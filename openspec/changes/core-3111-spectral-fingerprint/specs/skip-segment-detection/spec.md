@@ -42,6 +42,11 @@ candidate segment, under the existing segment guards.
 - **WHEN** after a shared intro both files hold the same hum while their other frames differ
 - **THEN** the intro ends where the shared intro ends
 
+#### Scenario: Held chord is evidence
+
+- **WHEN** a shared intro holds the same chord for 3 s
+- **THEN** the intro spans the chord
+
 #### Scenario: Longest run wins
 
 - **WHEN** two offsets each yield a shared run, of 20 s and of 26 s
@@ -49,13 +54,19 @@ candidate segment, under the existing segment guards.
 
 ### Requirement: Spectral duplicate rejection
 
-When an offset with no differing window shares at least 15 windows outside the candidate segment,
-the sibling SHALL yield no segment, because the two files are one recording.
+When an offset with no differing window shares at least 15 windows that lie outside the candidate
+segment on both files' timelines, the sibling SHALL yield no segment, because the two files are one
+recording.
 
 #### Scenario: Silence-padded copy
 
 - **WHEN** a sibling is this Media's audio after 100 s of leading silence
 - **THEN** that sibling yields no intro
+
+#### Scenario: Theme reprise
+
+- **WHEN** a sibling replays the shared theme later in its head region
+- **THEN** the intro is still detected in both files
 
 ### Requirement: Spectral fingerprint hash
 

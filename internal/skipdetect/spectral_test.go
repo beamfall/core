@@ -481,3 +481,61 @@ func TestSpectralHumDifferencesToEndOfHeadKeepIntro(t *testing.T) {
 	)
 	wantSegment(t, markers, "intro", 0, 24)
 }
+
+// CORE-3111 review r4: a 46 s clip compared with itself. Its 24 s arpeggio
+// repeats every 2 s, so a 2 s offset matches most of it and diverges after;
+// the exact offset matches two 10 s passages beyond that run. Short matches
+// outside the run still prove one recording, so no intro.
+func TestSpectralIdenticalClipWithRepeatingOpeningYieldsNoIntro(t *testing.T) {
+	notes := noise(81, 0.5) // four detailed notes, one frame each
+	var arpeggio []uint32
+	for range 12 {
+		for _, note := range notes[:4] {
+			arpeggio = append(arpeggio, constFrames(note, 0.5)...)
+		}
+	}
+	silence := constFrames(ffmpeg.SpectralSilentFrame, 1)
+	clip := join(arpeggio, silence, noise(82, 10), silence, noise(83, 10))
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Clip", 46, clip},
+		spectralSibling{"Clip copy", 46, append([]uint32(nil), clip...)},
+	)
+	wantNoSegment(t, markers, "intro")
+}
+
+// CORE-3111 review r4: TestSpectralThemeRepriseKeepsIntro from the episode
+// that reprises the theme. The reprise matches the sibling's intro, so it is
+// part of the shared segment, not a duplicate.
+func TestSpectralThemeRepriseKeepsIntroOnRepriseEpisode(t *testing.T) {
+	theme := noise(11, 24)
+	markers := detectSpectral(t, 1,
+		spectralSibling{"Reprise 1", 1800, join(theme, noise(12, 1776))},
+		spectralSibling{"Reprise 2", 1800, join(jitter(13, theme), noise(14, 132), jitter(15, theme), noise(16, 1620))},
+	)
+	wantSegment(t, markers, "intro", 0, 24)
+}
+
+// CORE-3111 review r4: TestSpectralReprisedThemeBeforeSilenceKeepsIntro from
+// the episode that reprises the theme.
+func TestSpectralReprisedThemeBeforeSilenceKeepsIntroOnRepriseEpisode(t *testing.T) {
+	theme := noise(51, 24)
+	silence := constFrames(ffmpeg.SpectralSilentFrame, 12)
+	markers := detectSpectral(t, 1,
+		spectralSibling{"Reprise 1", 72, join(theme, silence, noise(52, 36))},
+		spectralSibling{"Reprise 2", 72, join(jitter(53, theme), noise(54, 12), jitter(55, theme), silence)},
+	)
+	wantSegment(t, markers, "intro", 0, 24)
+}
+
+// CORE-3111 review r4: after distinct cold opens both episodes share 12 s of
+// audio, a 3 s held chord and 11 s more. A held chord is detailed audio, so
+// it keeps the intro whole.
+func TestSpectralHeldChordKeepsIntroWhole(t *testing.T) {
+	before, after := noise(91, 12), noise(92, 11)
+	chord := constFrames(noise(93, 0.125)[0], 3)
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Chord 1", 1800, join(noise(94, 5), before, chord, after, noise(95, 1769))},
+		spectralSibling{"Chord 2", 1800, join(noise(96, 5), jitter(97, before), chord, jitter(98, after), noise(99, 1769))},
+	)
+	wantSegment(t, markers, "intro", 5, 31)
+}
