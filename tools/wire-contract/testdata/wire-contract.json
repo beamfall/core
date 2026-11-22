@@ -51296,6 +51296,10 @@
           "kind": "scalar"
         },
         {
+          "name": "played",
+          "kind": "scalar"
+        },
+        {
           "name": "publishedAt",
           "kind": "scalar",
           "optional": true

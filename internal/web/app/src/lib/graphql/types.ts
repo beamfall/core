@@ -1140,6 +1140,18 @@ export interface FeedSubscription extends SubscriptionHealth {
   entryCount: number;
   downloadedCount: number;
   catalogBytes: number;
+  /** Whether the calling Profile follows it, and where its new entries go:
+   * new, queue-end or queue-front (CORE-2958). */
+  followed?: boolean;
+  newEntryRoute?: string;
+}
+
+/** The viewer-safe follow state (graph.FollowInfo). */
+export interface FollowInfo {
+  id: string;
+  title: string;
+  followed: boolean;
+  newEntryRoute: string;
 }
 
 /** The viewer-safe refreshSubscription response. */
@@ -1166,6 +1178,8 @@ export interface SubscriptionEntry {
   enclosureLength: number;
   downloadState: string;
   availability: string;
+  /** Whether the calling Profile has played the entry (CORE-2959). */
+  played: boolean;
 }
 
 /** The setSubscriptionRetention result. */

@@ -10,6 +10,7 @@ import {
   fetchSubscriptionEntries,
   type NavigationNode,
   type SubscriptionEntry,
+  setFollowNewEntryRoute,
 } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
@@ -18,6 +19,7 @@ import { FeedCatalogue } from "../components/feeds/FeedCatalogue";
 import { FeedFollowPanel } from "../components/feeds/FeedFollowPanel";
 import { FeedHealth } from "../components/feeds/FeedHealth";
 import { FeedList } from "../components/feeds/FeedList";
+import { FeedRouteSelect } from "../components/feeds/FeedRouteSelect";
 import { LibraryHeader } from "../components/LibraryPivots";
 import { ViewerActions } from "../components/ViewerActions";
 import { isForbidden, markLibraryHasFeeds, upsertSubscription } from "../lib/feeds";
@@ -228,6 +230,22 @@ export function FeedCataloguePage() {
         <LibraryHeader nodeID={node.id} libraryID={libraryID} heading={heading} pivots={false} />
         {subscription && (
           <FeedHealth health={subscription} lastPolledAt={subscription.lastPolledAt} />
+        )}
+        {subscription?.followed && (
+          <FeedRouteSelect
+            route={subscription.newEntryRoute || "new"}
+            onChange={async (route) => {
+              const follow = await setFollowNewEntryRoute(subscription.id, route);
+              setState((prev) =>
+                prev.kind === "ready" && prev.subscription
+                  ? {
+                      ...prev,
+                      subscription: { ...prev.subscription, newEntryRoute: follow.newEntryRoute },
+                    }
+                  : prev,
+              );
+            }}
+          />
         )}
         {state.kind === "loading" && (
           <p className="m-0 text-sm text-[var(--text-muted)]">{t("loading")}</p>

@@ -9,12 +9,13 @@ import { graphql } from "@/lib/api";
 import type {
   FeedSearchResult,
   FeedSubscription,
+  FollowInfo,
   SubscriptionEntry,
   SubscriptionRefreshInfo,
 } from "./types";
 
 const FEED_SUBSCRIPTION_FIELDS =
-  "id libraryID title downloadPolicy downloadLatestN healthStatus lastErrorClass failingSince nextPollAt lastPolledAt entryCount downloadedCount catalogBytes";
+  "id libraryID title downloadPolicy downloadLatestN healthStatus lastErrorClass failingSince nextPollAt lastPolledAt entryCount downloadedCount catalogBytes followed newEntryRoute";
 
 const SEARCH_FEEDS_QUERY =
   "query SearchFeeds($query: String!) { searchFeeds(query: $query) { title feedURL artworkURL description } }";
@@ -24,8 +25,12 @@ const FEED_SUBSCRIPTION_IDS_QUERY =
 const FOLLOW_FEED_MUTATION = `mutation FollowFeed($feedURL: String!, $libraryID: String, $downloadPolicy: String, $latestN: Int) { followFeed(feedURL: $feedURL, libraryID: $libraryID, downloadPolicy: $downloadPolicy, latestN: $latestN) { ${FEED_SUBSCRIPTION_FIELDS} } }`;
 const REFRESH_SUBSCRIPTION_MUTATION = `mutation RefreshSubscription($id: String!) { refreshSubscription(id: $id) { id title healthStatus lastErrorClass failingSince nextPollAt } }`;
 const SET_DOWNLOAD_POLICY_MUTATION = `mutation SetSubscriptionDownloadPolicy($id: String!, $downloadPolicy: String!, $latestN: Int, $confirmEverything: Boolean) { setSubscriptionDownloadPolicy(id: $id, downloadPolicy: $downloadPolicy, latestN: $latestN, confirmEverything: $confirmEverything) { ${FEED_SUBSCRIPTION_FIELDS} } }`;
+const SET_FOLLOW_NEW_ENTRY_ROUTE_MUTATION =
+  "mutation SetFollowNewEntryRoute($subscriptionID: String!, $route: String!) { setFollowNewEntryRoute(subscriptionID: $subscriptionID, route: $route) { id title followed newEntryRoute } }";
+const QUEUE_NEXT_MUTATION =
+  'mutation QueueNext($mediaIDs: [String!]!) { queueAddMany(mediaIDs: $mediaIDs, placement: "next") { currentEntryID } }';
 const SUBSCRIPTION_ENTRIES_QUERY =
-  "query SubscriptionEntries($subscriptionID: String!) { subscriptionEntries(subscriptionID: $subscriptionID) { mediaID title publishedAt feedPosition enclosureLength downloadState availability } }";
+  "query SubscriptionEntries($subscriptionID: String!) { subscriptionEntries(subscriptionID: $subscriptionID) { mediaID title publishedAt feedPosition enclosureLength downloadState availability played } }";
 
 /** Search the activated plugins' feed directories. Adult Profile or manager device. */
 export async function searchFeeds(query: string): Promise<FeedSearchResult[]> {
@@ -106,4 +111,22 @@ export async function fetchSubscriptionEntries(
     { subscriptionID },
   );
   return data.subscriptionEntries ?? [];
+}
+
+/** Where new entries of a followed feed go for the calling Profile: new
+ * (listed only), queue-end or queue-front (CORE-2958). */
+export async function setFollowNewEntryRoute(
+  subscriptionID: string,
+  route: string,
+): Promise<FollowInfo> {
+  const data = await graphql<{ setFollowNewEntryRoute: FollowInfo }>(
+    SET_FOLLOW_NEW_ENTRY_ROUTE_MUTATION,
+    { subscriptionID, route },
+  );
+  return data.setFollowNewEntryRoute;
+}
+
+/** Put one Media right after the current item of the Profile's play queue. */
+export async function queuePlayNextMedia(mediaID: string): Promise<void> {
+  await graphql<{ queueAddMany: unknown }>(QUEUE_NEXT_MUTATION, { mediaIDs: [mediaID] });
 }
