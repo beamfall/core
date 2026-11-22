@@ -69,13 +69,21 @@ export function nextUpChildContainer(
 }
 
 /**
- * The container card a rolled-up Media list plays next (CORE-3058): its first
- * unlocked container card with children left, else its first. Null when the
- * list has no container card.
+ * The container cards a rolled-up Media list plays through, in the order to
+ * try them (CORE-3058): its unlocked cards with children left, then its first
+ * unlocked card when none has. Empty when the list has no container card. The
+ * page tries the next when one turns out to hold nothing it can play (only
+ * locked Media, say).
  */
-export function nextUpRolledContainer(items: readonly SourceItem[]): SourceItem | null {
+export function rolledContainerCandidates(items: readonly SourceItem[]): SourceItem[] {
   const cards = items.filter((item) => item.kind === "entity" && !item.locked);
-  return cards.find(hasChildrenLeft) ?? cards[0] ?? null;
+  const left = cards.filter(hasChildrenLeft);
+  return left.length > 0 ? left : cards.slice(0, 1);
+}
+
+/** Whether the next-up child is a finished item played again (nothing is left). */
+export function nextUpFinished(next: NextUpChild): boolean {
+  return !next.resume && next.item.engagement?.completed === true;
 }
 
 /** Whether a rolled-up Media list has a container card with children left. */

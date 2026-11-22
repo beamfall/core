@@ -5,7 +5,8 @@ import {
   groupChildrenByKind,
   nextUpChild,
   nextUpChildContainer,
-  nextUpRolledContainer,
+  nextUpFinished,
+  rolledContainerCandidates,
   rolledContainerLeft,
 } from "./containerChildren";
 
@@ -109,7 +110,7 @@ describe("nextUpChildContainer", () => {
   });
 });
 
-describe("nextUpRolledContainer (CORE-3058)", () => {
+describe("rolledContainerCandidates (CORE-3058)", () => {
   const card = (id: string, remainingCount?: number, locked?: boolean): SourceItem => ({
     id,
     kind: "entity",
@@ -118,14 +119,33 @@ describe("nextUpRolledContainer (CORE-3058)", () => {
     engagement: { totalCount: 3, ...(remainingCount ? { remainingCount } : {}) },
   });
 
-  it("picks the first unlocked container card with children left, else the first", () => {
+  const ids = (items: SourceItem[]) => items.map((i) => i.id);
+
+  it("tries unlocked container cards with children left, else the first", () => {
     const film = item("f1");
-    expect(nextUpRolledContainer([film, card("a"), card("b", 2, true), card("c", 1)])?.id).toBe(
-      "c",
-    );
-    expect(nextUpRolledContainer([film, card("a"), card("b")])?.id).toBe("a");
-    expect(nextUpRolledContainer([film])).toBeNull();
+    expect(
+      ids(
+        rolledContainerCandidates([
+          film,
+          card("a"),
+          card("b", 2, true),
+          card("c", 1),
+          card("d", 2),
+        ]),
+      ),
+    ).toEqual(["c", "d"]);
+    expect(ids(rolledContainerCandidates([film, card("a"), card("b")]))).toEqual(["a"]);
+    expect(rolledContainerCandidates([film])).toEqual([]);
     expect(rolledContainerLeft([film, card("a"), card("b", 2, true)])).toBe(false);
     expect(rolledContainerLeft([film, card("c", 1)])).toBe(true);
+  });
+});
+
+describe("nextUpFinished", () => {
+  it("is true only for a finished item played again", () => {
+    const done = item("a", { engagement: { completed: true } });
+    expect(nextUpFinished({ item: done, resume: false })).toBe(true);
+    expect(nextUpFinished({ item: done, resume: true })).toBe(false);
+    expect(nextUpFinished({ item: item("b"), resume: false })).toBe(false);
   });
 });

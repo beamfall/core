@@ -33,7 +33,10 @@ category. Those act on a thing a viewer watches through, not on a person or a ge
 - The web Entity page asks for the rolled-up list and shows a list with container cards as a
   poster grid, each card opening its container's page. Its unwatched count adds the remaining counts
   of rolled-up container cards. Play and On Deck keep working: the next unfinished standalone
-  Media item, otherwise the next-up child of the first rolled-up container with children left.
+  Media item, otherwise the next-up child of the first rolled-up container with children left
+  that holds something playable, found down nested containers. A container a related row already
+  shows is not listed again, and the rolled-up list replaces a person or category detail Layout
+  that only lists the Entity's Media.
 - The web Entity page shows Mark watched, the watchlist toggle and the rating only on
   container-archetype Entities. Person and category pages keep Hide, which already mutes the
   Entity and everything under it (profile-hide).

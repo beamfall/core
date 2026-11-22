@@ -144,28 +144,46 @@ func (h *Handler) rollUpContainers(ctx context.Context, contextID store.EntityID
 	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
 		return nil, err
 	}
-	outer, seen, err := h.outermostContainers(ctx, items)
+	// Only non-audio Media can roll up, so only they walk the container chain.
+	var candidates []store.SourceItem
+	var at []int
+	for i, item := range items {
+		if item.Kind != "entity" && item.MediaClass != store.MediaClassAudio {
+			candidates = append(candidates, item)
+			at = append(at, i)
+		}
+	}
+	if len(candidates) == 0 {
+		return items, nil
+	}
+	found, foundSeen, err := h.outermostContainers(ctx, candidates)
 	if err != nil {
 		return nil, err
 	}
-	if len(outer) == 0 {
+	if len(found) == 0 {
 		return items, nil
 	}
+	outer := make(map[int]store.TitledEntityLink, len(found))
+	seen := make(map[int]map[store.EntityID]bool, len(foundSeen))
+	for j, link := range found {
+		outer[at[j]] = link
+		seen[at[j]] = foundSeen[j]
+	}
 	rolled := make([]store.SourceItem, 0, len(items))
-	at := map[store.EntityID]int{}
+	cardAt := map[store.EntityID]int{}
 	for i, item := range items {
 		link, held := outer[i]
-		if !held || item.MediaClass == store.MediaClassAudio || seen[i][contextID] {
+		if !held || seen[i][contextID] {
 			rolled = append(rolled, item)
 			continue
 		}
-		if j, ok := at[link.EntityID]; ok {
+		if j, ok := cardAt[link.EntityID]; ok {
 			if item.Year > 0 && (rolled[j].Year == 0 || item.Year < rolled[j].Year) {
 				rolled[j].Year = item.Year
 			}
 			continue
 		}
-		at[link.EntityID] = len(rolled)
+		cardAt[link.EntityID] = len(rolled)
 		rolled = append(rolled, store.SourceItem{
 			ID:         store.MediaID(link.EntityID),
 			Kind:       "entity",

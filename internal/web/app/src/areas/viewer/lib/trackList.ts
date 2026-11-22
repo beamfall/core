@@ -58,19 +58,33 @@ export function mediaClassOf(
   return item.mediaClass || rows[item.id]?.mediaClass;
 }
 
-/** True when there is at least one Media item and every one is audio. */
+/**
+ * True when there is at least one Media item, every one is audio, and no
+ * container card stands in for held Media: a rolled-up list rolls only
+ * non-audio Media into container cards (CORE-3058).
+ */
 export function isAudioListing(
   items: readonly ClassedItem[],
   rows: Readonly<Record<string, GenericMediaInfo>>,
 ): boolean {
   const media = items.filter((item) => item.kind === "media");
-  return media.length > 0 && media.every((item) => mediaClassOf(item, rows) === AUDIO_CLASS);
+  return (
+    media.length > 0 &&
+    !items.some((item) => item.kind === "entity") &&
+    media.every((item) => mediaClassOf(item, rows) === AUDIO_CLASS)
+  );
 }
 
-/** True when some listed Media item is known not to be audio (so no row read is needed). */
+/**
+ * True when some listed item is known not to be audio (so no row read is
+ * needed): a Media item of another class, or a container card standing in for
+ * held non-audio Media (CORE-3058).
+ */
 export function hasKnownNonAudio(items: readonly ClassedItem[]): boolean {
   return items.some(
-    (item) => item.kind === "media" && !!item.mediaClass && item.mediaClass !== AUDIO_CLASS,
+    (item) =>
+      item.kind === "entity" ||
+      (item.kind === "media" && !!item.mediaClass && item.mediaClass !== AUDIO_CLASS),
   );
 }
 

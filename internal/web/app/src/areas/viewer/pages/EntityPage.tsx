@@ -33,7 +33,8 @@ import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
 import {
   nextUpChild,
   nextUpChildContainer,
-  nextUpRolledContainer,
+  nextUpFinished,
+  rolledContainerCandidates,
   rolledContainerLeft,
 } from "../lib/containerChildren";
 import {
@@ -161,11 +162,20 @@ export function EntityPage() {
   // The primary action reads the Entity's own Media whether or not a detail
   // Layout renders them (CORE-1786: one accent action on every container).
   const needsDirectMedia = !notFound;
+  // A person or category lists its Media rolled up to their containers
+  // (CORE-3058), so a detail Layout that only lists its Media gives way to
+  // that list.
+  const rollsOverLayout =
+    !!detailLayout &&
+    listens === false &&
+    !!entity &&
+    entity.archetype !== "container" &&
+    layoutListsOnlyMedia(detailLayout);
 
   // The listed Media's rows, read once for the track list and this page's
   // Play action, so both start and queue an audio container's tracks in the
   // order the list shows (grouped and numbered by stored position, CORE-1635).
-  const listedItems = needsFallback || listens ? fallback : null;
+  const listedItems = needsFallback || listens || rollsOverLayout ? fallback : null;
   const listing = useListingRows(entity, listedItems ?? NO_ITEMS);
   const trackOrder = useMemo(
     () =>
@@ -183,20 +193,18 @@ export function EntityPage() {
   const directNext = useMemo(() => {
     if (!ordered || orderPending) return null;
     const next = nextUpChild(ordered);
-    const finished = next && !next.resume && next.item.engagement?.completed === true;
-    return finished && rolledContainerLeft(ordered) ? null : next;
+    return next && nextUpFinished(next) && rolledContainerLeft(ordered) ? null : next;
   }, [ordered, orderPending]);
-  // Otherwise play on through the next-up rolled-up container card, else the
-  // next-up child container.
-  const childContainer = useMemo(
-    () =>
-      fallback && !orderPending && !directNext
-        ? (nextUpRolledContainer(fallback) ?? nextUpChildContainer(entity?.relatedEntities))
-        : null,
-    [fallback, orderPending, directNext, entity],
-  );
+  // Otherwise play on through the rolled-up container cards, else the next-up
+  // child container: the space-separated ids of the containers to try in turn.
+  const childContainerIDs = useMemo(() => {
+    if (!fallback || orderPending || directNext) return "";
+    const rolled = rolledContainerCandidates(fallback);
+    if (rolled.length > 0) return rolled.map((item) => item.id).join(" ");
+    return nextUpChildContainer(entity?.relatedEntities)?.id ?? "";
+  }, [fallback, orderPending, directNext, entity]);
   const childItems =
-    childContainer && childMedia?.id === childContainer.id ? childMedia.items : null;
+    childContainerIDs && childMedia?.id === childContainerIDs ? childMedia.items : null;
   const fallbackQueue = useMemo(() => {
     if (directNext && trackOrder) return audioQueue(trackOrder);
     const queueSource = directNext ? fallback : childItems;
@@ -364,25 +372,24 @@ export function EntityPage() {
     };
   }, [identity, entityId, needsDirectMedia, engagementEpoch]);
 
-  const childContainerID = childContainer?.id ?? "";
   useEffect(() => {
-    if (!childContainerID) return;
+    if (!childContainerIDs) return;
     let alive = true;
     const controller = new AbortController();
-    childContainerMedia(childContainerID, controller.signal)
+    playThroughMedia(childContainerIDs.split(" "), entityId ?? "", controller.signal)
       .then((items) => {
-        if (alive) setChildMedia({ id: childContainerID, items });
+        if (alive) setChildMedia({ id: childContainerIDs, items });
       })
       .catch((err: unknown) => {
         if (!alive) return;
         if (isAuthRejection(err)) clearViewerCache();
-        setChildMedia({ id: childContainerID, items: [] });
+        setChildMedia({ id: childContainerIDs, items: [] });
       });
     return () => {
       alive = false;
       controller.abort();
     };
-  }, [childContainerID, engagementEpoch]);
+  }, [childContainerIDs, entityId, engagementEpoch]);
 
   // The ancestor's own read lists this container's siblings (CORE-2522).
   const ancestorID = ancestor?.id ?? "";
@@ -705,7 +712,9 @@ export function EntityPage() {
                 navigationID={`entity:${entityId || ""}`}
               />
             ))
-          ) : listsOwnMedia && !entity ? null : detailLayout && listens === false ? (
+          ) : listsOwnMedia && !entity ? null : detailLayout &&
+            listens === false &&
+            !rollsOverLayout ? (
             <LayoutView
               layout={detailLayout}
               libraryID=""
@@ -714,7 +723,7 @@ export function EntityPage() {
               navigationID={`entity:${entityId || ""}`}
             />
           ) : (
-            (needsFallback || listens) &&
+            (needsFallback || listens || rollsOverLayout) &&
             fallback && (
               <>
                 {childCount > 0 && (
@@ -724,7 +733,7 @@ export function EntityPage() {
                 )}
                 <EntityMediaBrowse
                   entity={entity}
-                  items={fallback}
+                  items={withoutShownCards(fallback, groups.containers)}
                   listing={listing}
                   label={t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })}
                 />
@@ -753,19 +762,78 @@ export function EntityPage() {
   );
 }
 
-/** One related group as a poster grid under its heading. */
+/** How many containers deep play-through looks for Media (identify.MaxContainerDepth). */
+const MAX_CONTAINER_DEPTH = 8;
+/** How many rolled-up container cards play-through tries before giving up. */
+const PLAY_THROUGH_TRIES = 4;
+
 /**
- * The Media a child container plays from: its own, or, when it has nothing to
- * play (a container of containers, as a rolled-up card can be), those of its
- * own next-up child container (CORE-3058).
+ * The Media a page plays through its container cards (CORE-3058): those of
+ * the first container that has something unfinished, trying each id in turn,
+ * else those of the first that has anything to play again. `from` is the
+ * page's own Entity, which the walk never goes back up to.
  */
-async function childContainerMedia(id: string, signal: AbortSignal): Promise<SourceItem[]> {
-  const items = await fetchMediaForEntity(id, signal);
-  if (nextUpChild(items)) return items;
-  const child = nextUpChildContainer((await fetchEntity(id, signal))?.relatedEntities);
-  return child && child.id !== id ? fetchMediaForEntity(child.id, signal) : items;
+async function playThroughMedia(
+  ids: readonly string[],
+  from: string,
+  signal: AbortSignal,
+): Promise<SourceItem[]> {
+  let replay: SourceItem[] = [];
+  for (const id of ids.slice(0, PLAY_THROUGH_TRIES)) {
+    const items = await containerMedia(id, from, signal);
+    const next = nextUpChild(items);
+    if (next && !nextUpFinished(next)) return items;
+    if (next && replay.length === 0) replay = items;
+  }
+  return replay;
 }
 
+/**
+ * The Media a container plays from: its own when one is unfinished, else
+ * those of its next-up child container, down the chain (a rolled-up card can
+ * stand several containers above its Media). Containers already visited are
+ * skipped, since related groups carry no direction and list the parent too.
+ * When nothing deeper is unfinished, the first Media found play again.
+ */
+async function containerMedia(
+  id: string,
+  from: string,
+  signal: AbortSignal,
+): Promise<SourceItem[]> {
+  const visited = new Set<string>([from]);
+  let replay: SourceItem[] = [];
+  let current: string | undefined = id;
+  for (let depth = 0; current && depth < MAX_CONTAINER_DEPTH; depth++) {
+    visited.add(current);
+    const items = await fetchMediaForEntity(current, signal);
+    const next = nextUpChild(items);
+    if (next && !nextUpFinished(next)) return items;
+    if (next && replay.length === 0) replay = items;
+    const groups = (await fetchEntity(current, signal))?.relatedEntities?.map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !visited.has(item.id)),
+    }));
+    current = nextUpChildContainer(groups)?.id;
+  }
+  return replay;
+}
+
+/**
+ * The listed items without the container cards a related-container row above
+ * already shows, so a container credited both itself and through its Media
+ * appears once (CORE-3058).
+ */
+function withoutShownCards(
+  items: SourceItem[],
+  groups: readonly { items: readonly SourceItem[] }[],
+): SourceItem[] {
+  const shown = new Set(groups.flatMap((group) => group.items.map((item) => item.id)));
+  return shown.size === 0
+    ? items
+    : items.filter((item) => item.kind !== "entity" || !shown.has(item.id));
+}
+
+/** One related group as a poster grid under its heading. */
 function RelatedGroup({ title, items }: { title: string; items: readonly SourceItem[] }) {
   return (
     <section className="bf-section flex flex-col gap-3">
