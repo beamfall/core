@@ -85,7 +85,7 @@ func TestFilmTVHydrationCarriesFilmSidecar(t *testing.T) {
 		}
 		names[relation.Name]++
 	}
-	if names["credited-in"] != 2 || names["genre-of"] != 1 || names["produced"] != 1 || names["series-member"] != 1 {
+	if names["credited-in"] != 2 || names["genre-of"] != 1 || names["produced"] != 1 || names["film-series-film"] != 1 {
 		t.Fatalf("local relations = %v", names)
 	}
 }
