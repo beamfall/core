@@ -771,6 +771,11 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 	case store.EntityFieldDate:
 		for _, layout := range []string{"2006-01-02", time.RFC3339, time.RFC3339Nano} {
 			if when, err := time.Parse(layout, value); err == nil {
+				if when.IsZero() {
+					// 0001-01-01 is Go's zero time, which the store reads as
+					// no value and refuses; treat it as absent.
+					return store.MediaField{}, false
+				}
 				return store.MediaField{Name: name, Type: store.EntityFieldDate, Date: when.UTC()}, true
 			}
 		}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/identify"
+	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
 )
@@ -141,5 +142,41 @@ func TestFixMatchOrdinalFailureKeepsHolderLink(t *testing.T) {
 	}
 	if got := holderOf(t, service, media); got != "" {
 		t.Fatalf("held by %q after a committed fix match with no group, want none", got)
+	}
+}
+
+// TestFixMatchZeroEntityDateIsAbsent (CORE-3128): hydration follows the
+// metadata commit, so a scraped Entity value the store refuses would leave a
+// committed ordinal that no retry can hydrate. 0001-01-01 parses as Go's zero
+// time, which the store reads as no value; it is dropped as absent instead.
+func TestFixMatchZeroEntityDateIsAbsent(t *testing.T) {
+	ctx := context.Background()
+	st, library, media, endpoint := holderLockFixture(t, map[string]string{
+		"/item/1": `{"title":"Origin","release_date":"1999-03-31","group":{"id":77,"name":"Original Set","first":"2000-01-01"}}`,
+		"/item/2": `{"title":"Replacement","release_date":"1999-03-31","group":{"id":88,"name":"New Set","first":"0001-01-01"}}`,
+	})
+	bundle := scraperHolderBundle(endpoint, "group")
+	bundle.EntityKinds[0].Fields = append(bundle.EntityKinds[0].Fields, plugin.FieldSpec{Name: "first", Type: "date"})
+	bundle.Scrapers[0].EntityMaps[0].FieldMap["first"] = "first"
+	service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), bundle, st)
+	service.SetEntities(st)
+	if err := service.Apply(ctx, media, "demo", "item", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ApplyFixMatch(ctx, media, "demo", "item", "2", nil, &store.MediaOrdinal{Index: 3}, "profile-default"); err != nil {
+		t.Fatalf("fix match with a zero entity date: %v", err)
+	}
+	replacement := identify.EntityIDForName(library, "set", "88")
+	if got := holderOf(t, service, media); got != replacement {
+		t.Fatalf("held by %q, want %q", got, replacement)
+	}
+	entity, err := st.Entity(ctx, replacement, metadataLibraryFilter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range entity.Fields {
+		if field.Name == "first" {
+			t.Fatalf("zero date stored as %v, want the field absent", field.Date)
+		}
 	}
 }
