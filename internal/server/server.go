@@ -90,6 +90,7 @@ type Server struct {
 	// credential; nil means none was established, which refuses every bearer.
 	metricsScrapeDigest []byte
 	testFaults          atomic.Pointer[testFaults]
+	buildIdentity       capabilities.Report
 	buildSHA            string
 	seedProfile         string
 	seedVersion         string
@@ -267,6 +268,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 		panic(fmt.Errorf("invalid release first-party build catalog: %w", err))
 	}
 	defaultCapabilities := capabilities.EnabledIDs(nil)
+	report := capabilities.Current()
 	s := &Server{
 		mux:             http.NewServeMux(),
 		accessClasses:   make(map[string]AccessClass),
@@ -280,9 +282,15 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 		auth:            authService,
 		jobStats:        jobStats,
 		buildSHA:        detectBuildSHA(),
-		capabilities:    append([]string(nil), defaultCapabilities...),
-		baseURL:         baseURL,
-		knownProxies:    knownProxies,
+		buildIdentity: capabilities.Report{
+			Version:   report.Version,
+			Commit:    report.Commit,
+			BuildDate: report.BuildDate,
+			BuildTags: report.BuildTags,
+		},
+		capabilities: append([]string(nil), defaultCapabilities...),
+		baseURL:      baseURL,
+		knownProxies: knownProxies,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -1124,7 +1132,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	}
 	_, ffmpegErr := lookPath("ffmpeg")
 	_, ffprobeErr := lookPath("ffprobe")
-	writeJSON(w, status, map[string]any{
+	body := map[string]any{
 		"status":       summary,
 		"live":         true,
 		"ready":        ready,
@@ -1135,7 +1143,14 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		"seedVersion":  s.seedVersion,
 		"capabilities": s.capabilities,
 		"features":     serverFeatures,
-	})
+		"version":      s.buildIdentity.Version,
+		"commit":       s.buildIdentity.Commit,
+	}
+	// buildDate is omitted, never invented, when the binary carries none.
+	if s.buildIdentity.BuildDate != "" {
+		body["buildDate"] = s.buildIdentity.BuildDate
+	}
+	writeJSON(w, status, body)
 }
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {

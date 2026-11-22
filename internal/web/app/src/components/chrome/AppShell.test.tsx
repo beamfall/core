@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchClientPrefs } from "@/lib/graphql/viewer";
 import { I18nProvider } from "@/lib/i18n";
+import { useServerBuild } from "@/lib/serverBuild";
 import { expectNoAxeViolations } from "@/test/axe";
 import { AppShell } from "./AppShell";
 import { resetSidebarPrefsCache } from "./sidebarPrefs";
@@ -29,6 +30,17 @@ vi.mock("@/lib/graphql/viewer", () => ({
 vi.mock("@/lib/register", () => ({
   useRegister: () => ({ register: "viewer" }),
 }));
+
+vi.mock("@/lib/serverBuild", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/serverBuild")>()),
+  useServerBuild: vi.fn(),
+}));
+
+const serverBuild = {
+  version: "v1.2.3",
+  commit: "0123456789abcdef",
+  buildDate: "2026-11-21T16:24:00Z",
+};
 
 const sessionState = vi.hoisted(() => ({
   isManager: false,
@@ -55,9 +67,12 @@ vi.mock("@/lib/session", () => ({
   }),
 }));
 
-function renderShell(path = "/") {
+function renderShell(path = "/", displayLocale?: string) {
   return render(
-    <I18nProvider>
+    <I18nProvider
+      initialLocale={displayLocale ? "en" : undefined}
+      initialDisplayLocale={displayLocale}
+    >
       <MemoryRouter initialEntries={[path]}>
         <AppShell>
           <div>Surface content</div>
@@ -68,6 +83,7 @@ function renderShell(path = "/") {
 }
 
 beforeEach(() => {
+  vi.mocked(useServerBuild).mockReturnValue(null);
   sessionState.isManager = false;
   sessionState.signedIn = false;
   sessionState.profileKind = "adult";
@@ -86,6 +102,16 @@ describe("AppShell host chrome suppression", () => {
     expect(screen.getByLabelText("Beamfall")).toBeInTheDocument();
     expect(screen.getByText("Surface content")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /corresponding source/i })).toBeNull();
+  });
+
+  it("shows the localized build identity and full details in the header", () => {
+    vi.mocked(useServerBuild).mockReturnValue(serverBuild);
+    renderShell("/", "en-GB");
+    const label = within(screen.getByRole("banner")).getByRole("note");
+    const details = "Version v1.2.3, Build date 2026-11-21T16:24:00Z and Commit 0123456789abcdef";
+    expect(label).toHaveTextContent("v1.2.3 · 21 Nov 2026");
+    expect(label).toHaveAccessibleName(details);
+    expect(label).toHaveAttribute("title", details);
   });
 
   it("links the Console from the header and Manage from the account menu for managers", async () => {
@@ -329,6 +355,12 @@ describe("AppShell library sidebar", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(screen.queryByRole("link", { name: "Space Archive" })).not.toBeInTheDocument();
       expect(screen.queryByRole("separator", { name: "Resize sidebar" })).not.toBeInTheDocument();
+    });
+
+    it("hides the build identity on phones", () => {
+      vi.mocked(useServerBuild).mockReturnValue(serverBuild);
+      renderShell();
+      expect(within(screen.getByRole("banner")).queryByRole("note")).not.toBeInTheDocument();
     });
 
     it("moves focus into the drawer on open and traps it there", async () => {

@@ -5,16 +5,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
 
 const capabilitiesPkg = "github.com/beamfall/core/internal/capabilities"
 
-// TestReleaseIdentityLinkTime (CORE-1096): the link-time ReleaseVersion and
-// ReleaseCommit reach Current(), which `beamfall version` prints, and a binary
-// linked without them and without VCS metadata (a Docker build context has no
-// .git) reports "development" for both.
+// TestReleaseIdentityLinkTime proves the linked identity reaches Current(),
+// which `beamfall version` prints.
 func TestReleaseIdentityLinkTime(t *testing.T) {
 	if testing.Short() {
 		t.Skip("links a helper binary")
@@ -39,13 +38,43 @@ func TestReleaseIdentityLinkTime(t *testing.T) {
 	}
 
 	const commit = "0123456789abcdef0123456789abcdef01234567"
-	stamped := build(t, "-X "+capabilitiesPkg+".ReleaseVersion=v1.0.0 -X "+capabilitiesPkg+".ReleaseCommit="+commit)
-	if want := "v1.0.0\n" + commit + "\n"; stamped != want {
+	const buildDate = "2026-11-21T16:24:00Z"
+	stamped := build(t, "-X "+capabilitiesPkg+".ReleaseVersion=v1.0.0 -X "+capabilitiesPkg+".ReleaseCommit="+commit+" -X "+capabilitiesPkg+".ReleaseBuildDate="+buildDate)
+	if want := "v1.0.0\n" + commit + "\n" + buildDate + "\n"; stamped != want {
 		t.Fatalf("stamped identity = %q, want %q", stamped, want)
 	}
 	unstamped := build(t, "-X "+capabilitiesPkg+".ReleaseCommit=")
-	if want := "development\ndevelopment\n"; unstamped != want {
+	if want := "development\ndevelopment\n\n"; unstamped != want {
 		t.Fatalf("unstamped identity = %q, want %q", unstamped, want)
+	}
+}
+
+func TestResolveBuildDate(t *testing.T) {
+	tests := []struct {
+		name    string
+		stamped string
+		vcsTime string
+		want    string
+	}{
+		{"stamp wins and normalizes", " 2026-11-21T18:24:00.987+02:00 ", "2026-11-20T08:00:00Z", "2026-11-21T16:24:00Z"},
+		{"invalid stamp falls back", "yesterday", "2026-11-20T08:00:00Z", "2026-11-20T08:00:00Z"},
+		{"VCS timestamp normalizes", "", "2026-11-21T23:24:00-02:00", "2026-11-22T01:24:00Z"},
+		{"missing timestamps", "", "", ""},
+		{"invalid timestamps", "today", "yesterday", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			readBuildInfo := func() (*debug.BuildInfo, bool) {
+				info := &debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "abc"}}}
+				if tt.vcsTime != "" {
+					info.Settings = append(info.Settings, debug.BuildSetting{Key: "vcs.time", Value: tt.vcsTime})
+				}
+				return info, true
+			}
+			if got := resolveBuildDate(tt.stamped, readBuildInfo); got != tt.want {
+				t.Errorf("resolveBuildDate = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -66,8 +95,10 @@ func TestDockerfileStampsBuildIdentity(t *testing.T) {
 	for _, want := range []string{
 		`ARG BEAMFALL_VERSION=""`,
 		`ARG BEAMFALL_COMMIT=""`,
+		`ARG BEAMFALL_BUILD_DATE=""`,
 		"-X " + capabilitiesPkg + ".ReleaseVersion=${version}",
 		"-X " + capabilitiesPkg + ".ReleaseCommit=${BEAMFALL_COMMIT}",
+		"-X " + capabilitiesPkg + ".ReleaseBuildDate=${build_date}",
 	} {
 		if !strings.Contains(buildStage, want) {
 			t.Errorf("build stage lacks %q", want)
