@@ -3,8 +3,10 @@
 ### Requirement: Fix Match reads are available for visible Media
 
 Managers SHALL be able to read the current match, searchable scrapers and locked field values
-for visible Media. A recorded searchable scraper from the owning plugin SHALL come first,
-followed by the remaining scrapers in declaration order.
+for visible Media outside Encrypted Libraries. A recorded searchable scraper from the owning plugin
+SHALL come first, followed by the remaining scrapers in declaration order. Identification
+provenance lives in the shared catalog, so Fix Match reads and applies for Media in an Encrypted
+Library SHALL be refused with the localized `fix_match.encrypted_library` error.
 
 #### Scenario: A manager opens Fix Match for an identified item
 
@@ -12,6 +14,12 @@ followed by the remaining scrapers in declaration order.
 - **THEN** the current match includes its recorded source and candidate, and the stored title and year
 - **AND** the first searchable scraper is the sole default when at least one exists
 - **AND** the manager can read the item's manually locked values
+
+#### Scenario: A manager opens Fix Match in an Encrypted Library
+
+- **WHEN** a manager opens Fix Match for visible Media in an Encrypted Library
+- **THEN** the request is refused with the localized `fix_match.encrypted_library` error
+- **AND** no match, scraper or lock data is returned
 
 ### Requirement: Applying a replacement respects field locks
 
