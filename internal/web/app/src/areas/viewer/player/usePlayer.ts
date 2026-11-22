@@ -188,17 +188,16 @@ interface QueuedProgress {
 
 interface ProgressQueue {
   playbackID: string;
-  // The play's clock: the wall clock when the play started, carried forward
-  // by performance.now(), so a device clock change mid-play can neither stall
-  // nor rewind its event times (CORE-1703).
-  clockWallMS: number;
-  clockPerfMS: number;
   active: boolean;
   finalQueued: boolean;
   // Set when the player moved on (track change, unmount) with a finish report
   // still owed: no new reports are accepted, but the queued ones are sent, in
   // order, the finish last.
   retiring: boolean;
+  // A replay's queue waits behind the previous play's until that one has
+  // delivered its finish, so the finish always arrives first (CORE-1703).
+  blocked: boolean;
+  next: ProgressQueue | null;
   onDrained: (() => void) | null;
   inFlight: { controller: AbortController; progress: ReportPlaybackVars } | null;
   // Reports waiting for the one in flight, sent one at a time in the order
@@ -210,11 +209,11 @@ interface ProgressQueue {
 function createProgressQueue(playbackID: string): ProgressQueue {
   return {
     playbackID,
-    clockWallMS: Math.max(Date.now(), lastPlaybackEventTimeMS),
-    clockPerfMS: performance.now(),
     active: true,
     finalQueued: false,
     retiring: false,
+    blocked: false,
+    next: null,
     onDrained: null,
     inFlight: null,
     queued: [],
@@ -223,8 +222,14 @@ function createProgressQueue(playbackID: string): ProgressQueue {
 
 // openProgressQueue starts the reporting for a new play: a new playback ID
 // and queue, stopped outright if the revealed identity changes (CORE-1143).
-function openProgressQueue(): ProgressQueue {
+// Given a previous play still delivering its reports, the new queue sends
+// nothing until that one is done.
+function openProgressQueue(after?: ProgressQueue): ProgressQueue {
   const queue = createProgressQueue(newPlaybackID());
+  if (after?.active) {
+    queue.blocked = true;
+    after.next = queue;
+  }
   const identitySignal = getIdentityEpochSignal();
   const stopForIdentityChange = () => stopProgressQueue(queue);
   queue.onDrained = () => identitySignal?.removeEventListener("abort", stopForIdentityChange);
@@ -244,7 +249,7 @@ function enqueueProgress(
   if (!queue.active || queue.retiring) return;
   if (queue.finalQueued && !progress.finished) return;
   if (progress.finished) queue.finalQueued = true;
-  if (!queue.inFlight) {
+  if (!queue.inFlight && !queue.blocked) {
     sendProgress(queue, progress);
     return;
   }
@@ -284,7 +289,17 @@ function completeProgress(queue: ProgressQueue, controller: AbortController): vo
     sendProgress(queue, next.progress);
     return;
   }
-  if (queue.retiring) stopProgressQueue(queue);
+  if (!queue.retiring) return;
+  stopProgressQueue(queue);
+  // Delivered in full: the replay waiting behind it may send now. A queue
+  // stopped by an identity change releases nothing; the replay's own queue
+  // stops for the same change.
+  const after = queue.next;
+  queue.next = null;
+  if (!after) return;
+  after.blocked = false;
+  const first = after.active ? after.queued.shift() : undefined;
+  if (first) sendProgress(after, first.progress);
 }
 
 function stopProgressQueue(queue: ProgressQueue): void {
@@ -316,12 +331,13 @@ function retireProgressQueue(queue: ProgressQueue): void {
   queue.retiring = true;
 }
 
-// playbackEventTimeMS reads the play's own clock, which only moves forward.
-// The next play starts its clock no earlier than the last time sent, so the
-// server's latest-report-wins check never sees this player go backward.
-function playbackEventTimeMS(queue: ProgressQueue): number {
-  const eventTimeMS = queue.clockWallMS + Math.round(performance.now() - queue.clockPerfMS);
-  lastPlaybackEventTimeMS = Math.max(lastPlaybackEventTimeMS, eventTimeMS);
+// nextPlaybackEventTimeMS is the wall clock, held strictly after the last
+// time sent, so the server's latest-report-wins check never sees this player
+// go backward. A clock set back stalls it only until the wall clock passes the
+// last time sent again, so a corrected fast clock stops leading (CORE-1703).
+function nextPlaybackEventTimeMS(): number {
+  const eventTimeMS = Math.max(lastPlaybackEventTimeMS + 1, Date.now());
+  lastPlaybackEventTimeMS = eventTimeMS;
   return eventTimeMS;
 }
 
@@ -638,7 +654,7 @@ export function usePlayer(
       if (position === null) return;
       const queue = progressQueueRef.current;
       if (!queue) return;
-      const eventTimeMS = playbackEventTimeMS(queue);
+      const eventTimeMS = nextPlaybackEventTimeMS();
       const songScale = songScaleRef.current;
       // The probed length, not a live transcode's growing video.duration:
       // the server derives "time left" from this (CORE-2314).
@@ -1508,12 +1524,16 @@ export function usePlayer(
     // reports too (CORE-1703).
     // Playing again after the finish (Play on an ended item, in place) is a
     // new play: a new playback ID and queue, and the beacon restarted. The
-    // old queue still delivers its finish.
+    // old queue still delivers its finish, before any of the new play's
+    // reports. The end position is forgotten, so the new play reports only a
+    // presented frame: none while the seek back to the start is pending, the
+    // start once `seeked` fires.
     const onPlay = () => {
       const play = playRef.current;
       if (play && play.queue === progressQueueRef.current && play.queue.finalQueued) {
         retireProgressQueue(play.queue);
-        const queue = openProgressQueue();
+        presentedPositionRef.current = null;
+        const queue = openProgressQueue(play.queue);
         playRef.current = { mediaID: play.mediaID, queue };
         progressQueueRef.current = queue;
         startHeartbeat();

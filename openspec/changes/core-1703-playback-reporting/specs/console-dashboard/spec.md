@@ -68,7 +68,7 @@ holds a delivery decision for that session and item, its play method.
 ### Requirement: Both report APIs accept the playback ID as sent
 
 GraphQL `reportPlayback` and `PUT /v1/media/{mediaID}/progress` SHALL accept the playback ID and
-paused state alike. A playback ID SHALL be checked exactly as sent, never trimmed: one longer than
+paused state alike, and the `/v1` OpenAPI `ProgressRequest` schema SHALL document both. A playback ID SHALL be checked exactly as sent, never trimmed: one longer than
 64 characters (Unicode code points) or with leading or trailing whitespace SHALL be refused.
 
 #### Scenario: Long and padded IDs
@@ -86,19 +86,22 @@ paused state alike. A playback ID SHALL be checked exactly as sent, never trimme
 
 A client SHALL send a new random playback ID each time its player starts an item and keep it
 across pauses, seeks and reloads of the same item. Playing an item again after its finish SHALL
-start a new playback ID.
+start a new playback ID, whose reports start from a presented frame, never the previous play's
+end position.
 
 #### Scenario: Replay in place
 
 - **WHEN** an item plays to its finish and the viewer presses Play again on the same player
-- **THEN** the second play's reports carry a new playback ID and its heartbeat runs again
+- **THEN** the second play's reports carry a new playback ID, the first of them the start
+  position once the seek back settles, and its heartbeat runs again
 
 ### Requirement: Clients send a play's reports in order
 
 A client SHALL send the reports for one playback ID one at a time in the order it made them, never
 dropping or reordering one. Only a periodic heartbeat MAY replace the heartbeat queued just before
 it in the same state. A reload of the same item SHALL send the reports still queued for its
-playback ID before any of its own.
+playback ID before any of its own, and a replay SHALL send nothing until the previous play's
+queued reports and finish are sent.
 
 #### Scenario: Pause, resume and heartbeat behind a stalled report
 
@@ -111,6 +114,11 @@ playback ID before any of its own.
 - **THEN** the pause and the seek are sent in order, before the reloaded stream's reports, with one
   playback ID
 
+#### Scenario: Replay behind a queued finish
+
+- **WHEN** the finish waits behind a stalled report and the viewer presses Play again at once
+- **THEN** the finish is sent before the replay's first report
+
 #### Scenario: Auto-advance with reports queued
 
 - **WHEN** the player moves to the next item while reports and the finish are queued
@@ -118,14 +126,15 @@ playback ID before any of its own.
 
 ### Requirement: Client event times only move forward
 
-A client's event times for one playback ID SHALL come from a clock that only moves forward, such as
-the wall clock at the play's start carried forward by a monotonic timer, so a device clock change
-mid-play neither stalls nor rewinds them.
+A client's event time SHALL be the wall clock, held strictly after the last event time it sent, so
+it never goes backward, and a fast clock that is corrected stops leading once the wall clock passes
+the last time sent.
 
-#### Scenario: Device clock set back mid-play
+#### Scenario: Fast clock corrected mid-play
 
-- **WHEN** the device clock is set back two minutes while an item plays for three seconds
-- **THEN** the play's next report carries an event time three seconds after its previous one
+- **WHEN** a play starts on a device clock two minutes fast, which is then corrected
+- **THEN** the next report's event time is one millisecond after the previous one, and reports ten
+  minutes later carry the wall clock
 
 ### Requirement: A play is the reports sharing a playback ID
 
@@ -172,8 +181,8 @@ is.
 
 Within a play, each step between consecutive reports SHALL credit the position advance capped at
 the time between them, and nothing when the earlier report said paused or the advance is negative.
-The time is the client's clock difference when both reports carry one and it moved forward, else
-the receipt difference for that step. A report that does not say whether it was paused SHALL count
+The time is the larger of the client's clock difference and the receipt difference when both
+reports carry a client time, else the receipt difference. A report that does not say whether it was paused SHALL count
 as playing. No cap of a minute applies.
 
 #### Scenario: Client clock runs fast

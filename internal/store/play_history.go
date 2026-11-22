@@ -254,12 +254,11 @@ const playedAtMS = `CASE
 // Within a playback ID the step is the advance of the position the client
 // reported, but no more than the time that passed between the two reports,
 // and nothing when the earlier report said the player was paused. The time
-// that passed is the difference between the client's own event times, both
-// read from the one player's clock, so a report queued behind a slow request
-// still earns the time it covered; when the client sent no event time, or its
-// event time did not move forward (a clock set back, or a client that holds
-// its clock at a high-water mark), it is the difference between the two
-// arrivals at the server for that step. A pause earns nothing whether the client stays silent or keeps
+// that passed is the larger of the difference between the client's own event
+// times and the difference between the two arrivals at the server, so a report
+// queued behind a slow request still earns the time it covered, and a client
+// clock that stood still or went back costs nothing; without client event
+// times it is the arrival difference. A pause earns nothing whether the client stays silent or keeps
 // reporting, a seek made while paused earns nothing, and a forward seek earns
 // no more than the time it took. A report that does not say whether the
 // player was paused reads as playing.
@@ -273,8 +272,9 @@ const playedStepMS = `CASE
 		WHEN starts = 1 THEN 0
 		WHEN part <> ''
 		THEN CASE WHEN prev_paused = 1 OR reported IS NULL OR prev_reported IS NULL THEN 0
-		          ELSE MAX(MIN(CASE WHEN client_ms > prev_client AND prev_client > 0
-		                            THEN client_ms - prev_client ELSE recv_ms - prev_recv END,
+		          ELSE MAX(MIN(CASE WHEN client_ms > 0 AND prev_client > 0
+		                            THEN MAX(client_ms - prev_client, recv_ms - prev_recv)
+		                            ELSE recv_ms - prev_recv END,
 		                       (reported - prev_reported) * 1000), 0) END
 		WHEN at_ms - prev_ms > ? THEN 0
 		WHEN watched = 0 AND prev_watched = 0 AND (position > 0 OR prev_position > 0)

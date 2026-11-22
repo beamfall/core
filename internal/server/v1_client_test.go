@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -291,5 +293,39 @@ func TestV1PlaybackInfoKeepsCaptionStreamIndex(t *testing.T) {
 	}
 	if got := out.CaptionTracks[2]; got.URL == "" || got.StreamIndex == nil || *got.StreamIndex != 3 {
 		t.Errorf("muxed text track = %+v, want both URL and streamIndex", got)
+	}
+}
+
+// TestOpenAPIProgressRequestMatchesHandler pins the documented /v1
+// ProgressRequest schema to the fields the handler decodes, so a client
+// generated from the served contract can send each of them (Codex CORE-1703
+// r5: playbackID and paused were accepted but undocumented).
+func TestOpenAPIProgressRequestMatchesHandler(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/api/openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]json.RawMessage `json:"properties"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	var documented []string
+	for name := range spec.Components.Schemas["ProgressRequest"].Properties {
+		documented = append(documented, name)
+	}
+	var decoded []string
+	for field := range reflect.TypeFor[v1ProgressRequest]().Fields() {
+		decoded = append(decoded, strings.Split(field.Tag.Get("json"), ",")[0])
+	}
+	slices.Sort(documented)
+	slices.Sort(decoded)
+	if !slices.Equal(documented, decoded) {
+		t.Fatalf("OpenAPI ProgressRequest properties = %v, handler decodes %v", documented, decoded)
 	}
 }
