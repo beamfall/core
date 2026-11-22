@@ -48755,6 +48755,11 @@
           "optional": true
         },
         {
+          "name": "playsAlone",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "restricted",
           "kind": "scalar",
           "optional": true
