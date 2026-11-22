@@ -8,4 +8,4 @@
 - [x] Server: route registration and access class.
 - [x] Arch whitelist and ARCHITECTURE.md §4 row for the new package.
 - [x] Web: player subtitle menu entry, detail page More menu entry, search dialog, strings.
-- [ ] Follow-ups: Console toggle and key UI, data-dir storage, native clients, more providers.
+- [x] Follow-ups filed: CORE-3102 (Console toggle and key), CORE-3103 (data-dir storage), CORE-3104 (native clients), CORE-3105 (more providers, rate limits), CORE-3106..3110 (review findings).
