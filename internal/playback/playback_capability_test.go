@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -822,6 +823,79 @@ func TestUndeclaredContainerWithPlayableStreamsRemuxes(t *testing.T) {
 	}
 	if len(resp.Streams) != 1 || len(resp.Streams[0].Renditions) != 1 || resp.Streams[0].Renditions[0].ID != audioCopyRungID {
 		t.Fatalf("streams = %+v, want the single video-copy rung", resp.Streams)
+	}
+}
+
+// appleOverlayProfile mirrors the tvOS/iPhone AVPlayer profile (beamfall-apple-ui
+// ApplePlaybackProfiles): mp4-family containers, H.264/HEVC and AAC, and no
+// subtitleFormats. Those clients draw every text track from its WebVTT caption
+// URL as an overlay (CORE-1670), so they must not declare "ass": that would get
+// them the raw-ASS sidecar their WebVTT parser cannot read.
+var appleOverlayProfile = CapabilityProfile{
+	Client:       "beamfall-tvos-avplayer-v1",
+	Containers:   []string{"mp4", "m4v", "mov"},
+	DirectCodecs: []string{"h264", "hevc", "aac"},
+}
+
+// TestOverlayCaptionProfileKeepsVideoCopyForSelectedASS pins CORE-1670: an
+// anime-shaped mkv (H.264, AAC, muxed ASS and PGS) on the Apple overlay profile
+// keeps the video-copy remux with the ASS track selected and hands it out as a
+// flattened WebVTT caption URL. Only the selected PGS track re-encodes video,
+// with the track burned in.
+func TestOverlayCaptionProfileKeepsVideoCopyForSelectedASS(t *testing.T) {
+	assIndex, pgsIndex := 2, 3
+	service, st, scope := capabilityTestService(t)
+	mediaID := importProbedMedia(t, st, "fp-mkv-ass-overlay", "matroska", "h264", 1920, 1080, []store.MediaFileStream{
+		videoStream("h264", "High", 0, ""),
+		audioStream(1, "aac", 2),
+		{Index: assIndex, Type: "subtitle", Codec: "ass", Language: "eng"},
+		{Index: pgsIndex, Type: "subtitle", Codec: "hdmv_pgs_subtitle", Language: "eng"},
+	})
+
+	resp, err := service.Info(context.Background(), scope, InfoRequest{
+		MediaID: string(mediaID), CapabilityProfile: appleOverlayProfile, SelectedSubtitleIndex: &assIndex,
+	})
+	if err != nil {
+		t.Fatalf("Info with ASS: %v", err)
+	}
+	if resp.Decision != "direct-stream" || resp.Reason != "container-remux" {
+		t.Fatalf("Decision/Reason = %q/%q, want direct-stream/container-remux with ASS selected", resp.Decision, resp.Reason)
+	}
+	if len(resp.Streams) != 1 || len(resp.Streams[0].Renditions) != 1 || resp.Streams[0].Renditions[0].ID != audioCopyRungID {
+		t.Fatalf("streams = %+v, want the single video-copy rung", resp.Streams)
+	}
+	grant, err := service.tokens.UnverifiedGrant(resp.Streams[0].Token, streamtoken.TargetMediaHLS)
+	if err != nil {
+		t.Fatalf("HLS token: %v", err)
+	}
+	if grant.BurnSubtitleIndex != 0 {
+		t.Fatalf("BurnSubtitleIndex = %d, want no burn-in for a text track", grant.BurnSubtitleIndex)
+	}
+	var ass *CaptionTrack
+	for i := range resp.CaptionTracks {
+		if track := &resp.CaptionTracks[i]; track.StreamIndex != nil && *track.StreamIndex == assIndex {
+			ass = track
+		}
+	}
+	if ass == nil || !strings.HasSuffix(ass.URL, fmt.Sprintf("/%d.vtt", assIndex)) {
+		t.Fatalf("ASS caption track = %+v, want a flattened /%d.vtt URL", ass, assIndex)
+	}
+
+	resp, err = service.Info(context.Background(), scope, InfoRequest{
+		MediaID: string(mediaID), CapabilityProfile: appleOverlayProfile, SelectedSubtitleIndex: &pgsIndex,
+	})
+	if err != nil {
+		t.Fatalf("Info with PGS: %v", err)
+	}
+	if resp.Decision != "transcode" {
+		t.Fatalf("Decision = %q (%q), want transcode to burn in the selected PGS track", resp.Decision, resp.Reason)
+	}
+	grant, err = service.tokens.UnverifiedGrant(resp.Streams[0].Token, streamtoken.TargetMediaHLS)
+	if err != nil {
+		t.Fatalf("HLS token: %v", err)
+	}
+	if got := grant.BurnSubtitleIndex - 1; got != pgsIndex {
+		t.Fatalf("BurnSubtitleIndex = %d, want %d", got, pgsIndex)
 	}
 }
 

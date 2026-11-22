@@ -5,5 +5,6 @@
 - [x] 3. Fine/coarse nudger with value, direction and reset; value on the settings row
 - [x] 4. Audio delay through a Web Audio delay line, honest on routes it cannot carry
 - [x] 5. Strings in all five locales; unit tests for the helpers, hooks and nudger
-- [ ] 6. Owner check in the running UI (Chromium, Firefox, Safari)
-- [ ] 7. Follow-up: subtitle offset onto the server nudge after CORE-0782
+- [x] 6. Subtitle offset also drives the styled ASS renderer (JASSUB `timeOffset`)
+- [ ] 7. Owner check in the running UI (Chromium, Firefox, Safari)
+- [ ] 8. Follow-up: subtitle offset onto the server nudge after CORE-0782

@@ -77,3 +77,29 @@ export function writeSync(profileID: string, mediaID: string, patch: Partial<Syn
     // Remembering the value is optional; the live offset still applies.
   }
 }
+
+/**
+ * The styled ASS renderer (JASSUB) draws on a canvas, not from native cues, so
+ * it cannot be retimed by shifting cue times. The subtitle hook publishes the
+ * live offset on the <video> element instead, and the renderer follows it.
+ */
+export const SUBTITLE_OFFSET_EVENT = "bf:subtitle-offset";
+const SUBTITLE_OFFSET_ATTRIBUTE = "data-bf-subtitle-offset";
+
+export function publishSubtitleOffset(video: HTMLVideoElement, offset: number): void {
+  if (offset === publishedSubtitleOffset(video)) return;
+  if (offset) {
+    video.setAttribute(SUBTITLE_OFFSET_ATTRIBUTE, String(offset));
+  } else {
+    video.removeAttribute(SUBTITLE_OFFSET_ATTRIBUTE);
+  }
+  video.dispatchEvent(new Event(SUBTITLE_OFFSET_EVENT));
+}
+
+export function publishedSubtitleOffset(video: HTMLVideoElement): number {
+  return clampSync(
+    Number(video.getAttribute(SUBTITLE_OFFSET_ATTRIBUTE) ?? 0),
+    -SUBTITLE_OFFSET_LIMIT,
+    SUBTITLE_OFFSET_LIMIT,
+  );
+}

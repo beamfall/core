@@ -1,6 +1,12 @@
 import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { clampSync, readSync, SUBTITLE_OFFSET_LIMIT, writeSync } from "./playbackSync";
+import {
+  clampSync,
+  publishSubtitleOffset,
+  readSync,
+  SUBTITLE_OFFSET_LIMIT,
+  writeSync,
+} from "./playbackSync";
 
 // Subtitle sync ("where supported", ADR-0007 transport spec), ported from
 // applySubtitleSync / subtitleStylingAvailable / subtitleSyncSupported (app.js).
@@ -9,8 +15,9 @@ import { clampSync, readSync, SUBTITLE_OFFSET_LIMIT, writeSync } from "./playbac
 // anchored against each cue's authored time so repeated nudges stay exact.
 // hls.js renders through native TextTracks by default (renderTextTracksNatively)
 // and appends cues as each subtitle fragment arrives, so on that route the
-// offset is re-applied after every appended fragment (CORE-1671); only a
-// non-native hls.js renderer degrades honestly. The offset persists per Profile
+// offset is re-applied after every appended fragment (CORE-1671), and the
+// styled ASS renderer follows the published offset; only a non-native hls.js
+// renderer degrades honestly. The offset persists per Profile
 // and Media (playbackSync.ts). The styling controls only surface once a real
 // subtitle track exists.
 
@@ -45,8 +52,11 @@ export function useSubtitleStyling({
 
   const applySync = useCallback(() => {
     const video = videoRef.current;
-    if (!video || !video.textTracks) return;
+    if (!video) return;
     const offset = syncOffsetRef.current;
+    // The styled ASS route draws its own canvas and follows the published value.
+    publishSubtitleOffset(video, offset);
+    if (!video.textTracks) return;
     for (const track of Array.from(video.textTracks)) {
       const cues = track.cues ? Array.from(track.cues) : [];
       for (const raw of cues) {
