@@ -1411,3 +1411,292 @@
     filter: none !important;
   }
 }
+
+/* --- Now Playing neighbours, Playing next, Up next drawer and Ambient mode (CORE-3216). --- */
+
+/* Previous / Next name their neighbour on hover or keyboard focus. The control's
+   accessible name carries the title; this label is visual only. */
+.bf-neighbour {
+  position: relative;
+  display: inline-flex;
+}
+
+.bf-neighbour-tip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(280px, 60vw);
+  padding: 8px 12px;
+  border-radius: var(--radius-card);
+  background: color-mix(in oklab, var(--scrim) 94%, transparent);
+  box-shadow: 0 12px 32px color-mix(in oklab, var(--shadow-color) 50%, transparent);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 140ms var(--ease-standard),
+    transform 140ms var(--ease-standard);
+  pointer-events: none;
+}
+
+.bf-neighbour:hover .bf-neighbour-tip,
+.bf-neighbour:has(:focus-visible) .bf-neighbour-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.bf-neighbour-tip-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--on-scrim) 35%, var(--on-scrim-muted));
+}
+
+.bf-neighbour-tip-title {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+/* Playing next: rises at the stage's bottom edge over an audio item's final
+   seconds, above the transport. */
+.bf-playing-next {
+  position: absolute;
+  bottom: clamp(188px, 27vh, 252px);
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(460px, calc(100% - 32px));
+  padding: 12px 14px;
+  border: 1px solid color-mix(in oklab, var(--on-scrim-muted) 24%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklab, var(--scrim) 94%, transparent);
+  box-shadow: 0 20px 48px color-mix(in oklab, var(--shadow-color) 55%, transparent);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
+  transform: translateX(-50%);
+  animation: bf-playing-next-in 320ms var(--ease-standard);
+}
+
+@keyframes bf-playing-next-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 16px);
+  }
+}
+
+.bf-playing-next-ring {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--accent) calc(var(--bf-left, 1) * 360deg),
+    color-mix(in oklab, var(--on-scrim-muted) 22%, transparent) 0
+  );
+}
+
+.bf-playing-next-ring::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--scrim);
+}
+
+.bf-playing-next-seconds {
+  position: relative;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.bf-playing-next-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bf-playing-next-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  color: color-mix(in oklab, var(--on-scrim) 35%, var(--on-scrim-muted));
+}
+
+.bf-playing-next-title {
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bf-playing-next-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+/* The Up next drawer slides in along the stage's right edge, clear of the
+   top bar and the transport. */
+.bf-queue-drawer {
+  position: absolute;
+  top: 64px;
+  right: clamp(12px, 2vw, 24px);
+  bottom: clamp(168px, 25vh, 232px);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(320px, calc(100% - 24px));
+  padding: 14px;
+  overflow-y: auto;
+  border: 1px solid color-mix(in oklab, var(--on-scrim-muted) 24%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklab, var(--scrim) 92%, transparent);
+  box-shadow: 0 20px 48px color-mix(in oklab, var(--shadow-color) 55%, transparent);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
+  animation: bf-queue-drawer-in 280ms var(--ease-standard);
+}
+
+@keyframes bf-queue-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+.bf-queue-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bf-queue-drawer-heading {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.bf-queue-drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bf-queue-drawer-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--on-scrim) 35%, var(--on-scrim-muted));
+}
+
+.bf-queue-drawer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bf-queue-drawer-row {
+  width: 100%;
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.bf-queue-drawer-row:hover,
+.bf-queue-drawer-row:focus-visible {
+  background: color-mix(in oklab, var(--on-scrim) 10%, transparent);
+}
+
+.bf-queue-drawer-row[data-state="before"] {
+  color: color-mix(in oklab, var(--on-scrim) 30%, var(--on-scrim-muted));
+}
+
+.bf-queue-drawer-row[data-state="now"] {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  font-weight: 600;
+  cursor: default;
+}
+
+/* Ambient mode: an OLED-safe stage. Black behind everything (pure black is a
+   device property, not a theme role: the theme's darkest surface, filtered to
+   zero light), no backdrop or visual, nothing at full white. */
+.bf-audio-stage.is-ambient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  filter: brightness(0);
+}
+
+.bf-audio-stage.is-ambient .bf-audio-backdrop {
+  display: none;
+}
+
+.bf-audio-stage.is-ambient .bf-audio-meta {
+  color: color-mix(in oklab, var(--on-scrim) 80%, var(--scrim));
+}
+
+.bf-audio-stage.is-ambient .bf-audio-card {
+  transform: scale(0.86);
+  opacity: 1;
+  transition:
+    transform 600ms var(--ease-standard),
+    opacity 600ms var(--ease-standard);
+}
+
+/* Idle: the card wanders and dims on Oscillux curves (useAmbient.ts writes the
+   variables every frame, so no transition here). */
+.bf-audio-stage.is-ambient-idle .bf-audio-card {
+  transform: translate(calc(var(--bf-ambient-x, 0) * 7vw), calc(var(--bf-ambient-y, 0) * 6vh))
+    scale(0.8);
+  opacity: var(--bf-ambient-dim, 0.35);
+  transition: none;
+}
+
+.bf-player-stage.is-ambient-idle .bf-transport,
+.bf-player-stage.is-ambient-idle .bf-queue-drawer {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 600ms var(--ease-standard);
+}
+
+.bf-player-stage.is-ambient-idle {
+  cursor: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-neighbour-tip,
+  .bf-audio-stage.is-ambient .bf-audio-card,
+  .bf-player-stage.is-ambient-idle .bf-transport,
+  .bf-player-stage.is-ambient-idle .bf-queue-drawer {
+    transition: none;
+  }
+
+  .bf-playing-next,
+  .bf-queue-drawer {
+    animation: none;
+  }
+}

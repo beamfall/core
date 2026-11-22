@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createRef, useRef } from "react";
+import { type ComponentProps, createRef, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import type { Locale } from "@/strings";
@@ -38,6 +38,55 @@ afterEach(() => {
   Reflect.deleteProperty(document, "pictureInPictureElement");
   Reflect.deleteProperty(document, "exitPictureInPicture");
   Reflect.deleteProperty(HTMLVideoElement.prototype, "requestPictureInPicture");
+});
+
+describe("PlayerTransport neighbours and Now Playing toggles (CORE-3216)", () => {
+  it("names Previous and Next after their neighbours and shows them as visual labels", () => {
+    render(
+      <Harness
+        extra={{
+          onPreviousInQueue: vi.fn(),
+          onNextInQueue: vi.fn(),
+          previousTitle: "Opening Track",
+          nextTitle: "Closing Track",
+        }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Previous: Opening Track" })).toBeInTheDocument();
+    const next = screen.getByRole("button", { name: "Next: Closing Track" });
+    const tip = next.parentElement?.querySelector(".bf-neighbour-tip");
+    expect(tip).toHaveAttribute("aria-hidden", "true");
+    expect(tip).toHaveTextContent("Closing Track");
+  });
+
+  it("keeps the plain names when no neighbour title is known", () => {
+    render(<Harness extra={{ onPreviousInQueue: vi.fn(), onNextInQueue: vi.fn() }} />);
+    expect(screen.getByRole("button", { name: "Previous" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeInTheDocument();
+    expect(document.querySelector(".bf-neighbour-tip")).toBeNull();
+  });
+
+  it("toggles Ambient mode and the Up next list as pressed buttons", async () => {
+    const onAmbientChange = vi.fn();
+    const onUpNextToggle = vi.fn();
+    render(
+      <Harness extra={{ ambient: false, onAmbientChange, upNextOpen: true, onUpNextToggle }} />,
+    );
+    const ambient = screen.getByRole("button", { name: "Ambient mode" });
+    expect(ambient).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(ambient);
+    expect(onAmbientChange).toHaveBeenCalledWith(true);
+    const list = screen.getByRole("button", { name: "Up next list" });
+    expect(list).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(list);
+    expect(onUpNextToggle).toHaveBeenCalledOnce();
+  });
+
+  it("hides both toggles when the page offers neither", () => {
+    render(<Harness />);
+    expect(screen.queryByRole("button", { name: "Ambient mode" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Up next list" })).toBeNull();
+  });
 });
 
 describe("PlayerTransport", () => {
@@ -758,6 +807,7 @@ function Harness({
   onSelectVersion,
   playerState = state,
   mediaID,
+  extra,
 }: {
   onShare?: (seconds: number) => void;
   onMenuOpenChange?: (open: boolean) => void;
@@ -766,6 +816,7 @@ function Harness({
   onSelectVersion?: (versionID: string) => void;
   playerState?: PlayerState;
   mediaID?: string;
+  extra?: Partial<ComponentProps<typeof PlayerTransport>>;
 }) {
   const videoRef = createRef<HTMLVideoElement>();
   const hlsRef = createRef<null>();
@@ -785,6 +836,7 @@ function Harness({
           skipInterval={skipInterval}
           onSelectVersion={onSelectVersion}
           mediaID={mediaID}
+          {...extra}
         />
       </div>
     </I18nProvider>
