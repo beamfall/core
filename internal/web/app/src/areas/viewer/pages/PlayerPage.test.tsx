@@ -1817,6 +1817,20 @@ describe("PlayerPage server Play Queue", () => {
     expect(playingID()).toBe(b.id);
   });
 
+  it("keeps the server Play Queue's successor for a plays-alone track (CORE-3147)", async () => {
+    queueMedia = {
+      id: b.id,
+      title: "Current track B",
+      favorited: false,
+      credits: [],
+      playsAlone: true,
+    };
+    renderQueue();
+    await screen.findByRole("heading", { name: "Current track B" });
+    expect(gapless()?.next?.mediaID).toBe(c.id);
+    expect(gapless()?.advanceID).toBe(c.id);
+  });
+
   it("withholds a stale gapless candidate and advances to the new server successor", async () => {
     const d = { id: "track-d", title: "D", mediaClass: "audio" };
     queueMedia = { id: b.id, title: "Current track B", favorited: false, credits: [] };

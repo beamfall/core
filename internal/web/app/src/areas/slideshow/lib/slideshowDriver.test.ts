@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrameLimiter, type Limiter } from "../../viewer/player/visualizer/limiter";
-import { createSlideshowDriver, MOTION_CANVAS_CLASS } from "./slideshowDriver";
+import {
+  createSlideshowDriver,
+  MOTION_CANVAS_CLASS,
+  MOTION_COVERED_CLASS,
+} from "./slideshowDriver";
 
 vi.mock("../../viewer/player/visualizer/oscillux", () => ({
   loadOscillux: async () => ({
@@ -324,6 +328,74 @@ describe("SlideshowDriver flash limiter (CORE-2980)", () => {
     expect(blits.at(-1)).toBe(next.fOut[next.cur]);
     expect(canvas?.style.width).toBe("320px");
     driver.dispose();
+  });
+
+  it("hides the DOM slide while the canvas is shown, through a resize fade", async () => {
+    const blits: unknown[] = [];
+    const { driver, stage, slide, run } = mount(blits);
+    expect(stage.classList.contains(MOTION_COVERED_CLASS)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve));
+    run(1600);
+    // The stage grows (full screen): the pinned frame covers only part of it while it fades.
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue(
+      new DOMRect(0, 0, 320, 180),
+    );
+    run(500);
+    expect(stage.classList.contains(MOTION_COVERED_CLASS)).toBe(true);
+    // A clip steps the canvas aside and uncovers the DOM slide.
+    slide.append(document.createElement("video"));
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(stage.classList.contains(MOTION_COVERED_CLASS)).toBe(false);
+    driver.dispose();
+  });
+
+  it("fades and restarts when browser zoom changes the CSS size but not the backing size", async () => {
+    const blits: unknown[] = [];
+    const spend = vi.spyOn(FrameLimiter.prototype, "spend");
+    const { driver, canvas, run, tick } = mount(blits);
+    await new Promise((resolve) => setTimeout(resolve));
+    run(1600);
+    const starts = spend.mock.calls.length;
+    expect(canvas?.width).toBe(160);
+    // 200% zoom: half the CSS pixels at twice the device pixel ratio.
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue(
+      new DOMRect(0, 0, 80, 45),
+    );
+    vi.spyOn(window, "devicePixelRatio", "get").mockReturnValue(2);
+    tick(16);
+    expect(spend.mock.calls.length).toBe(starts + 1);
+    run(4000);
+    expect(canvas?.width).toBe(160);
+    expect(canvas?.style.width).toBe("80px");
+    driver.dispose();
+  });
+
+  it("tells whenPresented once the photo is on the canvas, not while it holds black", async () => {
+    const blits: unknown[] = [];
+    const { driver, slide, run } = mount(blits);
+    let presented = false;
+    void driver.whenPresented(slide).then(() => {
+      presented = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve));
+    run(1000);
+    await Promise.resolve();
+    expect(blits).toEqual([]);
+    expect(presented).toBe(false);
+    run(600);
+    await Promise.resolve();
+    expect(blits.length).toBeGreaterThan(0);
+    expect(presented).toBe(true);
+    // A slide the canvas does not draw resolves at once.
+    await expect(driver.whenPresented(document.createElement("div"))).resolves.toBeUndefined();
+    driver.dispose();
+  });
+
+  it("releases whenPresented's waiters when the driver gives up", async () => {
+    const { driver, slide } = mount([]);
+    const waiting = driver.whenPresented(slide);
+    driver.dispose();
+    await expect(waiting).resolves.toBeUndefined();
   });
 
   it("hard-cuts for good, never showing a frame, when the limiter fails to build", async () => {

@@ -43,6 +43,13 @@ import {
 /** The motion canvas's class (slideshow.css stacks it over the DOM slide). */
 export const MOTION_CANVAS_CLASS = "bf-slideshow-motion";
 
+/**
+ * The stage's class while the canvas is shown: slideshow.css hides the DOM slide under it, so no
+ * photo pixel reaches the screen past the limiter, even where a frame pinned at its old size
+ * leaves part of a grown stage uncovered.
+ */
+export const MOTION_COVERED_CLASS = "bf-slideshow-covered";
+
 // The present pass's block (post/present.frag): present0, the 320-byte overlay block that
 // oscillux_overlay_pack writes, post0 and post1.
 const PRESENT_FLOATS = 92;
@@ -59,6 +66,8 @@ interface Photo {
 }
 
 interface Slide {
+  /** The DOM slide it draws, told to whenPresented's waiters once it is on screen. */
+  element: HTMLElement;
   photos: Photo[];
   layout: SlideshowLayout;
   direction: number;
@@ -82,6 +91,9 @@ interface Change {
 interface Targets {
   width: number;
   height: number;
+  /** The stage's CSS size the canvas was pinned to (Want). */
+  cssWidth: number;
+  cssHeight: number;
   scene: WebGLTexture;
   sceneFbo: WebGLFramebuffer;
   frame: WebGLTexture;
@@ -181,6 +193,9 @@ export class SlideshowDriver {
   private blackMs = 0;
   private blackLongestMs = 0;
   private blackShown = false;
+  // whenPresented's waiters for the slide element now on the stage, and the elements shown.
+  private waiters: (() => void)[] = [];
+  private readonly shownSlides = new WeakSet<HTMLElement>();
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -210,12 +225,28 @@ export class SlideshowDriver {
     }
   }
 
+  /**
+   * Resolves once the slide element's photo is on the canvas, so its dwell counts from when it is
+   * seen rather than from the DOM load under the black. Resolves at once when the canvas will not
+   * draw it (a clip, a broken photo, a later slide, a driver that gave up).
+   */
+  whenPresented(element: HTMLElement): Promise<void> {
+    if (this.dead || this.canvas.hidden || element !== this.slideEl) return Promise.resolve();
+    if (this.shownSlides.has(element)) return Promise.resolve();
+    return new Promise((resolve) => this.waiters.push(resolve));
+  }
+
   advance(_from: HTMLElement | null, to: HTMLElement): void {
     if (this.dead) return;
     const generation = ++this.generation;
+    this.release();
     this.slideEl = to;
     const stage = to.parentElement;
-    if (stage && this.canvas.parentElement !== stage) stage.append(this.canvas);
+    if (stage && this.canvas.parentElement !== stage) {
+      this.canvas.parentElement?.classList.remove(MOTION_COVERED_CLASS);
+      stage.append(this.canvas);
+      if (!this.canvas.hidden) stage.classList.add(MOTION_COVERED_CLASS);
+    }
     this.watch?.disconnect();
     this.watch = null;
     // A clip plays in the DOM: the canvas steps aside, and the next photo cuts in.
@@ -228,6 +259,7 @@ export class SlideshowDriver {
     // limiter's first frame rises from black that was on screen.
     if (this.canvas.hidden) {
       this.canvas.hidden = false;
+      stage?.classList.add(MOTION_COVERED_CLASS);
       this.presentBlack();
       this.loop(performance.now());
     }
@@ -242,7 +274,7 @@ export class SlideshowDriver {
       () => {
         if (generation !== this.generation || this.dead || !this.gpu) return;
         if (!to.isConnected || !this.photoSlide(to)) return;
-        this.enter(images);
+        this.enter(to, images);
       },
       // A broken photo: the DOM slide shows until the page skips it.
       () => {
@@ -340,7 +372,7 @@ export class SlideshowDriver {
   }
 
   // The new slide's photos are decoded: upload them and start its transition (or cut it in).
-  private enter(images: HTMLImageElement[]): void {
+  private enter(element: HTMLElement, images: HTMLImageElement[]): void {
     const now = performance.now();
     const clock = this.clock(now);
     const frame = this.frameAspect();
@@ -356,6 +388,7 @@ export class SlideshowDriver {
     const reduced = this.options.reducedMotion();
     const transition = transitionFor(this.changes, reduced);
     const slide: Slide = {
+      element,
       photos,
       layout: chooseLayout(
         photos.map((photo) => photo.aspect),
@@ -491,7 +524,7 @@ export class SlideshowDriver {
         this.resetBlack();
         t = null;
       }
-    } else if (t && gpu && !(want && want.width === t.width && want.height === t.height)) {
+    } else if (t && gpu && !(want && sameSize(want, t))) {
       // From this frame the limiter is fed black, its budgets written spent and its area limit
       // zero, so every fall to black waits for a grant.
       this.fadeLeft = FADE_S;
@@ -523,6 +556,22 @@ export class SlideshowDriver {
     this.draw(gpu, t, now, dt, fading);
     gpu.flash.run(t.limiter, t.frame, t.width, t.height, shownMs, lagMs, recentLagMs);
     this.showLimited(t);
+    // A frame fed black shows no slide; otherwise the slide coming in is now on screen.
+    const shown = this.change?.slide ?? this.current;
+    if (!fading && shown) this.markPresented(shown.element);
+  }
+
+  private markPresented(element: HTMLElement): void {
+    if (this.shownSlides.has(element)) return;
+    this.shownSlides.add(element);
+    if (element === this.slideEl) this.release();
+  }
+
+  // Resolves every whenPresented waiter.
+  private release(): void {
+    const waiters = this.waiters;
+    this.waiters = [];
+    for (const resolve of waiters) resolve();
   }
 
   private draw(
@@ -730,7 +779,8 @@ export class SlideshowDriver {
       }
       // Out of memory is reported through the error state, not thrown.
       if (outOfMemory(gl)) throw new Error("slideshow: out of memory for the frame's targets");
-      const next = { width, height, scene, sceneFbo, frame, history, limiter };
+      const { cssWidth, cssHeight } = want;
+      const next = { width, height, cssWidth, cssHeight, scene, sceneFbo, frame, history, limiter };
       this.targets = next;
       return next;
     } catch (error) {
@@ -775,6 +825,8 @@ export class SlideshowDriver {
     this.resetBlack();
     this.restartClocks();
     this.canvas.hidden = true;
+    this.canvas.parentElement?.classList.remove(MOTION_COVERED_CLASS);
+    this.release();
     cancelAnimationFrame(this.frameId);
     this.frameId = 0;
   }
@@ -808,6 +860,17 @@ export class SlideshowDriver {
     }
     this.gl.getExtension("WEBGL_lose_context")?.loseContext();
   }
+}
+
+// Whether a frame size's targets still fit the stage: the same texels and the same CSS box. At
+// another browser zoom the backing size can stay while the CSS size changes.
+function sameSize(want: Want, t: Targets): boolean {
+  return (
+    want.width === t.width &&
+    want.height === t.height &&
+    want.cssWidth === t.cssWidth &&
+    want.cssHeight === t.cssHeight
+  );
 }
 
 function decoded(image: HTMLImageElement): Promise<HTMLImageElement> {

@@ -70,12 +70,13 @@ export function EntityMediaBrowse({
   if (probe.roles) return <PersonRoles items={items} roles={probe.roles} />;
   // Media that plays on its own is no track list (CORE-3147): a person lists it
   // as a filmography, anything else in the server's order, one queue per card.
-  if (listsPlaysAlone(items))
-    return entity?.archetype === "person" ? (
-      <PosterGrid items={items} byYear />
-    ) : (
-      <SequencedMedia items={items} label={label} />
-    );
+  // A rolled-up list keeps its container cards (CORE-3058).
+  if (listsPlaysAlone(items)) {
+    if (entity?.archetype === "person") return <PosterGrid items={items} byYear />;
+    if (items.some((item) => item.kind === "entity"))
+      return <PosterGrid items={items} label={label} />;
+    return <SequencedMedia items={items} label={label} />;
+  }
   const tracks = containerTrackRows(entity, items, rows);
   if (tracks) return <ContainerTracks tracks={tracks} />;
   if (entity && rows && entity.archetype === "person" && isAudioListing(items, rows))
@@ -199,6 +200,7 @@ function PosterGrid({
             setSize={ordered.length}
             showYear
             nameContainer={false}
+            queue={item.kind === "media" && item.playsAlone ? playQueueOf([item]) : undefined}
           />
         ))}
       </ul>
