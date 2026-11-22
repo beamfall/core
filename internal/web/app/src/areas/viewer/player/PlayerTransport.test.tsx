@@ -104,7 +104,7 @@ describe("PlayerTransport", () => {
     Object.defineProperty(video, "currentTime", { configurable: true, value: 83.8 });
 
     fireEvent.timeUpdate(video);
-    fireEvent.click(screen.getByRole("button", { name: "Share current time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy link at current time" }));
 
     expect(onShare).toHaveBeenCalledWith(83);
   });
