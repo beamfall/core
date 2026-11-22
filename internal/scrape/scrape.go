@@ -256,10 +256,11 @@ type Engine struct {
 	streamClient *http.Client
 	clock        requestClock
 
-	mu          sync.Mutex
-	tokens      map[string]cachedToken     // login-bearer cache, keyed endpoint+authref
-	lastRequest map[string]time.Time       // rate-limit anchor per scraper ID
-	references  map[string]cachedReference // reference documents, keyed by URL
+	mu             sync.Mutex
+	tokens         map[string]cachedToken     // login-bearer cache, keyed endpoint+authref
+	lastRequest    map[string]time.Time       // rate-limit anchor per scraper ID
+	references     map[string]cachedReference // reference documents, keyed by URL
+	childResponses childResponseCache
 
 	// extensions reads the scraper declarations the pinned plugin-sdk does
 	// not carry yet; New sets plugin.ScraperExtensionsOf.
@@ -585,6 +586,9 @@ func (e *Engine) Search(ctx context.Context, spec plugin.ScraperSpec, query stri
 	if spec.SearchTemplate == "" {
 		return nil, fmt.Errorf("scrape: scraper %q declares no search template", spec.ID)
 	}
+	if spec.CandidatesPath == "" {
+		return nil, fmt.Errorf("scrape: scraper %q declares no candidates path", spec.ID)
+	}
 	v := variablesArg(vars)
 	config, err := e.configValues(ctx, v)
 	if err != nil {
@@ -739,8 +743,9 @@ func (e *Engine) lookupRSS(ctx context.Context, spec plugin.ScraperSpec, id stri
 // context-sensitively: path-escaped in the path, query-escaped after the
 // first "?" — so a free-text search term containing "&" or "=" cannot inject
 // extra query parameters.
-func buildURL(endpoint, template, placeholder, value string, vars Variables, config map[string]string, page int) string {
-	pairs := append([][2]string{{placeholder, value}}, vars.substitutions(page)...)
+func buildURL(endpoint, template, placeholder, value string, vars Variables, config map[string]string, page int, extra ...[2]string) string {
+	pairs := append([][2]string{{placeholder, value}}, extra...)
+	pairs = append(pairs, vars.substitutions(page)...)
 	path, query, hasQuery := strings.Cut(template, "?")
 	query = dropUnknownYear(query, vars)
 	for _, pair := range pairs {
@@ -1120,19 +1125,38 @@ func renderArtworkURL(base, tmpl, value string) string {
 // invalidate it, re-login once (inside the second authorizer call), and retry
 // the request once. A second 401 surfaces as the error.
 func (e *Engine) fetchAuthorized(ctx context.Context, spec plugin.ScraperSpec, method, rawURL string, payload []byte, contentType string) ([]byte, error) {
+	return e.fetchAuthorizedResponse(ctx, spec, method, rawURL, payload, contentType, false)
+}
+
+func (e *Engine) fetchAuthorizedResponse(ctx context.Context, spec plugin.ScraperSpec, method, rawURL string, payload []byte, contentType string, cache bool) ([]byte, error) {
 	attempt := func() ([]byte, error) {
 		authorize, err := e.authorizer(ctx, spec)
 		if err != nil {
-			return nil, err
-		}
-		if err := e.waitTurn(ctx, spec); err != nil {
 			return nil, err
 		}
 		var body io.Reader
 		if payload != nil {
 			body = bytes.NewReader(payload)
 		}
-		return e.fetch(ctx, method, rawURL, body, contentType, authorize)
+		req, err := e.newRequest(ctx, method, rawURL, body, contentType, authorize)
+		if err != nil {
+			return nil, err
+		}
+		var key [32]byte
+		if cache {
+			key = childResponseKey(req)
+			if data := e.childResponses.get(key, e.clock.Now()); data != nil {
+				return data, nil
+			}
+		}
+		if err := e.waitTurn(ctx, spec); err != nil {
+			return nil, err
+		}
+		data, err := e.fetchRequest(req)
+		if cache && err == nil && json.Valid(data) {
+			e.childResponses.put(key, data, e.clock.Now())
+		}
+		return data, err
 	}
 	data, err := attempt()
 	var status *statusError
@@ -1322,6 +1346,14 @@ func (e *Engine) invalidateToken(spec plugin.ScraperSpec) {
 // authorize runs after the URL passes the SSRF gate; it may add headers or
 // query parameters but never changes scheme or host.
 func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reader, contentType string, authorize func(*http.Request)) ([]byte, error) {
+	req, err := e.newRequest(ctx, method, rawURL, body, contentType, authorize)
+	if err != nil {
+		return nil, err
+	}
+	return e.fetchRequest(req)
+}
+
+func (e *Engine) newRequest(ctx context.Context, method, rawURL string, body io.Reader, contentType string, authorize func(*http.Request)) (*http.Request, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("scrape: invalid request URL: %w", err)
@@ -1342,7 +1374,12 @@ func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reade
 	if authorize != nil {
 		authorize(req)
 	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	return req, nil
+}
+
+func (e *Engine) fetchRequest(req *http.Request) ([]byte, error) {
+	parsed := req.URL
+	resp, err := e.requestWith429Retry(req.Context(), req, func(attempt *http.Request) (*http.Response, error) {
 		return e.client.Do(attempt)
 	})
 	if err != nil {

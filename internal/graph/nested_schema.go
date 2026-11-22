@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/beamfall/core/internal/graphshape"
+	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -84,6 +85,7 @@ var resultTypes = map[string]any{
 	"identifysearch":         IdentifyCandidate{},
 	"identifylookup":         IdentifyCandidate{},
 	"fixmatchcandidates":     FixMatchCandidateInfo{},
+	"fixmatchchildren":       scrape.ChildRow{},
 	"fixmatchcurrent":        FixMatchCurrentInfo{},
 	"fixmatchlockedfields":   FixMatchLockedFieldInfo{},
 	"fixmatchpreview":        FixMatchFieldDiff{},
@@ -392,6 +394,14 @@ var fieldArguments = map[string][]NestedArgument{
 	"entitiesformedia":  {{Name: "mediaID", Kind: "string"}, {Name: "relation", Kind: "string"}},
 	"entity":            {{Name: "id", Kind: "string"}},
 	"entityrelations":   {{Name: "entityID", Kind: "string"}, {Name: "relation", Kind: "string", Optional: true}},
+	"fixmatchchildren": {
+		{Name: "candidateID", Kind: "string"},
+		{Name: "level", Kind: "int"},
+		{Name: "mediaID", Kind: "string"},
+		{Name: "parentKey", Kind: "string", Optional: true},
+		{Name: "pluginID", Kind: "string"},
+		{Name: "scraperID", Kind: "string"},
+	},
 	"fixmatch": {
 		{Name: "candidateID", Kind: "string", Optional: true},
 		{Name: "clearLocks", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string"}},

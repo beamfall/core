@@ -143,6 +143,7 @@ var originalScopedFields = []string{
 	"suppressunmatched",
 	"resetunmatchedsuppression",
 	"fixmatchcandidates",
+	"fixmatchchildren",
 	"fixmatchcurrent",
 	"fixmatchlockedfields",
 	"fixmatchpreview",

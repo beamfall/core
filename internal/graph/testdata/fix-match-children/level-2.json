@@ -1,0 +1,6 @@
+[
+  {"key":27,"name":"Opening","number":2,"index":1,"date":2023,"image":"/opening.jpg"},
+  {"key":"finale","name":"Finale","index":"3","date":2023.5,"image":"http://["},
+  {"key":1.25,"name":"Invalid fractional key"},
+  {"key":{"id":1},"name":"Invalid object key"}
+]

@@ -80,7 +80,9 @@ func structFields(t reflect.Type, stack []reflect.Type) []Field {
 		node := shape(f.Type, stack)
 		node.Name = name
 		node.Optional = optional
-		node.Nullable = nullableJSON(f.Type)
+		// A producer that initializes a nilable field on every response can
+		// declare the stronger wire contract explicitly.
+		node.Nullable = nullableJSON(f.Type) && f.Tag.Get("graphshape") != "nonnull"
 		fields = append(fields, node)
 	}
 	slices.SortFunc(fields, func(a, b Field) int {

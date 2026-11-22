@@ -1255,6 +1255,19 @@
       ]
     },
     {
+      "field": "fixmatchchildren",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artworkURL",
+        "index",
+        "key",
+        "label",
+        "sequence",
+        "year"
+      ]
+    },
+    {
       "field": "fixmatchcurrent",
       "effect": "read",
       "tier": "session",
@@ -1292,6 +1305,7 @@
       "tier": "session",
       "children": [
         "acceptsPastedID",
+        "childLevels",
         "isDefault",
         "label",
         "pluginID",

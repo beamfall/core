@@ -380,6 +380,24 @@ func (s *Service) search(ctx context.Context, pluginID, scraperID, query string,
 	return candidates, nil
 }
 
+// ListChildren reads a declared level using the active bundle and scraper.
+func (s *Service) ListChildren(ctx context.Context, pluginID, scraperID, candidateID string, level int, parentKey *string) ([]scrape.ChildRow, error) {
+	_, spec, err := s.spec(pluginID, scraperID)
+	if err != nil {
+		return nil, err
+	}
+	if len(spec.Children) == 0 {
+		return nil, scrape.ErrNoChildListing
+	}
+	engine, ok := s.engine.(interface {
+		ListChildren(context.Context, plugin.ScraperSpec, int, string, *string, scrape.Variables) ([]scrape.ChildRow, error)
+	})
+	if !ok {
+		return nil, errors.New("identify: child listings unavailable")
+	}
+	return engine.ListChildren(ctx, spec, level, candidateID, parentKey, scrape.Variables{PluginID: pluginID})
+}
+
 // Lookup resolves ONE candidate by its scraper-native id and returns it WITHOUT
 // writing anything (METAPARITY-4, ADR-0068 §A). It is the read half Apply hides
 // inside itself, exposed for the two Fix-Match surfaces that need a candidate

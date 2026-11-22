@@ -475,6 +475,11 @@
     "tier": "session"
   },
   {
+    "field": "fixmatchchildren",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "fixmatchcurrent",
     "effect": "read",
     "tier": "session"

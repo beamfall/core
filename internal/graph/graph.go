@@ -6021,6 +6021,7 @@ var queryFields = map[string]bool{
 	"identifysearch":         true,
 	"identifylookup":         true, // METAPARITY-4 (ADR-0068 §A): paste-an-id direct fetch, read-only
 	"fixmatchcandidates":     true, // METAPARITY-4 (ADR-0068 §A): scored candidate list, read-only
+	"fixmatchchildren":       true,
 	"fixmatchcurrent":        true,
 	"fixmatchlockedfields":   true,
 	"fixmatchpreview":        true, // METAPARITY-4 (ADR-0068 §A): preview-before-apply diff, writes nothing

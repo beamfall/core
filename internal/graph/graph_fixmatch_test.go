@@ -27,7 +27,7 @@ import (
 )
 
 const fixMatchSourcesTestQuery = `query($mediaID: String!) {
-	fixMatchSources(mediaID: $mediaID) { pluginID scraperID label supportsChildren acceptsPastedID isDefault }
+	fixMatchSources(mediaID: $mediaID) { pluginID scraperID label supportsChildren childLevels acceptsPastedID isDefault }
 }`
 
 func TestFixMatchSourcesUsesOwningBundleAndProvenance(t *testing.T) {
@@ -48,7 +48,7 @@ func TestFixMatchSourcesUsesOwningBundleAndProvenance(t *testing.T) {
 		firstLabel string
 	}{
 		{"video", "filmtv", "mkv", "h264", store.MediaMetadataProvenance{PluginID: "filmtv", ScraperID: "tvdb-series", CandidateID: "7"},
-			[]string{"tvdb-series", "tmdb-movie", "tmdb-tv", "anilist-series", "anilist-movie"}, "TheTVDB (Series)"},
+			[]string{"tvdb-series", "tmdb-movie", "tmdb-tv", "tvmaze-show", "anilist-series", "anilist-movie"}, "TheTVDB (Series)"},
 		{"audio", "music", "flac", "flac", store.MediaMetadataProvenance{PluginID: "filmtv", ScraperID: "tmdb-tv", CandidateID: "8"},
 			[]string{"musicbrainz"}, "MusicBrainz"},
 	} {
@@ -73,7 +73,14 @@ func TestFixMatchSourcesUsesOwningBundleAndProvenance(t *testing.T) {
 			var ids []string
 			for i, source := range sources {
 				ids = append(ids, source.ScraperID)
-				if source.PluginID != tc.pluginID || source.IsDefault != (i == 0) || source.SupportsChildren {
+				var levels []string
+				switch source.ScraperID {
+				case "tvdb-series", "tmdb-tv", "tvmaze-show":
+					levels = []string{"season", "episode"}
+				}
+				if source.PluginID != tc.pluginID || source.IsDefault != (i == 0) ||
+					source.SupportsChildren != (len(levels) != 0) || source.ChildLevels == nil ||
+					!slices.Equal(source.ChildLevels, levels) {
 					t.Fatalf("source %d = %+v", i, source)
 				}
 			}
@@ -143,6 +150,7 @@ func TestFixMatchRejectsVisibleEncryptedMedia(t *testing.T) {
 		{"current", `query($mediaID: String!) { fixMatchCurrent(mediaID: $mediaID) { candidateID } }`},
 		{"locked fields", `query($mediaID: String!) { fixMatchLockedFields(mediaID: $mediaID) { field } }`},
 		{"candidates", `query($mediaID: String!) { fixMatchCandidates(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup") { id } }`},
+		{"children", `query($mediaID: String!) { fixMatchChildren(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42", level: 1) { key } }`},
 		{"clear ordinal", clearMediaOrdinalMutation},
 		{"preview", `query($mediaID: String!) { fixMatchPreview(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42") { field } }`},
 		{"replace", `mutation($mediaID: String!) { fixMatch(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42") { id } }`},

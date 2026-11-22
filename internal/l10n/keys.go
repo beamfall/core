@@ -10,9 +10,18 @@ const WorkflowCapabilityDisabled Key = "workflow.capability_disabled"
 const QueueMediaLocked Key = "queue.media_locked"
 
 const (
-	FixMatchEncryptedLibrary Key = "fix_match.encrypted_library"
-	FixMatchInvalidSequence  Key = "fix_match.invalid_sequence"
-	FixMatchInvalidIndex     Key = "fix_match.invalid_index"
+	FixMatchEncryptedLibrary     Key = "fix_match.encrypted_library"
+	FixMatchInvalidSequence      Key = "fix_match.invalid_sequence"
+	FixMatchInvalidIndex         Key = "fix_match.invalid_index"
+	FixMatchNoChildListing       Key = "fix_match.no_child_listing"
+	FixMatchNoChildLevel         Key = "fix_match.no_child_level"
+	FixMatchInvalidCandidate     Key = "fix_match.invalid_candidate"
+	FixMatchExtraParent          Key = "fix_match.extra_parent"
+	FixMatchMissingParent        Key = "fix_match.missing_parent"
+	FixMatchInvalidParent        Key = "fix_match.invalid_parent"
+	FixMatchUnknownParent        Key = "fix_match.unknown_parent"
+	FixMatchAmbiguousParent      Key = "fix_match.ambiguous_parent"
+	FixMatchInvalidParentOrdinal Key = "fix_match.invalid_parent_ordinal"
 )
 
 // Notification inbox titles, rendered per request from the notification kind.

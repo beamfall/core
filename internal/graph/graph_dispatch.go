@@ -483,6 +483,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"clearmediaordinal":                  newFieldHandler("clearMediaOrdinal", "clearMediaOrdinal", fieldMutation, roleSession|roleManager, 60),
 	"fixmatch":                           newFieldHandler("fixMatch", "fixMatch", fieldMutation, roleSession|roleManager, 60),
 	"fixmatchcandidates":                 newFieldHandler("fixMatchCandidates", "fixMatchCandidates", fieldRead, roleSession|roleManager, 60),
+	"fixmatchchildren":                   newFieldHandler("fixMatchChildren", "fixMatchChildren", fieldRead, roleSession|roleManager, 60),
 	"fixmatchcurrent":                    newFieldHandler("fixMatchCurrent", "fixMatchCurrent", fieldRead, roleSession|roleManager, 60),
 	"fixmatchlockedfields":               newFieldHandler("fixMatchLockedFields", "fixMatchLockedFields", fieldRead, roleSession|roleManager, 60),
 	"fixmatchpreview":                    newFieldHandler("fixMatchPreview", "fixMatchPreview", fieldRead, roleSession|roleManager, 60),
@@ -2074,7 +2075,7 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 		}
 	}
 	if fields["identifysearch"] || fields["identifyapply"] || fields["fixmatch"] ||
-		fields["identifylookup"] || fields["fixmatchcandidates"] || fields["fixmatchpreview"] || fields["clearmediaordinal"] {
+		fields["identifylookup"] || fields["fixmatchcandidates"] || fields["fixmatchchildren"] || fields["fixmatchpreview"] || fields["clearmediaordinal"] {
 		if h.identify == nil {
 			return response{Errors: []graphError{newGraphError(ErrorCodeInternal, "identification unavailable")}}
 		}
@@ -2096,6 +2097,12 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 		if fields["fixmatchcandidates"] {
 			candidates, err := h.fixMatchCandidates(ctx, scope, req)
 			if resp := resolveField(dispatch, "fixmatchcandidates", candidates, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["fixmatchchildren"] {
+			children, err := h.fixMatchChildren(ctx, scope, req)
+			if resp := resolveField(dispatch, "fixmatchchildren", children, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}

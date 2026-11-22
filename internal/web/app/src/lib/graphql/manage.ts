@@ -1733,8 +1733,18 @@ export interface FixMatchSourceInfo {
   scraperID: string;
   label: string;
   supportsChildren: boolean;
+  childLevels: string[];
   acceptsPastedID: boolean;
   isDefault: boolean;
+}
+
+export interface FixMatchChildInfo {
+  key: string;
+  label: string;
+  sequence?: string | null;
+  index?: number | null;
+  year?: number | null;
+  artworkURL?: string | null;
 }
 
 export interface FixMatchCurrentInfo {
@@ -1751,7 +1761,7 @@ export interface FixMatchLockedFieldInfo {
 }
 
 export const FIX_MATCH_SOURCES_QUERY =
-  "query FixMatchSources($mediaID: String!) { fixMatchSources(mediaID: $mediaID) { pluginID scraperID label supportsChildren acceptsPastedID isDefault } }";
+  "query FixMatchSources($mediaID: String!) { fixMatchSources(mediaID: $mediaID) { pluginID scraperID label supportsChildren childLevels acceptsPastedID isDefault } }";
 
 export const FIX_MATCH_CURRENT_QUERY =
   "query FixMatchCurrent($mediaID: String!) { fixMatchCurrent(mediaID: $mediaID) { pluginID scraperID candidateID title year } }";
@@ -1805,6 +1815,24 @@ export async function fixMatchCandidates(vars: {
     vars,
   );
   return data.fixMatchCandidates ?? [];
+}
+
+const FIX_MATCH_CHILDREN_QUERY =
+  "query FixMatchChildren($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $level: Int!, $parentKey: String) { fixMatchChildren(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, level: $level, parentKey: $parentKey) { key label sequence index year artworkURL } }";
+
+export async function fixMatchChildren(vars: {
+  mediaID: string;
+  pluginID: string;
+  scraperID: string;
+  candidateID: string;
+  level: number;
+  parentKey?: string | null;
+}): Promise<FixMatchChildInfo[]> {
+  const data = await graphql<{ fixMatchChildren: FixMatchChildInfo[] | null }>(
+    FIX_MATCH_CHILDREN_QUERY,
+    vars,
+  );
+  return data.fixMatchChildren ?? [];
 }
 
 const IDENTIFY_LOOKUP_QUERY =
