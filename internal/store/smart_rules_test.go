@@ -221,6 +221,52 @@ func TestSmartRulesSortAndLimitAcrossPages(t *testing.T) {
 	}
 }
 
+// TestSmartRulesLimitCountsSurvivors proves the rule limit caps the list the
+// Profile sees after Hide watched drops finished Media, for an ordered and a
+// random sort.
+func TestSmartRulesLimitCountsSurvivors(t *testing.T) {
+	st, ids := smartFixture(t)
+	ctx := context.Background()
+	if err := st.SetClientPref(ctx, "profile-default", ProfileHideWatchedPrefKey, "on", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{ProfileID: "profile-default", MediaID: ids["Arrival"], DurationSeconds: 100}, true, ResumePolicy{Class: MediaClassAudio}); err != nil {
+		t.Fatal(err)
+	}
+	first := mustSmartCollection(t, st, "library-local", `{"kind":"rules","rules":[{"field":"year","op":"gt","value":0}],"limit":1}`, "")
+	if got := smartItems(t, st, smartLocal, "profile-default", first, 50, 0); !slices.Equal(got, []string{"Blue Line"}) {
+		t.Fatalf("limit 1 after hiding the watched first match = %v", got)
+	}
+	random := mustSmartCollection(t, st, "library-local", `{"kind":"rules","rules":[{"field":"year","op":"gt","value":0}],"limit":3}`, `{"by":"random"}`)
+	got := smartItems(t, st, smartLocal, "profile-default", random, 50, 0)
+	if len(got) != 3 || slices.Contains(got, "Arrival") {
+		t.Fatalf("random limit 3 = %v", got)
+	}
+	if got := smartItems(t, st, smartLocal, "profile-managed", first, 50, 0); !slices.Equal(got, []string{"Arrival"}) {
+		t.Fatalf("a Profile that keeps watched Media = %v", got)
+	}
+}
+
+// TestSmartRulesRecentDatesEndNow proves "in the last N days" stops at now:
+// a future date is outside it and inside its complement.
+func TestSmartRulesRecentDatesEndNow(t *testing.T) {
+	st, ids := smartFixture(t)
+	ctx := context.Background()
+	for title, offset := range map[string]time.Duration{"Blue Line": -48 * time.Hour, "Cold Front": 48 * time.Hour} {
+		if err := st.SetMediaFields(ctx, ids[title], []MediaField{{Name: "seen", Type: EntityFieldDate, Date: time.Now().Add(offset)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recent := mustSmartCollection(t, st, "library-local", `{"kind":"rules","rules":[{"field":"field:seen","op":"inLast","value":7}]}`, "")
+	if got := smartItems(t, st, smartLocal, "profile-default", recent, 50, 0); !slices.Equal(got, []string{"Blue Line"}) {
+		t.Fatalf("in the last 7 days = %v", got)
+	}
+	notRecent := mustSmartCollection(t, st, "library-local", `{"kind":"rules","rules":[{"field":"field:seen","op":"notInLast","value":7},{"field":"year","op":"gt","value":0}]}`, "")
+	if got := smartItems(t, st, smartLocal, "profile-default", notRecent, 50, 0); !slices.Equal(got, []string{"Arrival", "Cold Front", "Dawn Chorus"}) {
+		t.Fatalf("not in the last 7 days = %v", got)
+	}
+}
+
 func TestSmartRulesRespectLibraryVisibility(t *testing.T) {
 	st := openSeeded(t)
 	id := mustSmartCollection(t, st, "library-archive", `{"kind":"rules","rules":[]}`, "")

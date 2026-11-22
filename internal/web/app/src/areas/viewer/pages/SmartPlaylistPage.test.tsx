@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,7 @@ import {
 } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { notifyEngagementChanged } from "../actions/engagementSync";
 import type { PlayerNavState } from "../lib/watchQueue";
 import { SmartPlaylistPage } from "./SmartPlaylistPage";
 
@@ -112,6 +113,14 @@ describe("SmartPlaylistPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Play all" }));
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/m-1|m-1,m-3");
+  });
+
+  it("rereads the matches when engagement changes elsewhere", async () => {
+    renderPage();
+    expect(await screen.findByText("3 items")).toBeVisible();
+    vi.mocked(fetchSmartCollectionItems).mockResolvedValue([item("m-1", "First tone")]);
+    act(() => notifyEngagementChanged());
+    expect(await screen.findByText("1 item")).toBeVisible();
   });
 
   it("says when nothing matches and when the playlist is gone", async () => {

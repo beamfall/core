@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,11 +24,11 @@ const (
 	smartRuleSourceKind = "rules"
 	smartRuleMaxRules   = 20
 	smartRuleMaxLimit   = 5000
-	// smartRuleScanCap bounds the match set a random sort shuffles in Go.
-	smartRuleScanCap = 50000
-	// smartRuleEngagementCap bounds the Profile engagement rows read from the
-	// events database for one evaluation.
-	smartRuleEngagementCap = 250000
+	// smartRuleEngagementCap bounds the Profile engagement rows (play and
+	// rating rows, each) read from the events database for one evaluation. A
+	// Profile past it gets an error rather than a list that treats the rest
+	// of its history as unplayed.
+	smartRuleEngagementCap = 1000000
 	smartRuleMaxValueLen   = 500
 	smartRuleMaxDays       = 36500
 )
@@ -272,7 +273,8 @@ func smartEngagementField(field string) bool {
 
 // smartRuleItemsLocked evaluates a rule source for the Library the caller
 // already narrowed filter to. It returns the [offset, offset+limit) window of
-// the sorted match list, which the rule limit caps as a whole.
+// the sorted match list after the reading Profile's Mutes and Hide watched
+// drop items, and the rule limit caps that surviving list as a whole.
 func (s *Store) smartRuleItemsLocked(ctx context.Context, filter LibraryFilter, libraryID LibraryID, profileID ProfileID, collectionID SmartCollectionID, sourceExpr, sortExpr string, limit, offset int) ([]SourceItem, error) {
 	set, err := decodeSmartRuleSet(sourceExpr)
 	if err != nil {
@@ -302,20 +304,125 @@ func (s *Store) smartRuleItemsLocked(ctx context.Context, filter LibraryFilter, 
 	if !visible {
 		return []SourceItem{}, nil
 	}
+	keep, err := s.smartRuleProfileFilterLocked(ctx, filter, profileID)
+	if err != nil {
+		return nil, err
+	}
+	query, args, err := s.smartRuleQueryLocked(ctx, filter, libraryID, profileID, set, order)
+	if err != nil {
+		return nil, err
+	}
+	want := offset + limit
+	if order.by == "random" {
+		matches, err := s.smartRuleScanLocked(ctx, query, args)
+		if err != nil {
+			return nil, err
+		}
+		// A daily stable shuffle over every match: pages of the same day
+		// agree, the next day reshuffles.
+		seed := string(collectionID) + "\x00" + s.serverNow().UTC().Format(time.DateOnly)
+		keys := make(map[MediaID][32]byte, len(matches))
+		for _, item := range matches {
+			keys[item.ID] = sha256.Sum256([]byte(seed + "\x00" + string(item.ID)))
+		}
+		slices.SortFunc(matches, func(a, b SourceItem) int {
+			ka, kb := keys[a.ID], keys[b.ID]
+			return bytes.Compare(ka[:], kb[:])
+		})
+		kept, err := smartRuleKeep(matches, want, keep)
+		if err != nil {
+			return nil, err
+		}
+		return pageOf(kept, limit, offset), nil
+	}
+	query += ` LIMIT ? OFFSET ?`
+	if keep == nil {
+		return s.smartRuleScanLocked(ctx, query, append(args, limit, offset))
+	}
+	// Read the ordered matches from the top in chunks until enough survive.
+	kept := []SourceItem{}
+	chunk := max(want, profileFilteredChunk)
+	for read := 0; len(kept) < want; read += chunk {
+		raw, err := s.smartRuleScanLocked(ctx, query, append(slices.Clone(args), chunk, read))
+		if err != nil {
+			return nil, err
+		}
+		survivors, err := keep(raw)
+		if err != nil {
+			return nil, err
+		}
+		kept = append(kept, survivors...)
+		if len(raw) < chunk {
+			break
+		}
+	}
+	return pageOf(kept[:min(len(kept), want)], limit, offset), nil
+}
 
+// smartRuleKeep filters matches in chunks, in order, until want survive.
+func smartRuleKeep(matches []SourceItem, want int, keep func([]SourceItem) ([]SourceItem, error)) ([]SourceItem, error) {
+	if keep == nil {
+		return matches[:min(len(matches), want)], nil
+	}
+	kept := []SourceItem{}
+	for start := 0; start < len(matches) && len(kept) < want; start += profileFilteredChunk {
+		survivors, err := keep(matches[start:min(len(matches), start+profileFilteredChunk)])
+		if err != nil {
+			return nil, err
+		}
+		kept = append(kept, survivors...)
+	}
+	return kept[:min(len(kept), want)], nil
+}
+
+// smartRuleProfileFilterLocked returns the Profile's Mute and Hide watched
+// pass for rule matches, or nil when neither applies. A smart playlist applies
+// them itself, before its limit, so profileSourceItemsLocked passes it through.
+func (s *Store) smartRuleProfileFilterLocked(ctx context.Context, filter LibraryFilter, profileID ProfileID) (func([]SourceItem) ([]SourceItem, error), error) {
+	if profileID == "" {
+		return nil, nil
+	}
+	watched, err := s.hiddenWatchedLocked(ctx, SourceQuery{Kind: "smart-collection", ProfileID: profileID})
+	if err != nil {
+		return nil, err
+	}
+	muted, err := s.profileHasMutesLocked(ctx, profileID)
+	if err != nil {
+		return nil, err
+	}
+	if watched == nil && !muted {
+		return nil, nil
+	}
+	return func(items []SourceItem) ([]SourceItem, error) {
+		if watched != nil {
+			items = dropWatched(items, watched)
+		}
+		if !muted {
+			return items, nil
+		}
+		return s.applyMuteFilterLocked(ctx, s.catalogR, profileID, filter, items)
+	}, nil
+}
+
+// smartRuleQueryLocked builds the match query: every visible, present Media
+// in the Library that the rules select, in sort order (a random sort is
+// shuffled by the caller). Profile engagement joins as a CTE read from the
+// events database; it drives a RIGHT JOIN so each engagement row finds its
+// Media through the primary key and unplayed Media pass with NULLs.
+func (s *Store) smartRuleQueryLocked(ctx context.Context, filter LibraryFilter, libraryID LibraryID, profileID ProfileID, set smartRuleSet, order smartRuleSort) (string, []any, error) {
 	var args []any
-	var with, join string
+	with, from := "", ` FROM media m`
 	if set.usesEngagement(order) {
 		rows, err := s.smartRuleEngagementJSON(ctx, profileID)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		with = `WITH eng(media_id, play_count, last_played_ms, rating) AS MATERIALIZED (
 			SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'), json_extract(value, '$[3]')
 			FROM json_each(?)
 		)
 		`
-		join = ` LEFT JOIN eng e ON e.media_id = m.id`
+		from = ` FROM eng e RIGHT JOIN media m ON m.id = e.media_id`
 		args = append(args, rows)
 	}
 	args = append(args, libraryID)
@@ -325,22 +432,21 @@ func (s *Store) smartRuleItemsLocked(ctx context.Context, filter LibraryFilter, 
 	args = append(args, certArgs...)
 
 	// #nosec G202 -- only fixed SQL fragments and generated placeholders are joined; every value is bound.
-	query := with + `SELECT m.id, m.title, m.library_id, m.duration_seconds
-		FROM media m` + join + `
+	query := with + `SELECT m.id, m.title, m.library_id, m.duration_seconds` + from + `
 		WHERE m.library_id = ?
 		  AND m.trashed_at_ms IS NULL` + mediaExcludeExtrasClause + `
 		  AND (NOT EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id)
 		       OR EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id AND f.missing_at_ms IS NULL))` + where + certClause
-	random := order.by == "random"
-	if random {
-		query += ` LIMIT ?`
-		args = append(args, smartRuleScanCap)
-	} else {
+	if order.by != "random" {
 		orderSQL, orderArgs := smartRuleOrderSQL(order)
-		query += orderSQL + ` LIMIT ? OFFSET ?`
+		query += orderSQL
 		args = append(args, orderArgs...)
-		args = append(args, limit, offset)
 	}
+	return query, args, nil
+}
+
+// smartRuleScanLocked runs a match query and reads every row it returns.
+func (s *Store) smartRuleScanLocked(ctx context.Context, query string, args []any) ([]SourceItem, error) {
 	rows, err := s.catalogR.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -357,28 +463,18 @@ func (s *Store) smartRuleItemsLocked(ctx context.Context, filter LibraryFilter, 
 		item.Summary = mediaDurationSummary(durationSeconds)
 		items = append(items, item)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if !random {
-		return items, nil
-	}
-	// A daily stable shuffle: pages of the same day agree, the next day reshuffles.
-	seed := string(collectionID) + "\x00" + s.serverNow().UTC().Format(time.DateOnly)
-	keys := make(map[MediaID][32]byte, len(items))
-	for _, item := range items {
-		keys[item.ID] = sha256.Sum256([]byte(seed + "\x00" + string(item.ID)))
-	}
-	slices.SortFunc(items, func(a, b SourceItem) int {
-		ka, kb := keys[a.ID], keys[b.ID]
-		return bytes.Compare(ka[:], kb[:])
-	})
-	items = items[:min(len(items), set.limit)]
-	if offset >= len(items) {
-		return []SourceItem{}, nil
-	}
-	return items[offset:min(len(items), offset+limit)], nil
+	return items, rows.Err()
 }
+
+// isSmartRuleCollectionLocked reports whether a Smart Collection id names a
+// rule source. The caller holds s.mu.
+func (s *Store) isSmartRuleCollectionLocked(ctx context.Context, id string) bool {
+	var expr string
+	err := s.catalogR.QueryRowContext(ctx, `SELECT source_expr FROM smart_collection WHERE id = ?`, strings.TrimSpace(id)).Scan(&expr)
+	return err == nil && isSmartRuleSourceExpr(expr)
+}
+
+var errSmartRuleEngagementCap = errors.New("the Profile's play history is too large to evaluate smart playlist rules")
 
 // smartRuleEngagementJSON reads the Profile's play counts, last-played times
 // and media ratings from the events database as one JSON array of
@@ -410,11 +506,15 @@ func (s *Store) smartRuleEngagementJSON(ctx context.Context, profileID ProfileID
 		FROM playback_progress
 		WHERE profile_id = ? AND (play_count > 0 OR last_played_at_ms IS NOT NULL)
 		LIMIT ?
-	`, profileID, smartRuleEngagementCap)
+	`, profileID, smartRuleEngagementCap+1)
 	if err != nil {
 		return "", err
 	}
 	for plays.Next() {
+		if len(order) == smartRuleEngagementCap {
+			_ = plays.Close()
+			return "", errSmartRuleEngagementCap
+		}
 		var id string
 		var playCount int64
 		var lastPlayed *int64
@@ -436,11 +536,15 @@ func (s *Store) smartRuleEngagementJSON(ctx context.Context, profileID ProfileID
 		FROM item_rating
 		WHERE profile_id = ? AND target_kind = 'media'
 		LIMIT ?
-	`, profileID, smartRuleEngagementCap)
+	`, profileID, smartRuleEngagementCap+1)
 	if err != nil {
 		return "", err
 	}
-	for ratings.Next() {
+	for rated := 0; ratings.Next(); rated++ {
+		if rated == smartRuleEngagementCap {
+			_ = ratings.Close()
+			return "", errSmartRuleEngagementCap
+		}
 		var id string
 		var rating int64
 		if err := ratings.Scan(&id, &rating); err != nil {
@@ -561,11 +665,14 @@ func smartTextPredicateSQL(expr, op, value string) (string, []any) {
 }
 
 func smartDatePredicateSQL(expr string, rule smartRule, now time.Time) (string, []any) {
+	// "In the last N days" is the window [now-N days, now]; a future date is
+	// outside it, and "not in the last N days" is its complement.
+	start, end := now.Add(-time.Duration(rule.days)*24*time.Hour).UnixMilli(), now.UnixMilli()
 	switch rule.op {
 	case "inLast":
-		return expr + " >= ?", []any{now.Add(-time.Duration(rule.days) * 24 * time.Hour).UnixMilli()}
+		return expr + " BETWEEN ? AND ?", []any{start, end}
 	case "notInLast":
-		return "(" + expr + " IS NULL OR " + expr + " < ?)", []any{now.Add(-time.Duration(rule.days) * 24 * time.Hour).UnixMilli()}
+		return "(" + expr + " IS NULL OR " + expr + " NOT BETWEEN ? AND ?)", []any{start, end}
 	case "before":
 		return expr + " < ?", []any{rule.when}
 	default:
@@ -626,6 +733,11 @@ func smartRuleOrderSQL(order smartRuleSort) (string, []any) {
 	dir := " ASC"
 	if order.desc {
 		dir = " DESC"
+	}
+	if order.by == "title" {
+		// A title is never NULL; with no null key the Library/title/id index
+		// supplies the order.
+		return "\n\t\tORDER BY " + expr + dir + ", m.id" + dir, nil
 	}
 	// The key expression appears twice (IS NULL, then the value), so its
 	// arguments do too.

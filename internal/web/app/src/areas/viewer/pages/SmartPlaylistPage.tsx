@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { useEngagementEpoch } from "../actions/engagementSync";
 import { SmartPlaylistEditor } from "../components/SmartPlaylistEditor";
 import { ViewerActions } from "../components/ViewerActions";
 import { mediaPath } from "../lib/mediaAddress";
@@ -47,6 +48,9 @@ export function SmartPlaylistPage() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // A play or rating anywhere can change which items match, so the list
+  // rereads on each engagement change.
+  const engagementEpoch = useEngagementEpoch();
 
   useEffect(() => {
     let alive = true;
@@ -64,15 +68,15 @@ export function SmartPlaylistPage() {
 
   useEffect(() => {
     if (!playlist) return;
+    void engagementEpoch;
     const controller = new AbortController();
-    setItems(null);
     loadSmartPlaylistItems(playlist, controller.signal)
       .then(setItems)
       .catch(() => {
         if (!controller.signal.aborted) setItems([]);
       });
     return () => controller.abort();
-  }, [playlist]);
+  }, [playlist, engagementEpoch]);
 
   const listed: PlayQueueItem[] = (items ?? []).map((item) =>
     item.mediaClass

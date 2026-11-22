@@ -11,6 +11,7 @@ import {
   parseSmartRules,
   parseSmartSort,
   type SmartPlaylist,
+  type SmartRule,
   type SmartRuleSet,
   saveSmartPlaylist,
   serializeSmartRules,
@@ -91,6 +92,42 @@ describe("smart playlist rule expressions", () => {
     expect(smartRulesComplete({ ...set, limit: 5001 })).toBe(false);
     const unknownField = { match: "all", rules: [{ field: "genre", op: "is", value: "x" }] };
     expect(smartRulesComplete({ ...unknownField, limit: null } as SmartRuleSet)).toBe(false);
+  });
+
+  it("keeps a saved text value that looks like a number as text", () => {
+    const parsed = parseSmartRules(
+      '{"kind":"rules","rules":[{"field":"field:code","op":"is","value":"007"},{"field":"field:bpm","op":"is","value":120}]}',
+    );
+    expect(parsed?.rules[0]).toEqual({
+      field: "field:code",
+      op: "is",
+      value: "007",
+      valueType: "text",
+    });
+    expect(JSON.parse(serializeSmartRules(parsed as SmartRuleSet)).rules).toEqual([
+      { field: "field:code", op: "is", value: "007" },
+      { field: "field:bpm", op: "is", value: 120 },
+    ]);
+    // A new rule, or one moved to another field, compares a number as a number.
+    const moved = withSmartField(parsed?.rules[0] as SmartRule, "field:bpm");
+    expect(
+      JSON.parse(serializeSmartRules({ match: "all", rules: [moved], limit: null })).rules,
+    ).toEqual([{ field: "field:bpm", op: "is", value: 7 }]);
+  });
+
+  it("accepts the date forms and bounds the server accepts", () => {
+    const rule = (op: string, value: string, field = "field:seen"): SmartRuleSet => ({
+      match: "all",
+      rules: [{ field, op, value }],
+      limit: null,
+    });
+    expect(smartRulesComplete(rule("before", "2026-05-01T10:30:00Z"))).toBe(true);
+    expect(smartRulesComplete(rule("after", "2026-05-01T10:30:00.250+02:00"))).toBe(true);
+    expect(smartRulesComplete(rule("before", "2026-05-01T10:30"))).toBe(false);
+    expect(smartRulesComplete(rule("inLast", "36500"))).toBe(true);
+    expect(smartRulesComplete(rule("inLast", "36501"))).toBe(false);
+    expect(smartRulesComplete(rule("contains", "é".repeat(250), "title"))).toBe(true);
+    expect(smartRulesComplete(rule("contains", "é".repeat(251), "title"))).toBe(false);
   });
 
   it("keeps the operator and value across a field change only when they still fit", () => {
@@ -218,6 +255,6 @@ describe("smart playlist reads and writes", () => {
     );
     expect(
       await loadSmartPlaylistItems({ ...playlist, rules: { ...playlist.rules, limit: null } }),
-    ).toHaveLength(1000);
+    ).toHaveLength(5000);
   });
 });

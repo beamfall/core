@@ -23,6 +23,12 @@ export interface SmartRule {
   field: string;
   op: string;
   value: string;
+  /**
+   * Set when a saved plugin-field equality value was JSON text. It is kept so a
+   * text value that looks like a number ("007") stays a text comparison;
+   * without it a numeric-looking value is sent as a number.
+   */
+  valueType?: "text";
 }
 
 export interface SmartRuleSet {
@@ -50,8 +56,13 @@ export type SmartValueKind = "none" | "text" | "number" | "days" | "date";
 
 export const SMART_RULE_MAX_RULES = 20;
 export const SMART_RULE_MAX_LIMIT = 5000;
+/** The server's bounds on a day count and on a text value (UTF-8 bytes). */
+export const SMART_RULE_MAX_DAYS = 36500;
+export const SMART_RULE_MAX_TEXT_BYTES = 500;
 /** The most items the web page reads for one smart playlist (pages of 200). */
-export const SMART_PLAYLIST_READ_CAP = 1000;
+export const SMART_PLAYLIST_READ_CAP = SMART_RULE_MAX_LIMIT;
+// A date-only value or an RFC 3339 timestamp, the forms the server accepts.
+const SMART_DATE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2}))?$/;
 const PAGE_SIZE = 200;
 
 export const SMART_BUILTIN_FIELDS = [
@@ -132,6 +143,7 @@ export function newSmartRule(field = "title"): SmartRule {
  * and the value is kept when it still means the same kind of thing.
  */
 export function withSmartField(rule: SmartRule, field: string): SmartRule {
+  // The saved value type belongs to the old field and is dropped.
   const ops = smartOperators(field);
   const op = ops.includes(rule.op) ? rule.op : (ops[0] ?? "is");
   const value = smartValueKind(field, op) === smartValueKind(rule.field, rule.op) ? rule.value : "";
@@ -167,10 +179,10 @@ function wireValue(rule: SmartRule): unknown {
       return null;
     case "days": {
       const days = Number(text);
-      return Number.isInteger(days) && days >= 1 ? days : undefined;
+      return Number.isInteger(days) && days >= 1 && days <= SMART_RULE_MAX_DAYS ? days : undefined;
     }
     case "date":
-      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : undefined;
+      return SMART_DATE.test(text) && !Number.isNaN(Date.parse(text)) ? text : undefined;
     case "number": {
       if (!text) return undefined;
       const number = Number(text);
@@ -179,9 +191,16 @@ function wireValue(rule: SmartRule): unknown {
       return rule.field === "duration" ? Math.round(number * 60) : number;
     }
     default:
-      if (!text) return undefined;
-      // A plugin field compares as a number when the value is one.
-      if (smartFieldClass(rule.field) === "plugin" && (rule.op === "is" || rule.op === "isNot")) {
+      if (!text || new TextEncoder().encode(text).length > SMART_RULE_MAX_TEXT_BYTES) {
+        return undefined;
+      }
+      // A plugin field compares as a number when the value is one, unless the
+      // saved rule compared it as text.
+      if (
+        smartFieldClass(rule.field) === "plugin" &&
+        (rule.op === "is" || rule.op === "isNot") &&
+        rule.valueType !== "text"
+      ) {
         const number = Number(text);
         if (Number.isFinite(number)) return number;
       }
@@ -239,12 +258,15 @@ export function parseSmartRules(expr: string): SmartRuleSet | null {
     const field = typeof rule.field === "string" ? rule.field : "";
     const op = typeof rule.op === "string" ? rule.op : "";
     let value = "";
+    let valueType: SmartRule["valueType"];
     if (typeof rule.value === "number") {
       value = String(field === "duration" ? rule.value / 60 : rule.value);
     } else if (typeof rule.value === "string") {
       value = rule.value;
+      valueType = "text";
     }
-    rules.push({ field, op, value });
+    const plugin = smartFieldClass(field) === "plugin" && (op === "is" || op === "isNot");
+    rules.push(plugin && valueType ? { field, op, value, valueType } : { field, op, value });
   }
   const limit = typeof raw.limit === "number" && raw.limit >= 1 ? raw.limit : null;
   return { match: raw.match === "any" ? "any" : "all", rules, limit };

@@ -63,6 +63,9 @@ const OP_LABELS: Record<string, StringKey> = {
   isFalse: "smartOpIsFalse",
 };
 
+// A saved RFC 3339 timestamp shows as text so it is kept, not blanked by a date picker.
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
 // The "Other field…" choice: a plugin Media field the manifest does not name.
 const OTHER_FIELD = "field:";
 
@@ -246,7 +249,13 @@ export function SmartPlaylistEditor({
                     <Input
                       aria-label={t("smartPlaylistRuleValue", { number })}
                       type={
-                        valueKind === "date" ? "date" : valueKind === "text" ? "text" : "number"
+                        valueKind === "date"
+                          ? DATE_ONLY.test(rule.value) || !rule.value
+                            ? "date"
+                            : "text"
+                          : valueKind === "text"
+                            ? "text"
+                            : "number"
                       }
                       min={valueKind === "days" ? 1 : undefined}
                       step={valueKind === "number" ? "any" : undefined}

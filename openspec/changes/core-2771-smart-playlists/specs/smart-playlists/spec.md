@@ -43,12 +43,19 @@ file-presence, trash, mute and hide-watched filters as other sources.
 ### Requirement: Rule results are sorted and capped
 
 `sortExpr` `{"by","dir"}` SHALL order a rule result, with title ascending as the default, and the
-rule limit SHALL cap the whole list across pages.
+rule limit SHALL cap the whole list across pages. The limit SHALL count the items left after the
+reading Profile's mute and hide-watched filters, so a filtered item does not shorten the list.
 
 #### Scenario: Limit across pages
 
 - **WHEN** a collection with limit 3 is read in pages of 2
 - **THEN** the first page has two items, the second has one, and the third is empty
+
+#### Scenario: Limit counts items left after filters
+
+- **WHEN** a Profile with hide-watched on reads a collection with limit 1 whose first match it has
+  watched
+- **THEN** the list holds the next unwatched match
 
 ### Requirement: Web builds and plays smart playlists
 
