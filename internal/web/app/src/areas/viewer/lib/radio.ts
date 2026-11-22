@@ -100,6 +100,7 @@ let active: Active | null = null;
 let generation = 0;
 // Bumped when a start is asked for; an older start that sees it change is overtaken.
 let startSeq = 0;
+let stops = 0;
 // This tab's radio queue writes run one at a time, each checking it is still
 // wanted when its turn comes: a start never interleaves with a top-up's add,
 // and an overtaken start or a superseded top-up writes nothing.
@@ -164,6 +165,7 @@ export function useActiveRadio(profileID: string | null | undefined): RadioStati
 
 /** Ends the Station: the queue keeps what it holds, and nothing more is added. */
 export function stopRadio() {
+  stops++;
   setActive(null);
 }
 
@@ -173,7 +175,11 @@ export type RadioStartResult =
   | { status: "started"; firstMediaID: string; station: RadioStation }
   | { status: "needs-confirm" }
   | { status: "empty"; message: string }
-  /** A stop, another start or an identity change overtook this start; nothing is active. */
+  /**
+   * A stop, a newer start or an identity change overtook this start. If its
+   * replace landed and only a newer start overtook it, its Station is active,
+   * since the queue holds it, until the newer one lands.
+   */
   | { status: "cancelled" };
 
 interface RadioStartInput {
@@ -191,18 +197,17 @@ interface RadioStartInput {
  * the result asks for confirmation and nothing changes. The playing Station
  * keeps playing until this one lands, so a retune that needs confirming keeps
  * it. A stop, a newer start or an identity change first cancels this start:
- * it writes nothing, or activates nothing if its write already went out.
+ * it writes nothing. Once its replace has landed, only a stop or an identity
+ * change keeps it from becoming active, because the queue now holds it.
  */
 export async function startRadio(input: RadioStartInput): Promise<RadioStartResult> {
   const station = { seedKind: input.seedKind, seedID: input.seedID, rules: input.rules ?? {} };
   const mineStart = ++startSeq;
-  const mine = generation;
+  const mineStop = stops;
   const epoch = getIdentityEpochSignal();
-  const overtaken = () =>
-    startSeq !== mineStart ||
-    generation !== mine ||
-    getIdentityEpochSignal() !== epoch ||
-    !!epoch?.aborted;
+  const stopped = () =>
+    stops !== mineStop || getIdentityEpochSignal() !== epoch || !!epoch?.aborted;
+  const overtaken = () => startSeq !== mineStart || stopped();
   // The same seed makes the preview and the started window identical, so the
   // preview's reasons describe what was queued; the server's reply says which.
   const seed = randomSeed();
@@ -228,8 +233,12 @@ export async function startRadio(input: RadioStartInput): Promise<RadioStartResu
       }
       throw error;
     }
-    if (overtaken()) return { status: "cancelled" };
-    if (!queued.length) return { status: "empty", message: preview.explanation };
+    if (stopped()) return { status: "cancelled" };
+    if (!queued.length) {
+      return overtaken()
+        ? { status: "cancelled" }
+        : { status: "empty", message: preview.explanation };
+    }
     const why = new Map(preview.candidates.map((c) => [c.mediaID, c.explanation]));
     const reasons = Object.fromEntries(queued.map(({ id }) => [id, why.get(id) ?? ""]));
     const started: RadioStation = {
@@ -240,6 +249,7 @@ export async function startRadio(input: RadioStartInput): Promise<RadioStartResu
     };
     // Inside the write turn, so the old Station's next add sees it ended.
     setActive(started, epoch);
+    if (overtaken()) return { status: "cancelled" };
     return { status: "started", firstMediaID: queued[0].id, station: started };
   });
 }
