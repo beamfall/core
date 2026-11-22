@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/store"
 )
@@ -231,5 +232,138 @@ func TestManifestRouteDeniesAfterCallerLosesMemberLibraryAccess(t *testing.T) {
 	visiblePart1Rec := serveContent(t, handlers, visibleToken, string(secondMedia.ID)+"/1")
 	if visiblePart1Rec.Code != http.StatusOK || !bytes.HasPrefix(visiblePart1Rec.Body.Bytes(), []byte("BFOP")) {
 		t.Fatalf("post-loss visiblePack content part 1 = %d, want 200 with BFOP bytes", visiblePart1Rec.Code)
+	}
+}
+
+func TestPackRoutesDenyAfterPurgingOnePackMember(t *testing.T) {
+	svc, authService, st, clock := newFixture(t)
+	elevateOfflineSession(t, st, clock)
+	ctx := context.Background()
+	scope := scopeFor(t, authService, "session-default")
+
+	secondPath := filepath.Join(t.TempDir(), "media-second.bin")
+	if err := os.WriteFile(secondPath, []byte("bytes-media-second"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	secondMedia, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: "library-local", Path: secondPath, Title: "Second",
+		Container: "flac", Codec: "flac", Class: store.MediaClassAudio,
+		ContentFingerprint: "fp-media-second", DurationSecondsHint: 60,
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+
+	pack, err := svc.BuildPack(ctx, scope, BuildPackRequest{
+		TargetKind: TargetKindMedia,
+		TargetRef:  "media-alpha," + string(secondMedia.ID),
+	})
+	if err != nil {
+		t.Fatalf("BuildPack: %v", err)
+	}
+	token, err := svc.IssuePackGrant(ctx, scope, pack.ID)
+	if err != nil {
+		t.Fatalf("IssuePackGrant: %v", err)
+	}
+	handlers := NewHTTPHandlers(svc, authService)
+
+	if rec := serveManifest(t, handlers, token); rec.Code != http.StatusOK {
+		t.Fatalf("pre-trash manifest = %d, want 200", rec.Code)
+	}
+	if rec := serveContent(t, handlers, token, string(secondMedia.ID)); rec.Code != http.StatusOK {
+		t.Fatalf("pre-trash content = %d, want 200", rec.Code)
+	}
+	if rec := serveKey(t, handlers, token); rec.Code != http.StatusOK || rec.Body.Len() != WrappedEnvelopeSize {
+		t.Fatalf("pre-trash key = %d/%d, want 200/%d", rec.Code, rec.Body.Len(), WrappedEnvelopeSize)
+	}
+
+	if err := st.TrashMedia(ctx, "media-alpha", store.LibraryFilter{AllLibraries: true, Revealed: true}); err != nil {
+		t.Fatalf("TrashMedia: %v", err)
+	}
+	if rec := serveManifest(t, handlers, token); rec.Code != http.StatusNotFound {
+		t.Fatalf("trashed manifest = %d, want 404", rec.Code)
+	}
+
+	purged, err := st.PurgeTrashedBefore(ctx, time.Now().UTC().Add(time.Hour))
+	if err != nil || purged != 1 {
+		t.Fatalf("PurgeTrashedBefore = %d, %v; want 1, nil", purged, err)
+	}
+	items, err := st.OfflinePackItems(ctx, pack.ID)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("OfflinePackItems after purge = %d, %v; want 1 surviving row", len(items), err)
+	}
+
+	manifestRec := serveManifest(t, handlers, token)
+	if manifestRec.Code != http.StatusNotFound {
+		t.Fatalf("post-purge manifest = %d, want 404", manifestRec.Code)
+	}
+	if strings.Contains(manifestRec.Body.String(), pack.Manifest) || manifestRec.Header().Get("Content-Type") == "application/jose" {
+		t.Fatalf("post-purge manifest served manifest bytes: content-type=%q body=%q", manifestRec.Header().Get("Content-Type"), manifestRec.Body.String())
+	}
+
+	contentRec := serveContent(t, handlers, token, string(secondMedia.ID))
+	if contentRec.Code != http.StatusNotFound || bytes.HasPrefix(contentRec.Body.Bytes(), []byte("BFOP")) {
+		t.Fatalf("post-purge surviving content = %d, want 404 without BFOP bytes", contentRec.Code)
+	}
+
+	keyRec := serveKey(t, handlers, token)
+	if keyRec.Code != http.StatusNotFound || keyRec.Body.Len() == WrappedEnvelopeSize {
+		t.Fatalf("post-purge key = %d/%d, want 404 without wrapped CEK", keyRec.Code, keyRec.Body.Len())
+	}
+}
+
+func TestKeyRouteRefusalAfterLosingLibraryAccessAuditsCaller(t *testing.T) {
+	svc, authService, st, clock := newFixture(t)
+	elevateOfflineSession(t, st, clock)
+	ctx := context.Background()
+	scope := scopeFor(t, authService, "session-default")
+
+	secondLib, err := st.CreateLibrary(ctx, "Second", false, "", scope.ProfileID)
+	if err != nil {
+		t.Fatalf("CreateLibrary: %v", err)
+	}
+
+	pack, err := svc.BuildPack(ctx, scope, BuildPackRequest{
+		TargetKind: TargetKindMedia,
+		TargetRef:  "media-alpha",
+	})
+	if err != nil {
+		t.Fatalf("BuildPack: %v", err)
+	}
+	token, err := svc.IssuePackGrant(ctx, scope, pack.ID)
+	if err != nil {
+		t.Fatalf("IssuePackGrant: %v", err)
+	}
+
+	if _, err := st.SetProfileLibraries(ctx, scope.ProfileID, []store.LibraryID{secondLib.ID}); err != nil {
+		t.Fatalf("SetProfileLibraries: %v", err)
+	}
+
+	audit := &recordingAudit{}
+	handlers := NewHTTPHandlers(svc, authService)
+	handlers.SetAuditRecorder(audit)
+
+	rec := serveKey(t, handlers, token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("post-loss key status = %d, want 404", rec.Code)
+	}
+	if rec.Body.Len() == WrappedEnvelopeSize {
+		t.Fatal("post-loss key route served wrapped CEK bytes")
+	}
+	if len(audit.records) != 1 {
+		t.Fatalf("key audit records = %+v, want one", audit.records)
+	}
+	want := AuditRecord{
+		Actor: AuditActor{
+			Authenticated: true,
+			SessionID:     "session-default",
+			DeviceID:      "device-tv",
+			ProfileID:     "profile-default",
+		},
+		Operation: keyAuditOperation,
+		Outcome:   AuditRefused,
+	}
+	if audit.records[0] != want {
+		t.Fatalf("key audit record = %+v, want %+v", audit.records[0], want)
 	}
 }

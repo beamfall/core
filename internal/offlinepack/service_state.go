@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -677,6 +678,36 @@ func packMediaIDs(items []store.OfflinePackItem) []store.MediaID {
 	return ids
 }
 
+// manifestItemsMatch reports whether items still matches the frozen item list
+// signed into manifest. Purging a Media deletes its offline_pack_item rows, so
+// a pack whose remaining rows no longer match its manifest has lost a member
+// and must fail closed.
+func manifestItemsMatch(manifest string, items []store.OfflinePackItem) bool {
+	if len(items) == 0 {
+		return false
+	}
+	segments := strings.Split(manifest, ".")
+	if len(segments) != 3 {
+		return false
+	}
+	payload, err := decodeCanonicalRawURL(segments[1])
+	if err != nil {
+		return false
+	}
+	var claims struct {
+		Items []ManifestItem `json:"items"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil || len(claims.Items) != len(items) {
+		return false
+	}
+	for i, item := range items {
+		if claims.Items[i].MediaID != string(item.MediaID) || claims.Items[i].PartOrdinal != item.PartOrdinal {
+			return false
+		}
+	}
+	return true
+}
+
 // packMembersVisible reports whether every frozen Media member of the pack is
 // currently visible under filter, returning the pack's items when all members
 // pass (CORE-3116).
@@ -685,7 +716,7 @@ func (s *Service) packMembersVisible(ctx context.Context, pack store.OfflinePack
 	if err != nil {
 		return nil, false, err
 	}
-	if len(items) == 0 {
+	if !manifestItemsMatch(pack.Manifest, items) {
 		return nil, false, nil
 	}
 	ids := packMediaIDs(items)
