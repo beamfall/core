@@ -15,6 +15,14 @@ describe("remembered Library pivot", () => {
     expect(readLibraryPivot("library-films")).toBe("/collections");
   });
 
+  it("keeps two Libraries' pivots separate when one ID matches the other's old node ID", () => {
+    window.localStorage.setItem("beamfall.libraryPivot.library-library-films", "/all");
+    expect(readLibraryPivot("library-library-films")).toBe("");
+    writeLibraryPivot("library-library-films", "/feeds");
+    expect(readLibraryPivot("library-films")).toBe("/all");
+    expect(readLibraryPivot("library-library-films")).toBe("/feeds");
+  });
+
   it("falls back to Recommended for a node with nothing remembered", () => {
     expect(readLibraryPivot("home")).toBe("");
   });

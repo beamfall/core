@@ -435,7 +435,8 @@ func parseStationRequest(req request) (stationSeed, stationRules, stationTuning,
 func (h *Handler) stationStart(ctx context.Context, scope auth.Scope, req request) ([]SourceItem, error) {
 	// Refuse a write made for another Profile before resolving its seed, which
 	// may be visible only to that Profile (CORE-2177).
-	if _, err := checkExpectedProfile(scope, req); err != nil {
+	expected, err := checkExpectedProfile(scope, req)
+	if err != nil {
 		return nil, err
 	}
 	seed, rules, tuning, err := parseStationRequest(req)
@@ -450,16 +451,18 @@ func (h *Handler) stationStart(ctx context.Context, scope auth.Scope, req reques
 	for i, c := range candidates {
 		mediaIDs[i] = store.MediaID(c.MediaID)
 	}
-	err = h.withExpectedProfile(ctx, scope, req, func() error {
-		return h.store.QueueReplaceWithStation(ctx, scope.ProfileID, mediaIDs, boolVar(req, "confirmReplace"), scope.LibraryFilter())
-	})
+	authorization, err := h.queueWriteAuthorization(ctx, scope, expected)
+	if err != nil {
+		return nil, err
+	}
+	committed, err := h.store.StartQueueStation(ctx, authorization, mediaIDs, boolVar(req, "confirmReplace"))
 	if errors.Is(err, store.ErrQueueReplaceNeedsConfirm) {
 		return nil, clientError("queue has items; pass confirmReplace to replace it")
 	}
 	if err != nil {
-		return nil, err
+		return nil, queueWriteError(err)
 	}
-	return h.queueItems(ctx, scope)
+	return h.queueItems(ctx, committed)
 }
 
 // SavedStationInfo is the wire shape for one saved Station (ADR-0098 area 5). It

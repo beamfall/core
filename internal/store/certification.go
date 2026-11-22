@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 )
@@ -17,6 +18,10 @@ import (
 // never marked locked. Items in grantedIDs are skipped (ACCESS-3, ADR-0113
 // §2.3): an active AccessGrant bypasses the ceiling for that item.
 func (s *Store) annotateLockedLocked(ctx context.Context, constraints []CertificationConstraint, items []SourceItem, grantedIDs []MediaID) error {
+	return annotateLocked(ctx, s.mediaReadersLocked(), constraints, items, grantedIDs)
+}
+
+func annotateLocked(ctx context.Context, readers mediaReaders, constraints []CertificationConstraint, items []SourceItem, grantedIDs []MediaID) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -51,7 +56,7 @@ func (s *Store) annotateLockedLocked(ctx context.Context, constraints []Certific
 	if len(ids) == 0 {
 		return nil
 	}
-	libraries, err := loadLibraries(ctx, s.catalogR)
+	libraries, err := loadLibraries(ctx, readers.catalog)
 	if err != nil {
 		return err
 	}
@@ -63,13 +68,12 @@ func (s *Store) annotateLockedLocked(ctx context.Context, constraints []Certific
 		if library.PluginID != nil {
 			pluginID = *library.PluginID
 		}
-		reader := s.catalogR
+		reader := readers.catalog
 		if library.Encrypted {
-			db := s.encryptedDBs[library.ID]
-			if db == nil || db.state != "unsealed-registered" || db.reader == nil {
+			reader = readers.encrypted(library.ID)
+			if reader == nil {
 				continue
 			}
-			reader = db.reader
 		}
 		for _, c := range locked {
 			if c.PluginID != pluginID {
@@ -208,9 +212,9 @@ func (s *Store) ClearProfileCertificationCeiling(ctx context.Context, id Profile
 	return s.profileSQL(ctx, id)
 }
 
-// certificationCeilingsSQL loads a Profile's ceilings, plugin-sorted.
-func (s *Store) certificationCeilingsSQL(ctx context.Context, id ProfileID) ([]ProfileCertificationCeiling, error) {
-	rows, err := s.catalogR.QueryContext(ctx, `
+// readCertificationCeilings loads a Profile's ceilings, plugin-sorted.
+func readCertificationCeilings(ctx context.Context, q rowsQueryer, id ProfileID) ([]ProfileCertificationCeiling, error) {
+	rows, err := q.QueryContext(ctx, `
 		SELECT plugin_id, ceiling, allow_unrated, filter_visibility
 		FROM profile_certification_ceiling
 		WHERE profile_id = ? ORDER BY plugin_id`, id)
@@ -261,15 +265,7 @@ func certificationFilterSQL(constraints []CertificationConstraint, playbackGate 
 	var clause strings.Builder
 	var args []any
 	// Pre-build the grant escape hatch (shared across all constraint clauses).
-	var grantClause string
-	var grantArgs []any
-	if len(grantedIDs) > 0 {
-		ph := strings.TrimSuffix(strings.Repeat("?, ", len(grantedIDs)), ", ")
-		grantClause = "\n		       OR m.id IN (" + ph + ")"
-		for _, id := range grantedIDs {
-			grantArgs = append(grantArgs, id)
-		}
-	}
+	grantClause, grantArg := grantedMediaClause(grantedIDs)
 	for _, constraint := range ordered {
 		// Locked constraints skip the exclusion clause on browse paths so that
 		// locked-but-visible Media appears in results; the byte gate always
@@ -296,11 +292,27 @@ func certificationFilterSQL(constraints []CertificationConstraint, playbackGate 
 		}
 		if grantClause != "" {
 			clause.WriteString(grantClause)
-			args = append(args, grantArgs...)
+			args = append(args, grantArg)
 		}
 		clause.WriteString(")")
 	}
 	return clause.String(), args
+}
+
+// grantedMediaClause renders the AccessGrant escape hatch of a certification
+// clause. The granted ids bind as one JSON array read through json_each, so a
+// Profile with any number of grants stays under SQLite's bound-variable limit
+// (CORE-2931). It returns "" when nothing is granted.
+func grantedMediaClause(grantedIDs []MediaID) (string, any) {
+	if len(grantedIDs) == 0 {
+		return "", nil
+	}
+	encoded, err := json.Marshal(grantedIDs)
+	if err != nil {
+		// A []MediaID is a string slice and always encodes; fail closed.
+		return "", nil
+	}
+	return "\n\t\t       OR m.id IN (SELECT value FROM json_each(?))", string(encoded)
 }
 
 // planeCertificationFilterSQL renders certification clauses for a query
@@ -312,6 +324,7 @@ func planeCertificationFilterSQL(pluginID string, constraints []CertificationCon
 	}
 	ordered := append([]CertificationConstraint(nil), constraints...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].PluginID < ordered[j].PluginID })
+	grantClause, grantArg := grantedMediaClause(grantedIDs)
 	var clause strings.Builder
 	var args []any
 	for _, constraint := range ordered {
@@ -333,12 +346,9 @@ func planeCertificationFilterSQL(pluginID string, constraints []CertificationCon
 		       OR NOT EXISTS (SELECT 1 FROM media_field_text cf WHERE cf.media_id = m.id
 		                      AND cf.field = '` + certificationField + `')`)
 		}
-		if len(grantedIDs) > 0 {
-			placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(grantedIDs)), ", ")
-			clause.WriteString("\n\t\t       OR m.id IN (" + placeholders + ")")
-			for _, id := range grantedIDs {
-				args = append(args, id)
-			}
+		if grantClause != "" {
+			clause.WriteString(grantClause)
+			args = append(args, grantArg)
 		}
 		clause.WriteString(")")
 	}

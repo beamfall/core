@@ -75,7 +75,7 @@ describe("JellyfinCompat", () => {
     expect(screen.getByText(/never through the relay or remote access/)).toBeVisible();
     expect(screen.getByText(/\/compat\/jellyfin\//)).toBeVisible();
     expect(screen.getByText(/sign in as admin with the admin password/)).toBeVisible();
-    expect(screen.getByText(/must overwrite X-Forwarded-For/)).toBeVisible();
+    expect(await screen.findByText(/must overwrite X-Forwarded-For/)).toBeVisible();
   });
 
   it("turns the API on and off through setJellyfinCompat", async () => {

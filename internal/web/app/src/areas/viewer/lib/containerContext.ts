@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
-import type { DisplayString, GenericMediaInfo, SourceItem } from "@/lib/graphql/types";
+import type {
+  DisplayString,
+  GenericMediaInfo,
+  RelatedEntityGroup,
+  SourceItem,
+} from "@/lib/graphql/types";
 
 // Where one Media item sits among its containers (CORE-1785, CORE-1786).
 //
@@ -107,13 +112,14 @@ export function nearestContainer(
  * different kind, holding at least as many items as the container does.
  */
 export function ancestorItems(
-  related: ReadonlyArray<{ archetype?: string; items: SourceItem[] }> | undefined,
+  related: ReadonlyArray<Pick<RelatedEntityGroup, "archetype" | "direction" | "items">> | undefined,
   container: { id: string; kind: string },
   childCount: number,
 ): SourceItem[] {
   const out: SourceItem[] = [];
   const uncounted: SourceItem[] = [];
   for (const group of related ?? []) {
+    if (group.direction === "child") continue;
     for (const item of group.items) {
       if (item.id === container.id || item.kind === container.kind) continue;
       const total = item.engagement?.totalCount ?? 0;

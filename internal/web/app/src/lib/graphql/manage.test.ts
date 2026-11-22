@@ -565,17 +565,17 @@ describe("manage mutation request recording", () => {
       fromEntityID: "e1",
       relation: "appears-in",
       toMediaID: "m1",
-      sortOrder: 3,
+      position: 3,
     });
     expect(recorded[0].query).toContain("mutation UpsertEntityRelation");
     expect(recorded[0].query).toContain(
-      "upsertEntityRelation(fromEntityID: $fromEntityID, relation: $relation, toEntityID: $toEntityID, toMediaID: $toMediaID, sortOrder: $sortOrder)",
+      "upsertEntityRelation(fromEntityID: $fromEntityID, relation: $relation, toEntityID: $toEntityID, toMediaID: $toMediaID, sortOrder: $sortOrder, position: $position)",
     );
     expect(recorded[0].variables).toEqual({
       fromEntityID: "e1",
       relation: "appears-in",
       toMediaID: "m1",
-      sortOrder: 3,
+      position: 3,
     });
   });
 
@@ -631,7 +631,7 @@ describe("manage mutation request recording", () => {
     });
     expect(recorded[0].query).toContain("mutation FixMatch");
     expect(recorded[0].query).toContain(
-      "fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID)",
+      "fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, clearLocks: $clearLocks, sequence: $sequence, index: $index)",
     );
     expect(recorded[0].variables).toEqual({
       mediaID: "media-1",

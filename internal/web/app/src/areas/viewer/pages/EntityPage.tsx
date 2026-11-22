@@ -661,7 +661,7 @@ export function EntityPage() {
           {/* Child containers first, each card counting its items. */}
           {groups.containers.map((group) => (
             <RelatedGroup
-              key={group.kind}
+              key={`${group.kind}:${group.direction ?? ""}`}
               title={groupHeading(group, displayLocale)}
               items={group.items.map((item) => withItemCount(item, itemCount, displayLocale))}
             />
@@ -730,7 +730,7 @@ export function EntityPage() {
 
           {groups.other.map((group) => (
             <RelatedGroup
-              key={group.kind}
+              key={`${group.kind}:${group.direction ?? ""}`}
               title={groupHeading(group, displayLocale)}
               items={group.items}
             />

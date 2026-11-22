@@ -103,6 +103,11 @@ export interface RemotePlayerTarget {
   stop?: () => void;
   /** Sets this player up afresh at a position in seconds (undefined: saved progress). */
   restart?: (atSeconds?: number) => void;
+  /**
+   * Song seconds per stream second under an applied tempo (CORE-1659); 1 or
+   * absent when unadjusted. Remote positions are song time.
+   */
+  songScale?: number;
 }
 
 // Another client's track ids are not this player's; only a plain index applies.
@@ -120,6 +125,10 @@ function anchoredTo(command: SessionControlCommand, target: RemotePlayerTarget):
 // A seek that waits for its player's metadata. A newer seek or a play-media
 // supersedes it, so it is kept to be cancelled.
 let deferredSeek: { video: HTMLVideoElement; listener: () => void } | null = null;
+
+function songScaleOf(target: RemotePlayerTarget): number {
+  return target.songScale && target.songScale > 0 ? target.songScale : 1;
+}
 
 function cancelDeferredSeek(): void {
   deferredSeek?.video.removeEventListener("loadedmetadata", deferredSeek.listener);
@@ -162,17 +171,22 @@ export function applyPlayerCommand(
     }
     case "seek": {
       if (!video || command.positionMs === undefined) return false;
-      const at = command.positionMs / 1000;
+      // A remote position is song time; an adjusted stream covers songScale
+      // song seconds per stream second (CORE-1828).
+      const songSeconds = command.positionMs / 1000;
       // Before metadata the player's own opening seek is still to come; seek
       // after it so the newer position wins.
       cancelDeferredSeek();
       if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-        video.currentTime = at;
+        video.currentTime = songSeconds / songScaleOf(target);
         return true;
       }
+      // The loading stream's tempo may not be known yet, so convert when the
+      // seek runs, against the player registered then.
       const listener = () => {
         deferredSeek = null;
-        video.currentTime = at;
+        const current = active?.current.video() === video ? active.current : target;
+        video.currentTime = songSeconds / songScaleOf(current);
       };
       deferredSeek = { video, listener };
       video.addEventListener("loadedmetadata", listener, { once: true });

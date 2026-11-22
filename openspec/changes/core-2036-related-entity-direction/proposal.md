@@ -23,6 +23,6 @@ child.
 
 - Code: `internal/store` (`RelatedEntityGroups`), `internal/graph` (`RelatedEntityGroupInfo.direction`),
   web `nextUpChildContainer` and the Entity query.
-- Wire: additive field `RelatedEntityGroup.direction`; wire goldens regenerated. The contract needs a
-  published minor version and consumer repins by the lander.
+- Wire: additive field `RelatedEntityGroup.direction`; wire goldens regenerated and registered in
+  client-core-wire 2.47.0. Consumer repins remain pending.
 - No migration.

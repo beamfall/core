@@ -168,40 +168,36 @@ describe("job purpose and target", () => {
     expect(jobTargetDetail({})).toBe("");
   });
 
-  it("humanizes only enum-like wire tokens and keeps free text as sent (CORE-2342)", () => {
+  it("humanizes dotted kinds it has no label for", () => {
+    expect(jobKindLabel("plugin.thing-run", labels)).toBe("Plugin thing run");
+  });
+
+  it("keeps free text in its original case and humanizes only enum tokens (CORE-2342)", () => {
+    // Enum tokens still read as words.
     expect(jobStatusLabel("yielded", labels)).toBe("Paused");
+    expect(jobStatusLabel("waiting_for_media", labels)).toBe("Waiting for media");
+    expect(jobStatusLabel("WAITING_FOR_MEDIA", labels)).toBe("Waiting for media");
     expect(jobEventLabel("scan-root-unavailable", labels)).toBe("Folder unavailable");
-    expect(jobStatusLabel("awaiting.remote_peer", labels)).toBe("Awaiting remote peer");
-    expect(jobEventLabel("Scan root /Volumes/Media/Films is offline", labels)).toBe(
-      "Scan root /Volumes/Media/Films is offline",
+    expect(jobEventLabel("root-gone", labels)).toBe("Root gone");
+    // Free text from the server is shown as sent.
+    expect(jobStatusLabel("Waiting on /media/Films/Alien (1979)", labels)).toBe(
+      "Waiting on /media/Films/Alien (1979)",
     );
-    expect(jobKindLabel("  Fetch from TheTVDB  ", labels)).toBe("Fetch from TheTVDB");
-    expect(jobStatusLabel("HTTP_TIMEOUT", labels)).toBe("HTTP_TIMEOUT");
+    expect(jobKindLabel("TMDb Refresh", labels)).toBe("TMDb Refresh");
+    expect(jobProgressCount({ current: 3, total: 0, unit: "MB" }, labels)).toBe("3 MB");
     expect(
       jobProgressRead(
-        {
-          current: 0,
-          total: 0,
-          unit: "",
-          message: "Reading /Volumes/Media/Films/Alien (1979)",
-        },
+        { current: 1, total: 4, unit: "TV episodes", message: "Reading /mnt/Media/TV" },
         labels,
         "en",
       ),
-    ).toBe("Reading /Volumes/Media/Films/Alien (1979)");
-    expect(jobProgressRead({ current: 2, total: 0, unit: "MB", message: "" }, labels, "en")).toBe(
-      "2 MB",
-    );
+    ).toBe("1 of 4 TV episodes · Reading /mnt/Media/TV");
     expect(
       jobEventDetail({
-        type: "failed",
-        payload: JSON.stringify({ status: "failed", reason: "Scan root /Volumes/Media missing" }),
+        type: "yielded",
+        payload: '{"status":"yielded","reason":"Root /Volumes/Media is offline"}',
       }),
-    ).toBe("Scan root /Volumes/Media missing");
-  });
-
-  it("humanizes dotted kinds it has no label for", () => {
-    expect(jobKindLabel("plugin.thing-run", labels)).toBe("Plugin thing run");
+    ).toBe("Root /Volumes/Media is offline");
   });
 
   it("counts work with no known total instead of reading N/0 (CORE-2352)", () => {

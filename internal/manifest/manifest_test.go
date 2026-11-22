@@ -28,7 +28,7 @@ func TestNilRegistryTreatsPluginBoundLibraryAsPluginless(t *testing.T) {
 		t.Fatalf("nil registry document: %v", err)
 	}
 	for _, node := range document.Navigation {
-		if node.ID == "library-"+string(document.Libraries[0].ID) && node.LayoutID != "layout-home" {
+		if node.LibraryID == document.Libraries[0].ID && node.LayoutID != "layout-home" {
 			t.Fatalf("plugin-bound library layout = %q, want pluginless fallback", node.LayoutID)
 		}
 	}
@@ -945,7 +945,7 @@ func TestLibrarySummaryIcon(t *testing.T) {
 func TestLibraryNodeIDsCarryThePrefixOnceAndLegacyIDsResolve(t *testing.T) {
 	service, authService := newTestService(t)
 	ctx := context.Background()
-	for _, title := range []string{"Films", "Shows", "Library Films"} {
+	for _, title := range []string{"Films", "Shows", "Library Films", "Order"} {
 		if _, err := service.store.CreateLibrary(ctx, title, false, "", "profile-default"); err != nil {
 			t.Fatal(err)
 		}
@@ -978,7 +978,7 @@ func TestLibraryNodeIDsCarryThePrefixOnceAndLegacyIDsResolve(t *testing.T) {
 	override := store.NavOverrideData{
 		// Saved before CORE-2343: the doubled IDs of the local and Shows nodes.
 		HiddenNodeIDs: []string{"library-library-local"},
-		NodeOrder:     []string{"library-library-shows", "home"},
+		NodeOrder:     []string{"library-library-shows", "home", "library-shows", "library-library-order"},
 		NodeLabelOverrides: map[string]map[string]string{
 			// A live node's own ID, not an alias for Films.
 			"library-library-films": {"en": "Cinema"},
@@ -1010,7 +1010,44 @@ func TestLibraryNodeIDsCarryThePrefixOnceAndLegacyIDsResolve(t *testing.T) {
 	if got := titles["library-shows"]; got != "TV" {
 		t.Errorf("Shows node title = %q, want TV", got)
 	}
-	if len(doc.Navigation) < 2 || doc.Navigation[0].ID != "library-shows" || doc.Navigation[1].ID != "home" {
-		t.Errorf("legacy order not applied: %v", doc.Navigation)
+	if len(doc.Navigation) < 3 || doc.Navigation[0].ID != "home" ||
+		doc.Navigation[1].ID != "library-shows" || doc.Navigation[2].ID != "library-order" {
+		t.Errorf("current and legacy IDs ordered incorrectly: %v", doc.Navigation)
 	}
+}
+
+func TestLibraryNodeIDsReserveRestrictedAndTrashedIDs(t *testing.T) {
+	service, authService := newTestService(t)
+	ctx := context.Background()
+	library, err := service.store.CreateLibrary(ctx, "Library Local", true, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, err := authService.Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	override := store.NavOverrideData{
+		NodeLabelOverrides: map[string]map[string]string{
+			string(library.ID): {"en": "Private label"},
+		},
+	}
+	if err := service.store.SetNavOverride(ctx, "server", nil, override, time.Unix(1, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	check := func() {
+		t.Helper()
+		doc, err := service.Document(ctx, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if containsTitle(doc, "Private label") {
+			t.Fatal("an override for a hidden Library was applied to the visible Library")
+		}
+	}
+	check()
+	if err := service.store.DeleteLibrary(ctx, library.ID); err != nil {
+		t.Fatal(err)
+	}
+	check()
 }

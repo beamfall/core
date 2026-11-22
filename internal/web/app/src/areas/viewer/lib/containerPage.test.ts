@@ -52,7 +52,7 @@ describe("ancestorOf (CORE-2510)", () => {
     expect(ancestorOf(part, 10)?.id).toBe("w1");
   });
 
-  it("never takes a container of the page's own kind as its ancestor", () => {
+  it("ignores a same-kind group when its direction is unknown", () => {
     const peer = {
       kind: "part",
       archetype: "container",
@@ -61,6 +61,24 @@ describe("ancestorOf (CORE-2510)", () => {
     expect(
       ancestorOf({ ...part, relatedEntities: [peer, ...(part.relatedEntities ?? [])] }, 10)?.id,
     ).toBe("w1");
+  });
+
+  it("uses relation direction when a child sorts before a same-kind parent", () => {
+    const relatedEntities: EntityInfo["relatedEntities"] = [
+      {
+        kind: "group",
+        direction: "child",
+        archetype: "container",
+        items: [entityItem("g1", "Group", { engagement: { totalCount: 30 } })],
+      },
+      {
+        kind: "part",
+        direction: "parent",
+        archetype: "container",
+        items: [entityItem("p1", "Parent", { engagement: { totalCount: 20 } })],
+      },
+    ];
+    expect(ancestorOf({ ...part, relatedEntities }, 10)?.id).toBe("p1");
   });
 
   it("finds none without own Media, for a non-container, or when no container is larger", () => {

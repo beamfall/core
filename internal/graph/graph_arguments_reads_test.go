@@ -460,6 +460,8 @@ var dynamicArgumentReads = map[string][]string{
 	"sessionControlArgsFromVariables": {"direction", "mediaID", "text"},
 	"profileSettingsFromVariables":    {"audioLanguages", "disabled", "preferSDH", "subtitleLanguages", "transcodeAllowed"},
 	"setTranscodeConfig":              {"codec", "device", "quality"},
+	"ownTrackPreferenceWrite": {"audioLanguages", "disabled", "entryPIN", "kind", "maxConcurrentStreams", "name",
+		"preferSDH", "remoteMaxBitrate", "subtitleLanguages", "subtitleMode", "transcodeAllowed"},
 }
 
 // rangedTableNames returns the string names in the literal tables fn ranges

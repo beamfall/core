@@ -97,6 +97,10 @@ export interface SourceSpec {
   fieldFilters?: FieldFilters;
   /** Narrows to the Media related to one named entity; echoed back verbatim. */
   entityFilter?: EntityFilter | null;
+  /** Pins a "random" Source's shuffle order; echoed back verbatim. Omitted when none. */
+  seed?: string;
+  /** Selects a valued Source's band (resume-progress, availability); echoed back verbatim. */
+  value?: string;
 }
 
 /** A Source's entity-relation filter (manifest.EntityFilter). */
@@ -268,7 +272,7 @@ export interface EntityInfo {
   fields: EntityFieldInfo[];
   /** The kind's fixed archetype ("container", "person", …); drives generic page layout. */
   archetype?: string;
-  /** Entities related in either direction, grouped by kind; only entity(id) fills it. */
+  /** Entities grouped by kind and relation direction; only entity(id) fills it. */
   relatedEntities?: RelatedEntityGroup[];
   /** The Entity's own artwork slots; only entity(id) fills it (CORE-2406). */
   artworkSlots?: Record<string, string>;
@@ -420,6 +424,13 @@ export interface ReportPlaybackVars {
   durationSeconds: number;
   finished: boolean;
   eventTimeMS: number;
+  /** Whether the player was paused: play history credits no time after a paused report. */
+  paused?: boolean;
+  /** The client's random ID for this play, kept across pauses and seeks. */
+  playbackID?: string;
+  /** Milliseconds actually played under playbackID so far (not paused, seeking or
+   *  buffering): play history credits its growth. */
+  playedMS?: number;
 }
 
 // --- Viewer: My Data / Privacy panel (internal/graph/mydata.go) -----------
@@ -946,6 +957,31 @@ export interface TrashEntry {
   id: string;
   title: string;
   trashedAt: string;
+  /** Set when a Version merge (not undone) folded this Media into a survivor. */
+  mergedInto?: TrashMergeInfo;
+}
+
+/** The Version merge that sent a Media to Trash (graph.TrashMergeInfo). */
+export interface TrashMergeInfo {
+  batchID: string;
+  survivorID: string;
+  survivorTitle: string;
+  mergedAt: string;
+}
+
+/** A Media whose live Versions include likely identical copies (graph.DuplicateCopySetInfo). */
+export interface DuplicateCopySet {
+  mediaID: string;
+  title: string;
+  libraryID: string;
+  copies: DuplicateCopy[];
+}
+
+/** One on-disk file of a DuplicateCopySet. */
+export interface DuplicateCopy {
+  path: string;
+  sizeBytes: number;
+  label: string;
 }
 
 /** A first-class Core Tag (graph.TagInfo). */
@@ -1060,6 +1096,55 @@ export interface SubscriptionInfo {
   root: string;
   retentionKind: string;
   retentionN: number | null;
+}
+
+/** Feed health (CORE-2955). `healthStatus` is ok, failing, warning after
+ * seven days of failure, or retired. `lastErrorClass` is a closed class. */
+export interface SubscriptionHealth {
+  healthStatus: string;
+  lastErrorClass?: string | null;
+  failingSince?: string | null;
+  nextPollAt?: string | null;
+}
+
+/** A followed feed as the feed home shows it (graph.SubscriptionInfo, the
+ * CORE-2957 selection). Never selects feedURL: it is secret-class. */
+export interface FeedSubscription extends SubscriptionHealth {
+  id: string;
+  libraryID: string;
+  title: string;
+  downloadPolicy: string;
+  downloadLatestN: number;
+  lastPolledAt?: string | null;
+  entryCount: number;
+  downloadedCount: number;
+  catalogBytes: number;
+}
+
+/** The viewer-safe refreshSubscription response. */
+export interface SubscriptionRefreshInfo extends SubscriptionHealth {
+  id: string;
+  title: string;
+}
+
+/** One searchFeeds result (graph.FeedSearchResult). */
+export interface FeedSearchResult {
+  title: string;
+  feedURL: string;
+  artworkURL?: string | null;
+  description?: string | null;
+}
+
+/** One catalogue entry of a Subscription (graph.SubscriptionEntryInfo).
+ * `mediaID` is a Media id the ordinary play path accepts, downloaded or not. */
+export interface SubscriptionEntry {
+  mediaID: string;
+  title: string;
+  publishedAt?: string | null;
+  feedPosition: number;
+  enclosureLength: number;
+  downloadState: string;
+  availability: string;
 }
 
 /** The setSubscriptionRetention result. */
@@ -1584,6 +1669,10 @@ export interface HostMetricsInfo {
   samples: HostMetricSample[];
 }
 
+/** How a play was delivered: as stored, remuxed or transcoded (CORE-1703).
+ * "unknown" is a play recorded before the method was, or with no decision. */
+export type PlayMethod = "direct" | "remux" | "transcode" | "unknown";
+
 /** One past play (graph.PlayInfo). */
 export interface PlayInfo {
   profileID: string;
@@ -1592,6 +1681,11 @@ export interface PlayInfo {
   title: string;
   libraryID: string;
   libraryTitle: string;
+  /** The Device that played it; absent for plays recorded before devices were. */
+  deviceID?: string;
+  deviceName?: string;
+  deviceClient?: string;
+  playMethod: PlayMethod;
   startedAt: string;
   watchedSeconds: number;
   finished: boolean;
@@ -1601,22 +1695,46 @@ export interface PlayInfo {
 export interface PlayHistoryFilter {
   profileID?: string;
   libraryID?: string;
+  mediaID?: string;
+  deviceID?: string;
+  playMethod?: PlayMethod;
   since?: string;
   until?: string;
   limit?: number;
 }
 
-/** Rankings over a 7, 30 or 90 day window (graph.PlayStatsInfo). */
+/** Filters and range for the play stats read: a 7, 30 or 90 day window, or
+ * since (and optionally until), not both. */
+export interface PlayStatsFilter {
+  profileID?: string;
+  libraryID?: string;
+  mediaID?: string;
+  deviceID?: string;
+  playMethod?: PlayMethod;
+  windowDays?: 7 | 30 | 90;
+  since?: string;
+  until?: string;
+}
+
+/** One row of a play breakdown: how many plays and how long. */
+export interface PlayTally {
+  plays: number;
+  watchedSeconds: number;
+}
+
+/** Totals and breakdowns over a date range (graph.PlayStatsInfo). Days run in
+ * the caller's time zone and omit days with no plays. */
 export interface PlayStatsInfo {
   windowDays: number;
-  profiles: { profileID: string; profileName: string; plays: number; watchedSeconds: number }[];
-  items: {
-    mediaID: string;
-    title: string;
-    libraryID: string;
-    plays: number;
-    watchedSeconds: number;
-  }[];
+  since: string;
+  until: string;
+  totalPlays: number;
+  totalWatchedSeconds: number;
+  profiles: ({ profileID: string; profileName: string } & PlayTally)[];
+  items: ({ mediaID: string; title: string; libraryID: string } & PlayTally)[];
+  devices: ({ deviceID: string; deviceName: string; deviceClient: string } & PlayTally)[];
+  methods: ({ playMethod: PlayMethod } & PlayTally)[];
+  days: ({ day: string } & PlayTally)[];
 }
 
 /** The terminateSession result. */
@@ -1808,6 +1926,7 @@ export interface MediaMetadataInfo {
   year: number;
   refreshable: boolean;
   locks: FieldLockInfo[];
+  operatorOrdinal?: { sequence: string; index: number } | null;
 }
 
 /** The built-in fields an item edit may set; an absent field is left alone. */

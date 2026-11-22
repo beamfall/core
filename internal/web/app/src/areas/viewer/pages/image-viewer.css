@@ -1,0 +1,334 @@
+/* Web image viewer (CORE-0542, photos design §3.1 W3). A media surface: the
+ * picture fills the stage on the scrim, the controls sit in one bar above it,
+ * and the info pane opens beside it. Tokens only; no blur or ambient effect
+ * (those come only from Oscillux). */
+
+.bf-image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--scrim);
+  color: var(--on-scrim);
+}
+
+.bf-image-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.bf-image-viewer-title {
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.bf-image-viewer-title h1 {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bf-image-viewer-title p {
+  color: var(--on-scrim-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.bf-image-viewer-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.bf-image-viewer-button:hover {
+  background: color-mix(in srgb, var(--on-scrim) 12%, transparent);
+}
+
+.bf-image-viewer-button:focus-visible {
+  outline: 2px solid var(--on-scrim);
+  outline-offset: 2px;
+}
+
+.bf-image-viewer-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.bf-image-viewer-button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--on-scrim) 16%, transparent);
+}
+
+.bf-image-viewer-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.bf-image-viewer-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.bf-image-viewer-stage {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.bf-image-viewer[data-zoomed] .bf-image-viewer-stage {
+  cursor: grab;
+}
+
+.bf-image-viewer-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  transition: transform 160ms ease-out;
+}
+
+.bf-image-viewer-frame img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.bf-image-viewer-glyph {
+  width: 25%;
+  height: 25%;
+  color: var(--on-scrim-muted);
+}
+
+.bf-image-viewer-status,
+.bf-image-viewer-notice {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--scrim) 80%, transparent);
+  font-size: 13px;
+}
+
+.bf-image-viewer-step {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  background: color-mix(in srgb, var(--scrim) 60%, transparent);
+}
+
+.bf-image-viewer-step[data-side="previous"] {
+  left: 12px;
+}
+
+.bf-image-viewer-step[data-side="next"] {
+  right: 12px;
+}
+
+.bf-image-viewer-info {
+  width: min(320px, 40vw);
+  padding: 16px;
+  overflow-y: auto;
+  border-left: 1px solid color-mix(in srgb, var(--on-scrim) 14%, transparent);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.bf-image-viewer-info h2 {
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.bf-image-viewer-info dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+}
+
+.bf-image-viewer-info dt {
+  color: var(--on-scrim-muted);
+}
+
+/* Inline clips (CORE-2977) fill the frame like a picture. */
+.bf-image-viewer-frame video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.bf-image-viewer-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bf-image-viewer-text-button {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.bf-image-viewer-text-button:hover {
+  background: color-mix(in srgb, var(--on-scrim) 12%, transparent);
+}
+
+.bf-image-viewer-text-button:focus-visible {
+  outline: 2px solid var(--on-scrim);
+  outline-offset: 2px;
+}
+
+/* Filmstrip (CORE-2978): the neighbours along the foot of the stage. */
+.bf-image-viewer-filmstrip-dock {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  padding: 8px 12px 12px;
+}
+
+.bf-image-viewer-filmstrip {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.bf-image-viewer-filmstrip ul {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+}
+
+.bf-image-viewer-thumb {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--on-scrim) 10%, transparent);
+  color: var(--on-scrim-muted);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.bf-image-viewer-thumb:hover,
+.bf-image-viewer-thumb[aria-current="true"] {
+  opacity: 1;
+}
+
+.bf-image-viewer-thumb[aria-current="true"] {
+  outline: 2px solid var(--on-scrim);
+  outline-offset: 1px;
+}
+
+.bf-image-viewer-thumb:focus-visible {
+  outline: 2px solid var(--on-scrim);
+  outline-offset: 2px;
+}
+
+.bf-image-viewer-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bf-image-viewer-thumb-duration {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--scrim) 75%, transparent);
+  color: var(--on-scrim);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.bf-image-viewer-stage:has(.bf-image-viewer-filmstrip-dock) .bf-image-viewer-status,
+.bf-image-viewer-stage:has(.bf-image-viewer-filmstrip-dock) .bf-image-viewer-notice {
+  bottom: 96px;
+}
+
+/* Undo toast for a trashed item. */
+.bf-image-viewer-toast {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 14px;
+  transform: translateX(-50%);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--scrim) 90%, var(--on-scrim));
+  font-size: 13px;
+}
+
+/* Idle chrome: hidden outright, no fade (effects come only from Oscillux). A
+ * control holding focus stays visible. */
+.bf-image-viewer[data-chrome="hidden"] .bf-image-viewer-bar:not(:focus-within),
+.bf-image-viewer[data-chrome="hidden"] .bf-image-viewer-step:not(:focus-visible),
+.bf-image-viewer[data-chrome="hidden"] .bf-image-viewer-filmstrip-dock:not(:focus-within) {
+  visibility: hidden;
+}
+
+.bf-image-viewer[data-chrome="hidden"] .bf-image-viewer-stage {
+  cursor: none;
+}
+
+@media (max-width: 640px) {
+  .bf-image-viewer-body {
+    flex-direction: column;
+  }
+
+  .bf-image-viewer-info {
+    width: auto;
+    max-height: 40vh;
+    border-top: 1px solid color-mix(in srgb, var(--on-scrim) 14%, transparent);
+    border-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-image-viewer-frame {
+    transition: none;
+  }
+}

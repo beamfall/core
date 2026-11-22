@@ -274,4 +274,27 @@ describe("BrowsePage readable node address", () => {
     expect(screen.getByTestId("path")).toHaveTextContent(/^\/n\/library-films$/);
     expect(screen.getByTestId("layout")).toHaveAttribute("data-library", "library-films");
   });
+
+  it("keeps the address of a real Library whose ID repeats the prefix", () => {
+    const current = {
+      ...doubled,
+      navigation: [
+        doubled.navigation[0],
+        { ...doubled.navigation[1], id: "library-films" },
+        {
+          ...doubled.navigation[1],
+          title: "Library Films",
+          libraryID: "library-library-films",
+        },
+      ],
+    };
+    renderAt("/n/library-library-films", { manifest: current, loading: false });
+
+    expect(screen.getByTestId("path")).toHaveTextContent(/^\/n\/library-library-films$/);
+    expect(screen.getByTestId("layout")).toHaveAttribute("data-library", "library-library-films");
+    expect(screen.getByRole("link", { name: "Library" })).toHaveAttribute(
+      "href",
+      "/n/library-library-films/all",
+    );
+  });
 });

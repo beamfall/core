@@ -38,7 +38,9 @@ export function ancestorOf(
   if (!entity || entity.archetype !== "container" || ownMediaCount <= 0) return null;
   const containers = (entity.relatedEntities ?? []).filter(
     // A related item's own kind is the generic "entity"; its group names the Kind.
-    (group) => group.archetype === "container" && group.kind !== entity.kind,
+    (group) =>
+      group.archetype === "container" &&
+      (group.direction === "parent" || group.kind !== entity.kind),
   );
   return ancestorItems(containers, entity, ownMediaCount)[0] ?? null;
 }
@@ -74,7 +76,9 @@ export function siblingContainers(
   if (!ancestor || !entity) return null;
   const group = (ancestor.relatedEntities ?? []).find(
     (candidate) =>
-      candidate.kind === entity.kind && candidate.items.some((item) => item.id === entity.id),
+      candidate.direction !== "parent" &&
+      candidate.kind === entity.kind &&
+      candidate.items.some((item) => item.id === entity.id),
   );
   if (!group) return null;
   const seen = new Set<string>();

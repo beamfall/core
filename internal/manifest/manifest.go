@@ -3,6 +3,7 @@ package manifest
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -256,10 +257,21 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 	if err != nil {
 		return Document{}, err
 	}
-	// A legacy ID that is also a live node's ID names that node, not an alias
-	// (a Library titled "Library Films" has the ID "library-library-films").
-	for _, n := range navigation {
-		delete(legacyNodeIDs, n.ID)
+	// Reserve current IDs even when their Libraries are hidden or recoverable
+	// from trash. A scoped manifest must not apply their overrides elsewhere.
+	var candidates []store.LibraryID
+	for id := range legacyNodeIDs {
+		if _, labeled := override.NodeLabelOverrides[id]; labeled ||
+			slices.Contains(override.HiddenNodeIDs, id) || slices.Contains(override.NodeOrder, id) {
+			candidates = append(candidates, store.LibraryID(id))
+		}
+	}
+	reserved, err := s.store.LibraryIDsInUse(ctx, candidates)
+	if err != nil {
+		return Document{}, err
+	}
+	for _, id := range reserved {
+		delete(legacyNodeIDs, string(id))
 	}
 	navigation = applyNavOverride(navigation, resolveLegacyNodeIDs(override, legacyNodeIDs))
 	layouts = applyLayoutOverride(layouts, override)
@@ -305,12 +317,6 @@ func resolveLegacyNodeIDs(o store.NavOverrideData, legacy map[string]string) sto
 	if len(legacy) == 0 {
 		return o
 	}
-	current := func(id string) string {
-		if to, ok := legacy[id]; ok {
-			return to
-		}
-		return id
-	}
 	resolveList := func(ids []string) []string {
 		if len(ids) == 0 {
 			return ids
@@ -318,7 +324,12 @@ func resolveLegacyNodeIDs(o store.NavOverrideData, legacy map[string]string) sto
 		out := make([]string, 0, len(ids))
 		seen := make(map[string]bool, len(ids))
 		for _, id := range ids {
-			id = current(id)
+			if to, ok := legacy[id]; ok {
+				if slices.Contains(ids, to) {
+					continue
+				}
+				id = to
+			}
 			if !seen[id] {
 				seen[id] = true
 				out = append(out, id)

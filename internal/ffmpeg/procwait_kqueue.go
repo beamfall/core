@@ -4,14 +4,18 @@ package ffmpeg
 
 import (
 	"fmt"
+	"os"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
 
 // waitForProcessExit blocks until pid, an unreaped child of this process, has
 // exited. kqueue may report ESRCH once the child is already a zombie. An
-// unreaped child's pid cannot be reused, so ESRCH means it has already exited.
+// unreaped child's pid cannot be reused, so ESRCH from a pid that is still
+// this process's child, zombie or mid-exit, means it has exited; ESRCH from a
+// pid that is gone, or was never a child, stays an error (CORE-0661).
 func waitForProcessExit(pid int) error {
 	if pid < 0 {
 		return syscall.EINVAL
@@ -34,7 +38,7 @@ func waitForProcessExit(pid int) error {
 			continue
 		}
 		if err == syscall.ESRCH {
-			return nil // already exited before the watch was registered
+			return exitedBeforeWatch(pid)
 		}
 		if err != nil {
 			return err
@@ -50,11 +54,37 @@ func waitForProcessExit(pid int) error {
 			if errno := syscall.Errno(eventErrno); errno != syscall.ESRCH {
 				return errno
 			}
-			return nil // already exited before the watch was registered
+			return exitedBeforeWatch(pid)
 		}
 		return nil
 	}
 }
+
+// exitedBeforeWatch reports whether a pid kqueue answered ESRCH for is a
+// child of this process that has exited. XNU refuses the watch once a child
+// starts exiting, which can be before it reaches SZOMB, so a child still
+// finishing its exit is polled until it is a zombie. A pid that is gone, or
+// belongs to another parent, keeps the ESRCH.
+func exitedBeforeWatch(pid int) error {
+	deadline := time.Now().Add(exitSettleTimeout)
+	for {
+		proc, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+		if err != nil || int(proc.Proc.P_pid) != pid || int(proc.Eproc.Ppid) != os.Getpid() {
+			return syscall.ESRCH
+		}
+		if proc.Proc.P_stat == zombieState {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return syscall.ESRCH
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// exitSettleTimeout bounds how long a child kqueue refused may take to
+// become a zombie.
+const exitSettleTimeout = 5 * time.Second
 
 // groupQuietProbes is how many listings in a row must find no live member
 // before the sweep ends. One listing is not enough on XNU: a parent that exits

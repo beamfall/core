@@ -644,8 +644,10 @@ func partyProfiles(members []conductor.Member, extra ...store.ProfileID) []store
 }
 
 // partyTransition moves a party's shared timeline on hostSession's behalf and
-// broadcasts the result. Two guards hold here (CORE-1677):
+// broadcasts the result. Three guards hold here (CORE-1677):
 //
+//   - Only the host session moves the timeline, checked before anything that
+//     reads the named Media (CORE-1801).
 //   - The Reveal intersection holds for every title, not only the one the party
 //     formed on: a move to another Media is refused unless every member's own
 //     session can see it, so the per-Profile fan-out never hands a Profile a
@@ -655,6 +657,17 @@ func partyProfiles(members []conductor.Member, extra ...store.ProfileID) []store
 func (h *Handler) partyTransition(ctx context.Context, partyID string, hostSession store.SessionID, caller store.ProfileID, item store.MediaID, position time.Duration, paused bool) (conductor.Transition, error) {
 	h.partyMu.Lock()
 	defer h.partyMu.Unlock()
+	// Authorize before the Reveal check: a non-host must get the same refusal
+	// whatever Media it names, or the two refusals tell a restricted item
+	// apart from a visible one (CORE-1801). Host changes hold partyMu, so the
+	// role cannot move before HostTransition checks it again.
+	g, err := h.conductor.Party(partyID)
+	if err != nil {
+		return conductor.Transition{}, partyClientError(err)
+	}
+	if host, _ := g.Host(); host != hostSession {
+		return conductor.Transition{}, partyClientError(conductor.ErrNotHost)
+	}
 	if err := h.partyCanReveal(ctx, partyID, item); err != nil {
 		return conductor.Transition{}, err
 	}

@@ -2,7 +2,8 @@
 
 - [x] 1.1 `RelatedEntityGroups` derives each related Entity's direction from the relation rows and groups by kind and direction
 - [x] 1.2 `RelatedEntityGroupInfo` publishes `direction`; wire goldens regenerated with `make regen-wire-goldens`
-- [ ] 1.3 Publish the client-core-wire minor version and repin consumers (lander)
+- [x] 1.3 Generate and register client-core-wire 2.47.0
+- [ ] 1.4 Repin consumers (lander)
 
 ## 2. Web
 

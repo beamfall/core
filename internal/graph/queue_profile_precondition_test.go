@@ -76,8 +76,8 @@ func TestEveryQueueMutationHonoursExpectedProfile(t *testing.T) {
 	st := storetest.Open(t)
 	h := newTestHandlerWithStore(st)
 	pqSwitchViewerToManaged(t, h)
-	if err := st.QueueAdd(t.Context(), pqManaged, "media-alpha", nil, store.LibraryFilter{AllLibraries: true}); err != nil {
-		t.Fatal(err)
+	if got := qaItems(t, h, qaAddAlpha, authorizeViewer, "queueAdd"); !qaEqualIDs(got, "media-alpha") {
+		t.Fatalf("seed queue = %v", qaIDs(got))
 	}
 	cases := map[string]string{
 		"queueRemove": `mutation M($expectedProfileID: String) { queueRemove(mediaID: "media-alpha", expectedProfileID: $expectedProfileID) { id } }`,
@@ -156,8 +156,8 @@ func TestBlankExpectedProfileIsRefusedOnEveryQueueMutation(t *testing.T) {
 	h := newStationTestHandler(t, st)
 	fx := seedMusicFixture(t, st)
 	pqSwitchViewerToManaged(t, h)
-	if err := st.QueueAdd(t.Context(), pqManaged, "media-alpha", nil, store.LibraryFilter{AllLibraries: true}); err != nil {
-		t.Fatal(err)
+	if got := qaItems(t, h, qaAddAlpha, authorizeViewer, "queueAdd"); !qaEqualIDs(got, "media-alpha") {
+		t.Fatalf("seed queue = %v", qaIDs(got))
 	}
 	// A second Media the managed Profile can see, so a queueAdd that slipped
 	// through would visibly change the queue.
@@ -314,4 +314,33 @@ func TestConcurrentSwitchNeverMovesPreconditionedWriteToNewProfile(t *testing.T)
 		}
 	}
 	t.Logf("applied %d, refused %d", applied, refused)
+}
+
+func TestSetContinueWatchingHiddenWithStaleExpectedProfileIsRefused(t *testing.T) {
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	ctx := t.Context()
+	for _, profile := range []store.ProfileID{pqDefault, pqManaged} {
+		if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
+			ProfileID: profile, MediaID: "media-alpha", PositionSeconds: 30, DurationSeconds: 120,
+		}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const hide = `mutation H($expectedProfileID: String) { setContinueWatchingHidden(mediaID: "media-alpha", hidden: true, expectedProfileID: $expectedProfileID) { id } }`
+	if resp := postGraphJSON(t, h, authorizeViewer, hide, map[string]any{"expectedProfileID": pqDefault}); len(resp.Errors) != 0 {
+		t.Fatalf("matching expectedProfileID errors = %#v", resp.Errors)
+	}
+	// Another tab moves the session to profile-managed: the first Profile's
+	// Undo must not write under the new one.
+	pqSwitchViewerToManaged(t, h)
+	resp := postGraphJSON(t, h, authorizeViewer, hide, map[string]any{"expectedProfileID": pqDefault})
+	pqWantMismatch(t, "setContinueWatchingHidden", resp.Errors)
+	items, err := st.SourceItems(ctx, store.LibraryFilter{Revealed: true, AllLibraries: true}, store.SourceQuery{Kind: "continue-watching", ProfileID: pqManaged})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("new Profile's Continue Watching = %d items, want untouched (1)", len(items))
+	}
 }

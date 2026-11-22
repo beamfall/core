@@ -161,7 +161,15 @@ func (h *Handler) verifyAuthenticatedMediaGrant(ctx context.Context, authenticat
 	grant := authenticated.Grant()
 	scope, err := h.auth.Scope(ctx, grant.SessionID)
 	if err != nil {
-		return streamtoken.Grant{}, auth.Scope{}, err
+		if auth.AccessScheduleEnded(err) && !h.grantMaySeeScheduleReason(ctx, err, grant) {
+			// The schedule refusal belongs to the Profile the session held
+			// when the schedule was evaluated. A token signed for another
+			// Profile or device, or one whose own bindings no longer hold,
+			// gets the generic refusal and never learns that Profile's
+			// schedule state (CORE-2950).
+			return streamtoken.Grant{}, auth.Scope{}, errStreamTokenScopeMismatch
+		}
+		return streamtoken.Grant{}, auth.Scope{}, sessionUnresolvedError{err: err}
 	}
 	grant, err = h.verifyCompatDecision(ctx, authenticated, scope)
 	if err != nil {
@@ -171,6 +179,59 @@ func (h *Handler) verifyAuthenticatedMediaGrant(ctx context.Context, authenticat
 		return streamtoken.Grant{}, auth.Scope{}, err
 	}
 	return grant, scope, nil
+}
+
+// refuseAccessScheduleEnded answers a grant verification that failed only
+// because the session's managed Profile is outside its access schedule: 403
+// with the ACCESS_SCHEDULE_ENDED reason in the X-Beamfall-Denial-Reason
+// header, so a player can tell it from an expired or revoked stream
+// (CORE-2950). For every other failure it writes nothing and reports false,
+// and the route keeps its own status. The Stream Token verified before the
+// session was resolved, and verifyAuthenticatedMediaGrant surfaces the reason
+// only when the session snapshot the schedule was evaluated against holds the
+// grant's Profile and device and the grant's other bindings still verify, so
+// it reaches only that Profile's own player.
+func refuseAccessScheduleEnded(w http.ResponseWriter, err error) bool {
+	if !auth.AccessScheduleEnded(err) {
+		return false
+	}
+	w.Header().Set(auth.DenialReasonHeader, auth.DenialReasonAccessScheduleEnded)
+	http.Error(w, "access schedule ended", http.StatusForbidden)
+	return true
+}
+
+// errStreamTokenScopeMismatch refuses a grant whose signed session binding no
+// longer matches the live session.
+var errStreamTokenScopeMismatch = errors.New("stream token scope mismatch")
+
+// sessionUnresolvedError marks a grant refused because its session did not
+// resolve to a scope, so a route can classify the failure from the one
+// lookup that refused it instead of a second read that may disagree.
+type sessionUnresolvedError struct{ err error }
+
+func (e sessionUnresolvedError) Error() string { return e.err.Error() }
+
+func (e sessionUnresolvedError) Unwrap() error { return e.err }
+
+// grantMaySeeScheduleReason reports whether a grant refused on the access
+// schedule may carry that reason. The session snapshot the schedule was
+// evaluated against must hold the grant's session, Profile and device, and
+// the grant's compatibility decision and receiver binding must still verify,
+// exactly as they would have to before the grant serves bytes. A restricted
+// grant never qualifies: Reveal holds only for an adult Profile, and a Profile
+// under an access schedule is never one, so the grant fails Reveal on its own.
+func (h *Handler) grantMaySeeScheduleReason(ctx context.Context, err error, grant streamtoken.Grant) bool {
+	if grant.Restricted {
+		return false
+	}
+	bound := auth.SessionBinding{SessionID: grant.SessionID, ProfileID: grant.ProfileID, DeviceID: grant.DeviceID}
+	if !auth.AccessScheduleReasonVisible(err, &bound) {
+		return false
+	}
+	if h.tokens.VerifyCompatDecision(ctx, grant) != nil {
+		return false
+	}
+	return verifyReceiverBinding(grant) == nil
 }
 
 // errUnverifiedReceiver refuses bytes for a receiver-bound grant whose receiver
@@ -320,6 +381,9 @@ func (h *Handler) Assets(w http.ResponseWriter, r *http.Request) {
 	}
 	grant, scope, err := h.verifyMediaGrant(r.Context(), token, streamtoken.TargetMediaAssets)
 	if err != nil {
+		if refuseAccessScheduleEnded(w, err) {
+			return
+		}
 		http.Error(w, "invalid stream token", http.StatusUnauthorized)
 		return
 	}
@@ -394,8 +458,12 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		// playback that ended (ADR-0012 §7 revocation, relock). The track menu
 		// keeps the URL for the whole runtime, so 410 tells the player the
 		// track is gone for good instead of inviting a retry; a token that never
-		// verified at all stays 401.
-		http.Error(w, "stream ended", h.endedSubtitleStatus(r.Context(), token))
+		// verified at all stays 401. A session refused only by its Profile's
+		// access schedule says so instead (CORE-2950).
+		if refuseAccessScheduleEnded(w, err) {
+			return
+		}
+		http.Error(w, "stream ended", endedSubtitleStatus(err))
 		return
 	}
 	if grant.SubtitleStreamIndex != 0 && grant.SubtitleStreamIndex-1 != streamIndex {
@@ -528,20 +596,17 @@ func (h *Handler) subtitleSidecarPath(ctx context.Context, fingerprint, srcPath 
 }
 
 // endedSubtitleStatus maps a failed subtitle grant verification to its status:
-// 410 when the token itself still authenticates (signature, expiry, target) but
-// its session no longer resolves to a scope, 401 for every other failure.
-func (h *Handler) endedSubtitleStatus(ctx context.Context, token string) int {
-	if h.tokens == nil {
-		return http.StatusUnauthorized
+// 410 when the token itself authenticated (signature, expiry, target) but its
+// session no longer resolved to a scope, 401 for every other failure. It reads
+// only the verification's own result: a second session lookup could see the
+// access schedule close in between and tell a grant refused on its own
+// bindings that session's schedule state (CORE-2950).
+func endedSubtitleStatus(verifyErr error) int {
+	var unresolved sessionUnresolvedError
+	if errors.As(verifyErr, &unresolved) {
+		return http.StatusGone
 	}
-	grant, err := h.tokens.UnverifiedGrant(token, streamtoken.TargetMediaSubtitle)
-	if err != nil {
-		return http.StatusUnauthorized
-	}
-	if _, err := h.auth.Scope(ctx, grant.SessionID); err == nil {
-		return http.StatusUnauthorized
-	}
-	return http.StatusGone
+	return http.StatusUnauthorized
 }
 
 // rootedRegularFileExists reports whether a rooted member currently resolves to
@@ -657,6 +722,9 @@ func (h *Handler) Sidecars(w http.ResponseWriter, r *http.Request) {
 	}
 	grant, scope, err := h.verifyMediaGrant(r.Context(), token, streamtoken.TargetMediaSidecar)
 	if err != nil {
+		if refuseAccessScheduleEnded(w, err) {
+			return
+		}
 		http.Error(w, "invalid stream token", http.StatusUnauthorized)
 		return
 	}
@@ -1004,6 +1072,9 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		if refuseAccessScheduleEnded(w, err) {
+			return
+		}
 		http.Error(w, "invalid stream token", http.StatusUnauthorized)
 		return
 	}
@@ -1106,12 +1177,28 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	shape.AudioSource = playback.AudioSourceStream(streams, audioStreamIndex)
 	shape.LibraryID = media.LibraryID
 	shape.Encrypted = secure
-	// A Media stored without a runtime is probed on demand so a new session
-	// writes a VOD playlist covering the whole file (CORE-2314). An Encrypted
-	// Library's file is ciphertext on disk and is never probed in place.
-	durationSeconds := media.DurationSeconds
+	// The catalog runtime describes the primary file. Other files need their
+	// own runtime for live playlist geometry (CORE-2314).
+	factsFingerprint, _, err := h.store.MediaFactsFingerprint(r.Context(), media.ID)
+	if ended() {
+		return
+	}
+	if err != nil {
+		http.Error(w, "media unavailable", http.StatusNotFound)
+		return
+	}
+	primary := file.PartOrdinal == 0 && file.ContentFingerprint == factsFingerprint
+	durationSeconds := 0
+	if primary {
+		durationSeconds = media.DurationSeconds
+	}
 	if durationSeconds <= 0 && secure == nil {
-		durationSeconds = binding.ProbedDurationSeconds(r.Context(), file.ContentFingerprint, file.Path)
+		persist := false
+		if primary {
+			multipart, err := h.store.MediaVersionHasAdditionalParts(r.Context(), media.ID, file.VersionLabel)
+			persist = err == nil && !multipart
+		}
+		durationSeconds = binding.ProbedDurationSeconds(r.Context(), file.ContentFingerprint, file.Path, persist)
 	}
 	r = r.WithContext(requestCtx)
 	artifact, err := binding.ArtifactShaped(requestCtx, file.Path, durationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
@@ -1398,10 +1485,7 @@ func (h *Handler) artworkCandidatePreviewPath(ctx context.Context, candidate sto
 	cacheID := artwork.CandidateCacheID(candidate.ID)
 	source := h.artwork.ArtworkPath(cacheID, artwork.SlotPoster)
 	if !regularFileExists(source) {
-		if h.artworkCandidateFetch == nil {
-			return "", errors.New("artwork candidate fetcher unavailable")
-		}
-		data, err := h.artworkCandidateFetch.FetchResource(ctx, candidate.SourceURL)
+		data, err := h.artworkCandidateSource(ctx, candidate)
 		if err != nil {
 			return "", err
 		}
@@ -1410,6 +1494,18 @@ func (h *Handler) artworkCandidatePreviewPath(ctx context.Context, candidate sto
 		}
 	}
 	return h.artwork.ArtworkDerivative(ctx, cacheID, artwork.SlotPoster, bucket)
+}
+
+// artworkCandidateSource returns a candidate's image: an upload's kept bytes
+// (CORE-2937), or the fetched SourceURL for a scraped candidate.
+func (h *Handler) artworkCandidateSource(ctx context.Context, candidate store.ArtworkCandidate) ([]byte, error) {
+	if artwork.IsUploadedSource(candidate.SourceURL) {
+		return h.artwork.UploadedCandidate(candidate.MediaID, candidate.SourceURL)
+	}
+	if h.artworkCandidateFetch == nil {
+		return nil, errors.New("artwork candidate fetcher unavailable")
+	}
+	return h.artworkCandidateFetch.FetchResource(ctx, candidate.SourceURL)
 }
 
 // artworkNotModified applies the content-addressed cache contract for an
@@ -1539,6 +1635,11 @@ func (h *Handler) Direct(w http.ResponseWriter, r *http.Request) {
 		fileFingerprint = grant.FileFingerprint
 	}
 	if err != nil {
+		// A media grant that authenticated but whose Profile is outside its
+		// access schedule is not a Circle lease; refuse it as such (CORE-2950).
+		if refuseAccessScheduleEnded(w, err) {
+			return
+		}
 		if h.tokens == nil {
 			http.Error(w, "invalid stream token", http.StatusUnauthorized)
 			return

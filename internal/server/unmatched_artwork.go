@@ -66,7 +66,7 @@ func (s *Server) createMediaWithArtwork(w http.ResponseWriter, r *http.Request) 
 	}
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 	if scope.DeviceRole != store.DeviceRoleManager {

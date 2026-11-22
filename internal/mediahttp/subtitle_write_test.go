@@ -586,3 +586,19 @@ func TestSubtitleOffsetWriteIsScopedToTheWritingProfile(t *testing.T) {
 		t.Fatalf("other profile saw a shifted track: %q", other.Body.String())
 	}
 }
+
+// A tab still naming the Profile its session was switched away from is
+// refused with the server's Profile mismatch, not a 401 that would send it to
+// enrol again (CORE-2923).
+func TestSubtitleWriteNamingAnotherProfileIsAProfileMismatch(t *testing.T) {
+	f := newSubtitleWriteFixture(t)
+	req := f.post(t, "/api/media/subtitle-pin", map[string]any{
+		"mediaId": string(f.episodes[0]), "selected": "off",
+	})
+	req.Header.Set(auth.ProfileHeader, "profile-managed")
+	rec := httptest.NewRecorder()
+	f.handler.SetSubtitlePin(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"reason":"PROFILE_MISMATCH"`) {
+		t.Fatalf("stale subtitle write = %d %s, want 409 PROFILE_MISMATCH", rec.Code, rec.Body.String())
+	}
+}

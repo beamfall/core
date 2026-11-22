@@ -193,6 +193,33 @@ describe("AdminGate reason-coded locks", () => {
     expect(screen.getByLabelText("Admin password")).toBeInTheDocument();
   });
 
+  it("shows a retryable error, not the lock form, when the admin-session read fails (CORE-0258)", async () => {
+    vi.mocked(fetchAdminSession)
+      .mockRejectedValueOnce(new Error("graphql 500"))
+      .mockResolvedValueOnce({ active: false });
+    const user = userEvent.setup();
+    renderGate();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the server.");
+    expect(screen.queryByLabelText("Admin password")).toBeNull();
+    expect(screen.queryByText("Console locked")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(fetchAdminSession).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText("Console locked")).toBeInTheDocument();
+    expect(screen.getByLabelText("Admin password")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("renders the Console when Retry reads an active session (CORE-0258)", async () => {
+    vi.mocked(fetchAdminSession)
+      .mockRejectedValueOnce(new Error("graphql 500"))
+      .mockResolvedValueOnce({ active: true, expiresAt: "2999-01-01T00:00:00Z" });
+    const user = userEvent.setup();
+    renderGate();
+    await user.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("UNLOCKED CONTENT")).toBeInTheDocument();
+  });
+
   it("keeps Console locked until the server Admin Session is active", async () => {
     Object.defineProperty(window, "beamfallHost", {
       configurable: true,

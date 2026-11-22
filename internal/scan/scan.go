@@ -150,6 +150,16 @@ type MetadataHydrator interface {
 	HydrateMetadata(ctx context.Context, input MetadataHydrationInput) error
 }
 
+// MetadataSidecarHydrator is implemented by a MetadataHydrator that reads
+// sidecar files beside the media. A scan of an unchanged file, or of a version
+// attached to an existing Media, calls HydrateSidecars when SidecarsChanged
+// reports that the Media's sidecar changed since it was last applied; neither
+// needs a probe.
+type MetadataSidecarHydrator interface {
+	SidecarsChanged(ctx context.Context, mediaID store.MediaID, path string) (bool, error)
+	HydrateSidecars(ctx context.Context, input MetadataHydrationInput) error
+}
+
 const JobKind store.JobKind = "scan"
 
 // A scan job yields after scanJobFileBatchSize checkpointed files or after
@@ -233,10 +243,20 @@ var imageExtensions = map[string]bool{
 	"webp": true,
 	"heic": true,
 	"heif": true,
+	// RAW formats (CORE-0310, CORE-0652); derivatives come from the
+	// embedded JPEG preview (internal/ffmpeg ScaleImage).
 	"cr2":  true,
+	"cr3":  true,
 	"nef":  true,
+	"nrw":  true,
 	"arw":  true,
 	"dng":  true,
+	"raf":  true,
+	"orf":  true,
+	"rw2":  true,
+	"pef":  true,
+	"srw":  true,
+	"3fr":  true,
 	"avif": true,
 	"bmp":  true,
 	"tif":  true,
@@ -399,4 +419,9 @@ type parsedPartImport struct {
 	markerTitle   string
 	probeChapters []ffmpeg.ProbeChapter
 	probed        bool
+	// hydrate is set when the part is new or changed on disk, as a single
+	// file must be to hydrate; tags are then its embedded metadata. The group
+	// hydrates from its first part's.
+	hydrate bool
+	tags    map[string]string
 }

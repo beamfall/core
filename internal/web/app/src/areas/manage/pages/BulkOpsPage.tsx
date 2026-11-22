@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { mediaAddressIDs } from "@/areas/viewer/lib/mediaAddress";
+import { AssignDialog } from "@/components/assign/AssignDialog";
+import { EntityMultiPicker } from "@/components/beamfall/EntityPicker";
 import {
   ErrorLine,
   HelpTip,
@@ -45,6 +47,7 @@ import type {
   MediaFieldInput,
 } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { useSession } from "@/lib/session";
 
 function fieldSummary(fields: MediaFieldInput[]): string {
   return fields.map((f) => `${f.name}=${f.value}`).join(", ");
@@ -113,7 +116,8 @@ function BulkEditSection({
   onApplied: (result: BatchResultInfo) => void;
 }) {
   const t = useT();
-  const [ids, setIds] = useState("");
+  const { session, isManager } = useSession();
+  const [ids, setIds] = useState<string[]>([]);
   const [fieldName, setFieldName] = useState("");
   const [fieldValue, setFieldValue] = useState("");
   const [changes, setChanges] = useState<BulkEditChangeInfo[] | null>(null);
@@ -122,16 +126,10 @@ function BulkEditSection({
   const [previewKey, setPreviewKey] = useState("");
 
   const mediaIDs = () =>
-    ids
-      .split(",")
-      .map((id) => id.trim())
-      .filter(Boolean)
-      .map((id) => {
-        const address = id.split(/[?#]/, 1)[0];
-        return /(?:^|[-/])sample1\.[0-9a-f]{17}\/?$/.test(address)
-          ? mediaAddressIDs(address)[0]
-          : id;
-      });
+    ids.map((id) => {
+      const address = id.split(/[?#]/, 1)[0];
+      return /(?:^|[-/])sample1\.[0-9a-f]{17}\/?$/.test(address) ? mediaAddressIDs(address)[0] : id;
+    });
 
   const fields = (): MediaFieldInput[] => {
     const name = fieldName.trim();
@@ -177,13 +175,7 @@ function BulkEditSection({
             <Label htmlFor="bulk-edit-ids">{t("bulkEditMediaIDs")}</Label>
             <HelpTip label={t("bulkEditMediaIDs")} text="manageBulkMediaIdsHelp" />
           </span>
-          <Input
-            id="bulk-edit-ids"
-            value={ids}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setIds(e.target.value)}
-          />
+          <EntityMultiPicker id="bulk-edit-ids" value={ids} onChange={setIds} />
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1" data-setting="manage.bulk.fieldName">
@@ -210,6 +202,12 @@ function BulkEditSection({
           <Button type="button" variant="outline" onClick={onPreview} disabled={!canRun}>
             {t("bulkEditPreview")}
           </Button>
+          {isManager && session?.profile === "adult" && (
+            <AssignDialog
+              selection={mediaIDs().map((mediaID) => ({ mediaID }))}
+              onChanged={() => setChanges(null)}
+            />
+          )}
           <ConfirmApply
             label={t("bulkEditApply")}
             disabled={!canRun || !previewCurrent}

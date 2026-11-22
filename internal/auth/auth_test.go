@@ -820,7 +820,7 @@ func TestManagedScopeEnforcesAccessSchedule(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Scope(ctx, "session-managed"); err != ErrAccessOutsideSchedule {
+	if _, err := service.Scope(ctx, "session-managed"); !errors.Is(err, ErrAccessOutsideSchedule) {
 		t.Fatalf("outside-window Scope err = %v, want ErrAccessOutsideSchedule", err)
 	}
 
@@ -876,7 +876,7 @@ func TestApprovedExtensionLiftsScheduleBlock(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Scope(ctx, "session-managed"); err != ErrAccessOutsideSchedule {
+	if _, err := service.Scope(ctx, "session-managed"); !errors.Is(err, ErrAccessOutsideSchedule) {
 		t.Fatalf("pre-grant Scope err = %v, want ErrAccessOutsideSchedule", err)
 	}
 
@@ -917,7 +917,7 @@ func TestApprovedExtensionLiftsScheduleBlock(t *testing.T) {
 
 	// Time-bounded: once the 30-minute grant window passes, the block resumes.
 	after := NewServiceWithClock(st, func() time.Time { return at.Add(31 * time.Minute) })
-	if _, err := after.Scope(ctx, "session-managed"); err != ErrAccessOutsideSchedule {
+	if _, err := after.Scope(ctx, "session-managed"); !errors.Is(err, ErrAccessOutsideSchedule) {
 		t.Fatalf("expired-grant Scope err = %v, want ErrAccessOutsideSchedule (grant window closed)", err)
 	}
 }

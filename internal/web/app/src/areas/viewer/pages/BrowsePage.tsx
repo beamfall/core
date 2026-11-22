@@ -53,8 +53,8 @@ export function BrowsePage() {
   }
   // An old link names the node by its raw ID; move it to the readable address
   // (CORE-2322).
-  if (nodeId !== undefined && node && nodeId !== nodeSlug(node.id)) {
-    return <Navigate to={nodePath(node.id)} replace />;
+  if (nodeId !== undefined && node && nodeId !== nodeSlug(node.id, node.libraryID)) {
+    return <Navigate to={nodePath(node.id, "", node.libraryID)} replace />;
   }
   const home = node?.id === HOME_NODE_ID;
   const layout = (manifest?.layouts || []).find((l) => l.id === node?.layoutID) || null;
@@ -69,7 +69,7 @@ export function BrowsePage() {
       section,
       libraryID,
       entityID: "",
-      returnTo: nodeId === undefined || !node ? "/" : nodePath(node.id),
+      returnTo: nodeId === undefined || !node ? "/" : nodePath(node.id, "", node.libraryID),
       home,
     });
   }
@@ -84,6 +84,7 @@ export function BrowsePage() {
         <div className="pb-6">
           <LibraryHeader
             nodeID={node.id}
+            libraryID={libraryID}
             heading={displayString(node.title, displayLocale)}
             aside={emptyNode !== node.id && <PosterSizeControl className="ml-auto" />}
             pivots={emptyNode !== node.id}

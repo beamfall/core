@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createMarker,
@@ -15,6 +16,12 @@ import { I18nProvider } from "@/lib/i18n";
 import { MarkersPage } from "./MarkersPage";
 
 vi.mock("@/lib/graphql", () => ({
+  searchResult: vi.fn(async () => ({
+    mode: "keyword",
+    items: [],
+    hasMore: false,
+    restrictedResultsPresent: false,
+  })),
   fetchMarkers: vi.fn(),
   fetchTrashedMarkers: vi.fn(),
   createMarker: vi.fn(),
@@ -66,13 +73,15 @@ beforeEach(() => {
 function renderPage() {
   return render(
     <I18nProvider>
-      <MarkersPage />
+      <MemoryRouter>
+        <MarkersPage />
+      </MemoryRouter>
     </I18nProvider>,
   );
 }
 
 async function loadMedia(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText("Media ID"), "media-7f3a");
+  await user.type(screen.getByLabelText("Media ID"), "media-7f3a{Enter}");
   await user.click(screen.getByRole("button", { name: "Load" }));
   await screen.findByDisplayValue("Opening titles");
 }

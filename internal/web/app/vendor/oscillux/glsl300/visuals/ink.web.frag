@@ -560,6 +560,223 @@ vec3 tonemap(vec3 x) {
     return pow(clamp(x, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
 }
 
+// SPDX-License-Identifier: AGPL-3.0-only
+// Shared helpers for the Oscillux originals, joined after library.glsl: the
+// beat-locked flight speed, the eased roll, the detail level the host can
+// afford and a few common shapes. Every function is a pure function of its
+// arguments, so all targets agree.
+
+// Speed profile, in distance per beat, over a 32-beat cycle: cruise, build,
+// burst, a hard brake, a slow breakdown drift, then a build to a final burst.
+float osBeatSpeed(float n) {
+    float k = mod(n, 32.0);
+    if (k < 4.0) return 1.0;
+    if (k < 8.0) return 1.0 + 0.3 * (k - 3.0);
+    if (k < 12.0) return 3.5;
+    if (k < 13.0) return 1.6;
+    if (k < 14.0) return 0.45;
+    if (k < 20.0) return 0.9 + 0.1 * (k - 14.0);
+    if (k < 24.0) return 0.6;
+    if (k < 28.0) return 1.5 + 0.75 * (k - 24.0);
+    if (k < 31.0) return 4.5;
+    return 2.4;
+}
+
+// The flight state is a pure function of the uniforms, so every target and
+// frame rate computes the same camera. Within a beat the speed ramps linearly
+// from this beat's value to the next one's, so velocity never jumps and the
+// distance is its exact integral. x = distance, y = speed in beats' units.
+vec2 osFlight(VisualUniforms u, float cruise, float surge) {
+    float n = floor(u.beatCount);
+    float cycle = 0.0;
+    float before = 0.0;
+    float k0 = n - mod(n, 32.0);
+    for (int i = 0; i < 32; i++) {
+        float k = k0 + float(i);
+        float seg = 0.5 * (osBeatSpeed(k) + osBeatSpeed(k + 1.0));
+        cycle += seg;
+        before += k < n ? seg : 0.0;
+    }
+    float ph = saturate(u.beatPhase);
+    float v0 = osBeatSpeed(n);
+    float v1 = osBeatSpeed(n + 1.0);
+    float beats = floor(n / 32.0) * cycle + before + v0 * ph + 0.5 * (v1 - v0) * ph * ph;
+    float v = mix(v0, v1, ph);
+    // A fifth of the motion is steady; the rest follows the profile, so a burst
+    // runs about four times cruise and a brake drops to about half.
+    return vec2(u.time * cruise * 0.2 + beats * (cruise * 0.4 + surge), v);
+}
+
+// Detail the host can afford: 1, the default, down to 0. Hosts lower it with
+// presentation1.y, a reduction in [0, 1], to hold their frame rate.
+float osDetail(VisualUniforms u) { return 1.0 - saturate(u.presentation1.y); }
+
+// Bank angle: every eight beats the roll picks a new side (a golden-angle
+// walk) and eases toward it across the whole span, so it never stops and starts.
+float osBank(VisualUniforms u, float amount) {
+    float b = (u.beatCount + saturate(u.beatPhase)) / 8.0;
+    float k = floor(b);
+    return amount * mix(sin(k * 2.39996), sin((k + 1.0) * 2.39996), smoothstep(0.0, 1.0, b - k));
+}
+
+// Ray direction for a camera at ro looking at ta, rolled by roll, with
+// focal length fov (larger is narrower). p is the centred pixel position.
+vec3 osCamera(vec3 ro, vec3 ta, float roll, float fov, vec2 p) {
+    vec3 fw = normalize(ta - ro);
+    vec3 up = vec3(sin(roll), cos(roll), 0.0);
+    vec3 rt = normalize(cross(fw, up));
+    vec3 cu = cross(rt, fw);
+    return normalize(p.x * rt + p.y * cu + fov * fw);
+}
+
+float osBox(vec3 p, vec3 b) {
+    vec3 q = abs(p) - b;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+// Smooth union with blend radius k.
+float osSmin(float a, float b, float k) {
+    float h = saturate(0.5 + 0.5 * (b - a) / k);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// Round a march step count from a detail-scaled float, so every target
+// agrees on the count.
+int osSteps(float lo, float hi, float detail) { return int(mix(lo, hi, detail) + 0.5); }
+
+// ---- vivid palettes ----
+// In the hosts' free palette mode (palette.x < 0) the originals read this set
+// instead of the library's: sixteen loops of five saturated stops in linear
+// light, each a few hue families with a contrasting accent. palette.z tours
+// them, cross-fading from one to the next, and also walks t by a quarter loop
+// per palette (four whole loops per tour, so the wrap is seamless), so a visual
+// that reads only a narrow range of t still meets every stop. Manifest mode
+// (palette.x >= 0) keeps the library palettes, so reference renders do not
+// change.
+const vec3 OS_PAL[80] = vec3[80](
+    vec3(1.000, 0.033, 0.133), vec3(1.000, 0.262, 0.010), vec3(1.000, 0.807, 0.010), vec3(0.033, 1.000, 0.262), vec3(0.000, 0.578, 1.000), // 0 tropicPunch
+    vec3(0.000, 0.784, 1.000), vec3(0.027, 0.105, 1.000), vec3(0.479, 0.022, 1.000), vec3(1.000, 0.027, 0.309), vec3(1.000, 0.323, 0.014), // 1 synthSunset
+    vec3(0.000, 1.000, 0.578), vec3(0.000, 0.392, 1.000), vec3(1.000, 0.078, 0.366), vec3(1.000, 0.434, 0.000), vec3(1.000, 0.102, 0.037), // 2 lagoonPop
+    vec3(0.565, 1.000, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.000, 0.100), vec3(0.000, 1.000, 0.195), // 3 acidCitrus
+    vec3(0.000, 0.871, 1.000), vec3(0.000, 0.133, 1.000), vec3(1.000, 0.047, 0.000), vec3(1.000, 0.552, 0.000), vec3(1.000, 0.000, 0.156), // 4 iceFire
+    vec3(0.000, 1.000, 0.332), vec3(0.000, 0.658, 1.000), vec3(0.047, 0.102, 0.991), vec3(1.000, 0.823, 0.000), vec3(0.328, 1.000, 0.000), // 5 electricMint
+    vec3(1.000, 0.347, 0.000), vec3(1.000, 0.074, 0.000), vec3(0.791, 0.000, 0.195), vec3(0.144, 0.000, 0.905), vec3(0.000, 0.539, 1.000), // 6 mangoBerry
+    vec3(1.000, 0.050, 0.371), vec3(1.000, 0.347, 0.050), vec3(1.000, 0.784, 0.050), vec3(0.050, 1.000, 0.434), vec3(0.050, 0.479, 1.000), // 7 candyShop
+    vec3(0.000, 1.000, 0.235), vec3(0.000, 0.745, 0.565), vec3(0.000, 0.296, 1.000), vec3(0.254, 0.024, 1.000), vec3(1.000, 0.028, 0.631), // 8 aurora
+    vec3(1.000, 0.014, 0.014), vec3(1.000, 0.144, 0.000), vec3(1.000, 0.479, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.000, 0.212), // 9 lavaLamp
+    vec3(0.784, 1.000, 0.000), vec3(0.000, 1.000, 0.133), vec3(0.000, 0.694, 1.000), vec3(0.000, 0.080, 1.000), vec3(1.000, 0.434, 0.000), // 10 cyberLime
+    vec3(1.000, 0.102, 0.114), vec3(1.000, 0.026, 0.301), vec3(0.397, 0.045, 1.000), vec3(0.026, 0.198, 1.000), vec3(0.000, 0.807, 0.565), // 11 coralReef
+    vec3(1.000, 0.631, 0.000), vec3(1.000, 0.254, 0.000), vec3(1.000, 0.044, 0.044), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.871, 0.074), // 12 goldRush
+    vec3(0.000, 0.010, 1.000), vec3(0.000, 0.283, 1.000), vec3(0.000, 0.913, 0.658), vec3(0.328, 1.000, 0.000), vec3(1.000, 0.791, 0.000), // 13 deepNeon
+    vec3(1.000, 0.195, 0.565), vec3(0.571, 0.205, 1.000), vec3(0.195, 0.392, 1.000), vec3(0.195, 1.000, 0.745), vec3(1.000, 0.871, 0.195), // 14 bubbleTea
+    vec3(1.000, 0.000, 0.091), vec3(0.133, 0.000, 1.000), vec3(0.000, 0.451, 1.000), vec3(0.000, 1.000, 0.665), vec3(0.468, 1.000, 0.000) // 15 neonTokyo
+);
+const float OS_PAL_COUNT = 16.0;
+
+// Linear mix that keeps the endpoints' channel range, so a blend between two
+// saturated colours stays saturated instead of passing through grey.
+vec3 osVividMix(vec3 a, vec3 b, float w) {
+    vec3 m = mix(a, b, w);
+    float lo = min(m.r, min(m.g, m.b)), hi = max(m.r, max(m.g, m.b));
+    float tlo = mix(min(a.r, min(a.g, a.b)), min(b.r, min(b.g, b.b)), w);
+    float thi = mix(max(a.r, max(a.g, a.b)), max(b.r, max(b.g, b.b)), w);
+    return tlo + (m - lo) * ((thi - tlo) / max(hi - lo, 1e-3));
+}
+
+vec3 osPalLoop(float t, int idx) {
+    float f = fract(t) * 5.0;
+    int i = int(floor(f));
+    i = clamp(i, 0, 4);
+    int j = i == 4 ? 0 : i + 1;
+    return osVividMix(OS_PAL[idx * 5 + i], OS_PAL[idx * 5 + j], smoothstep(0.0, 1.0, f - float(i)));
+}
+
+vec3 osPalVisual(float t, VisualUniforms u) {
+    if (u.palette.x >= 0.0) return palVisual(t, u);
+    float phase = u.palette.z;
+    int a = int(mod(floor(phase), OS_PAL_COUNT));
+    int b = int(mod(float(a + 1), OS_PAL_COUNT));
+    float blend = smoothstep(0.18, 0.82, fract(phase));
+    float nudge = phase * 0.25 + u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    return osVividMix(osPalLoop(t + nudge, a), osPalLoop(t + nudge, b), blend);
+}
+
+// The calm visuals' audio response, 0..0.25: the music's level, which rises
+// and falls with the song, scaled by the sensitivity. Not the kick: a calm
+// visual's light never jumps on the beat.
+float osCalmBreath(VisualUniforms u) {
+    return 0.25 * saturate(u.level) * (0.5 + 0.5 * u.sensitivity);
+}
+
+// The calm visuals' palette read: the visual's own library palette `own`
+// (its manifest palette) at t, with no beat or spectral nudge. Under the vivid
+// palette tour (palette.x < 0) a calm visual keeps `own`: the tour moves
+// through sixteen neon palettes of very different brightness every few
+// seconds, which turns a moonlit sea orange and swells the light, so vivid
+// leaves a calm visual only its present-pass saturation. A host's manifest
+// palette (palette.x >= 0) still replaces it.
+vec3 osPalCalm(float t, int own, VisualUniforms u) {
+    return palByIndex(t, u.palette.x >= 0.0 ? int(floor(u.palette.x + 0.5)) : own);
+}
+
+// The library's palette roles, reading osPalVisual.
+vec3 osPalRoleTrace(float t, VisualUniforms u) { return osPalVisual(t + 0.03 * u.beatPhase, u); }
+vec3 osPalRoleBass(float t, VisualUniforms u) {
+    vec3 hot = osPalVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 body = osPalVisual(t + 0.10, u);
+    return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
+}
+vec3 osPalRoleTreble(float t, VisualUniforms u) {
+    vec3 spark = osPalVisual(0.62 + t * 0.28 + 0.10 * u.spectralCentroid, u);
+    return peakWhite(spark, u.treble * u.onset * 0.14);
+}
+vec3 osPalRolePeak(float t, VisualUniforms u) {
+    return peakWhite(osPalVisual(t + 0.08 * u.spectralCentroid, u), saturate(u.onset * 0.18 + u.bassImpact * 0.10));
+}
+vec3 osPalRoleFog(float t, VisualUniforms u) {
+    vec3 c = osPalVisual(t + 0.04 * u.spectralCentroid, u);
+    return mix(vec3(luma(c) * 0.62), c, 0.42);
+}
+vec3 osPalRoleRim(float t, VisualUniforms u) {
+    return mix(osPalVisual(t, u), osPalRolePeak(t + 0.18, u), 0.35 + 0.35 * u.flux);
+}
+
+// Every original finishes through osOffRed. The present pass grades with the vivid saturation
+// and vibrance (palette.rs), which pushes a nearly pure red past the 0.8 red share at which the
+// flash limiter counts saturated red and holds it. Where green plus blue is under 0.55 of red
+// (linear light), both rise by half the difference, so the graded red presents under a 0.77
+// share. Near black the present dither can still split a dim red into a saturated-red byte
+// triple such as (1, 0, 0), so a dim colour becomes exactly grey and a dim red loses its excess
+// over green and blue, which then ramps back in (limiter-red-expire-black, design.md section 3;
+// tools/shader/test-originals-red.mjs). A quality measure: the frame limiter carries the safety
+// claim. NaN becomes 0 by a boolean select, exact on targets honouring IEEE NaN.
+const float OS_GREY_BELOW = 0.006;  // below it the colour becomes exactly grey
+const float OS_RED_FROM = 0.012;    // below it red is at most the larger of green and blue
+const float OS_RED_FULL = 0.05;     // red's excess is whole from here, and red returned as it stands
+vec3 osOffRed(vec3 c) {
+    c = mix(c, vec3(0.0), notEqual(c, c));      // NaN -> 0
+    c = clamp(c, vec3(0.0), vec3(16.0));
+    float s = c.g + c.b, t = 0.55 * c.r;        // gated on the rounded sum and product, so a
+    if (s < t) c += vec3(0.0, 0.5 * (t - s), 0.5 * (t - s));  // colour that meets the share is kept
+    float m = max(c.r, max(c.g, c.b));
+    if (m < OS_GREY_BELOW) return vec3(luma(c));  // three identical channels
+    float p = max(c.g, c.b);
+    if (c.r > p && m < OS_RED_FULL) {           // no saturated red byte from the present dither
+        float w = clamp((m - OS_RED_FROM) / (OS_RED_FULL - OS_RED_FROM), 0.0, 1.0);
+        c.r = w <= 0.0 ? p : p + w * (c.r - p);  // red equal to a partner below OS_RED_FROM
+    }
+    return c;
+}
+
+// Everything joined after this file reads the vivid set through the usual names.
+#define palVisual osPalVisual
+#define palRoleTrace osPalRoleTrace
+#define palRoleBass osPalRoleBass
+#define palRoleTreble osPalRoleTreble
+#define palRolePeak osPalRolePeak
+#define palRoleFog osPalRoleFog
+#define palRoleRim osPalRoleRim
+
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
@@ -574,115 +791,239 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
-// Ink — "Luminous Ink in Dark Water"
-// No fluid sim: the feedback buffer IS the fluid. Each frame samples PREV
-// through a curl-noise displaced uv (advection), decays it (energy bleed),
-// and injects analytic dye splats on onsets whose color follows the spectral
-// centroid. The bass adds an upward advection bias (buoyancy plume).
+// Ink.
+// Luminous ink in dark water, shot macro. The feedback buffer is the fluid:
+// each frame it is carried along a velocity field, sharpened against the
+// blur of resampling, and fed fresh dye. The field is multi-scale curl noise
+// plus the analytic vortex pairs of rising plumes: every beat a warm charge
+// eases in slowly from the floor and mushrooms upward, a small crown of dye
+// opens once a beat, and two pens draw a second, cool ink in thin wisps which
+// the turbulence frays. The dye and the flow follow the music's smoothed
+// level, never a kick or an onset, so ink fades in rather than popping;
+// the water swirls slowly, the pens draw at a gentle pace and the soft
+// caustic light drifts slowly. Thin, old ink cools and darkens as it
+// spreads, dense fresh ink glows, and soft light shafts fall through the
+// water behind it all. No camera: the motion is the fluid.
 // param0 = Flow ; param1 = Ink Budget ; param2 = Buoyancy
 
-float inkNs(vec2 p) {
-    return vnoise(p) + 0.5 * vnoise(p * 2.13 + 7.7);
+// Value noise with its analytic gradient.
+float inkNoise(vec2 p, out vec2 g) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 w = f * f * (3.0 - 2.0 * f);
+    vec2 dw = 6.0 * f * (1.0 - f);
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
+    float k = a - b - c + d;
+    g = dw * vec2(b - a + k * w.y, c - a + k * w.x);
+    return a + (b - a) * w.x + (c - a) * w.y + k * w.x * w.y;
 }
 
-vec2 inkCurl(vec2 p) {
-    float e = 0.05;
-    float a = inkNs(p + vec2(0.0, e)) - inkNs(p - vec2(0.0, e));
-    float b = inkNs(p + vec2(e, 0.0)) - inkNs(p - vec2(e, 0.0));
-    return vec2(a, -b) / (2.0 * e);
+// Curl of a few noise octaves: divergence-free swirl.
+vec2 inkCurl(vec2 p, int oct, float fine) {
+    vec2 v = vec2(0.0);
+    float amp = 1.0;
+    for (int i = 0; i < 4; i++) {
+        if (i >= oct) break;
+        vec2 g;
+        inkNoise(p, g);
+        v += vec2(g.y, -g.x) * amp;
+        p = p * 2.07 + vec2(17.3, 9.1);
+        amp *= i == 0 ? 0.55 * fine : 0.5;
+    }
+    return v;
 }
 
-vec3 visual(vec2 uv, VisualUniforms u) {
+// Sunlight through the surface, a function of position and time only: a
+// warped network of caustic ridges that is brightest near the top and fades
+// with depth. The picture is ink * light + motes, and the next frame divides
+// the light back out (and subtracts the motes) before advecting, so the
+// light plays over the ink without ever being stored in it. Every rate is a
+// whole number of turns per 600 s, so the time wrap is seamless.
+float inkLight(vec2 uv, vec2 asp, float t) {
+    const float W = 0.010471976;                  // 2pi / 600
+    float c = 0.0;
+    for (int L = 0; L < 2; L++) {
+        float fl = float(L);
+        vec2 q = rot2(0.6 + 0.9 * fl) * (uv * asp * (5.5 + 3.0 * fl)) + fl * 7.3;
+        for (int n = 0; n < 3; n++) {
+            float fn = float(n) + fl * 3.0;
+            q += 0.85 * vec2(sin(q.y * 1.3 + t * W * (5.0 + 1.0 * fn) + fn * 1.7),
+                            sin(q.x * 1.1 - t * W * (4.0 + 1.0 * fn) + fn * 2.3));
+        }
+        float v = sin(q.x * 2.1) * sin(q.y * 1.9);
+        float ridge = 1.0 - abs(v);
+        float r2 = ridge * ridge;
+        r2 *= r2;
+        r2 *= r2;                                  // ridge^8: thin bright lines
+        c += r2 * (1.0 - 0.4 * fl);
+    }
+    float depth = 1.0 - smoothstep(-0.15, 1.1, uv.y);
+    // broad sun patches so the light also moves at large scale
+    float sun = 0.5 + 0.5 * sin(uv.x * asp.x * 2.3 + t * W * 5.0) * sin(uv.y * 1.7 - t * W * 4.0 + 1.0);
+    return 0.3 + depth * (0.16 * sun + 0.4 * c * (0.35 + 0.65 * sun));
+}
+
+// Out-of-focus motes drifting in front of the ink, also time-only: big soft
+// discs with a brighter rim, as a macro lens renders specks off the focal plane.
+vec3 inkMotes(vec2 uv, vec2 asp, float t, vec3 tintA, vec3 tintB) {
+    const float W = 0.010471976;
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < 5; i++) {
+        float fi = float(i);
+        vec2 c = vec2(0.5 + 0.48 * sin(t * W * (5.0 + fi * 2.0) + fi * 2.4),
+                      0.5 + 0.46 * sin(t * W * (4.0 + fi * 3.0) + fi * 1.3 + 0.7));
+        float r = 0.05 + 0.025 * fi;
+        float d = length((uv - c) * asp) / r;
+        float disc = 1.0 - smoothstep(0.82, 1.0, d);
+        float rim = smoothstep(0.55, 0.95, d) * disc;
+        float pulse = 0.8 + 0.2 * sin(t * W * (8.0 + 1.0 * fi) + fi);
+        acc += mix(tintA, tintB, fract(fi * 0.618)) * (disc * 0.012 + rim * 0.02) * pulse;
+    }
+    return acc;
+}
+
+// Velocity of a point vortex of strength s at c (aspect-corrected space).
+vec2 inkVortex(vec2 d, float s, float core) {
+    return s * vec2(-d.y, d.x) / (dot(d, d) + core * core);
+}
+
+vec3 osBody(vec2 uv, VisualUniforms u) {
     float aspect = u.resolution.x / max(u.resolution.y, 1.0);
-    float flow   = mix(0.45, 1.70, u.param0);
-    float budget = mix(0.55, 1.90, u.param1);
-    float buoy   = mix(0.25, 1.30, u.param2);
-    // Advection, bleed and injection are authored per 60 Hz frame; n = dt*60
-    // keeps them the same per second at 30/60/120 Hz (one step without a clock).
-    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
+    vec2 asp = vec2(aspect, 1.0);
+    float detail = osDetail(u);
+    float t = mod(u.time, 600.0);
+    float flow = mix(0.45, 1.70, u.param0);
+    float budget = mix(0.55, 1.90, u.param1) * 0.8;
+    float buoy = mix(0.25, 1.30, u.param2);
+    float step60 = clamp(u.dt * 60.0, 0.25, 3.0);
+    if (u.dt <= 0.0) step60 = 1.0;
+    float beats = u.beatCount + saturate(u.beatPhase);
+    float bc = floor(u.beatCount);
 
-    // ---- advection: curl-noise velocity field in uv space (y-down screen) ----
-    vec2 q = uv * vec2(aspect, 1.0) * 3.1 + vec2(0.0, u.time * 0.045);
-    vec2 vel = inkCurl(q) * (0.55 + u.mid * 1.1);
-    vel += inkCurl(q * 2.7 + 31.4) * 0.35 * (0.3 + u.treble);
+    // ---- velocity field (uv units per 60 Hz frame, y down) ----
+    vec2 q = uv * asp * 2.8;
+    q = rot2(0.07 * sin(t * 0.05)) * q + vec2(0.0, t * 0.025);
+    int oct = osSteps(2.0, 4.0, detail);
+    vec2 vel = inkCurl(q, oct, 0.9) * (0.0006 + 0.0003 * u.level) * flow;
 
-    // beat swirl around center (vorticity "turns over" on the beat); a wide,
-    // gentle bell, so bright fluid edges sweep rather than jump at the wrap
-    vec2 rc = (uv - 0.5) * vec2(aspect, 1.0);
-    vel += vec2(-rc.y, rc.x) * (0.15 + 0.50 * phasePulse(u, 0.0, 0.35));
+    // fresh dye is grainy, so the flow stretches it into filaments
+    float grain = 0.45 + 0.55 * smoothstep(0.2, 0.9, vnoise(rot2(0.6) * uv * asp * 17.0 + vec2(t * 0.2, 0.0)));
 
-    // buoyancy: sample from below => dye rises (uv.y grows downward); the bass
-    // envelope, not the kick impulse, so plume edges never lurch on a kick
-    float rise = (0.0026 + 0.0030 * u.bass) * buoy;
+    // warm water rises: a slow buoyant drift carries old ink upward
+    vel.y -= (0.0005 + 0.0002 * u.level) * buoy;
 
-    vec2 sampleUV = uv + (vel * 0.0040 * flow + vec2(0.0, rise)) * n;
-    // Water outside the frame is empty: fade history sampled past the edge
-    // instead of repeating the edge texel, which advection drags inward.
-    vec2 outside = max(-sampleUV, sampleUV - 1.0);
-    float inside = clamp(1.0 - 32.0 * max(max(outside.x, outside.y), 0.0), 0.0, 1.0);
-    vec3 prev = PREV(sampleUV).rgb * inside;
-
-    // energy must decay: base bleed + whiteout guard. The guard must bite
-    // inside the tonemapped range (ACES is ~white by luma 2), or dye stacks
-    // into flat white blobs and the color is lost.
-    float pl = luma(prev);
-    float keep = 0.991 - 0.10 * smoothstep(0.7, 2.2, pl);
-    prev = max(prev * pow(keep, n) - 0.0008 * n, vec3(0.0));
-
-    // ---- dye injection ----
-    // Dye is poured, not dropped: each beat's three charges flow in one after
-    // another along bells (about 90 ms attack, longer release at 120 BPM)
-    // instead of on the onset impulse, so a charge blooms rather than pops and
-    // the frame stays within the general flash limit before the limiter. The
-    // fluid also bleeds slower, so less ink keeps the water as full.
-    // Loudness sets how much ink a beat pours; the timbre still sets its colour.
-    // Splats are sized against the frame's short side, so on a portrait frame
-    // they cover the same share of it as at 16:9 instead of stacking into white.
-    vec2 splatScale = vec2(aspect, 1.0) / min(aspect, 1.0);
-    float ph = u.beatPhase;
-    float loud = 0.35 + 0.65 * saturate(u.level * 0.6 + u.amplitude * 0.4);
+    // kick plumes: a vortex pair per plume, rising from the floor
+    vec3 warmA = palVisual(0.22 + 0.08 * u.spectralCentroid, u);
+    vec3 warmB = palVisual(0.97, u);
     vec3 dye = vec3(0.0);
-    float k = u.beatCount; // splat site key, one set of sites per beat
-    for (int j = 0; j < 3; ++j) {
-        float fj = float(j);
-        // the three charges pour one after another across the beat
-        float p0 = 0.08 + 0.26 * fj;
-        float pour = smoothstep(p0, p0 + 0.18, ph) * (1.0 - smoothstep(p0 + 0.18, p0 + 0.40, ph));
-        vec2 h = hash22(vec2(k * 0.371 + fj * 13.7, fj * 5.13 + 2.7));
-        // one site per third of the width, so a beat's charges never pile up
-        vec2 c = vec2((fj + 0.2 + 0.6 * h.x) / 3.0, 0.24 + 0.46 * h.y);
-        vec2 d = (uv - c) * splatScale;
-        float g = exp(-dot(d, d) / (0.0045 + 0.0025 * saturate(u.flux)));
-        vec3 dcol = palVisual(u.spectralCentroid * 0.85 + fj * 0.14 + h.y * 0.10, u);
-        // vivid rather than bright: chroma reads as glow without luma steps
-        dcol = max(mix(vec3(luma(dcol)), dcol, 1.6), vec3(0.0));
-        dye += dcol * g * pour * loud * budget * 0.025;
-        // a steady trickle from a slowly drifting source in each third keeps
-        // the water full of bright dye between beats: it never steps with the
-        // music, so it fills the frame without a luma transition
-        vec2 sc = vec2((fj + 0.5 + 0.30 * sin(u.time * (0.21 + 0.07 * fj) + fj * 2.1)) / 3.0,
-                       0.47 + 0.20 * sin(u.time * (0.17 + 0.05 * fj) + fj * 4.3));
-        vec2 ds = (uv - sc) * splatScale;
-        vec3 scol = palVisual(0.30 + fj * 0.14 + 0.08 * sin(u.time * 0.05 + fj), u);
-        scol = max(mix(vec3(luma(scol)), scol, 1.6), vec3(0.0));
-        dye += scol * exp(-dot(ds, ds) / 0.0100) * budget * 0.055;
+    for (int j = 0; j < 3; j++) {
+        float born = bc - float(j);
+        float hb = hash21(vec2(mod(born, 512.0), 3.7));
+        float age = beats - born;
+        float hero = mod(born, 8.0) < 0.5 ? 1.0 : 0.0;
+        float x0 = mix(0.18 + 0.64 * hb, 0.38 + 0.24 * hb, hero);
+        float y0 = 1.05 - age * 0.16 * (0.6 + 0.6 * buoy);
+        vec2 c = vec2(x0 + 0.03 * sin(age * 1.3 + hb * 6.0), y0);
+        float life = smoothstep(0.0, 0.6, age) * (1.0 - smoothstep(2.0, 3.0, age));
+        float s = 0.0006 * life * (0.6 + 0.3 * u.level) * buoy * flow * (1.0 + 0.5 * hero);
+        float R = (0.06 + 0.03 * age) * (1.0 + 0.6 * hero);
+        vec2 d = (uv - c) * asp;
+        vel += (inkVortex(d - vec2(R, 0.0), s, 0.05) - inkVortex(d + vec2(R, 0.0), s, 0.05)) / asp;
+        // the youngest plume carries the kick's dye up from the floor
+        float g = exp(-dot(d, d) / (0.006 * (1.0 + 1.2 * hero)));
+        // the charge is shaded as a lit billow: a hot crown toward the light
+        // above, a deeper body below, so the advected sheets keep their form
+        float lit = 0.55 + 0.75 * saturate(0.5 - d.y * 9.0 - d.x * 3.0) + 0.6 * exp(-dot(d + vec2(0.012, 0.03), d + vec2(0.012, 0.03)) / 0.0008);
+        vec3 pc = mix(mix(warmB, warmA, hb), palVisual(0.985, u) * 1.2, hero * 0.6);
+        dye += pc * g * lit * (1.0 + 0.2 * hero) * 0.8 * (0.045 + 0.045 * u.level)
+             * smoothstep(0.0, 0.8, age) * (1.0 - smoothstep(0.9, 1.8, age)) * budget * 0.7 * grain;
     }
 
-    // kick plume: charge near the floor that the buoyancy carries up, poured on
-    // the same slow bell, scaled by the bass.
-    vec2 db = (uv - vec2(0.5 + 0.12 * sin(u.time * 0.7), 0.90)) * splatScale;
-    vec3 bassCol = palRoleBass(0.06 + 0.05 * u.spectralCentroid, u);
-    dye += bassCol * exp(-dot(db, db) / 0.0045) * smoothstep(0.0, 0.3, ph) * (1.0 - smoothstep(0.3, 0.7, ph)) * u.bass * budget * 0.055;
+    // crowns: once a beat, dye blooms open where it lands
+    float k = u.beatCount;
+    float kAge = fract(beats);
+    for (int j = 0; j < 2; j++) {
+        float fj = float(j);
+        vec2 h = hash22(vec2(mod(floor(k), 997.0) * 0.371 + fj * 13.7, fj * 5.13 + 2.7));
+        vec2 c = vec2(0.14 + 0.72 * h.x, 0.18 + 0.5 * h.y);
+        vec2 d = (uv - c) * asp;
+        float r2 = dot(d, d);
+        vel += d / asp / (r2 + 0.004) * 0.00002 * smoothstep(0.0, 0.2, kAge) * exp(-kAge * 3.0) * flow;
+        // a burst lands as a crown: a thin expanding ring of dye with a
+        // small dense core, which the outward flow then frays
+        float rr = sqrt(r2);
+        float rx = (rr - 0.012 - 0.06 * kAge) / (0.006 + 0.004 * u.flux);
+        float g = exp(-rx * rx) * (0.6 + 0.4 * grain) + 0.5 * exp(-r2 / 0.0004);
+        // the first burst takes the palette's far end, the accent opposite the
+        // cool pens (red-coral on the default palette)
+        vec3 dc = j == 0 ? palVisual(0.975 + 0.02 * h.y, u) * 1.25
+                         : palVisual(0.05 + 0.2 * u.spectralCentroid + h.y * 0.08, u);
+        dye += dc * g * smoothstep(0.0, 0.3, kAge) * (1.0 - kAge) * (0.015 + 0.02 * u.level) * budget * 0.35 * grain;
+    }
 
-    vec3 col = prev + dye * n;
+    // treble pens: a second, cool ink in thin drawn wisps
+    vec3 cool = palVisual(0.74 + 0.06 * u.spectralCentroid, u);
+    for (int j = 0; j < 2; j++) {
+        float fj = float(j);
+        vec2 pen = vec2(0.5 + 0.36 * sin(t * 0.1 + fj * 3.1) + 0.08 * sin(t * 0.25 + fj),
+                        0.48 + 0.28 * sin(t * 0.08 + fj * 1.9 + 1.0));
+        vec2 d = (uv - pen) * asp;
+        float g = exp(-dot(d, d) / 0.00022);
+        float tr = 0.025 + 0.04 * u.level + 0.01 * u.treble;
+        dye += mix(cool, vec3(0.9, 1.0, 1.0), 0.1) * g * tr * budget * 1.3;
+    }
 
-    // faint steady caustic floor light: a teal glow under the dye, not
-    // modulated by loudness, so it never pumps
-    float caustic = fbm(uv * vec2(aspect, 1.0) * 6.0 + u.time * 0.03);
-    col += palRoleFog(0.62, u) * caustic * 0.0030 * n;
+    // ---- advect: sample upstream ----
+    // stay inside the frame, so the light divided out is the light stored there
+    vec2 hp = 0.5 / max(u.resolution, vec2(1.0));
+    vec2 su = clamp(uv - vel * step60, hp, 1.0 - hp);
+    float tPrev = mod(u.time - max(u.dt, 0.0), 600.0);
+    vec3 moteA = palVisual(0.7, u), moteB = palVisual(0.2, u);
+    float lightP = inkLight(su, asp, tPrev);
+    vec3 motesP = inkMotes(su, asp, tPrev, moteA, moteB);
+    vec3 prev = max(PREV(su).rgb - motesP, vec3(0.0)) / lightP;
+    // anti-diffusion: bilinear resampling blurs the ink a little every
+    // frame; a small, clamped unsharp step keeps filaments knife-crisp
+    if (detail > 0.3) {
+        vec2 px = 1.5 / max(u.resolution, vec2(1.0));
+        vec3 nb = 0.25 * (PREV(su + vec2(px.x, 0.0)).rgb + PREV(su - vec2(px.x, 0.0)).rgb
+                        + PREV(su + vec2(0.0, px.y)).rgb + PREV(su - vec2(0.0, px.y)).rgb);
+        nb = max(nb - motesP, vec3(0.0)) / lightP;
+        vec3 sharp = clamp(prev - nb, -0.3 * prev, 0.3 * prev);
+        prev = max(prev + sharp * 0.14 * min(step60, 1.5), vec3(0.0));
+    }
 
-    return col; // LINEAR HDR — this exact value is next frame's fluid state
+    // ---- decay: thin ink cools and darkens, dense ink is guarded from
+    // stacking into white ----
+    float pl = luma(prev);
+    vec3 tintKeep = mix(vec3(1.0), normalize(palVisual(0.5, u) + 0.05) * 1.7, 0.012);
+    float keep = 0.99 - 0.12 * smoothstep(0.3, 1.0, pl);
+    vec3 kv = min(tintKeep * keep, vec3(0.995));
+    kv = pow(kv, vec3(step60));
+    prev = max(prev * kv - 0.0011 * step60, vec3(0.0));
+
+    vec3 col = prev + dye * step60;
+    // a hot rim where fresh dye meets the water
+    float dl = luma(dye);
+    col += dye * dl * 0.12;
+
+    // ---- the water behind: never accumulates, only shows where ink is thin
+    vec2 wp = uv * asp;
+    float sh = vnoise(vec2((wp.x + wp.y * 0.35) * 7.0 + t * 0.06, t * 0.05));
+    sh = sh * sh * sh * (1.0 - uv.y) * (1.0 - uv.y);
+    vec3 deep = palVisual(0.5, u);
+    vec3 water = deep * (0.010 + 0.012 * (1.0 - uv.y)) + palRoleFog(0.55, u) * sh * 0.08 * (0.8 + 0.1 * u.level);
+    // light the ink, keep the water behind mostly out of the caustics, and
+    // float the motes in front; the next frame removes the light and motes
+    float light = inkLight(uv, asp, t);
+    col = max(col * light, water * (0.55 + 0.25 * light));
+    return col + inkMotes(uv, asp, t, moteA, moteB); // LINEAR HDR fluid state
 }
+
+// Reds stay off saturated red through the vivid present (common.glsl).
+vec3 visual(vec2 uv, VisualUniforms u) { return osOffRed(osBody(uv, u)); }
 
 in vec2 vUV;
 layout(location=0) out vec4 fragColor;

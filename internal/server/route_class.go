@@ -101,6 +101,7 @@ var exactRouteClasses = map[string]AccessClass{
 	"POST /api/graphql":                 AccessPrivateUI,
 	"POST /api/compat/handshake":        AccessPrivateUI,
 	"GET /api/manifest":                 AccessPrivateUI,
+	"GET " + subscriptionExportPath:     AccessPrivateUI,
 	"POST /api/playback-info":           AccessPrivateUI,
 	"POST /api/preview-info":            AccessPrivateUI,
 	"POST /api/beam/offers":             AccessPrivateUI,

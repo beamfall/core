@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,18 @@ type TrashedMedia struct {
 	LibraryID LibraryID
 	Title     string
 	TrashedAt time.Time
+	// Merge is set when a Version merge that has not been undone folded this
+	// Media into another, rather than anyone deleting it (CORE-2916).
+	Merge *TrashedMediaMerge
+}
+
+// TrashedMediaMerge names the merge batch that trashed a Media and the Media
+// that kept its files as Versions.
+type TrashedMediaMerge struct {
+	BatchID       string
+	Survivor      MediaID
+	SurvivorTitle string
+	MergedAt      time.Time
 }
 
 // TrashRetention is how long trashed media stays restorable before purge.
@@ -249,12 +262,23 @@ func (s *Store) trashedMediaSQL(ctx context.Context, filter LibraryFilter) ([]Tr
 			visible[library.ID] = true
 		}
 	}
+	// The live merge-version batch item, if any, explains the trash. A Media
+	// a merge folded and the user undid is never folded again, so at most one
+	// such batch is live; the newest wins defensively.
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT id, library_id, title, trashed_at_ms
-		FROM media
-		WHERE trashed_at_ms IS NOT NULL
-		ORDER BY trashed_at_ms DESC
-	`)
+		SELECT m.id, m.library_id, m.title, m.trashed_at_ms,
+		  COALESCE(b.id, ''), COALESCE(json_extract(i.prior_state, '$.survivor'), ''),
+		  COALESCE(sm.title, ''), COALESCE(b.created_at_ms, 0)
+		FROM media m
+		LEFT JOIN op_batch_item i ON i.rowid = (
+		  SELECT i2.rowid FROM op_batch_item i2 JOIN op_batch b2 ON b2.id = i2.batch_id
+		  WHERE i2.media_id = m.id AND b2.kind = ? AND b2.undone_at_ms = 0
+		  ORDER BY b2.created_at_ms DESC, b2.id DESC LIMIT 1)
+		LEFT JOIN op_batch b ON b.id = i.batch_id
+		LEFT JOIN media sm ON sm.id = json_extract(i.prior_state, '$.survivor')
+		WHERE m.trashed_at_ms IS NOT NULL
+		ORDER BY m.trashed_at_ms DESC
+	`, opKindMergeVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -262,17 +286,88 @@ func (s *Store) trashedMediaSQL(ctx context.Context, filter LibraryFilter) ([]Tr
 	entries := []TrashedMedia{}
 	for rows.Next() {
 		var entry TrashedMedia
-		var trashedAt int64
-		if err := rows.Scan(&entry.ID, &entry.LibraryID, &entry.Title, &trashedAt); err != nil {
+		var trashedAt, mergedAt int64
+		var merge TrashedMediaMerge
+		if err := rows.Scan(&entry.ID, &entry.LibraryID, &entry.Title, &trashedAt,
+			&merge.BatchID, &merge.Survivor, &merge.SurvivorTitle, &mergedAt); err != nil {
 			return nil, err
 		}
 		if !visible[entry.LibraryID] {
 			continue
 		}
 		entry.TrashedAt = millisToTime(trashedAt)
+		if merge.BatchID != "" && merge.Survivor != "" {
+			merge.MergedAt = millisToTime(mergedAt)
+			entry.Merge = &merge
+		}
 		entries = append(entries, entry)
 	}
-	return entries, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := s.hideUnseenMergeSurvivors(ctx, entries, filter); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+// hideUnseenMergeSurvivors redacts the survivor of a merge whose survivor is
+// above the caller's certification ceiling, so trash never names a Media the
+// caller cannot see (CORE-2916). The entry keeps its merge batch: it is still
+// a merge to undo, not a deletion to restore. A Version merge never runs in an
+// encrypted Library, so the survivor is always in the shared catalog.
+func (s *Store) hideUnseenMergeSurvivors(ctx context.Context, entries []TrashedMedia, filter LibraryFilter) error {
+	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	if certClause == "" {
+		return nil
+	}
+	unique := map[MediaID]bool{}
+	survivors := []any{}
+	for _, entry := range entries {
+		if entry.Merge != nil && !unique[entry.Merge.Survivor] {
+			unique[entry.Merge.Survivor] = true
+			survivors = append(survivors, entry.Merge.Survivor)
+		}
+	}
+	seen := map[MediaID]bool{}
+	for start := 0; start < len(survivors); start += survivorLookupChunk {
+		chunk := survivors[start:min(start+survivorLookupChunk, len(survivors))]
+		if err := s.visibleSurvivors(ctx, chunk, certClause, certArgs, seen); err != nil {
+			return err
+		}
+	}
+	for i := range entries {
+		if merge := entries[i].Merge; merge != nil && !seen[merge.Survivor] {
+			redacted := *merge
+			redacted.Survivor, redacted.SurvivorTitle = "", ""
+			entries[i].Merge = &redacted
+		}
+	}
+	return nil
+}
+
+// survivorLookupChunk bounds the survivor ids bound in one query, well under
+// SQLite's variable limit whatever the certification clause adds.
+const survivorLookupChunk = 500
+
+func (s *Store) visibleSurvivors(ctx context.Context, ids []any, certClause string, certArgs []any, seen map[MediaID]bool) error {
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(ids)), ", ")
+	args := append(append([]any{}, ids...), certArgs...)
+	// #nosec G202 -- only generated placeholders and the closed certification clause are interpolated.
+	rows, err := s.catalogR.QueryContext(ctx,
+		`SELECT m.id FROM media m WHERE m.id IN (`+placeholders+`)`+certClause, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id MediaID
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		seen[id] = true
+	}
+	return rows.Err()
 }
 
 // purgeableTrashedMediaSelect is the inner selection of Media eligible for a
@@ -299,25 +394,38 @@ const purgeableTrashedMediaSelect = `
 // in a Custodial Library is exempt (purgeableTrashedMediaSelect): the server
 // holds its only copy, so its trash is never auto-purged.
 func (s *Store) PurgeTrashedBefore(ctx context.Context, cutoff time.Time) (int, error) {
+	purged, err := s.PurgeTrashedMediaBefore(ctx, cutoff)
+	return len(purged), err
+}
+
+// PurgeTrashedMediaBefore is PurgeTrashedBefore reporting which Media went, so
+// state kept outside the catalog for them, such as their artwork directories,
+// can go too (CORE-1281). After the rows are committed it still reports them
+// alongside a later error.
+func (s *Store) PurgeTrashedMediaBefore(ctx context.Context, cutoff time.Time) ([]MediaID, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return 0, err
+		return nil, err
 	}
 	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer tx.Rollback()
+	purged, err := queryIDs[MediaID](ctx, tx, purgeableTrashedMediaSelect, timeToMillis(cutoff))
+	if err != nil {
+		return nil, err
+	}
 	affected, err := purgeMediaRowsTx(ctx, tx, purgeableTrashedMediaSelect, timeToMillis(cutoff))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return nil, err
 	}
 	if _, err := s.pruneOrphanedEngagementRowsLocked(ctx); err != nil {
-		return int(affected), err
+		return purged, err
 	}
 	if affected > 0 {
 		if err := appendActivitySQL(ctx, s.eventsW, ActivityEntry{
@@ -326,10 +434,10 @@ func (s *Store) PurgeTrashedBefore(ctx context.Context, cutoff time.Time) (int, 
 			TargetType: "trash",
 			TargetID:   strconv.FormatInt(affected, 10),
 		}); err != nil {
-			return int(affected), err
+			return purged, err
 		}
 	}
-	return int(affected), nil
+	return purged, nil
 }
 
 // purgeMediaRowsTx removes the catalog rows of every Media named by selection,
@@ -370,11 +478,11 @@ func purgeMediaRowsTx(ctx context.Context, tx *sql.Tx, selection string, args ..
 // SweepPurgeTrashedBefore runs the autonomous retained-trash purge. Human
 // confirmed purge calls PurgeTrashedBefore directly and remains legal while
 // trash is disabled.
-func (s *Store) SweepPurgeTrashedBefore(ctx context.Context, cutoff time.Time) (purged int, skipped bool, err error) {
+func (s *Store) SweepPurgeTrashedBefore(ctx context.Context, cutoff time.Time) (purged []MediaID, skipped bool, err error) {
 	if s.trashDisabled {
 		s.trashDisabledSweepSkips.Add(1)
-		return 0, true, ErrTrashDisabledConfirmationRequired
+		return nil, true, ErrTrashDisabledConfirmationRequired
 	}
-	purged, err = s.PurgeTrashedBefore(ctx, cutoff)
+	purged, err = s.PurgeTrashedMediaBefore(ctx, cutoff)
 	return purged, false, err
 }

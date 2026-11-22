@@ -912,7 +912,8 @@
       "0017_engagement_import_provenance.sql": "dace43de80acd2fe58d804f61126e315817ebc3097a2d6d9e2f19b1be762b475",
       "0018_playback_event_time.sql": "ad5f5fe322860d2634e12acfef9f02d077ff3d6358c9cc8e3b8eefa280f4b574",
       "0019_activity_operation_id.sql": "389a8ec86fd591cc7707462f35ee5879cf9270505320ed4782db69a22aad8f04",
-      "0020_channel_context.sql": "2a5016910b62c96afef0c947e9d86f552a31ac0b72f31301fbeea5b52950dbf8"
+      "0020_channel_context.sql": "2a5016910b62c96afef0c947e9d86f552a31ac0b72f31301fbeea5b52950dbf8",
+      "0026_play_queue_state.sql": "2354ac49760d64ff3255c760db9870aa8791c1855f8abbdbf57ac7a3b9975c8f"
     },
     "columns": {
       "activity_entry.action": "TEXT|notnull=1|default=\"\"|pk=0|hidden=0",
@@ -995,9 +996,16 @@
       "pack_token_ledger.session_id": "TEXT|notnull=1|default=\"\"|pk=1|hidden=0",
       "pack_token_ledger.target": "TEXT|notnull=1|default=\"\"|pk=2|hidden=0",
       "play_queue.added_at_ms": "INTEGER|notnull=1|default=\"\"|pk=0|hidden=0",
+      "play_queue.entry_id": "TEXT|notnull=1|default=\"lower(hex(randomblob(16)))\"|pk=1|hidden=0",
       "play_queue.media_id": "TEXT|notnull=1|default=\"\"|pk=0|hidden=0",
-      "play_queue.position": "INTEGER|notnull=1|default=\"\"|pk=2|hidden=0",
-      "play_queue.profile_id": "TEXT|notnull=1|default=\"\"|pk=1|hidden=0",
+      "play_queue.position": "INTEGER|notnull=1|default=\"\"|pk=0|hidden=0",
+      "play_queue.profile_id": "TEXT|notnull=1|default=\"\"|pk=0|hidden=0",
+      "play_queue.shuffle_position": "INTEGER|notnull=0|default=\"\"|pk=0|hidden=0",
+      "play_queue_state.current_entry_id": "TEXT|notnull=0|default=\"\"|pk=0|hidden=0",
+      "play_queue_state.position_ms": "INTEGER|notnull=1|default=\"0\"|pk=0|hidden=0",
+      "play_queue_state.profile_id": "TEXT|notnull=1|default=\"\"|pk=1|hidden=0",
+      "play_queue_state.repeat_mode": "TEXT|notnull=1|default=\"'off'\"|pk=0|hidden=0",
+      "play_queue_state.shuffle": "INTEGER|notnull=1|default=\"0\"|pk=0|hidden=0",
       "playback_progress.channel_context": "INTEGER|notnull=1|default=\"0\"|pk=0|hidden=0",
       "playback_progress.duration_seconds": "INTEGER|notnull=1|default=\"0\"|pk=0|hidden=0",
       "playback_progress.event_time_ms": "INTEGER|notnull=0|default=\"\"|pk=0|hidden=0",

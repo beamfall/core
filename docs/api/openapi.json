@@ -239,6 +239,18 @@
             "format": "int64",
             "minimum": 0,
             "description": "The client clock, in Unix milliseconds, when it observed the position. The server keeps the latest report by this time."
+          },
+          "playbackID": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The client's random ID for this play, new each time the player starts the Media and kept across pauses, seeks and reloads. Play history groups a play's reports by it. At most 64 characters, checked as sent: an ID with leading or trailing whitespace is refused."
+          },
+          "paused": { "type": "boolean", "description": "Whether the player was paused when it observed the position. Omitted reads as playing." },
+          "playedMS": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "How long, in milliseconds, the client has actually played under this playbackID so far, counting only while media plays: not paused, seeking or buffering. Play history credits its growth, so a delayed or repeated report credits exactly the time it covers."
           }
         },
         "required": ["positionSeconds"]

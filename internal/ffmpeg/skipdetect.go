@@ -238,32 +238,17 @@ func parseCueTimestamp(value string) (float64, bool) {
 }
 
 // AudioFingerprintTail returns the same bounded signature as AudioFingerprint,
-// but reads the final windowCount windows of src. FFmpeg's input-side -sseof
-// keeps differently-sized siblings aligned to EOF for credits comparison. Old
-// FFmpeg builds without -sseof retry with an absolute seek derived from the
-// catalog duration.
+// but reads the final windowCount windows of src, so differently-sized siblings
+// stay aligned to EOF for credits comparison. The seek is absolute from the
+// catalog duration when one is known, and FFmpeg's -sseof otherwise
+// (withTailSeek).
 //
 //io:ignore ffmpeg-audio-fingerprint-tail — seek wrapper over the audioFingerprint I/O journey.
 func (r *Runner) AudioFingerprintTail(ctx context.Context, src string, windowCount, durationSeconds int) ([]float64, error) {
 	tailSeconds := FingerprintWindowSeconds * float64(windowCount)
-	signature, err := r.audioFingerprint(ctx, src, windowCount, []string{
-		"-sseof", "-" + strconv.FormatFloat(tailSeconds, 'f', 3, 64),
+	return withTailSeek(tailSeconds, durationSeconds, func(seek []string) ([]float64, error) {
+		return r.audioFingerprint(ctx, src, windowCount, seek)
 	})
-	if err == nil || errors.Is(err, errGroupSurvived) || !sseofUnavailable(err.Error()) {
-		return signature, err
-	}
-	start := math.Max(0, float64(durationSeconds)-tailSeconds)
-	return r.audioFingerprint(ctx, src, windowCount, []string{
-		"-ss", strconv.FormatFloat(start, 'f', 3, 64),
-	})
-}
-
-func sseofUnavailable(detail string) bool {
-	detail = strings.ToLower(detail)
-	return strings.Contains(detail, "unrecognized option 'sseof'") ||
-		strings.Contains(detail, "unrecognized option \"sseof\"") ||
-		strings.Contains(detail, "option sseof not found") ||
-		strings.Contains(detail, "option not found: sseof")
 }
 
 func (r *Runner) audioFingerprint(ctx context.Context, src string, windowCount int, inputSeek []string) ([]float64, error) {

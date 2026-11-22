@@ -467,7 +467,7 @@ func TestAppWiresRoutesAndSurfaces(t *testing.T) {
 	// profile picture routes (CORE-1240).
 	// This constant is rebase-hidden coupling: git keeps it as common context,
 	// so every lane that adds a route must bump it explicitly.
-	if got, want := len(beamfall.Routes()), 72; got != want {
+	if got, want := len(beamfall.Routes()), 73; got != want {
 		t.Fatalf("len(Routes) = %d, want %d", got, want)
 	}
 	if got := len(beamfall.Surfaces().All()); got < 5 {
@@ -1358,6 +1358,44 @@ func TestRetentionPurgeReconcilesCandidatePreviewCache(t *testing.T) {
 	}
 	if _, err := os.Stat(survivorPreview); err != nil {
 		t.Fatalf("surviving candidate preview removed: %v", err)
+	}
+}
+
+// TestRetentionPurgeRemovesPurgedMediaArtwork: the trash purge removes the
+// artwork directory of each purged Media and leaves every other Media's alone
+// (CORE-1281).
+func TestRetentionPurgeRemovesPurgedMediaArtwork(t *testing.T) {
+	dataDir := t.TempDir()
+	st, err := store.Open(context.Background(), dataDir, store.Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	ctx := context.Background()
+	art := artwork.NewService(st, nil, dataDir)
+	posters := map[store.MediaID]string{}
+	for _, id := range []store.MediaID{"media-alpha", "media-archive"} {
+		posters[id] = art.ArtworkPath(id, artwork.SlotPoster)
+		if err := os.MkdirAll(filepath.Dir(posters[id]), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(posters[id], []byte("jpeg"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local", "library-archive"}, Revealed: true}
+	if err := st.TrashMedia(ctx, "media-alpha", filter); err != nil {
+		t.Fatal(err)
+	}
+	storetest.BackdateTrashedMedia(t, dataDir, "media-alpha", time.Now().UTC().Add(-store.TrashRetention-time.Hour))
+
+	runRetentionPurge(ctx, st, art, discardLogger())
+
+	if _, err := os.Stat(filepath.Dir(posters["media-alpha"])); !os.IsNotExist(err) {
+		t.Fatalf("purged Media artwork still on disk (%v): %s", err, posters["media-alpha"])
+	}
+	if _, err := os.Stat(posters["media-archive"]); err != nil {
+		t.Fatalf("live Media artwork removed: %v", err)
 	}
 }
 

@@ -21,13 +21,15 @@ export interface ActivityRecord {
   tokenID?: string;
   /** Managers only: the scoped API key that made the change. */
   apiKeyID?: string;
+  /** The server process that made the change, such as "scan", when no person did. */
+  systemActor?: string;
 }
 
 /** The server caps one page at 200 entries (graph.activityLog). */
 export const ACTIVITY_PAGE_SIZE = 200;
 
 const ACTIVITY_RECORDS_QUERY =
-  "query ActivityRecords($limit: Int, $offset: Int) { activityLog(limit: $limit, offset: $offset) { id occurredAt action reversible profileID deviceID targetType targetID libraryID tokenID apiKeyID } }";
+  "query ActivityRecords($limit: Int, $offset: Int) { activityLog(limit: $limit, offset: $offset) { id occurredAt action reversible profileID deviceID targetType targetID libraryID tokenID apiKeyID systemActor } }";
 
 /**
  * One page of activity entries, newest first, reveal-filtered by the server.

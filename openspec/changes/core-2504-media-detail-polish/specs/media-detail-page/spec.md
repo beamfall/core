@@ -1,28 +1,5 @@
 ## MODIFIED Requirements
 
-### Requirement: Facts row
-
-Under the title the page SHALL show a row of facts: the year, the runtime when the opening card
-carried a duration of at least a minute, the content rating, the community score, and the item's
-category-archetype credits. Category credits SHALL be grouped by kind in credit order; the row
-SHALL show the first two kinds, at most two distinct credits of each, followed by a "+N" chip
-counting that kind's remaining credits. Category credits of one kind are distinct by title: a name
-that reads the same shows once. Each category chip with an entity id SHALL be a
-keyboard-focusable link to that Entity's page whose accessible name is the credit's title. Unknown
-facts SHALL be omitted.
-
-#### Scenario: Facts from server and card
-
-- **WHEN** the item has year 2001, a rating "PG-13", one category credit "Drama" and the card
-  carried a duration of 5400 seconds
-- **THEN** the facts row reads "2001", "1 h 30 min", "PG-13", "Drama" in that order
-
-#### Scenario: Category chips link and overflow
-
-- **WHEN** the item has two credits of one category kind and three of another
-- **THEN** the row shows both credits of the first kind, the first two of the second and a "+1"
-  chip, and each credit chip links to `/entity/<its entity id>`
-
 ### Requirement: Loading, missing and failed states
 
 While the page has nothing to paint it SHALL show a skeleton marked busy with the stage's shape:

@@ -54,7 +54,7 @@ func (s *Server) profilePictureWriteSession(w http.ResponseWriter, r *http.Reque
 	}
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil || scope.SessionID == "" || scope.APITokenID != "" || scope.APIKeyID != "" {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return auth.Scope{}, false
 	}
 	return scope, true
@@ -144,7 +144,7 @@ func (s *Server) profilePicture(w http.ResponseWriter, r *http.Request) {
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil || scope.SessionID == "" || scope.APIKeyID != "" || scope.APITokenID != "" ||
 		scope.SessionKind == store.SessionKindIntegration {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 	if s.profilePictures == nil {

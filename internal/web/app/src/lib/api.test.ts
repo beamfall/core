@@ -11,11 +11,17 @@ import {
   isAuthRejection,
   postJSON,
   postKeepalive,
+  profileHeaders,
+  setExpectedProfile,
   setIdentityEpochSignal,
+  setProfileMismatchHandler,
+  subscribeEvents,
 } from "./api";
 
 afterEach(() => {
   setIdentityEpochSignal();
+  setExpectedProfile();
+  setProfileMismatchHandler();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -307,5 +313,169 @@ describe("keepalive POST", () => {
     expect(() => postKeepalive("/api/graphql", {})).not.toThrow();
     vi.stubGlobal("fetch", undefined);
     expect(() => postKeepalive("/api/graphql", {})).not.toThrow();
+  });
+});
+
+describe("request Profile precondition (CORE-2923)", () => {
+  const graphMismatch = {
+    errors: [
+      {
+        message: "the session is bound to another profile",
+        extensions: { code: "CONFLICT", reason: "PROFILE_MISMATCH" },
+      },
+    ],
+  };
+
+  function headersOf(fetchMock: ReturnType<typeof vi.fn>, call = 0): Record<string, string> {
+    return (fetchMock.mock.calls[call]?.[1] as RequestInit | undefined)?.headers as Record<
+      string,
+      string
+    >;
+  }
+
+  it("names the expected Profile on every request, and none before one is known", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ data: { ok: true } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getJSON("/api/manifest");
+    expect(headersOf(fetchMock)?.["X-Beamfall-Profile"]).toBeUndefined();
+    expect(profileHeaders()).toEqual({});
+
+    setExpectedProfile("profile-a");
+    await getJSON("/api/manifest");
+    await postJSON("/api/media/subtitle-pin", {});
+    await graphql("mutation { setClientPref }");
+    postKeepalive("/api/sessions/leave", {});
+    for (const call of [1, 2, 3, 4]) {
+      expect(headersOf(fetchMock, call)?.["X-Beamfall-Profile"]).toBe("profile-a");
+    }
+    expect(headersOf(fetchMock, 2)?.["X-Beamfall-Csrf"]).toBe("1");
+    expect(profileHeaders()).toEqual({ "X-Beamfall-Profile": "profile-a" });
+  });
+
+  it("reloads on a GraphQL mutation that found the switch only at its write", async () => {
+    // The scope check passed, then the switch landed before the write took its
+    // lock: the resolver refuses with HTTP 200 and the reason on its error.
+    const fetchMock = vi.fn(async () => Response.json(graphMismatch));
+    vi.stubGlobal("fetch", fetchMock);
+    const onMismatch = vi.fn();
+    setProfileMismatchHandler(onMismatch);
+    setExpectedProfile("profile-a");
+
+    await expect(graphql("mutation { reveal }")).rejects.toThrow();
+    expect(onMismatch).toHaveBeenCalledTimes(1);
+
+    postKeepalive("/api/graphql", {});
+    await vi.waitFor(() => expect(onMismatch).toHaveBeenCalledTimes(2));
+
+    // An ordinary GraphQL error is not a Profile refusal.
+    fetchMock.mockImplementation(async () => Response.json({ errors: [{ message: "nope" }] }));
+    await expect(graphql("mutation { reveal }")).rejects.toThrow();
+    expect(onMismatch).toHaveBeenCalledTimes(2);
+  });
+
+  it("names the Profile a keepalive was opened for, and reloads on its refusal", async () => {
+    const fetchMock = vi.fn(async () => Response.json(graphMismatch, { status: 409 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const onMismatch = vi.fn();
+    setProfileMismatchHandler(onMismatch);
+    setExpectedProfile("profile-a");
+
+    // A player unmounting after this tab moved on names the Profile it opened
+    // for, or none, never the current one.
+    postKeepalive("/api/graphql", {}, "profile-old");
+    postKeepalive("/api/graphql", {}, null);
+    expect(headersOf(fetchMock, 0)?.["X-Beamfall-Profile"]).toBe("profile-old");
+    expect(headersOf(fetchMock, 1)?.["X-Beamfall-Profile"]).toBeUndefined();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onMismatch).not.toHaveBeenCalled();
+
+    // A keepalive for the shown Profile that is refused reloads the tab.
+    postKeepalive("/api/graphql", {});
+    await vi.waitFor(() => expect(onMismatch).toHaveBeenCalledTimes(1));
+  });
+
+  it("names the shown Profile on every event stream connection, and reloads on its refusal", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { error: "profile mismatch", code: "CONFLICT", reason: "PROFILE_MISMATCH" },
+        { status: 409 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const onMismatch = vi.fn();
+    setProfileMismatchHandler(onMismatch);
+    setExpectedProfile("profile-a");
+
+    const close = subscribeEvents(() => {});
+    await vi.waitFor(() => expect(onMismatch).toHaveBeenCalledTimes(1));
+    close();
+    expect(headersOf(fetchMock)?.["X-Beamfall-Profile"]).toBe("profile-a");
+  });
+
+  it("throws a typed 409 and asks the spine to reload when the shown Profile is refused", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(graphMismatch, { status: 409 })),
+    );
+    const onMismatch = vi.fn();
+    setProfileMismatchHandler(onMismatch);
+    setExpectedProfile("profile-a");
+
+    const refused = await graphql("mutation { setClientPref }").catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(ApiError);
+    expect(refused).toMatchObject({ status: 409 });
+    expect(isAuthRejection(refused)).toBe(false);
+    expect(onMismatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the REST refusal shape too", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          { error: "profile mismatch", code: "CONFLICT", reason: "PROFILE_MISMATCH" },
+          { status: 409 },
+        ),
+      ),
+    );
+    const onMismatch = vi.fn();
+    setProfileMismatchHandler(onMismatch);
+    setExpectedProfile("profile-a");
+
+    await expect(postJSON("/api/media/subtitle-pin", {})).rejects.toMatchObject({ status: 409 });
+    expect(onMismatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a refusal for a Profile the tab no longer shows", async () => {
+    let answer!: (response: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>((resolve) => (answer = resolve))),
+    );
+    const onMismatch = vi.fn();
+    setProfileMismatchHandler(onMismatch);
+    setExpectedProfile("profile-a");
+
+    const pending = postJSON("/api/media/subtitle-pin", {}).catch(() => undefined);
+    // The tab moved on to another identity before the old request's refusal arrived.
+    setExpectedProfile("profile-b");
+    answer(Response.json(graphMismatch, { status: 409 }));
+    await pending;
+    expect(onMismatch).not.toHaveBeenCalled();
+  });
+
+  it("ignores other conflicts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "conflict", code: "CONFLICT" }, { status: 409 })),
+    );
+    const onMismatch = vi.fn();
+    setProfileMismatchHandler(onMismatch);
+    setExpectedProfile("profile-a");
+
+    await expect(postJSON("/api/x", {})).rejects.toMatchObject({ status: 409 });
+    expect(onMismatch).not.toHaveBeenCalled();
   });
 });

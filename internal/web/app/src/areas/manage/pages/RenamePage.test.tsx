@@ -107,6 +107,39 @@ describe("RenamePage", () => {
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
   });
 
+  it("keeps Apply off after the folder changes until the new folder loads (CORE-0755)", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await loadFiles(user);
+    await user.type(screen.getByLabelText("Find"), "one");
+    await user.type(screen.getByLabelText("Replace"), "uno");
+    expect(await screen.findByRole("button", { name: /^Apply \(1\)$/ })).toBeEnabled();
+
+    await user.type(screen.getByLabelText("Folder"), "/Other");
+    expect(screen.getByRole("button", { name: /^Apply \(1\)$/ })).toBeDisabled();
+
+    vi.mocked(fetchFolderTree).mockResolvedValueOnce({
+      name: "Other",
+      path: "/srv/Movies/Other",
+      kind: "folder",
+      size: 0,
+      modifiedAt: "",
+      children: [
+        {
+          name: "one.mkv",
+          path: "/srv/Movies/Other/one.mkv",
+          kind: "file",
+          size: 1,
+          modifiedAt: "",
+        },
+      ],
+    });
+    await user.click(screen.getByRole("button", { name: "Load files" }));
+    expect(await screen.findByText("uno.mkv")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Apply \(1\)$/ })).toBeEnabled();
+    expect(fetchFolderTree).toHaveBeenLastCalledWith("library-local", "/srv/Movies/Other", 1);
+  });
+
   it("applies a journaled batch then undoes it", async () => {
     vi.mocked(batchRenameManagedPaths).mockResolvedValue({
       batchID: "batch-7",

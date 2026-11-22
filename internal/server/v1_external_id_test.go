@@ -4,10 +4,60 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/beamfall/core/internal/store"
 )
+
+func TestV1MediaDetailProtectsLegacyURLGUID(t *testing.T) {
+	const guid = "https://cdn.example.com/track.mp3?signature=test-secret"
+	detail := newV1MediaDetail(store.Media{Title: guid}, []store.MediaExternalID{
+		{Scheme: "feed-guid", Value: guid},
+		{Scheme: store.ProvisionalExternalIDScheme, Value: "sub-1\x00" + guid},
+	})
+	data, err := json.Marshal(detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Title != "Untitled" || len(detail.ExternalIDs) != 2 ||
+		strings.Contains(string(data), "https://") || strings.Contains(string(data), "test-secret") {
+		t.Fatal("Media detail exposed a legacy feed GUID")
+	}
+}
+
+func TestV1LookupResolvesOpaqueLegacyFeedGUID(t *testing.T) {
+	const guid = "https://cdn.example.com/track.mp3?signature=test-secret"
+	srv, st := newTestServerWithStore(t)
+	for _, id := range []store.MediaExternalID{
+		{Scheme: "feed-guid", Value: guid},
+		{Scheme: store.ProvisionalExternalIDScheme, Value: "sub-1\x00" + guid},
+	} {
+		if err := st.AddMediaExternalID(t.Context(), "media-alpha", id.Scheme, id.Value); err != nil {
+			t.Fatal("could not seed legacy identifier")
+		}
+	}
+	key := mintKey(t, st, "lookup", "profile-managed", store.ScopeReadCatalog)
+	rec := v1Get(t, srv, "/v1/media/media-alpha", key)
+	var detail v1MediaDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil || rec.Code != http.StatusOK ||
+		len(detail.ExternalIDs) != 2 || strings.Contains(rec.Body.String(), "test-secret") {
+		t.Fatal("detail did not return two safe legacy identifiers")
+	}
+	for _, id := range detail.ExternalIDs {
+		if !strings.Contains(id.Value, "urn:beamfall:feed-entry:") {
+			t.Fatal("detail identifier is not opaque")
+		}
+		query := url.Values{"scheme": {id.Scheme}, "value": {id.Value}}
+		rec := v1Get(t, srv, "/v1/media?"+query.Encode(), key)
+		var found v1MediaLookupResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &found); err != nil || rec.Code != http.StatusOK ||
+			len(found.Media) != 1 || found.Media[0].ID != detail.ID || strings.Contains(rec.Body.String(), "test-secret") {
+			t.Fatalf("opaque lookup by %s did not return the same Media safely", id.Scheme)
+		}
+	}
+}
 
 // TestV1LookupMediaByExternalID pins CORE-1698: an integration that knows an
 // item only by another system's identifier can ask whether it is in the

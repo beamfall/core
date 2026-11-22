@@ -58,7 +58,7 @@ func prepareOperation(req request) (operationPlan, error) {
 		if occurrence.Aliased {
 			responseKey = occurrence.ResponseKey
 		}
-		normalized := operationOccurrence{canonical: occurrence.Canonical, responseKey: responseKey, input: occurrence.Input}
+		normalized := operationOccurrence{canonical: occurrence.Canonical, responseKey: responseKey, input: effectiveArguments(occurrence)}
 		if prior, exists := byResponseKey[responseKey]; exists {
 			if prior.occurrence.canonical != normalized.canonical || !graphquery.EquivalentInputs(prior.occurrence.input, normalized.input) {
 				return operationPlan{}, clientError(fmt.Sprintf("conflicting selections for response key %q", responseKey))
@@ -82,6 +82,26 @@ func prepareOperation(req request) (operationPlan, error) {
 		}
 	}
 	return plan, nil
+}
+
+// argumentBoundFields resolve only the arguments the document binds on
+// them. Their authorization reads those arguments (CORE-1937: updateProfile's
+// own-track-preference exception), so the authorization probe and the
+// resolver must see one set: an argument bound to a variable of any name
+// (`profileID: $id`) counts under the argument's name, and an operation
+// variable no argument of this field references counts for nothing, even
+// when it shares an argument's name.
+var argumentBoundFields = map[string]bool{
+	"updateprofile": true,
+}
+
+// effectiveArguments is an argument-bound field's explicit argument
+// bindings; every other field keeps the full input.
+func effectiveArguments(occurrence graphquery.Occurrence) map[string]any {
+	if !argumentBoundFields[occurrence.Canonical] {
+		return occurrence.Input
+	}
+	return occurrence.Arguments
 }
 
 // oneTimeSecretFields return a credential exactly once. A later mutation

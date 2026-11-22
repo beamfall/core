@@ -1330,7 +1330,14 @@ describe("EntityPage hero (CORE-2441)", () => {
   it("shows no badge from a lone parent container, before or after its Media load", async () => {
     vi.mocked(fetchEntity).mockResolvedValue({
       ...show,
-      relatedEntities: [{ kind: "whole", archetype: "container", items: [container("w", 9, 20)] }],
+      relatedEntities: [
+        {
+          kind: "whole",
+          direction: "parent",
+          archetype: "container",
+          items: [container("w", 9, 20)],
+        },
+      ],
     });
     let resolveMedia: (items: SourceItem[]) => void = () => {};
     vi.mocked(fetchMediaForEntity).mockReturnValue(
@@ -1355,8 +1362,18 @@ describe("EntityPage hero (CORE-2441)", () => {
     vi.mocked(fetchEntity).mockResolvedValue({
       ...show,
       relatedEntities: [
-        { kind: "whole", archetype: "container", items: [container("w", 3, 10)] },
-        { kind: "part", archetype: "container", items: [container("b", 3, 10)] },
+        {
+          kind: "whole",
+          direction: "parent",
+          archetype: "container",
+          items: [container("w", 3, 10)],
+        },
+        {
+          kind: "part",
+          direction: "child",
+          archetype: "container",
+          items: [container("b", 3, 10)],
+        },
       ],
     });
     vi.mocked(fetchMediaForEntity).mockResolvedValue([]);

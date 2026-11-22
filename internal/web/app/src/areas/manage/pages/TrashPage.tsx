@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import {
   EmptyLine,
   ErrorLine,
@@ -25,9 +26,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { describeActivity } from "@/lib/activityDisplay";
-import { fetchActivityRecords, fetchTrashList, purgeTrash, restoreMedia } from "@/lib/graphql";
+import {
+  fetchActivityRecords,
+  fetchDuplicateCopies,
+  fetchTrashList,
+  purgeTrash,
+  restoreMedia,
+  undoVersionMerge,
+} from "@/lib/graphql";
 import type { ActivityRecord } from "@/lib/graphql/activity";
-import type { TrashEntry } from "@/lib/graphql/types";
+import type { DuplicateCopySet, TrashEntry, TrashMergeInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { formatDateTime } from "../lib/schedule";
 
@@ -39,6 +47,12 @@ import { formatDateTime } from "../lib/schedule";
 //      purge is irreversible, so it is confirm-gated twice — an explicit
 //      checkbox plus an AlertDialog — and the server still re-checks
 //      Admin-Session + reveal + the confirm flag.
+//   1b. Merged copies (CORE-2916): Media the library scan folded into another
+//      item as an extra Version sit in Trash too. They are listed apart from
+//      deletions, one row per merge batch, with Undo merge (undoBatch) in place
+//      of Restore; purging them drops only the empty records, never the files,
+//      which now belong to the survivor. A read-only list of likely identical
+//      copies on disk follows; the server never deletes files.
 //   3. Activity: the append-only feed (latest 50); reversible rows (a
 //      media.trash) carry an Undo that scrolls to the Retained Trash table where
 //      Restore lives, irreversible rows (trash.purge) are flagged with no undo.
@@ -63,6 +77,40 @@ export function datetimeLocalDaysAgo(days: number, now: Date = new Date()): stri
   d.setDate(d.getDate() - days);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// MergeBatch is one Version merge batch: the survivor and the Media it folded.
+export interface MergeBatch {
+  merge: TrashMergeInfo;
+  entries: TrashEntry[];
+}
+
+// splitTrash separates real deletions from Media a Version merge folded, and
+// groups the merged ones by batch, newest batch first.
+export function splitTrash(entries: TrashEntry[]): {
+  deleted: TrashEntry[];
+  merges: MergeBatch[];
+} {
+  const deleted: TrashEntry[] = [];
+  const byBatch = new Map<string, MergeBatch>();
+  for (const entry of entries) {
+    const merge = entry.mergedInto;
+    if (!merge) {
+      deleted.push(entry);
+      continue;
+    }
+    const batch = byBatch.get(merge.batchID);
+    if (batch) batch.entries.push(entry);
+    else byBatch.set(merge.batchID, { merge, entries: [entry] });
+  }
+  const merges = [...byBatch.values()].sort((a, b) =>
+    b.merge.mergedAt.localeCompare(a.merge.mergedAt),
+  );
+  return { deleted, merges };
+}
+
+function itemLink(id: string): string {
+  return `/manage/items/${encodeURIComponent(id)}`;
 }
 
 export function TrashPage() {
@@ -93,6 +141,14 @@ export function TrashPage() {
     };
   }, [load]);
 
+  const { deleted, merges } = useMemo(() => splitTrash(entries), [entries]);
+
+  const [duplicatesReload, setDuplicatesReload] = useState(0);
+  const onMergeUndone = async () => {
+    await load();
+    setDuplicatesReload((n) => n + 1);
+  };
+
   const onRestore = async (entry: TrashEntry) => {
     setError("");
     try {
@@ -111,7 +167,7 @@ export function TrashPage() {
         actions={
           <div className="flex items-center gap-2">
             <StatusBadge state="neutral">
-              {t("trashRetainedCount", { count: entries.length })}
+              {t("trashRetainedCount", { count: deleted.length })}
             </StatusBadge>
             <Button type="button" variant="outline" size="sm" onClick={load}>
               {t("refresh")}
@@ -120,8 +176,8 @@ export function TrashPage() {
         }
       >
         <div id={RETAINED_TRASH_ANCHOR} className="scroll-mt-4">
-          {!loading && entries.length === 0 ? (
-            <EmptyLine message={t("trashIsEmpty")} />
+          {!loading && deleted.length === 0 ? (
+            <EmptyLine message={merges.length === 0 ? t("trashIsEmpty") : t("trashNoDeleted")} />
           ) : (
             <ManageTable>
               <TableHeader>
@@ -135,7 +191,7 @@ export function TrashPage() {
                 {loading ? (
                   <TableSkeletonRows columns={3} />
                 ) : (
-                  entries.map((entry) => (
+                  deleted.map((entry) => (
                     <TableRow key={entry.id}>
                       <TableCell className="manage-cell-primary">{entry.title}</TableCell>
                       <TableCell className="manage-cell-num">
@@ -161,10 +217,199 @@ export function TrashPage() {
         <ErrorLine message={error} />
       </ManageSection>
 
+      {merges.length > 0 && <MergedSection merges={merges} onUndone={onMergeUndone} />}
+
+      <DuplicateCopiesSection reloadKey={duplicatesReload} />
+
       <PurgeSection onPurged={load} />
 
       <ActivitySection />
     </div>
+  );
+}
+
+// MergedSection: one row per Version merge batch the scan made, naming the
+// folded items and the survivor that now holds their files, with Undo merge.
+function MergedSection({
+  merges,
+  onUndone,
+}: {
+  merges: MergeBatch[];
+  onUndone: () => Promise<void> | void;
+}) {
+  const t = useT();
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+
+  const onUndo = async (batchID: string) => {
+    setError("");
+    setBusy(batchID);
+    try {
+      await undoVersionMerge(batchID);
+      await onUndone();
+    } catch {
+      setError(t("trashUndoMergeFailed"));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  return (
+    <ManageSection
+      title={t("trashMergedHeading")}
+      lead={t("trashMergedLead")}
+      actions={
+        <StatusBadge state="neutral">{t("trashMergedCount", { count: merges.length })}</StatusBadge>
+      }
+    >
+      <ManageTable>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t("trashMergedItems")}</TableHead>
+            <TableHead>{t("trashMergedInto")}</TableHead>
+            <TableHead>{t("trashMergedWhen")}</TableHead>
+            <TableHead className="text-right">{t("trashUndoMerge")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {merges.map(({ merge, entries }) => (
+            <TableRow key={merge.batchID} data-merge-batch={merge.batchID}>
+              <TableCell className="manage-cell-primary">
+                {entries.map((entry) => entry.title).join(", ")}
+              </TableCell>
+              <TableCell>
+                {merge.survivorID ? (
+                  <Link
+                    to={itemLink(merge.survivorID)}
+                    className="underline-offset-2 hover:underline"
+                  >
+                    {merge.survivorTitle || merge.survivorID}
+                  </Link>
+                ) : (
+                  // The server redacts a survivor above this Profile's ratings ceiling.
+                  t("trashMergedHiddenSurvivor")
+                )}
+                <div className="text-xs text-muted-foreground">{t("trashMergedAsVersion")}</div>
+              </TableCell>
+              <TableCell className="manage-cell-num">{formatDateTime(merge.mergedAt)}</TableCell>
+              <TableCell className="text-right">
+                {/* The server refuses Undo on a survivor the caller cannot see. */}
+                {merge.survivorID ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy !== ""}
+                    aria-label={t("trashUndoMergeNamed", {
+                      title: merge.survivorTitle || merge.survivorID,
+                    })}
+                    onClick={() => onUndo(merge.batchID)}
+                  >
+                    {busy === merge.batchID ? t("trashUndoMergeBusy") : t("trashUndoMerge")}
+                  </Button>
+                ) : null}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </ManageTable>
+      <ErrorLine message={error} />
+    </ManageSection>
+  );
+}
+
+const sizeFormat = new Intl.NumberFormat(undefined, {
+  style: "unit",
+  unit: "gigabyte",
+  maximumFractionDigits: 2,
+});
+
+// DuplicateCopiesSection: read-only list of items holding likely identical
+// files on disk. There is no delete control: the server never deletes files.
+// reloadKey changes after an undone merge, whose files moved back.
+function DuplicateCopiesSection({ reloadKey }: { reloadKey: number }) {
+  const t = useT();
+  const [sets, setSets] = useState<DuplicateCopySet[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const loadGeneration = useRef(0);
+
+  // A generation guard keeps a slower, older request (from before an undone
+  // merge) from overwriting the latest report.
+  const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
+    setError("");
+    setLoading(true);
+    try {
+      const next = await fetchDuplicateCopies();
+      if (loadGeneration.current === generation) setSets(next);
+    } catch {
+      if (loadGeneration.current === generation) setError(t("duplicateCopiesUnavailable"));
+    } finally {
+      if (loadGeneration.current === generation) setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    void load();
+    return () => {
+      loadGeneration.current += 1;
+    };
+  }, [load, reloadKey]);
+
+  return (
+    <ManageSection
+      title={t("duplicateCopiesHeading")}
+      lead={t("duplicateCopiesLead")}
+      collapsible
+      actions={
+        <Button type="button" variant="outline" size="sm" onClick={load}>
+          {t("refresh")}
+        </Button>
+      }
+    >
+      {!loading && !error && sets.length === 0 ? (
+        <EmptyLine message={t("duplicateCopiesEmpty")} />
+      ) : (
+        <ManageTable>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("duplicateCopiesItem")}</TableHead>
+              <TableHead>{t("duplicateCopiesFiles")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableSkeletonRows columns={2} />
+            ) : (
+              sets.map((set) => (
+                <TableRow key={`${set.mediaID}:${set.copies[0]?.path ?? ""}`}>
+                  <TableCell className="manage-cell-primary align-top">
+                    <Link to={itemLink(set.mediaID)} className="underline-offset-2 hover:underline">
+                      {set.title || set.mediaID}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <ul className="space-y-1">
+                      {set.copies.map((copy) => (
+                        <li key={copy.path} className="flex flex-wrap gap-x-3">
+                          <span className="manage-mono break-all">{copy.path}</span>
+                          <span className="text-muted-foreground">
+                            {sizeFormat.format(copy.sizeBytes / 1e9)}
+                            {copy.label ? ` · ${copy.label}` : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </ManageTable>
+      )}
+      <ErrorLine message={error} />
+    </ManageSection>
   );
 }
 

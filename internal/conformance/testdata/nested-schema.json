@@ -219,6 +219,186 @@
         "optional": true
       },
       {
+        "name": "mediaRelationChange",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "after",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "attributes",
+                  "kind": "map",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "libraryID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockActivityID",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "lockOne",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockedAtMS",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "sortOrder",
+                  "kind": "scalar",
+                  "nullable": true
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "attributes",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "libraryID",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockActivityID",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "lockOne",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockedAtMS",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "sortOrder",
+                "kind": "scalar",
+                "nullable": true
+              }
+            ]
+          },
+          {
+            "name": "before",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "attributes",
+                  "kind": "map",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "libraryID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockActivityID",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "lockOne",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockedAtMS",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "sortOrder",
+                  "kind": "scalar",
+                  "nullable": true
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "attributes",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "libraryID",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockActivityID",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "lockOne",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockedAtMS",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "sortOrder",
+                "kind": "scalar",
+                "nullable": true
+              }
+            ]
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          },
+          {
+            "name": "relation",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "occurredAt",
         "kind": "scalar"
       },
@@ -233,6 +413,11 @@
       {
         "name": "sessionID",
         "kind": "scalar"
+      },
+      {
+        "name": "systemActor",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "targetID",
@@ -278,6 +463,186 @@
         "optional": true
       },
       {
+        "name": "mediaRelationChange",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "after",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "attributes",
+                  "kind": "map",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "libraryID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockActivityID",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "lockOne",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockedAtMS",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "sortOrder",
+                  "kind": "scalar",
+                  "nullable": true
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "attributes",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "libraryID",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockActivityID",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "lockOne",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockedAtMS",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "sortOrder",
+                "kind": "scalar",
+                "nullable": true
+              }
+            ]
+          },
+          {
+            "name": "before",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "attributes",
+                  "kind": "map",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "libraryID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockActivityID",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "lockOne",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockedAtMS",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "sortOrder",
+                  "kind": "scalar",
+                  "nullable": true
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "attributes",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "libraryID",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockActivityID",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "lockOne",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockedAtMS",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "sortOrder",
+                "kind": "scalar",
+                "nullable": true
+              }
+            ]
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          },
+          {
+            "name": "relation",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "occurredAt",
         "kind": "scalar"
       },
@@ -292,6 +657,11 @@
       {
         "name": "sessionID",
         "kind": "scalar"
+      },
+      {
+        "name": "systemActor",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "targetID",
@@ -677,6 +1047,31 @@
         "optional": true
       },
       {
+        "name": "catalogBytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadLatestN",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadPolicy",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadedCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "entryCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "failingSince",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "feedURL",
         "kind": "scalar"
       },
@@ -689,7 +1084,15 @@
         "kind": "scalar"
       },
       {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
         "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
         "kind": "scalar"
       },
       {
@@ -702,6 +1105,16 @@
         "kind": "scalar"
       },
       {
+        "name": "movedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "retentionKind",
         "kind": "scalar"
       },
@@ -709,6 +1122,11 @@
         "name": "retentionN",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "retiredAt",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "root",
@@ -2225,6 +2643,16 @@
       {
         "name": "cleared",
         "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "clearmediaordinal",
+    "kind": "scalar",
+    "arguments": [
+      {
+        "name": "mediaID",
+        "kind": "string"
       }
     ]
   },
@@ -6140,6 +6568,60 @@
     "kind": "object"
   },
   {
+    "field": "duplicatecopies",
+    "kind": "object",
+    "children": [
+      {
+        "name": "copies",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "label",
+              "kind": "scalar"
+            },
+            {
+              "name": "path",
+              "kind": "scalar"
+            },
+            {
+              "name": "sizeBytes",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "label",
+            "kind": "scalar"
+          },
+          {
+            "name": "path",
+            "kind": "scalar"
+          },
+          {
+            "name": "sizeBytes",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "libraryID",
+        "kind": "scalar"
+      },
+      {
+        "name": "mediaID",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "editmediametadata",
     "kind": "object",
     "children": [
@@ -6174,6 +6656,21 @@
       {
         "name": "mediaID",
         "kind": "scalar"
+      },
+      {
+        "name": "operatorOrdinal",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "index",
+            "kind": "scalar"
+          },
+          {
+            "name": "sequence",
+            "kind": "scalar"
+          }
+        ]
       },
       {
         "name": "refreshable",
@@ -6326,7 +6823,8 @@
       },
       {
         "name": "relation",
-        "kind": "string"
+        "kind": "string",
+        "optional": true
       }
     ],
     "children": [
@@ -6415,7 +6913,25 @@
         }
       },
       {
+        "name": "operatorLocked",
+        "kind": "scalar"
+      },
+      {
+        "name": "relation",
+        "kind": "scalar"
+      },
+      {
+        "name": "sortOrder",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      },
+      {
         "name": "title",
+        "kind": "scalar"
+      },
+      {
+        "name": "undeclared",
         "kind": "scalar"
       }
     ]
@@ -7793,6 +8309,43 @@
     ]
   },
   {
+    "field": "entitysearch",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "kind",
+        "kind": "string"
+      },
+      {
+        "name": "limit",
+        "kind": "int",
+        "optional": true
+      },
+      {
+        "name": "query",
+        "kind": "string"
+      }
+    ],
+    "children": [
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "libraryID",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "evictplaybackrenditioncache",
     "kind": "object",
     "children": [
@@ -7850,8 +8403,21 @@
         "optional": true
       },
       {
+        "name": "clearLocks",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
         "name": "importRunID",
         "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "index",
+        "kind": "int",
         "optional": true
       },
       {
@@ -7870,6 +8436,11 @@
       },
       {
         "name": "scraperID",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "sequence",
         "kind": "string",
         "optional": true
       }
@@ -8185,8 +8756,149 @@
     ]
   },
   {
+    "field": "fixmatchchildren",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "candidateID",
+        "kind": "string"
+      },
+      {
+        "name": "level",
+        "kind": "int"
+      },
+      {
+        "name": "mediaID",
+        "kind": "string"
+      },
+      {
+        "name": "parentKey",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "pluginID",
+        "kind": "string"
+      },
+      {
+        "name": "scraperID",
+        "kind": "string"
+      }
+    ],
+    "children": [
+      {
+        "name": "artworkURL",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      },
+      {
+        "name": "index",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      },
+      {
+        "name": "key",
+        "kind": "scalar"
+      },
+      {
+        "name": "label",
+        "kind": "scalar"
+      },
+      {
+        "name": "sequence",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      },
+      {
+        "name": "year",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      }
+    ]
+  },
+  {
+    "field": "fixmatchcurrent",
+    "kind": "object",
+    "children": [
+      {
+        "name": "candidateID",
+        "kind": "scalar"
+      },
+      {
+        "name": "pluginID",
+        "kind": "scalar"
+      },
+      {
+        "name": "scraperID",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      },
+      {
+        "name": "year",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "fixmatchlockedfields",
+    "kind": "object",
+    "children": [
+      {
+        "name": "field",
+        "kind": "scalar"
+      },
+      {
+        "name": "value",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "fixmatchpreview",
     "kind": "object",
+    "arguments": [
+      {
+        "name": "candidateID",
+        "kind": "string"
+      },
+      {
+        "name": "clearLocks",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
+        "name": "index",
+        "kind": "int",
+        "optional": true
+      },
+      {
+        "name": "mediaID",
+        "kind": "string"
+      },
+      {
+        "name": "pluginID",
+        "kind": "string"
+      },
+      {
+        "name": "scraperID",
+        "kind": "string"
+      },
+      {
+        "name": "sequence",
+        "kind": "string",
+        "optional": true
+      }
+    ],
     "children": [
       {
         "name": "changed",
@@ -8202,6 +8914,43 @@
       },
       {
         "name": "proposed",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "fixmatchsources",
+    "kind": "object",
+    "children": [
+      {
+        "name": "acceptsPastedID",
+        "kind": "scalar"
+      },
+      {
+        "name": "childLevels",
+        "kind": "list",
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "isDefault",
+        "kind": "scalar"
+      },
+      {
+        "name": "label",
+        "kind": "scalar"
+      },
+      {
+        "name": "pluginID",
+        "kind": "scalar"
+      },
+      {
+        "name": "scraperID",
+        "kind": "scalar"
+      },
+      {
+        "name": "supportsChildren",
         "kind": "scalar"
       }
     ]
@@ -8238,6 +8987,107 @@
       },
       {
         "name": "size",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "followfeed",
+    "kind": "object",
+    "children": [
+      {
+        "name": "addedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "catalogBytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadLatestN",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadPolicy",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadedCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "entryCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "failingSince",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "feedURL",
+        "kind": "scalar"
+      },
+      {
+        "name": "followed",
+        "kind": "scalar"
+      },
+      {
+        "name": "hasAuth",
+        "kind": "scalar"
+      },
+      {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastPolledAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "libraryID",
+        "kind": "scalar"
+      },
+      {
+        "name": "movedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "retentionKind",
+        "kind": "scalar"
+      },
+      {
+        "name": "retentionN",
+        "kind": "scalar",
+        "nullable": true
+      },
+      {
+        "name": "retiredAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "root",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
         "kind": "scalar"
       }
     ]
@@ -13515,6 +14365,21 @@
         "kind": "scalar"
       },
       {
+        "name": "operatorOrdinal",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "index",
+            "kind": "scalar"
+          },
+          {
+            "name": "sequence",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "refreshable",
         "kind": "scalar"
       },
@@ -14826,6 +15691,22 @@
               "optional": true
             },
             {
+              "name": "operatorOrdinal",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "index",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "sequence",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
               "name": "summary",
               "kind": "scalar",
               "optional": true
@@ -15052,6 +15933,22 @@
             "optional": true
           },
           {
+            "name": "operatorOrdinal",
+            "kind": "object",
+            "optional": true,
+            "nullable": true,
+            "children": [
+              {
+                "name": "index",
+                "kind": "scalar"
+              },
+              {
+                "name": "sequence",
+                "kind": "scalar"
+              }
+            ]
+          },
+          {
             "name": "summary",
             "kind": "scalar",
             "optional": true
@@ -15142,6 +16039,11 @@
               "kind": "scalar"
             },
             {
+              "name": "operatorLocked",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "relation",
               "kind": "scalar"
             },
@@ -15170,6 +16072,11 @@
           {
             "name": "fromEntityID",
             "kind": "scalar"
+          },
+          {
+            "name": "operatorLocked",
+            "kind": "scalar",
+            "optional": true
           },
           {
             "name": "relation",
@@ -15727,6 +16634,10 @@
               "kind": "scalar"
             },
             {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
               "name": "mediaID",
               "kind": "scalar"
             }
@@ -15738,8 +16649,43 @@
             "kind": "scalar"
           },
           {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
             "name": "mediaID",
             "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "queueState",
+        "kind": "object",
+        "children": [
+          {
+            "name": "currentEntryID",
+            "kind": "scalar",
+            "nullable": true
+          },
+          {
+            "name": "positionMS",
+            "kind": "scalar"
+          },
+          {
+            "name": "repeatMode",
+            "kind": "scalar"
+          },
+          {
+            "name": "shuffle",
+            "kind": "scalar"
+          },
+          {
+            "name": "shuffledEntryIDs",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
           }
         ]
       },
@@ -15927,6 +16873,316 @@
       },
       {
         "name": "total",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "myplayhistory",
+    "kind": "object",
+    "children": [
+      {
+        "name": "deviceClient",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "deviceID",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "deviceName",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "finished",
+        "kind": "scalar"
+      },
+      {
+        "name": "libraryID",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "libraryTitle",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "mediaID",
+        "kind": "scalar"
+      },
+      {
+        "name": "playMethod",
+        "kind": "scalar"
+      },
+      {
+        "name": "profileID",
+        "kind": "scalar"
+      },
+      {
+        "name": "profileName",
+        "kind": "scalar"
+      },
+      {
+        "name": "startedAt",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "watchedSeconds",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "myplaystats",
+    "kind": "object",
+    "children": [
+      {
+        "name": "days",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "day",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "day",
+            "kind": "scalar"
+          },
+          {
+            "name": "plays",
+            "kind": "scalar"
+          },
+          {
+            "name": "watchedSeconds",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "devices",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "deviceClient",
+              "kind": "scalar"
+            },
+            {
+              "name": "deviceID",
+              "kind": "scalar"
+            },
+            {
+              "name": "deviceName",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "deviceClient",
+            "kind": "scalar"
+          },
+          {
+            "name": "deviceID",
+            "kind": "scalar"
+          },
+          {
+            "name": "deviceName",
+            "kind": "scalar"
+          },
+          {
+            "name": "plays",
+            "kind": "scalar"
+          },
+          {
+            "name": "watchedSeconds",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "items",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "libraryID",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "libraryID",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          },
+          {
+            "name": "plays",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "scalar"
+          },
+          {
+            "name": "watchedSeconds",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "methods",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "playMethod",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "playMethod",
+            "kind": "scalar"
+          },
+          {
+            "name": "plays",
+            "kind": "scalar"
+          },
+          {
+            "name": "watchedSeconds",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "profiles",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "profileID",
+              "kind": "scalar"
+            },
+            {
+              "name": "profileName",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "plays",
+            "kind": "scalar"
+          },
+          {
+            "name": "profileID",
+            "kind": "scalar"
+          },
+          {
+            "name": "profileName",
+            "kind": "scalar"
+          },
+          {
+            "name": "watchedSeconds",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "since",
+        "kind": "scalar"
+      },
+      {
+        "name": "totalPlays",
+        "kind": "scalar"
+      },
+      {
+        "name": "totalWatchedSeconds",
+        "kind": "scalar"
+      },
+      {
+        "name": "until",
+        "kind": "scalar"
+      },
+      {
+        "name": "windowDays",
         "kind": "scalar"
       }
     ]
@@ -17542,6 +18798,21 @@
     "kind": "object",
     "children": [
       {
+        "name": "deviceClient",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "deviceID",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "deviceName",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "finished",
         "kind": "scalar"
       },
@@ -17557,6 +18828,10 @@
       },
       {
         "name": "mediaID",
+        "kind": "scalar"
+      },
+      {
+        "name": "playMethod",
         "kind": "scalar"
       },
       {
@@ -17583,9 +18858,148 @@
     ]
   },
   {
+    "field": "playqueue",
+    "kind": "object",
+    "children": [
+      {
+        "name": "currentEntryID",
+        "kind": "scalar",
+        "nullable": true
+      },
+      {
+        "name": "entries",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "positionMS",
+        "kind": "scalar"
+      },
+      {
+        "name": "repeatMode",
+        "kind": "scalar"
+      },
+      {
+        "name": "shuffle",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "playstats",
     "kind": "object",
     "children": [
+      {
+        "name": "days",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "day",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "day",
+            "kind": "scalar"
+          },
+          {
+            "name": "plays",
+            "kind": "scalar"
+          },
+          {
+            "name": "watchedSeconds",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "devices",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "deviceClient",
+              "kind": "scalar"
+            },
+            {
+              "name": "deviceID",
+              "kind": "scalar"
+            },
+            {
+              "name": "deviceName",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "deviceClient",
+            "kind": "scalar"
+          },
+          {
+            "name": "deviceID",
+            "kind": "scalar"
+          },
+          {
+            "name": "deviceName",
+            "kind": "scalar"
+          },
+          {
+            "name": "plays",
+            "kind": "scalar"
+          },
+          {
+            "name": "watchedSeconds",
+            "kind": "scalar"
+          }
+        ]
+      },
       {
         "name": "items",
         "kind": "list",
@@ -17639,6 +19053,42 @@
         ]
       },
       {
+        "name": "methods",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "playMethod",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "playMethod",
+            "kind": "scalar"
+          },
+          {
+            "name": "plays",
+            "kind": "scalar"
+          },
+          {
+            "name": "watchedSeconds",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "profiles",
         "kind": "list",
         "nullable": true,
@@ -17681,6 +19131,22 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "since",
+        "kind": "scalar"
+      },
+      {
+        "name": "totalPlays",
+        "kind": "scalar"
+      },
+      {
+        "name": "totalWatchedSeconds",
+        "kind": "scalar"
+      },
+      {
+        "name": "until",
+        "kind": "scalar"
       },
       {
         "name": "windowDays",
@@ -18569,6 +20035,79 @@
     ]
   },
   {
+    "field": "queueaddmany",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "expectedProfileID",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "mediaIDs",
+        "kind": "list",
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
+        "name": "placement",
+        "kind": "string",
+        "enum": [
+          "end",
+          "next"
+        ]
+      }
+    ],
+    "children": [
+      {
+        "name": "currentEntryID",
+        "kind": "scalar",
+        "nullable": true
+      },
+      {
+        "name": "entries",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "positionMS",
+        "kind": "scalar"
+      },
+      {
+        "name": "repeatMode",
+        "kind": "scalar"
+      },
+      {
+        "name": "shuffle",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "queueclear",
     "kind": "object",
     "children": [
@@ -18975,6 +20514,134 @@
     ]
   },
   {
+    "field": "queuemoveentry",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "entryID",
+        "kind": "string"
+      },
+      {
+        "name": "expectedProfileID",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "position",
+        "kind": "number"
+      }
+    ],
+    "children": [
+      {
+        "name": "currentEntryID",
+        "kind": "scalar",
+        "nullable": true
+      },
+      {
+        "name": "entries",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "positionMS",
+        "kind": "scalar"
+      },
+      {
+        "name": "repeatMode",
+        "kind": "scalar"
+      },
+      {
+        "name": "shuffle",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "queueplaynext",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "entryID",
+        "kind": "string"
+      },
+      {
+        "name": "expectedProfileID",
+        "kind": "string",
+        "optional": true
+      }
+    ],
+    "children": [
+      {
+        "name": "currentEntryID",
+        "kind": "scalar",
+        "nullable": true
+      },
+      {
+        "name": "entries",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "positionMS",
+        "kind": "scalar"
+      },
+      {
+        "name": "repeatMode",
+        "kind": "scalar"
+      },
+      {
+        "name": "shuffle",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "queueremove",
     "kind": "object",
     "children": [
@@ -19178,6 +20845,264 @@
     ]
   },
   {
+    "field": "queueremoveentry",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "entryID",
+        "kind": "string"
+      },
+      {
+        "name": "expectedProfileID",
+        "kind": "string",
+        "optional": true
+      }
+    ],
+    "children": [
+      {
+        "name": "currentEntryID",
+        "kind": "scalar",
+        "nullable": true
+      },
+      {
+        "name": "entries",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "positionMS",
+        "kind": "scalar"
+      },
+      {
+        "name": "repeatMode",
+        "kind": "scalar"
+      },
+      {
+        "name": "shuffle",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "queuesetcurrent",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "entryID",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "expectedProfileID",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "positionMS",
+        "kind": "number"
+      }
+    ],
+    "children": [
+      {
+        "name": "currentEntryID",
+        "kind": "scalar",
+        "nullable": true
+      },
+      {
+        "name": "entries",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "positionMS",
+        "kind": "scalar"
+      },
+      {
+        "name": "repeatMode",
+        "kind": "scalar"
+      },
+      {
+        "name": "shuffle",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "queuesetrepeat",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "expectedProfileID",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "mode",
+        "kind": "string",
+        "enum": [
+          "all",
+          "off",
+          "one"
+        ]
+      }
+    ],
+    "children": [
+      {
+        "name": "currentEntryID",
+        "kind": "scalar",
+        "nullable": true
+      },
+      {
+        "name": "entries",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "positionMS",
+        "kind": "scalar"
+      },
+      {
+        "name": "repeatMode",
+        "kind": "scalar"
+      },
+      {
+        "name": "shuffle",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "queuesetshuffle",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "enabled",
+        "kind": "boolean"
+      },
+      {
+        "name": "expectedProfileID",
+        "kind": "string",
+        "optional": true
+      }
+    ],
+    "children": [
+      {
+        "name": "currentEntryID",
+        "kind": "scalar",
+        "nullable": true
+      },
+      {
+        "name": "entries",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "positionMS",
+        "kind": "scalar"
+      },
+      {
+        "name": "repeatMode",
+        "kind": "scalar"
+      },
+      {
+        "name": "shuffle",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "recordengagement",
     "kind": "object",
     "children": [
@@ -19207,6 +21132,16 @@
         "name": "mediaID",
         "kind": "scalar",
         "optional": true
+      }
+    ]
+  },
+  {
+    "field": "refreshallsubscriptions",
+    "kind": "object",
+    "children": [
+      {
+        "name": "refreshed",
+        "kind": "scalar"
       }
     ]
   },
@@ -19347,6 +21282,21 @@
         "kind": "scalar"
       },
       {
+        "name": "operatorOrdinal",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "index",
+            "kind": "scalar"
+          },
+          {
+            "name": "sequence",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "refreshable",
         "kind": "scalar"
       },
@@ -19364,6 +21314,38 @@
       },
       {
         "name": "year",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "refreshsubscription",
+    "kind": "object",
+    "children": [
+      {
+        "name": "failingSince",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
+        "kind": "scalar"
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "title",
         "kind": "scalar"
       }
     ]
@@ -19967,11 +21949,68 @@
     ]
   },
   {
+    "field": "removemediarelation",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "entityID",
+        "kind": "string"
+      },
+      {
+        "name": "mediaID",
+        "kind": "string"
+      },
+      {
+        "name": "relation",
+        "kind": "string"
+      }
+    ],
+    "children": [
+      {
+        "name": "relation",
+        "kind": "scalar"
+      },
+      {
+        "name": "sourceID",
+        "kind": "scalar"
+      },
+      {
+        "name": "targetID",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "removesubscription",
     "kind": "object",
     "children": [
       {
         "name": "addedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "catalogBytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadLatestN",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadPolicy",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadedCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "entryCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "failingSince",
         "kind": "scalar",
         "optional": true
       },
@@ -19988,7 +22027,15 @@
         "kind": "scalar"
       },
       {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
         "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
         "kind": "scalar"
       },
       {
@@ -20001,6 +22048,16 @@
         "kind": "scalar"
       },
       {
+        "name": "movedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "retentionKind",
         "kind": "scalar"
       },
@@ -20008,6 +22065,11 @@
         "name": "retentionN",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "retiredAt",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "root",
@@ -20617,6 +22679,30 @@
       {
         "name": "libraryID",
         "kind": "scalar"
+      },
+      {
+        "name": "mergedInto",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "batchID",
+            "kind": "scalar"
+          },
+          {
+            "name": "mergedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorID",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorTitle",
+            "kind": "scalar"
+          }
+        ]
       },
       {
         "name": "title",
@@ -25526,6 +27612,32 @@
     ]
   },
   {
+    "field": "setcontinuewatchinghidden",
+    "kind": "object",
+    "children": [
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "rating",
+        "kind": "scalar"
+      },
+      {
+        "name": "watched",
+        "kind": "scalar"
+      },
+      {
+        "name": "watchlisted",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "setdevicerole",
     "kind": "object",
     "children": [
@@ -26324,6 +28436,67 @@
       },
       {
         "name": "locked",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "setmediarelation",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "attributes",
+        "kind": "map",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
+        "name": "entityID",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "mediaID",
+        "kind": "string"
+      },
+      {
+        "name": "newEntity",
+        "kind": "object",
+        "optional": true,
+        "fields": [
+          {
+            "name": "kind",
+            "kind": "string"
+          },
+          {
+            "name": "name",
+            "kind": "string"
+          }
+        ]
+      },
+      {
+        "name": "relation",
+        "kind": "string"
+      },
+      {
+        "name": "sortOrder",
+        "kind": "int",
+        "optional": true
+      }
+    ],
+    "children": [
+      {
+        "name": "relation",
+        "kind": "scalar"
+      },
+      {
+        "name": "sourceID",
+        "kind": "scalar"
+      },
+      {
+        "name": "targetID",
         "kind": "scalar"
       }
     ]
@@ -31024,11 +33197,36 @@
     ]
   },
   {
-    "field": "setsubscriptionretention",
+    "field": "setsubscriptiondownloadpolicy",
     "kind": "object",
     "children": [
       {
         "name": "addedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "catalogBytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadLatestN",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadPolicy",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadedCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "entryCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "failingSince",
         "kind": "scalar",
         "optional": true
       },
@@ -31045,7 +33243,15 @@
         "kind": "scalar"
       },
       {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
         "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
         "kind": "scalar"
       },
       {
@@ -31058,6 +33264,16 @@
         "kind": "scalar"
       },
       {
+        "name": "movedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "retentionKind",
         "kind": "scalar"
       },
@@ -31065,6 +33281,112 @@
         "name": "retentionN",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "retiredAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "root",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "setsubscriptionretention",
+    "kind": "object",
+    "children": [
+      {
+        "name": "addedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "catalogBytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadLatestN",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadPolicy",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadedCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "entryCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "failingSince",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "feedURL",
+        "kind": "scalar"
+      },
+      {
+        "name": "followed",
+        "kind": "scalar"
+      },
+      {
+        "name": "hasAuth",
+        "kind": "scalar"
+      },
+      {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastPolledAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "libraryID",
+        "kind": "scalar"
+      },
+      {
+        "name": "movedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "retentionKind",
+        "kind": "scalar"
+      },
+      {
+        "name": "retentionN",
+        "kind": "scalar",
+        "nullable": true
+      },
+      {
+        "name": "retiredAt",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "root",
@@ -32330,11 +34652,71 @@
     ]
   },
   {
+    "field": "subscriptionentries",
+    "kind": "object",
+    "children": [
+      {
+        "name": "availability",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadState",
+        "kind": "scalar"
+      },
+      {
+        "name": "enclosureLength",
+        "kind": "scalar"
+      },
+      {
+        "name": "feedPosition",
+        "kind": "scalar"
+      },
+      {
+        "name": "mediaID",
+        "kind": "scalar"
+      },
+      {
+        "name": "publishedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "subscriptions",
     "kind": "object",
     "children": [
       {
         "name": "addedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "catalogBytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadLatestN",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadPolicy",
+        "kind": "scalar"
+      },
+      {
+        "name": "downloadedCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "entryCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "failingSince",
         "kind": "scalar",
         "optional": true
       },
@@ -32351,7 +34733,15 @@
         "kind": "scalar"
       },
       {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
         "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
         "kind": "scalar"
       },
       {
@@ -32364,6 +34754,16 @@
         "kind": "scalar"
       },
       {
+        "name": "movedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "retentionKind",
         "kind": "scalar"
       },
@@ -32371,6 +34771,11 @@
         "name": "retentionN",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "retiredAt",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "root",
@@ -32889,6 +35294,30 @@
         "kind": "scalar"
       },
       {
+        "name": "mergedInto",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "batchID",
+            "kind": "scalar"
+          },
+          {
+            "name": "mergedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorID",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorTitle",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "title",
         "kind": "scalar"
       },
@@ -32909,6 +35338,30 @@
       {
         "name": "libraryID",
         "kind": "scalar"
+      },
+      {
+        "name": "mergedInto",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "batchID",
+            "kind": "scalar"
+          },
+          {
+            "name": "mergedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorID",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorTitle",
+            "kind": "scalar"
+          }
+        ]
       },
       {
         "name": "title",

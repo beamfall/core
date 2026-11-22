@@ -605,11 +605,11 @@ export function Visualizer({
         return false;
       }
     };
-    const start = (restored = false) => {
+    const start = () => {
       const mine = ++build;
       const current = () => alive && mine === build;
       return loadOscillux()
-        .then((osc) => Renderer.create(canvas, osc, restored))
+        .then((osc) => Renderer.create(canvas, osc))
         .then((renderer) => {
           // No hardware WebGL2: the slot stays empty, as without WebGL2 at all.
           if (!renderer) {
@@ -657,7 +657,7 @@ export function Visualizer({
         // Deleting objects on a lost context is a no-op or throws; either way it is gone.
       }
     };
-    const restored = () => void start(true);
+    const restored = () => void start();
     // Browsers usually stop animation frames while the page is hidden, so the tick cannot see
     // the hide itself: the first interval after it would span the whole time hidden.
     const visibility = () => restartClocks();

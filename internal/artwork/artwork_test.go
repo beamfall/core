@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -123,6 +124,9 @@ func TestGeneratePosterPrefersEmbeddedArtwork(t *testing.T) {
 	}
 	if svc.IsGeneratedArtwork("media-alpha", SlotPoster) {
 		t.Fatal("embedded poster carried generated provenance")
+	}
+	if !svc.IsEmbeddedArtwork("media-alpha", SlotPoster) {
+		t.Fatal("embedded poster lost its embedded provenance")
 	}
 	poster, err := os.ReadFile(svc.PosterPath("media-alpha"))
 	if err != nil || string(poster) != "embedded jpeg" {
@@ -563,6 +567,95 @@ func TestDeriveImageIsFingerprintResumableAndRegeneratesChangedSource(t *testing
 	}
 	if string(data) != "changed image" {
 		t.Fatalf("preview = %q, want changed source", data)
+	}
+}
+
+func TestDeriveImageRegeneratesDerivativesFromAnOlderScaler(t *testing.T) {
+	st := storetest.Open(t)
+	id, path := importImageFile(t, st, "still", "jpg")
+	scaler := &copyScaler{}
+	svc := NewService(st, scaler, t.TempDir())
+	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+		t.Fatal(err)
+	}
+	// A marker written before imageDerivativeVersion held the bare fingerprint.
+	if err := os.WriteFile(svc.PosterPath(id)+".source-fingerprint", []byte("fingerprint-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if scaler.calls != 6 {
+		t.Fatalf("scale calls = %d, want one regeneration for the unversioned marker", scaler.calls)
+	}
+}
+
+func TestDeriveImageVersionBumpKeepsAnImportedPoster(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		marker  string   // a bare fingerprint is the marker a pre-version scaler wrote
+		present []string // buckets already cached before the scan
+		scales  int
+	}{
+		{"pre-version, no buckets", "fingerprint-1", nil, 2},
+		{"pre-version, one bucket", "fingerprint-1", []string{"w400"}, 2},
+		{"pre-version, all buckets", "fingerprint-1", []string{"w400", "w1920"}, 2},
+		{"current, one bucket", imageDerivativeVersion + ":fingerprint-1", []string{"w400"}, 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			st := storetest.Open(t)
+			id, path := importImageFile(t, st, "still", "jpg")
+			scaler := &copyScaler{}
+			svc := NewService(st, scaler, t.TempDir())
+			if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+				t.Fatal(err)
+			}
+			// Importing removes the buckets.
+			if err := svc.ImportArtwork(context.Background(), id, SlotPoster, []byte("chosen poster")); err != nil {
+				t.Fatal(err)
+			}
+			marker := svc.PosterPath(id) + ".source-fingerprint"
+			if err := os.WriteFile(marker, []byte(c.marker+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Dir(svc.PosterPath(id))
+			content := "old scaler bucket"
+			if c.marker != "fingerprint-1" {
+				content = "chosen poster"
+			}
+			for _, bucket := range c.present {
+				if err := os.WriteFile(filepath.Join(dir, SlotPoster+"."+bucket+".jpg"), []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := scaler.calls
+			if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+				t.Fatal(err)
+			}
+			if scaler.calls != before+c.scales {
+				t.Fatalf("scale calls = %d, want %d", scaler.calls, before+c.scales)
+			}
+			for _, name := range []string{SlotPoster + ".jpg", SlotPoster + ".w400.jpg", SlotPoster + ".w1920.jpg"} {
+				// #nosec G304 -- the path is under the test-owned artwork root.
+				if data, err := os.ReadFile(filepath.Join(dir, name)); err != nil || string(data) != "chosen poster" {
+					t.Fatalf("%s = %q, %v; want the imported poster", name, data, err)
+				}
+			}
+			// #nosec G304 -- the path is under the test-owned artwork root.
+			if data, err := os.ReadFile(marker); err != nil || string(data) != imageDerivativeVersion+":fingerprint-1\n" {
+				t.Fatalf("marker = %q, %v; want the current stamp", data, err)
+			}
+			// The rebuilt buckets carry the current stamp: the next scan is a no-op.
+			before = scaler.calls
+			if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+				t.Fatal(err)
+			}
+			if scaler.calls != before {
+				t.Fatalf("scale calls = %d after a current rescan, want %d", scaler.calls, before)
+			}
+		})
 	}
 }
 
@@ -1138,5 +1231,127 @@ func TestImportCandidateArtworkBypassesSealedGate(t *testing.T) {
 	}
 	if svc.HasPoster(other) {
 		t.Fatal("Media-gated ImportArtwork wrote a poster for an unresolvable synthetic ID; sealed gate not fail-closed")
+	}
+}
+
+// TestImportArtworkClearsEmbeddedProvenance (CORE-2901): fetched artwork over
+// an embedded cover is no longer marked embedded, so identify keeps it.
+func TestImportArtworkClearsEmbeddedProvenance(t *testing.T) {
+	st := storetest.Open(t)
+	setPrimaryFile(t, st, "media-alpha")
+	svc := NewService(st, &fakeGrabber{embedded: true}, t.TempDir())
+	found, err := svc.ImportEmbeddedPoster(context.Background(), "media-alpha")
+	if err != nil || !found {
+		t.Fatalf("ImportEmbeddedPoster = %v, %v; want true, nil", found, err)
+	}
+	if !svc.IsEmbeddedArtwork("media-alpha", SlotPoster) {
+		t.Fatal("embedded poster not marked embedded")
+	}
+	if err := svc.ImportArtwork(context.Background(), "media-alpha", SlotPoster, []byte("fetched poster")); err != nil {
+		t.Fatal(err)
+	}
+	if svc.IsEmbeddedArtwork("media-alpha", SlotPoster) {
+		t.Fatal("fetched poster still marked embedded")
+	}
+	if !svc.IsImportedArtwork("media-alpha", SlotPoster) {
+		t.Fatal("fetched poster not marked imported")
+	}
+	// The embedded cover fills only a missing or generated poster.
+	if found, err := svc.ImportEmbeddedPoster(context.Background(), "media-alpha"); err != nil || found {
+		t.Fatalf("ImportEmbeddedPoster over a fetched poster = %v, %v; want false, nil", found, err)
+	}
+	// A conditional import that no longer wants the slot leaves it alone.
+	stored, err := svc.ImportArtworkIf(context.Background(), "media-alpha", SlotPoster, []byte("late poster"), func() bool { return false })
+	if err != nil || stored {
+		t.Fatalf("ImportArtworkIf with a false condition = %v, %v; want false, nil", stored, err)
+	}
+	poster, err := os.ReadFile(svc.PosterPath("media-alpha"))
+	if err != nil || string(poster) != "fetched poster" {
+		t.Fatalf("poster = %q, %v; want the fetched poster", poster, err)
+	}
+	if !svc.IsImportedArtwork("media-alpha", SlotPoster) || svc.IsEmbeddedArtwork("media-alpha", SlotPoster) {
+		t.Fatal("provenance changed by refused imports")
+	}
+}
+
+// TestKeepUploadedCandidateRoundTripsAndVerifies: an uploaded candidate's bytes
+// come back only under the SourceURL they hash to (CORE-2937), live under the
+// owning Media, and go with that Media's artwork when it is purged.
+func TestKeepUploadedCandidateRoundTripsAndVerifies(t *testing.T) {
+	svc := NewService(storetest.Open(t), &fakeGrabber{}, t.TempDir())
+	ctx := context.Background()
+	data := []byte("uploaded poster bytes")
+	sourceURL := UploadedSourceURL(data)
+	if !IsUploadedSource(sourceURL) || IsUploadedSource("https://img.example.test/a.jpg") {
+		t.Fatalf("IsUploadedSource misclassifies %q", sourceURL)
+	}
+	if _, err := svc.UploadedCandidate("media-alpha", sourceURL); !errors.Is(err, ErrUploadedCandidateMissing) {
+		t.Fatalf("UploadedCandidate before keep = %v, want ErrUploadedCandidateMissing", err)
+	}
+	if err := svc.KeepUploadedCandidate(ctx, "media-alpha", data); err != nil {
+		t.Fatalf("KeepUploadedCandidate: %v", err)
+	}
+	if err := svc.KeepUploadedCandidate(ctx, "media-alpha", data); err != nil {
+		t.Fatalf("repeat KeepUploadedCandidate: %v", err)
+	}
+	got, err := svc.UploadedCandidate("media-alpha", sourceURL)
+	if err != nil || string(got) != string(data) {
+		t.Fatalf("UploadedCandidate = %q, %v; want the kept bytes", got, err)
+	}
+	path := svc.uploadedCandidatePath("media-alpha", sourceURL)
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("kept upload mode = %v, %v; want 0600", info, err)
+	}
+	if _, err := svc.UploadedCandidate("media-alpha", UploadedSourceURL([]byte("other"))); !errors.Is(err, ErrUploadedCandidateMissing) {
+		t.Fatalf("UploadedCandidate under another digest = %v, want ErrUploadedCandidateMissing", err)
+	}
+	for _, bad := range []string{"https://img.example.test/a.jpg", UploadedSourcePrefix + "../../x", UploadedSourcePrefix + strings.ToUpper(sourceURL[len(UploadedSourcePrefix):])} {
+		if _, err := svc.UploadedCandidate("media-alpha", bad); !errors.Is(err, ErrUploadedCandidateMissing) {
+			t.Fatalf("UploadedCandidate(%q) = %v, want ErrUploadedCandidateMissing", bad, err)
+		}
+	}
+	if _, err := svc.SweepCandidatePreviewCache(nil); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if _, err := svc.UploadedCandidate("media-alpha", sourceURL); err != nil {
+		t.Fatalf("candidate-preview sweep removed a kept upload: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.KeepUploadedCandidate(ctx, "media-alpha", data); err != nil {
+		t.Fatalf("KeepUploadedCandidate over a corrupt original: %v", err)
+	}
+	if got, err := svc.UploadedCandidate("media-alpha", sourceURL); err != nil || string(got) != string(data) {
+		t.Fatalf("UploadedCandidate after repair = %q, %v", got, err)
+	}
+	if err := svc.PurgeMediaArtwork("media-alpha"); err != nil {
+		t.Fatalf("PurgeMediaArtwork: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("purged Media kept its uploaded original: %v", err)
+	}
+}
+
+// TestKeepUploadedCandidateSkipsSealedAndEncryptedMedia: no plaintext upload
+// copy lands on disk for Media in a Sealed or encrypted Library.
+func TestKeepUploadedCandidateSkipsSealedAndEncryptedMedia(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		sealed    bool
+		encrypted bool
+	}{{name: "sealed", sealed: true}, {name: "encrypted", encrypted: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := NewService(storetest.Open(t), &fakeGrabber{}, t.TempDir())
+			svc.SetSealed(func(store.LibraryID) bool { return tc.sealed })
+			svc.SetEncrypted(func(store.LibraryID) bool { return tc.encrypted })
+			if err := svc.KeepUploadedCandidate(context.Background(), "media-alpha", []byte("plaintext")); err != nil {
+				t.Fatalf("KeepUploadedCandidate: %v", err)
+			}
+			if _, err := os.Stat(svc.uploadedCandidatePath("media-alpha", UploadedSourceURL([]byte("plaintext")))); !os.IsNotExist(err) {
+				t.Fatalf("plaintext upload kept for %s media: %v", tc.name, err)
+			}
+		})
 	}
 }

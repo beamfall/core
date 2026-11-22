@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
   ErrorLine,
@@ -7,7 +8,6 @@ import {
   StatusBadge,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchEntity } from "@/lib/graphql";
@@ -26,36 +26,47 @@ export function EntityPage() {
   const [entity, setEntity] = useState<EntityInfo | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  // Only the newest load may land, so a slow earlier pick cannot replace it.
+  const loadSeq = useRef(0);
 
-  const onLoad = async () => {
+  const onLoad = async (picked?: string) => {
     setError("");
-    const id = entityID.trim();
+    const id = (picked ?? entityID).trim();
     if (!id) return;
-    try {
-      const result = await fetchEntity(id);
-      setEntity(result);
-      setLoaded(true);
-    } catch {
-      setEntity(null);
-      setLoaded(true);
-    }
+    const seq = ++loadSeq.current;
+    const result = await fetchEntity(id).catch(() => null);
+    if (seq !== loadSeq.current) return;
+    setEntity(result);
+    setLoaded(true);
   };
 
   return (
     <ManageSection>
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <div className="space-y-1">
           <Label htmlFor="entity-id">{t("fieldLocksMediaLabel")}</Label>
-          <Input
+          <EntityPicker
             id="entity-id"
+            kind="entity"
             value={entityID}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setEntityID(e.target.value)}
-            className="w-72"
+            onChange={(id) => {
+              setEntityID(id);
+              if (id) void onLoad(id);
+              else {
+                loadSeq.current++;
+                setEntity(null);
+                setLoaded(false);
+              }
+            }}
           />
         </div>
-        <Button type="button" variant="outline" onClick={onLoad} disabled={!entityID.trim()}>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-6"
+          onClick={() => void onLoad()}
+          disabled={!entityID.trim()}
+        >
           {t("fieldLocksLoad")}
         </Button>
       </div>
