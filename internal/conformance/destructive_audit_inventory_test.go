@@ -27,6 +27,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"AppendGroupSyncEvent":                  {},
 	"AppendInvalidationEvent":               {},
 	"AppendSessionControlEventWithActivity": {},
+	"ApplyOfflineEngagementEvent":           {}, // offline engagement replay, Profile-scoped (CORE-3182)
 	"ArtworkCandidate":                      {},
 	"ArtworkCandidates":                     {},
 	"AssignTag":                             {},

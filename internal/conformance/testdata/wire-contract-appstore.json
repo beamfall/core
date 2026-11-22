@@ -1163,6 +1163,11 @@
       "tier": "admin"
     },
     {
+      "field": "replayofflineengagement",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "reportdrift",
       "effect": "write",
       "tier": "session"
@@ -37630,6 +37635,62 @@
         {
           "name": "remoteMaxBitrate",
           "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "replayofflineengagement",
+      "kind": "object",
+      "children": [
+        {
+          "name": "applied",
+          "kind": "scalar"
+        },
+        {
+          "name": "duplicates",
+          "kind": "scalar"
+        },
+        {
+          "name": "rejected",
+          "kind": "scalar"
+        },
+        {
+          "name": "results",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "eventID",
+                "kind": "scalar"
+              },
+              {
+                "name": "reason",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "status",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "eventID",
+              "kind": "scalar"
+            },
+            {
+              "name": "reason",
+              "kind": "scalar",
+              "nullable": true
+            },
+            {
+              "name": "status",
+              "kind": "scalar"
+            }
+          ]
         }
       ]
     },

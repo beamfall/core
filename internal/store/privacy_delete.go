@@ -146,7 +146,7 @@ func (s *Store) deleteProfileMediaAuditedLocked(ctx context.Context, profileID P
 	if err := appendActivitySQL(ctx, tx, activity); err != nil {
 		return err
 	}
-	for _, table := range []string{"playback_progress", "media_favorite", "engagement_event"} {
+	for _, table := range []string{"playback_progress", "media_favorite", "engagement_event", "offline_engagement_event"} {
 		// #nosec G202 -- table is drawn from the closed literal list above.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE profile_id = ? AND media_id = ?`, profileID, mediaID); err != nil {
 			return err
@@ -290,7 +290,7 @@ func (s *Store) deleteProfileEventsLocked(ctx context.Context, profileID Profile
 		return err
 	}
 	defer tx.Rollback()
-	for _, table := range []string{"playback_progress", "media_favorite", "engagement_event", "watchlist_item", "item_rating", "version_merge_playback"} {
+	for _, table := range []string{"playback_progress", "media_favorite", "engagement_event", "watchlist_item", "item_rating", "version_merge_playback", "offline_engagement_event"} {
 		// #nosec G202 -- table is drawn from the closed literal list above.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE profile_id = ?`, profileID); err != nil {
 			return err

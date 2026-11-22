@@ -4853,6 +4853,12 @@ func (h *Handler) heldPlayMethod(sessionID store.SessionID, mediaID store.MediaI
 // LibraryID/Class/Title/Year ride the transition so the plugin can gate
 // eligibility and map a submission without a second read.
 func (h *Handler) notifyWatched(ctx context.Context, profileID store.ProfileID, media store.Media) {
+	h.notifyWatchedAt(ctx, profileID, media, time.Now())
+}
+
+// notifyWatchedAt is notifyWatched for a play that happened at watchedAt, such
+// as one replayed from a Device's offline log (CORE-3182).
+func (h *Handler) notifyWatchedAt(ctx context.Context, profileID store.ProfileID, media store.Media, watchedAt time.Time) {
 	externalIDs, err := h.store.MediaExternalIDs(ctx, media.ID)
 	if err != nil {
 		externalIDs = nil
@@ -4874,7 +4880,7 @@ func (h *Handler) notifyWatched(ctx context.Context, profileID store.ProfileID, 
 		Year:        media.Year,
 		ExternalIDs: externalIDs,
 		Audio:       audio,
-		WatchedAt:   time.Now().UTC(),
+		WatchedAt:   watchedAt.UTC(),
 	})
 }
 
@@ -6520,6 +6526,7 @@ var mutationFields = map[string]bool{
 	"relock":                       true,
 	"setrevealpin":                 true,
 	"reportplayback":               true,
+	"replayofflineengagement":      true, // CORE-3182: offline engagement replay
 	"endplayback":                  true, // CORE-2305: a closing player ends its live session
 	"marknotificationread":         true,
 	"registerdevicepushtoken":      true,
