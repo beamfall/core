@@ -915,6 +915,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// and hands them to the standard scan pipeline. A completed pass re-arms
 	// itself at the default cadence (ADR-0032's Scheduler owns cadence later).
 	subscriptionPoller := ingest.NewPoller(st, scrapeEngine)
+	subscriptionPoller.SetCertificationResolver(authService.CertificationConstraints)
 	subscriptionPoller.SetLogger(logger)
 	pollHandler := ingest.Handler(subscriptionPoller)
 	jobRegistry.Register(ingest.PollJobKind, pollHandler)

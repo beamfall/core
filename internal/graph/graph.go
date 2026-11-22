@@ -3381,12 +3381,15 @@ type SubscriptionInfo struct {
 	// the secure store for this Subscription. The header value is never
 	// returned (invariant #5) — only its presence, so the Console can render an
 	// "authenticated feed" indicator and offer to replace the secret.
-	HasAuth       bool   `json:"hasAuth"`
-	Root          string `json:"root"`
-	Title         string `json:"title"`
-	AddedAt       string `json:"addedAt,omitempty"`
-	LastPolledAt  string `json:"lastPolledAt,omitempty"`
-	Followed      bool   `json:"followed"`
+	HasAuth      bool   `json:"hasAuth"`
+	Root         string `json:"root"`
+	Title        string `json:"title"`
+	AddedAt      string `json:"addedAt,omitempty"`
+	LastPolledAt string `json:"lastPolledAt,omitempty"`
+	Followed     bool   `json:"followed"`
+	// NewEntryRoute is where the caller's new entries go: new, queue-end or
+	// queue-front (CORE-2958).
+	NewEntryRoute string `json:"newEntryRoute"`
 	RetentionKind string `json:"retentionKind"`
 	RetentionN    *int   `json:"retentionN"`
 	// Download policy and catalogue counts (CORE-2953).
@@ -3451,7 +3454,12 @@ func (h *Handler) subscriptionBaseInfo(ctx context.Context, scope auth.Scope, su
 	if err != nil {
 		return SubscriptionInfo{}, err
 	}
+	route, err := h.followNewEntryRoute(ctx, scope, subscription.ID)
+	if err != nil {
+		return SubscriptionInfo{}, err
+	}
 	return SubscriptionInfo{
+		NewEntryRoute: route,
 		ID:            string(subscription.ID),
 		LibraryID:     string(subscription.LibraryID),
 		FeedURL:       subscription.FeedURL,
@@ -3715,9 +3723,10 @@ func (h *Handler) subscriptions(ctx context.Context, scope auth.Scope, req reque
 // viewer sessions. (The private-feed credential itself is never in
 // SubscriptionInfo at all — it lives in the secure store.)
 type FollowInfo struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Followed bool   `json:"followed"`
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Followed      bool   `json:"followed"`
+	NewEntryRoute string `json:"newEntryRoute"`
 }
 
 func (h *Handler) setFollow(ctx context.Context, scope auth.Scope, req request) (FollowInfo, error) {
@@ -3745,11 +3754,57 @@ func (h *Handler) setFollow(ctx context.Context, scope auth.Scope, req request) 
 	if err := h.store.SetFollow(ctx, scope.ProfileID, id, on, time.Now().UTC()); err != nil {
 		return FollowInfo{}, err
 	}
-	followed, err := h.store.SubscriptionFollowed(ctx, scope.ProfileID, id)
+	return h.followInfo(ctx, scope, subscription)
+}
+
+func (h *Handler) followInfo(ctx context.Context, scope auth.Scope, subscription store.Subscription) (FollowInfo, error) {
+	followed, err := h.store.SubscriptionFollowed(ctx, scope.ProfileID, subscription.ID)
 	if err != nil {
 		return FollowInfo{}, err
 	}
-	return FollowInfo{ID: string(subscription.ID), Title: subscription.Title, Followed: followed}, nil
+	route, err := h.followNewEntryRoute(ctx, scope, subscription.ID)
+	if err != nil {
+		return FollowInfo{}, err
+	}
+	return FollowInfo{ID: string(subscription.ID), Title: subscription.Title, Followed: followed, NewEntryRoute: route}, nil
+}
+
+// followNewEntryRoute is the caller's route; a scope without a Profile reads
+// the default.
+func (h *Handler) followNewEntryRoute(ctx context.Context, scope auth.Scope, id store.SubscriptionID) (string, error) {
+	if scope.ProfileID == "" {
+		return string(store.NewEntryRouteNew), nil
+	}
+	route, err := h.store.FollowNewEntryRoute(ctx, scope.ProfileID, id)
+	return string(route), err
+}
+
+// setFollowNewEntryRoute sets where new entries of a followed Subscription go
+// for the caller's Profile (CORE-2958).
+func (h *Handler) setFollowNewEntryRoute(ctx context.Context, scope auth.Scope, req request) (FollowInfo, error) {
+	id := store.SubscriptionID(trimmedVariable(req, "subscriptionID"))
+	route := store.NewEntryRoute(trimmedVariable(req, "route"))
+	if id == "" || !route.Valid() {
+		return FollowInfo{}, clientError("subscriptionID and a route of new, queue-end or queue-front are required")
+	}
+	subscription, err := h.store.Subscription(ctx, id)
+	if err != nil {
+		return FollowInfo{}, clientError("unknown subscription")
+	}
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
+	if err != nil {
+		return FollowInfo{}, err
+	}
+	if !visible {
+		return FollowInfo{}, clientError("unknown subscription")
+	}
+	if err := h.store.SetFollowNewEntryRoute(ctx, scope.ProfileID, id, route); err != nil {
+		if errors.Is(err, store.ErrNotFollowing) {
+			return FollowInfo{}, clientError("follow the subscription first")
+		}
+		return FollowInfo{}, err
+	}
+	return h.followInfo(ctx, scope, subscription)
 }
 
 func (h *Handler) setSubscriptionRetention(ctx context.Context, scope auth.Scope, req request) (SubscriptionInfo, error) {
@@ -6579,6 +6634,7 @@ var mutationFields = map[string]bool{
 	"sethomelayout":                      true, // CORE-1972: save the session Profile's Home layout
 	"resethomelayout":                    true, // CORE-1972: clear the session Profile's Home layout
 	"setfollow":                          true,
+	"setfollownewentryroute":             true, // CORE-2958: per-follow new-entry route (own Profile)
 	"associatesubscriptionentry":         true,
 	"setmute":                            true, // ENR-4 (ADR-0054 §2.8): set "Not interested" on an Entity/Tag (own Profile)
 	"clearmute":                          true, // ENR-4 (ADR-0054 §2.8): unmute one target (own Profile)

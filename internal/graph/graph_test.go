@@ -4012,6 +4012,48 @@ func TestFollowMutationAllowsAdultViewerAndRejectsManagedProfile(t *testing.T) {
 	}
 }
 
+func TestSetFollowNewEntryRouteRequiresFollowAndReadsBack(t *testing.T) {
+	handler := newTestHandler(t)
+	var added SubscriptionInfo
+	execGraph(t, handler, authorizeManager,
+		`mutation Add($libraryID: String!, $feedURL: String!, $root: String!) { addSubscription(libraryID: $libraryID, feedURL: $feedURL, root: $root) { id } }`,
+		map[string]any{"libraryID": "library-local", "feedURL": "https://feeds.example.com/route", "root": "/media/route"},
+		"addSubscription", &added)
+	const routeMutation = `mutation Route($id: String!, $route: String!) { setFollowNewEntryRoute(subscriptionID: $id, route: $route) { id followed newEntryRoute } }`
+
+	resp := postGraphJSON(t, handler, authorizeViewer, routeMutation, map[string]any{"id": added.ID, "route": "queue-end"})
+	if len(resp.Errors) == 0 || !strings.Contains(resp.Errors[0].Message, "follow the subscription first") {
+		t.Fatalf("route before follow errors = %+v", resp.Errors)
+	}
+	resp = postGraphJSON(t, handler, authorizeViewer, routeMutation, map[string]any{"id": added.ID, "route": "sideways"})
+	if len(resp.Errors) == 0 {
+		t.Fatal("unknown route accepted")
+	}
+
+	var followed FollowInfo
+	execGraph(t, handler, authorizeViewer,
+		`mutation Follow($id: String!, $on: Boolean!) { setFollow(subscriptionID: $id, on: $on) { id followed newEntryRoute } }`,
+		map[string]any{"id": added.ID, "on": true},
+		"setFollow", &followed)
+	if followed.NewEntryRoute != "new" {
+		t.Fatalf("default route = %q, want new", followed.NewEntryRoute)
+	}
+	var routed FollowInfo
+	execGraph(t, handler, authorizeViewer, routeMutation, map[string]any{"id": added.ID, "route": "queue-end"}, "setFollowNewEntryRoute", &routed)
+	if !routed.Followed || routed.NewEntryRoute != "queue-end" {
+		t.Fatalf("routed = %+v, want followed queue-end", routed)
+	}
+	// The manager session runs as the same Profile, so it reads that route.
+	var listed []SubscriptionInfo
+	execGraph(t, handler, authorizeManager,
+		`query Subs($libraryID: String!) { subscriptions(libraryID: $libraryID) { id newEntryRoute } }`,
+		map[string]any{"libraryID": "library-local"},
+		"subscriptions", &listed)
+	if len(listed) != 1 || listed[0].NewEntryRoute != "queue-end" {
+		t.Fatalf("listed = %+v, want queue-end", listed)
+	}
+}
+
 func TestSetFollowHidesRestrictedSubscriptionsAndLeaksNoSecrets(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := context.Background()

@@ -971,6 +971,10 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "on", Kind: "boolean", Optional: true},
 		{Name: "subscriptionID", Kind: "string", Optional: true},
 	},
+	"setfollownewentryroute": {
+		{Name: "route", Kind: "string"},
+		{Name: "subscriptionID", Kind: "string"},
+	},
 	"setlibraryaiindexing": {
 		{Name: "enabled", Kind: "boolean"},
 		{Name: "libraryID", Kind: "string"},

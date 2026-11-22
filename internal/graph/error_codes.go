@@ -273,6 +273,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"invalid session": ErrorCodeUnauthenticated,
 
 	"access request already resolved":                                                              ErrorCodeConflict,
+	"follow the subscription first":                                                                ErrorCodeConflict, // CORE-2958
 	"no backup key is waiting to be saved":                                                         ErrorCodeConflict,
 	"the backup key changed; reveal it again":                                                      ErrorCodeConflict,
 	"encrypted library is already provisioned":                                                     ErrorCodeConflict,

@@ -3689,7 +3689,7 @@ const defaultSourceItemsLimit = 50
 // SourceItems returns visible Media rows for a bounded manifest Source.
 func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query SourceQuery) ([]SourceItem, error) {
 	switch query.Kind {
-	case "", "recently-added", "all-items", "on-this-day", "continue-watching", "next-up", "recently-played", "most-played", "top-tracks", "top-artists", "top-albums", "listening-summary", "queue", "entity-items", "entity-media", "random", "resume-progress", "availability", "watched-by-any-profile", "directory", "smart-collection", "collection", "watchlist", "rated", "favorites":
+	case "", "recently-added", "all-items", "on-this-day", "continue-watching", "next-up", "recently-played", "most-played", "top-tracks", "top-artists", "top-albums", "listening-summary", "queue", "entity-items", "entity-media", "random", "resume-progress", "availability", "watched-by-any-profile", "directory", "smart-collection", "collection", "watchlist", "rated", "favorites", "subscription-new":
 	default:
 		return []SourceItem{}, nil
 	}
@@ -3836,6 +3836,11 @@ func (s *Store) sourceItemsForKind(ctx context.Context, filter LibraryFilter, qu
 			return []SourceItem{}, nil
 		}
 		return s.favoriteItemsSQL(ctx, query.ProfileID, filter, limit, offset)
+	case "subscription-new":
+		if query.ProfileID == "" {
+			return []SourceItem{}, nil
+		}
+		return s.subscriptionNewSQL(ctx, query.ProfileID, filter, limit, offset)
 	case "rated":
 		if query.ProfileID == "" {
 			return []SourceItem{}, nil

@@ -348,6 +348,7 @@ var originalScopedFields = []string{
 	"setrating",                 // CORE-1194: personal rating set/clear
 	"setcontinuewatchinghidden", // CORE-2039: remove from / restore to Continue Watching, keeping progress
 	"setfollow",
+	"setfollownewentryroute", // CORE-2958: per-follow new-entry route (own Profile)
 	"setlibraryaiindexing",
 	"skipdetectionenabled",    // ENR-7 (ADR-0048 Decision 3/6): per-Library skip-detection toggle (read)
 	"setskipdetectionenabled", // ENR-7 (ADR-0048 Decision 3/6): per-Library skip-detection toggle (write)
