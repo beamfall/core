@@ -3365,14 +3365,14 @@ func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID,
 	return media, created, nil
 }
 
-func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane, parts []ImportMediaFilePart, now time.Time) (Media, []MediaFile, bool, error) {
+func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane, parts []ImportMediaFilePart, now time.Time) (Media, []MediaFile, bool, bool, error) {
 	ordered := append([]ImportMediaFilePart(nil), parts...)
 	sort.SliceStable(ordered, func(i, j int) bool {
 		return ordered[i].SourceOrdinal < ordered[j].SourceOrdinal
 	})
 	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
-		return Media{}, nil, false, err
+		return Media{}, nil, false, false, err
 	}
 	defer tx.Rollback()
 
@@ -3386,7 +3386,7 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 			continue
 		}
 		if err != nil {
-			return Media{}, nil, false, err
+			return Media{}, nil, false, false, err
 		}
 		if mediaID != "" {
 			break
@@ -3396,7 +3396,7 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 		if plane.encrypted {
 			mediaID, err = s.allocateEncryptedMediaIDLocked(ctx)
 			if err != nil {
-				return Media{}, nil, false, err
+				return Media{}, nil, false, false, err
 			}
 		} else {
 			mediaID = mediaIDForFingerprint(ordered[0].File.ContentFingerprint)
@@ -3408,13 +3408,20 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 	if primary.KeepProbeFacts {
 		first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
 		if err != nil {
-			return Media{}, nil, false, err
+			return Media{}, nil, false, false, err
 		}
 		keepProbeFacts = first == primary.ContentFingerprint
 	}
 	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, primary, plane.encrypted, false, keepProbeFacts)
 	if err != nil {
-		return Media{}, nil, false, err
+		return Media{}, nil, false, false, err
+	}
+	partsChanged := false
+	if !created {
+		partsChanged, err = mediaPartsDifferTx(ctx, tx, mediaID, ordered)
+		if err != nil {
+			return Media{}, nil, false, false, err
+		}
 	}
 	files := make([]MediaFile, 0, len(ordered))
 	for i, part := range ordered {
@@ -3431,24 +3438,52 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 			LastSeenAt:         now,
 		}
 		if err := upsertMediaFilePartTx(ctx, tx, file, now); err != nil {
-			return Media{}, nil, false, err
+			return Media{}, nil, false, false, err
 		}
 		if imported.Streams != nil || imported.FontAttachments != nil {
 			if err := replaceMediaFileInventoryTx(ctx, tx, plane.encrypted, imported.ContentFingerprint, imported.Streams, imported.FontAttachments); err != nil {
-				return Media{}, nil, false, err
+				return Media{}, nil, false, false, err
 			}
 		}
 		if imported.Sidecars != nil {
 			if err := replaceMediaFileSidecarsTx(ctx, tx, imported.ContentFingerprint, imported.Sidecars); err != nil {
-				return Media{}, nil, false, err
+				return Media{}, nil, false, false, err
 			}
 		}
 		files = append(files, file)
 	}
 	if err := tx.Commit(); err != nil {
-		return Media{}, nil, false, err
+		return Media{}, nil, false, false, err
 	}
-	return media, files, created, nil
+	return media, files, created, partsChanged, nil
+}
+
+func mediaPartsDifferTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, ordered []ImportMediaFilePart) (bool, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT content_fingerprint
+		FROM media_file
+		WHERE media_id = ? AND version_label = '' AND missing_at_ms IS NULL
+		ORDER BY part_ordinal ASC
+	`, mediaID)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	i := 0
+	for rows.Next() {
+		var fingerprint string
+		if err := rows.Scan(&fingerprint); err != nil {
+			return false, err
+		}
+		if i >= len(ordered) || ordered[i].File.ContentFingerprint != fingerprint {
+			return true, nil
+		}
+		i++
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return i != len(ordered), nil
 }
 
 func upsertMediaFilePartTx(ctx context.Context, tx *sql.Tx, file MediaFile, now time.Time) error {
