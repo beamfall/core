@@ -176,17 +176,14 @@ func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rend
 	if picture.GraphicsPath != "" {
 		args = append(args, "-i", picture.GraphicsPath)
 		// The decoder emits 300 frames a second, so the output rate is taken
-		// first and the upscale runs on 30. xBR magnifies the low-resolution
-		// graphics 4x along their edges (smooth curves, crisp lyrics), and a
-		// bicubic step fits that to the graphics size, which is not an integer
-		// multiple of 300x216 (CORE-3149).
-		filters = []string{
-			fmt.Sprintf("fps=%d", composedFPS),
-			fmt.Sprintf("xbr=n=%d", composedGraphicsMagnify),
-			fmt.Sprintf("scale=%d:%d:flags=bicubic", evenRound(float64(composedGraphicsWidth*height)/composedHeight), height),
-			fmt.Sprintf("pad=%d:%d:(ow-iw)/2:0", width, height),
-			"tpad=stop=-1:stop_mode=clone",
-		}
+		// first, and the picture is held, trimmed and retimed before it is
+		// magnified: a seek decodes from the start, and upscaling the frames
+		// the trim then drops made the first frame of a 30 s seek cost ~5 s.
+		// xBR magnifies the low-resolution graphics 4x along their edges
+		// (smooth curves, crisp lyrics), and a bicubic step fits that to the
+		// graphics size, which is not an integer multiple of 300x216
+		// (CORE-3149).
+		filters = []string{fmt.Sprintf("fps=%d", composedFPS), "tpad=stop=-1:stop_mode=clone"}
 		switch {
 		case tempo != 1 && startSeconds > 0:
 			filters = append(filters, "trim=start="+source, "setpts=(PTS-STARTPTS)/"+formatFactor(tempo), fmt.Sprintf("fps=%d", composedFPS))
@@ -195,6 +192,11 @@ func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rend
 		case startSeconds > 0:
 			filters = append(filters, "trim=start="+source, "setpts=PTS-STARTPTS")
 		}
+		filters = append(filters,
+			fmt.Sprintf("xbr=n=%d", composedGraphicsMagnify),
+			fmt.Sprintf("scale=%d:%d:flags=bicubic", evenRound(float64(composedGraphicsWidth*height)/composedHeight), height),
+			fmt.Sprintf("pad=%d:%d:(ow-iw)/2:0", width, height),
+		)
 	} else {
 		args = append(args, "-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=%dx%d:r=%d", width, height, composedFPS))
 		switch {
