@@ -8,8 +8,6 @@ import (
 	"io"
 	"math/big"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -29,8 +27,9 @@ const (
 	// closed rather than trust certificates it cannot check.
 	attestationStatusMaxAge = 30 * 24 * time.Hour
 	// attestationStatusRetryAfter spaces fetch attempts after a failure.
-	attestationStatusRetryAfter = 5 * time.Minute
-	attestationStatusMaxBytes   = 32 << 20
+	attestationStatusRetryAfter   = 5 * time.Minute
+	attestationStatusMaxBytes     = 32 << 20
+	attestationStatusFetchTimeout = 30 * time.Second
 )
 
 // AttestationStatusList is a parsed Google attestation status list.
@@ -70,19 +69,19 @@ func (l *AttestationStatusList) status(serial *big.Int) (string, bool) {
 }
 
 // AttestationStatusSource fetches the status list on demand, keeps it in
-// memory and in a cache file, and serves it while it is fresh enough. It
-// makes no request until a device key is verified.
+// memory and serves it while it is fresh enough. It makes no request until
+// a device key is verified. It keeps no disk cache: a stale or rolled-back
+// file could hide a revocation, so a restarted server fetches again and
+// fails closed while it cannot.
 type AttestationStatusSource struct {
-	URL       string
-	Client    *http.Client
-	CachePath string
-	Now       func() time.Time
+	URL    string
+	Client *http.Client
+	Now    func() time.Time
 
 	mu        sync.Mutex
 	list      *AttestationStatusList
 	fetchedAt time.Time
 	lastTry   time.Time
-	loaded    bool
 }
 
 // Current returns a list no older than the maximum age, fetching a fresh
@@ -92,19 +91,17 @@ func (s *AttestationStatusSource) Current(ctx context.Context) (*AttestationStat
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	if !s.loaded {
-		s.loaded = true
-		s.loadCache()
-	}
 	var fetchErr error
 	if (s.list == nil || now.Sub(s.fetchedAt) > attestationStatusRefreshAfter) &&
 		(s.lastTry.IsZero() || now.Sub(s.lastTry) > attestationStatusRetryAfter) {
 		s.lastTry = now
 		// Detached from the caller: one dropped request must not cost every
-		// other device the retry window. The client timeout bounds it.
-		fetchErr = s.fetch(context.WithoutCancel(ctx), now)
+		// other device the retry window. Bounded here whatever the client.
+		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), attestationStatusFetchTimeout)
+		fetchErr = s.fetch(fetchCtx, now)
+		cancel()
 	}
-	if s.list == nil || now.Sub(s.fetchedAt) > attestationStatusMaxAge || s.fetchedAt.After(now) {
+	if s.list == nil || now.Sub(s.fetchedAt) > attestationStatusMaxAge {
 		if fetchErr == nil {
 			fetchErr = errors.New("no recent fetch")
 		}
@@ -120,32 +117,6 @@ func (s *AttestationStatusSource) now() time.Time {
 	return time.Now()
 }
 
-func (s *AttestationStatusSource) loadCache() {
-	if s.CachePath == "" {
-		return
-	}
-	data, err := os.ReadFile(s.CachePath)
-	if err != nil {
-		return
-	}
-	// The fetch time travels inside the file, not in its mtime, so a
-	// restored or copied cache keeps its real age.
-	var cached attestationStatusCache
-	if json.Unmarshal(data, &cached) != nil || cached.FetchedAt.IsZero() {
-		return
-	}
-	list, err := ParseAttestationStatusList(cached.Body)
-	if err != nil {
-		return
-	}
-	s.list, s.fetchedAt = list, cached.FetchedAt
-}
-
-type attestationStatusCache struct {
-	FetchedAt time.Time       `json:"fetchedAt"`
-	Body      json.RawMessage `json:"body"`
-}
-
 func (s *AttestationStatusSource) fetch(ctx context.Context, now time.Time) error {
 	url := s.URL
 	if url == "" {
@@ -153,7 +124,7 @@ func (s *AttestationStatusSource) fetch(ctx context.Context, now time.Time) erro
 	}
 	client := s.Client
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = &http.Client{}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -179,40 +150,5 @@ func (s *AttestationStatusSource) fetch(ctx context.Context, now time.Time) erro
 		return err
 	}
 	s.list, s.fetchedAt = list, now
-	s.saveCache(data, now)
 	return nil
-}
-
-// saveCache replaces the cache file. When that fails the old file is
-// removed: after a restart it could otherwise resurrect a list that predates
-// a revocation this process has already seen.
-func (s *AttestationStatusSource) saveCache(data []byte, now time.Time) {
-	if s.CachePath == "" {
-		return
-	}
-	if !s.writeCache(data, now) {
-		_ = os.Remove(s.CachePath)
-	}
-}
-
-func (s *AttestationStatusSource) writeCache(data []byte, now time.Time) bool {
-	body, err := json.Marshal(attestationStatusCache{FetchedAt: now.UTC(), Body: data})
-	if err != nil {
-		return false
-	}
-	if err := os.MkdirAll(filepath.Dir(s.CachePath), 0o700); err != nil {
-		return false
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(s.CachePath), ".attestation-status-*")
-	if err != nil {
-		return false
-	}
-	name := tmp.Name()
-	_, werr := tmp.Write(body)
-	cerr := tmp.Close()
-	if werr != nil || cerr != nil || os.Rename(name, s.CachePath) != nil {
-		_ = os.Remove(name)
-		return false
-	}
-	return true
 }

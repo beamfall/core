@@ -33,6 +33,8 @@ import (
 // keyDescriptionOID is the Android Key Attestation extension.
 var keyDescriptionOID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 1, 17}
 
+var extKeyUsageOID = asn1.ObjectIdentifier{2, 5, 29, 37}
+
 const (
 	attestationSecuritySoftware  = 0
 	attestationSecurityTEE       = 1
@@ -158,16 +160,16 @@ func (v *AndroidKeyAttestationVerifier) VerifyDeviceKey(ctx context.Context, enr
 			return fmt.Errorf("attestation security level %d is unknown", level)
 		}
 	}
-	enforcedList := desc.HardwareEnforced
-	if software && desc.AttestationSecurityLevel == attestationSecuritySoftware {
-		enforcedList = desc.SoftwareEnforced
-	}
-	if _, err := parseAuthorizationList(desc.SoftwareEnforced); err != nil {
-		return err
-	}
-	enforced, err := parseAuthorizationList(enforcedList)
+	softwareList, err := parseAuthorizationList(desc.SoftwareEnforced)
 	if err != nil {
 		return err
+	}
+	enforced, err := parseAuthorizationList(desc.HardwareEnforced)
+	if err != nil {
+		return err
+	}
+	if software && desc.AttestationSecurityLevel == attestationSecuritySoftware {
+		enforced = softwareList
 	}
 	origin, ok, err := enforced.integer(authorizationTagOrigin)
 	if err != nil {
@@ -253,8 +255,9 @@ func (v *AndroidKeyAttestationVerifier) verifyChain(chain []*x509.Certificate) e
 	// constraints, name constraints and unhandled critical extensions.
 	// ExtKeyUsageAny below skips Go's EKU checks, so refuse any certificate
 	// restricted to some other purpose. Attestation certificates carry none.
+	// An EKU extension, even an empty one, must permit any purpose.
 	for i, cert := range chain {
-		if (len(cert.ExtKeyUsage) > 0 || len(cert.UnknownExtKeyUsage) > 0) && !slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageAny) {
+		if hasExtension(cert, extKeyUsageOID) && !slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageAny) {
 			return fmt.Errorf("attestation certificate %d is restricted to another extended key usage", i)
 		}
 	}

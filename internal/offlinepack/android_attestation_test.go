@@ -402,6 +402,30 @@ func TestAndroidAttestationRefusesEKURestrictedIntermediate(t *testing.T) {
 	}
 }
 
+func TestAndroidAttestationRefusesEmptyEKUExtension(t *testing.T) {
+	f := newAttestationFixture(t)
+	f.inter = signTestCert(t, &x509.Certificate{
+		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "empty-eku intermediate"},
+		NotBefore: testNow.Add(-time.Hour), NotAfter: testNow.Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+		ExtraExtensions: []pkix.Extension{{Id: extKeyUsageOID, Value: []byte{0x30, 0x00}}},
+	}, f.root, &f.interKey.PublicKey, f.rootKey)
+	err := f.verifier(t, false).VerifyDeviceKey(context.Background(), testEnrollmentID, f.devicePublicKey(t), f.chain(t, defaultLeaf()))
+	if err == nil {
+		t.Fatal("accepted an intermediate with an empty EKU extension")
+	}
+}
+
+func TestAndroidAttestationDevModeParsesHardwareList(t *testing.T) {
+	f := newAttestationFixture(t)
+	spec := defaultLeaf()
+	spec.attestLevel, spec.keymasterLevel, spec.emptyWrapper = 0, 0, true
+	err := f.verifier(t, true).VerifyDeviceKey(context.Background(), testEnrollmentID, f.devicePublicKey(t), f.chain(t, spec))
+	if err == nil || !strings.Contains(err.Error(), "malformed") {
+		t.Fatalf("err = %v, want malformed hardware list refused in dev mode", err)
+	}
+}
+
 func TestAndroidAttestationDevModeKeepsStaleRevocations(t *testing.T) {
 	f := newAttestationFixture(t)
 	revoked, err := ParseAttestationStatusList([]byte(`{"entries":{"2":{"status":"REVOKED"}}}`))
