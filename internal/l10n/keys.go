@@ -35,3 +35,18 @@ const (
 // Home shelf titles added after CORE-2102, rendered into every shipped locale
 // of the manifest's LocaleString (CORE-2822).
 const ManifestShelfNextUp Key = "manifest.shelf.next_up"
+
+// Station explanations (ADR-0098 area 5, CORE-2772): why an item joined a
+// generated Station, and the Station-level scarcity note.
+const (
+	StationReasonSeed     Key = "station.reason.seed"
+	StationReasonFrom     Key = "station.reason.from"
+	StationReasonShared   Key = "station.reason.shared"
+	StationReasonCategory Key = "station.reason.category"
+	StationReasonEra      Key = "station.reason.era"
+	StationReasonPlayed   Key = "station.reason.played"
+	StationReasonPicked   Key = "station.reason.picked"
+	StationReasonSonic    Key = "station.reason.sonic"
+	StationEmpty          Key = "station.empty"
+	StationShort          Key = "station.short"
+)

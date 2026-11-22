@@ -22,6 +22,7 @@ import type {
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { RadioTuning } from "../components/StartRadio";
 import { mediaPath } from "../lib/mediaAddress";
 import {
   MUSIC_QUEUE_PARAM,
@@ -44,6 +45,7 @@ import {
   skipIntervalOverrideKey,
   skipIntervalOverrideValue,
 } from "../lib/preferences";
+import { RADIO_LOW_WATER, topUpRadio, useActiveRadio } from "../lib/radio";
 import { noteAutoAdvance } from "../lib/stillWatching";
 import {
   encodeSubtitleAppearance,
@@ -255,6 +257,45 @@ function FeaturePlayer({
     () => ({ mediaId, queueProfile, identity, epoch, revealed, profileID }),
     [mediaId, queueProfile, identity, epoch, revealed, profileID],
   );
+
+  // Radio (CORE-2772) runs on this Profile's server queue: the player names why
+  // each item was picked and tops the queue up before it runs out.
+  const activeStation = useActiveRadio(profileID);
+  const station = serverQueueRun && queueMatchesProfile ? activeStation : null;
+  const radioReason = station?.reasons[mediaId] ?? "";
+  const toppingUp = useRef(false);
+  // The item that ended with nothing queued after it, and the ended handler to
+  // run again once a top-up has added more (runQueueAction is declared below).
+  const endedWithoutNext = useRef<string | null>(null);
+  const retryEnded = useRef<() => void>(() => {});
+  const queueRows = musicQueue?.rows;
+  useEffect(() => {
+    if (!station || !queueRows || toppingUp.current) return;
+    const index = queueRows.findIndex((row) => row.id === mediaId);
+    if (index < 0) return;
+    if (queueRows.slice(index + 1).filter(playableMusic).length >= RADIO_LOW_WATER) return;
+    toppingUp.current = true;
+    topUpRadio(station, new Set(queueRows.map((row) => row.id)))
+      .then(async (added) => {
+        if (!added) return;
+        // Joins a read already in flight rather than aborting it: the ended
+        // handler may be waiting on that read to advance.
+        await refreshMusicQueue();
+        // The last item ended on a read from before these were added: advance
+        // now, on a fresh read, instead of stopping. It may be a later item
+        // than the one this top-up started on.
+        if (endedWithoutNext.current) {
+          endedWithoutNext.current = null;
+          retryEnded.current();
+        }
+      })
+      .catch(() => {
+        // The queue still plays what it holds; the next item change tries again.
+      })
+      .finally(() => {
+        toppingUp.current = false;
+      });
+  }, [station, queueRows, mediaId, refreshMusicQueue]);
 
   const needsInitialQueueRead = serverQueueRun && queueMatchesProfile && !musicQueue;
   useEffect(() => {
@@ -678,7 +719,11 @@ function FeaturePlayer({
       } else {
         const neighbours = musicQueueNeighbours(rows, mediaId);
         const target = (action === "previous" ? neighbours.previous : neighbours.next)?.id;
-        if (!target) return;
+        if (!target) {
+          if (action === "ended") endedWithoutNext.current = mediaId;
+          return;
+        }
+        endedWithoutNext.current = null;
         if (action === "ended") confirmGaplessAdvance(target);
         playItemRef.current(target, "", true, profileID);
       }
@@ -694,6 +739,13 @@ function FeaturePlayer({
       confirmGaplessAdvance,
     ],
   );
+  useEffect(() => {
+    retryEnded.current = () => void runQueueAction("ended");
+  }, [runQueueAction]);
+  useEffect(() => {
+    // Another item started: the one that ended without a next is behind us.
+    if (endedWithoutNext.current !== mediaId) endedWithoutNext.current = null;
+  }, [mediaId]);
   const retryMusicQueue = () =>
     retryAction ? void runQueueAction(retryAction) : void refreshMusicQueue();
   const playNext = useMemo(() => {
@@ -1066,6 +1118,7 @@ function FeaturePlayer({
                 videoRef={videoRef}
                 stream={state.stream}
                 trackKey={stage.key}
+                reason={radioReason}
                 next={
                   issuedNext
                     ? { key: issuedNext.mediaID, stream: decodableStream(issuedNext) }
@@ -1123,6 +1176,11 @@ function FeaturePlayer({
               </div>
             )}
             {!docked && queueFailureNotice}
+            {station && showAudioStage && !docked && (
+              <div className="absolute left-4 top-4 z-10">
+                <RadioTuning station={station} credits={stage.credits} />
+              </div>
+            )}
             {state.waitingForNetwork ? (
               <p
                 className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-scrim/70 px-3 py-1 text-sm text-on-scrim"

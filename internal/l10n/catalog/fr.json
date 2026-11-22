@@ -11,6 +11,16 @@
   "queue.media_locked": "Cet élément est verrouillé.",
   "setup.lan_hint.finish_setup": "Ouvrez Beamfall avec son adresse IP pour terminer la configuration sans le jeton de configuration.",
   "setup.lan_hint.sign_in": "Ouvrez Beamfall avec son adresse IP pour vous connecter avec le mot de passe administrateur.",
+  "station.empty": "Aucun titre n'est disponible pour lancer cette radio pour le moment.",
+  "station.reason.category": "Aussi dans {title}",
+  "station.reason.era": "De la même époque : les années {decade}",
+  "station.reason.from": "De {title}",
+  "station.reason.picked": "Choisi pour cette radio",
+  "station.reason.sonic": "Ressemble à votre point de départ",
+  "station.reason.played": "Un titre déjà écouté",
+  "station.reason.seed": "Le point de départ de cette radio",
+  "station.reason.shared": "Lié par {title}",
+  "station.short": "Peu de titres correspondent, cette radio est donc courte.",
   "watch_party.participant_fallback": "Participant",
   "workflow.capability_disabled": "Cette fonctionnalité est désactivée dans Console → Fonctions facultatives."
 }

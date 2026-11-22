@@ -188,7 +188,7 @@ func TestStationSonicSeedKeepsSimilarityOrder(t *testing.T) {
 		t.Fatalf("sonic station = %v, want %v", ids, want)
 	}
 	for _, c := range got {
-		if c.Explanation != "sounds like your seed" {
+		if c.Explanation != "Sounds like your seed" {
 			t.Fatalf("explanation = %q", c.Explanation)
 		}
 	}

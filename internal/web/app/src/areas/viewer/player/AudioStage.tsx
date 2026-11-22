@@ -29,6 +29,7 @@ export function AudioStage({
   trackKey = "",
   next = null,
   lyrics = null,
+  reason = "",
 }: {
   title: string;
   artworkURL: string;
@@ -44,6 +45,8 @@ export function AudioStage({
   next?: NextTrack | null;
   /** The lyrics view (CORE-1638): when set, the artwork moves left and the lyrics fill the right. */
   lyrics?: ReactNode;
+  /** Why radio picked this item (CORE-2772), shown under its credits. */
+  reason?: string;
 }) {
   const [failedURL, setFailedURL] = useState("");
   const showArtwork = !!artworkURL && failedURL !== artworkURL;
@@ -57,7 +60,7 @@ export function AudioStage({
 
   const changeKey = trackKey || title;
   const motion = motionForChange(changeKey, useTrackChangeMotion(), usePrefersReducedMotion());
-  const meta = { position: queuePosition ?? "", title, people, collections, others };
+  const meta = { position: queuePosition ?? "", title, people, collections, others, reason };
   // A further change cancels an unfinished one: only the latest outgoing words stay.
   const metaLayers = useLayers(changeKey, meta, META_LEAVE_MS, undefined, 1);
   const art = showArtwork ? artworkURL : "";
@@ -129,6 +132,11 @@ export function AudioStage({
               {m.others && (
                 <Line beat={3} className="bf-audio-others">
                   {m.others}
+                </Line>
+              )}
+              {m.reason && (
+                <Line beat={3} className="bf-audio-reason">
+                  {m.reason}
                 </Line>
               )}
             </div>

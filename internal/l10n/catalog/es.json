@@ -11,6 +11,16 @@
   "queue.media_locked": "Este elemento está bloqueado.",
   "setup.lan_hint.finish_setup": "Abre Beamfall con su dirección IP para terminar la configuración sin el token de configuración.",
   "setup.lan_hint.sign_in": "Abre Beamfall con su dirección IP para iniciar sesión con la contraseña de administrador.",
+  "station.empty": "No hay canciones disponibles para iniciar esta emisora ahora.",
+  "station.reason.category": "También en {title}",
+  "station.reason.era": "De la misma época: los años {decade}",
+  "station.reason.from": "De {title}",
+  "station.reason.picked": "Elegida para esta emisora",
+  "station.reason.sonic": "Suena como tu semilla",
+  "station.reason.played": "Una que ya has escuchado",
+  "station.reason.seed": "Donde empezó esta emisora",
+  "station.reason.shared": "Relacionada a través de {title}",
+  "station.short": "Solo coinciden unas pocas canciones, así que esta emisora es corta.",
   "watch_party.participant_fallback": "Participante",
   "workflow.capability_disabled": "Esta herramienta está desactivada en Consola → Funciones opcionales."
 }

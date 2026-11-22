@@ -925,13 +925,14 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 		// reveal-filtered query already lawfully returns; the graph layer
 		// suppresses it on the wire unless the scope is Revealed.
 		items = append(items, SourceItem{
-			ID:         id,
-			Kind:       "media",
-			Title:      title,
-			Summary:    mediaDurationSummary(durationSeconds),
-			Restricted: restricted[libraryID],
-			LibraryID:  libraryID,
-			Year:       year,
+			ID:              id,
+			Kind:            "media",
+			Title:           title,
+			Summary:         mediaDurationSummary(durationSeconds),
+			Restricted:      restricted[libraryID],
+			LibraryID:       libraryID,
+			Year:            year,
+			DurationSeconds: durationSeconds,
 		})
 	}
 	return items, rows.Err()

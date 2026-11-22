@@ -1265,7 +1265,8 @@
 }
 
 .bf-audio-collections,
-.bf-audio-others {
+.bf-audio-others,
+.bf-audio-reason {
   font-size: clamp(14px, 1.4vw, 18px);
   color: color-mix(
     in oklab,
@@ -1290,7 +1291,7 @@
 }
 
 .bf-audio-stage:has(.bf-audio-visualizer-canvas)
-  :is(.bf-audio-position, .bf-audio-collections, .bf-audio-others) {
+  :is(.bf-audio-position, .bf-audio-collections, .bf-audio-others, .bf-audio-reason) {
   color: color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted));
 }
 
@@ -1530,7 +1531,8 @@
   .bf-audio-title,
   .bf-audio-people,
   .bf-audio-collections,
-  .bf-audio-others {
+  .bf-audio-others,
+  .bf-audio-reason {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 1;
@@ -1563,4 +1565,27 @@
     transform: none !important;
     filter: none !important;
   }
+}
+
+/* Why radio picked the playing item (CORE-2772): a quiet italic note. */
+.bf-audio-reason {
+  font-style: italic;
+}
+
+.bf-radio-tuning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--on-scrim-muted);
+}
+
+.bf-radio-tuning select {
+  max-width: 14rem;
+  border-radius: var(--radius-control, 6px);
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 24%, transparent);
+  background: color-mix(in oklab, var(--scrim) 60%, transparent);
+  color: var(--on-scrim);
+  padding: 2px 6px;
 }
