@@ -84,7 +84,7 @@ func TestEventStreamIdleEmitsKeepalive(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want 200", status)
 	}
-	start := time.Now()
+	var firstAt time.Time
 	seen := 0
 	deadline := time.After(3 * time.Second)
 	for seen < 2 {
@@ -98,13 +98,18 @@ func TestEventStreamIdleEmitsKeepalive(t *testing.T) {
 			}
 			if line == ": keepalive" {
 				seen++
+				if seen == 1 {
+					firstAt = time.Now()
+				}
 			}
 		case <-deadline:
 			t.Fatalf("saw %d keepalive frames in 3s, want 2", seen)
 		}
 	}
-	if elapsed := time.Since(start); elapsed < 2*300*time.Millisecond {
-		t.Fatalf("two keepalives after %v; they should be spaced by the interval", elapsed)
+	// The server's ticker starts before the client sees the response, so
+	// measure the gap between frames, with slack for delivery jitter.
+	if gap := time.Since(firstAt); gap < 150*time.Millisecond {
+		t.Fatalf("keepalives %v apart; they should be spaced by the 300ms interval", gap)
 	}
 }
 
