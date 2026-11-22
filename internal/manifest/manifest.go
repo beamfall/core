@@ -254,6 +254,9 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 	if err != nil {
 		return Document{}, err
 	}
+	if customized(preference) {
+		layouts, navigation = splitLibraryHomeLayout(layouts, navigation)
+	}
 	for i := range layouts {
 		if layouts[i].ID == HomeLayoutID {
 			layouts[i] = applyHomePreference(layouts[i], preference)

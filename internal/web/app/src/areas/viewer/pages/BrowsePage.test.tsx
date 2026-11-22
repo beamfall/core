@@ -82,9 +82,17 @@ vi.mock("../components/LayoutView", () => ({
     );
   },
 }));
+const requestManifestRefresh = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/manifestRefresh", () => ({ requestManifestRefresh }));
 vi.mock("../components/HomeEditor", () => ({
-  HomeEditor: ({ onClose }: { onClose: () => void }) => (
-    <button type="button" onClick={onClose}>
+  HomeEditor: ({ onSaved, onClose }: { onSaved: () => void; onClose: () => void }) => (
+    <button
+      type="button"
+      onClick={() => {
+        onSaved();
+        onClose();
+      }}
+    >
       home editor
     </button>
   ),
@@ -118,11 +126,15 @@ afterEach(() => {
 
 describe("BrowsePage node resolution", () => {
   it("offers Edit home on Home only and swaps the layout for the editor (CORE-1972)", () => {
-    renderAt("/", { manifest, loading: false, refresh: vi.fn() });
+    const refresh = vi.fn();
+    renderAt("/", { manifest, loading: false, refresh });
     fireEvent.click(screen.getByRole("button", { name: "Edit home" }));
     expect(screen.queryByTestId("layout")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "home editor" }));
     expect(screen.getByTestId("layout")).toBeInTheDocument();
+    // A save re-reads the manifest in place; a session reload would stop playback.
+    expect(requestManifestRefresh).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
     cleanup();
 
     renderAt("/n/library-lib-a");

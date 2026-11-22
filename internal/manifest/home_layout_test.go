@@ -165,3 +165,72 @@ func TestHomeLayoutRefusesOversizedListsAndProfilelessScopes(t *testing.T) {
 		t.Fatalf("profileless read err = %v, want validation error", err)
 	}
 }
+
+func TestHomeLayoutSaveKeepsSettingsForShelvesOutOfScope(t *testing.T) {
+	ctx := context.Background()
+	service, authService := newTestService(t)
+	scope := homeScope(t, authService, "session-default")
+	restricted := addSmartShelf(t, service, "library-archive", "Archive shelf")
+	// Saved earlier while the restricted Library was revealed.
+	profileID := string(scope.ProfileID)
+	earlier := store.NavOverrideData{LayoutSectionOverrides: map[string]store.SectionOverrideData{
+		HomeLayoutID: {SectionOrder: []string{restricted, "recent"}, HiddenSectionIDs: []string{restricted}},
+	}}
+	if err := service.store.SetNavOverride(ctx, navScopeProfile, &profileID, earlier, time.Unix(1, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetHomeLayout(ctx, scope, []string{"watchlist", "recent"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.homePreference(ctx, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.SectionOrder, []string{"watchlist", "recent", restricted}) || !slices.Equal(got.HiddenSectionIDs, []string{restricted}) {
+		t.Fatalf("preference after relocked save = %+v, want the out-of-scope shelf kept", got)
+	}
+}
+
+func TestHomeLayoutPartialOrderKeepsContinueBeforeOwnerOrder(t *testing.T) {
+	ctx := context.Background()
+	service, authService := newTestService(t)
+	override := store.NavOverrideData{LayoutSectionOverrides: map[string]store.SectionOverrideData{
+		HomeLayoutID: {SectionOrder: []string{"recent", "watchlist", "continue"}},
+	}}
+	if err := service.store.SetNavOverride(ctx, "server", nil, override, time.Unix(1, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	scope := homeScope(t, authService, "session-default")
+	if _, err := service.SetHomeLayout(ctx, scope, []string{"watchlist"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := homeSectionIDs(t, service, scope), []string{"watchlist", "continue", "recent"}; !slices.Equal(got[:3], want) {
+		t.Fatalf("home = %v, want prefix %v", got, want)
+	}
+}
+
+func TestLibraryPagesIgnoreTheHomePreference(t *testing.T) {
+	ctx := context.Background()
+	service, authService := newTestService(t)
+	scope := homeScope(t, authService, "session-default")
+	if _, err := service.SetHomeLayout(ctx, scope, []string{"recent"}, []string{"continue", "watchlist"}); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := service.Document(ctx, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range doc.Navigation {
+		if node.LibraryID != "" && node.LayoutID == HomeLayoutID {
+			t.Fatalf("library node %s still opens the customized Home Layout", node.ID)
+		}
+	}
+	library := layoutByID(doc, LibraryHomeLayoutID)
+	var ids []string
+	for _, section := range library.Sections {
+		ids = append(ids, section.ID)
+	}
+	if len(ids) == 0 || !slices.Contains(ids, "watchlist") || ids[0] != "continue" {
+		t.Fatalf("library layout = %v, want the default Home order with every shelf", ids)
+	}
+}

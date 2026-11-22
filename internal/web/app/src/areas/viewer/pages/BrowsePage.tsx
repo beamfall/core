@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import type { NavigationNode, Section } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { requestManifestRefresh } from "@/lib/manifestRefresh";
 import { findNodeBySlug, HOME_NODE_ID, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
 import { HomeEditor } from "../components/HomeEditor";
@@ -29,7 +30,7 @@ export function BrowsePage() {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const { nodeId } = useParams();
-  const { manifest, loading, refresh } = useSession();
+  const { manifest, loading } = useSession();
   const [editingHome, setEditingHome] = useState(false);
   // The node whose Layout settled with nothing in it: an empty Library offers
   // no pivots into empty views (CORE-2322).
@@ -106,7 +107,7 @@ export function BrowsePage() {
         </div>
       )}
       {home && editingHome ? (
-        <HomeEditor onSaved={refresh} onClose={() => setEditingHome(false)} />
+        <HomeEditor onSaved={requestManifestRefresh} onClose={() => setEditingHome(false)} />
       ) : (
         <LayoutView
           layout={layout}

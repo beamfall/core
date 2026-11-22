@@ -8,8 +8,12 @@ import { fetchHomeLayout, resetHomeLayout, setHomeLayout } from "@/lib/graphql/v
 import { useDisplayLocale, useT } from "@/lib/i18n";
 
 interface HomeEditorProps {
-  /** Called after a save or reset lands, so the caller can refresh the Home it shows. */
-  onSaved: () => Promise<void> | void;
+  /**
+   * Called after a save or reset lands, so the caller can re-read the Home it
+   * shows. Use the in-epoch manifest refresh, not a session reload, which
+   * would unmount the player.
+   */
+  onSaved: () => void;
   onClose: () => void;
 }
 
@@ -53,7 +57,7 @@ export function HomeEditor({ onSaved, onClose }: HomeEditorProps) {
     setFailed(false);
     try {
       await write();
-      await onSaved();
+      onSaved();
       onClose();
     } catch {
       setFailed(true);

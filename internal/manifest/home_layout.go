@@ -81,9 +81,16 @@ func (s *Service) SetHomeLayout(ctx context.Context, scope auth.Scope, order, hi
 	for _, section := range base.Sections {
 		known[section.ID] = true
 	}
+	previous, err := s.homePreference(ctx, scope)
+	if err != nil {
+		return HomeLayout{}, err
+	}
+	// Ids saved earlier that this scope cannot see now (a Smart Collection in
+	// a restricted Library, saved while revealed) keep their saved setting;
+	// they were validated when saved and are filtered again on every read.
 	preference := store.SectionOverrideData{
-		SectionOrder:     knownIDs(order, known),
-		HiddenSectionIDs: knownIDs(hidden, known),
+		SectionOrder:     withUnseen(knownIDs(order, known), previous.SectionOrder, known),
+		HiddenSectionIDs: withUnseen(knownIDs(hidden, known), previous.HiddenSectionIDs, known),
 	}
 	if err := s.saveHomePreference(ctx, scope, preference); err != nil {
 		return HomeLayout{}, err
@@ -184,13 +191,15 @@ func applyHomePreference(home Layout, preference store.SectionOverrideData) Layo
 }
 
 // orderSections returns the Sections in the preference's order: listed ids
-// first, then every unlisted Section in its default order (a Library or Smart
+// first, then every unlisted Section in the default order, which leads with
+// Continue Watching (a Library or Smart
 // Collection added after the preference was saved lands at the end). Listed
 // ids naming no Section are ignored. With no saved order the default order
 // leads with Continue Watching.
 func orderSections(sections []Section, preference store.SectionOverrideData) []Section {
+	sections = continueFirst(sections)
 	if len(preference.SectionOrder) == 0 {
-		return continueFirst(sections)
+		return sections
 	}
 	byID := make(map[string]Section, len(sections))
 	for _, section := range sections {
@@ -252,4 +261,58 @@ func knownIDs(ids []string, known map[string]bool) []string {
 		}
 	}
 	return out
+}
+
+// withUnseen appends the previously saved ids the current scope does not
+// receive, so saving while relocked keeps settings made while revealed. The
+// result stays within MaxHomeLayoutIDs.
+func withUnseen(ids, previous []string, known map[string]bool) []string {
+	seen := idSet(ids)
+	for _, id := range previous {
+		if len(ids) >= MaxHomeLayoutIDs {
+			break
+		}
+		if !known[id] && !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
+	return ids
+}
+
+// LibraryHomeLayoutID is the Layout a Library without a plugin Layout opens
+// once its Profile has customized Home: the Home Layout before that
+// preference, so ordering or hiding Home shelves never changes a Library page
+// (CORE-1972). Without a preference those Libraries keep sharing layout-home.
+const LibraryHomeLayoutID = "layout-library"
+
+// splitLibraryHomeLayout points Library nodes that share the Home Layout at a
+// copy of it taken before the Profile's preference applies, in the default
+// order that leads with Continue Watching.
+func splitLibraryHomeLayout(layouts []Layout, navigation []NavigationNode) ([]Layout, []NavigationNode) {
+	var home *Layout
+	for i := range layouts {
+		if layouts[i].ID == HomeLayoutID {
+			home = &layouts[i]
+		}
+	}
+	if home == nil {
+		return layouts, navigation
+	}
+	shared := false
+	for i := range navigation {
+		if navigation[i].LibraryID != "" && navigation[i].LayoutID == HomeLayoutID {
+			navigation[i].LayoutID = LibraryHomeLayoutID
+			shared = true
+		}
+	}
+	if !shared {
+		return layouts, navigation
+	}
+	library := *home
+	library.ID = LibraryHomeLayoutID
+	library.Sections = continueFirst(append([]Section(nil), home.Sections...))
+	layouts = append(layouts, library)
+	sortLayouts(layouts)
+	return layouts, navigation
 }

@@ -77,3 +77,26 @@ Watching section first, whatever order the server-level override gives it.
 
 - **WHEN** the server override orders Recently Added before Continue Watching and the Profile saved nothing
 - **THEN** the Profile's manifest Home layout lists Continue Watching first
+
+#### Scenario: Partial order under an owner override
+
+- **WHEN** the Profile's saved order names only some sections
+- **THEN** the unlisted sections follow in the default order, Continue Watching first
+
+### Requirement: The preference changes Home only
+
+A Library page that opens the plugin-less default layout SHALL NOT change when
+its Profile customises Home: once a preference exists, such Library nodes open
+`layout-library`, the default Home layout before the preference. A save SHALL
+keep the saved setting of sections the Profile cannot see at that moment (a
+restricted Library while relocked).
+
+#### Scenario: Customised Home, plugin-less Library
+
+- **WHEN** a Profile hides Continue Watching on Home and opens a plugin-less Library
+- **THEN** that Library page still lists every default section, Continue Watching first
+
+#### Scenario: Save while relocked
+
+- **WHEN** a Profile saves Home while relocked after hiding a restricted Library's shelf while revealed
+- **THEN** that shelf stays hidden when the Profile reveals again
