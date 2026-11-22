@@ -246,15 +246,8 @@ func parseCueTimestamp(value string) (float64, bool) {
 //io:ignore ffmpeg-audio-fingerprint-tail — seek wrapper over the audioFingerprint I/O journey.
 func (r *Runner) AudioFingerprintTail(ctx context.Context, src string, windowCount, durationSeconds int) ([]float64, error) {
 	tailSeconds := FingerprintWindowSeconds * float64(windowCount)
-	signature, err := r.audioFingerprint(ctx, src, windowCount, []string{
-		"-sseof", "-" + strconv.FormatFloat(tailSeconds, 'f', 3, 64),
-	})
-	if err == nil || errors.Is(err, errGroupSurvived) || !sseofUnavailable(err.Error()) {
-		return signature, err
-	}
-	start := math.Max(0, float64(durationSeconds)-tailSeconds)
-	return r.audioFingerprint(ctx, src, windowCount, []string{
-		"-ss", strconv.FormatFloat(start, 'f', 3, 64),
+	return withTailSeek(tailSeconds, durationSeconds, func(seek []string) ([]float64, error) {
+		return r.audioFingerprint(ctx, src, windowCount, seek)
 	})
 }
 
