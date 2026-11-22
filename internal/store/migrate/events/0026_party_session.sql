@@ -46,6 +46,7 @@ CREATE TABLE party_entry (
   state TEXT NOT NULL CHECK (state IN ('pending', 'waiting', 'current', 'done', 'removed', 'declined', 'skipped')),
   prior_state TEXT CHECK (prior_state IS NULL OR prior_state IN ('pending', 'waiting')),
   pinned_position INTEGER CHECK (pinned_position IS NULL OR pinned_position >= 1),
+  pitch_semitones INTEGER NOT NULL DEFAULT 0 CHECK (pitch_semitones BETWEEN -12 AND 12),
   added_at_ms INTEGER NOT NULL,
   current_at_ms INTEGER,
   played_at_ms INTEGER,

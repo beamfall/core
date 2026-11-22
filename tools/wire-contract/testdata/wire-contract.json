@@ -19381,6 +19381,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -19446,6 +19450,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -19502,6 +19510,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -19685,6 +19697,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -19741,6 +19757,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -19809,6 +19829,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -19865,6 +19889,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -19933,6 +19961,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -19989,6 +20021,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -20141,6 +20177,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -20197,6 +20237,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -20293,6 +20337,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -20358,6 +20406,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -20414,6 +20466,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -20597,6 +20653,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -20653,6 +20713,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -20721,6 +20785,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -20777,6 +20845,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -20845,6 +20917,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -20901,6 +20977,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -21053,6 +21133,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -21109,6 +21193,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -21219,6 +21307,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -21284,6 +21376,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -21340,6 +21436,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -21523,6 +21623,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -21579,6 +21683,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -21647,6 +21755,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -21703,6 +21815,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -21771,6 +21887,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -21827,6 +21947,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -21979,6 +22103,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -22035,6 +22163,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -22152,6 +22284,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -22217,6 +22353,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -22273,6 +22413,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -22456,6 +22600,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -22512,6 +22660,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -22580,6 +22732,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -22636,6 +22792,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -22704,6 +22864,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -22760,6 +22924,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -22912,6 +23080,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -22968,6 +23140,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -23063,6 +23239,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -23128,6 +23308,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -23184,6 +23368,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -23367,6 +23555,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -23423,6 +23615,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -23491,6 +23687,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -23547,6 +23747,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -23615,6 +23819,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -23671,6 +23879,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -23823,6 +24035,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -23879,6 +24095,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -23974,6 +24194,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -24039,6 +24263,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -24095,6 +24323,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -24278,6 +24510,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -24334,6 +24570,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -24402,6 +24642,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -24458,6 +24702,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -24526,6 +24774,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -24582,6 +24834,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -24734,6 +24990,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -24790,6 +25050,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -24885,6 +25149,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -24950,6 +25218,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -25006,6 +25278,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -25189,6 +25465,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -25245,6 +25525,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -25313,6 +25597,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -25369,6 +25657,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -25437,6 +25729,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -25493,6 +25789,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -25645,6 +25945,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -25701,6 +26005,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -25800,6 +26108,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -25865,6 +26177,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -25921,6 +26237,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -26104,6 +26424,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -26160,6 +26484,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -26228,6 +26556,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -26284,6 +26616,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -26352,6 +26688,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -26408,6 +26748,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -26560,6 +26904,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -26616,6 +26964,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -26707,6 +27059,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -26772,6 +27128,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -26828,6 +27188,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -27011,6 +27375,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -27067,6 +27435,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -27135,6 +27507,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -27191,6 +27567,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -27259,6 +27639,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -27315,6 +27699,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -27467,6 +27855,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -27523,6 +27915,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -27618,6 +28014,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -27683,6 +28083,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -27739,6 +28143,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -27922,6 +28330,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -27978,6 +28390,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -28046,6 +28462,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -28102,6 +28522,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -28170,6 +28594,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -28226,6 +28654,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -28378,6 +28810,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -28434,6 +28870,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -28629,6 +29069,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -28694,6 +29138,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -28750,6 +29198,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -28933,6 +29385,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -28989,6 +29445,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -29057,6 +29517,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -29113,6 +29577,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -29181,6 +29649,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -29237,6 +29709,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -29389,6 +29865,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -29445,6 +29925,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -29529,6 +30013,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -29594,6 +30082,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -29650,6 +30142,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -29833,6 +30329,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -29889,6 +30389,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -29957,6 +30461,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -30013,6 +30521,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -30081,6 +30593,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -30137,6 +30653,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -30289,6 +30809,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -30345,6 +30869,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -30429,6 +30957,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -30548,6 +31080,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -30604,6 +31140,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -30712,6 +31252,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -30777,6 +31321,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -30833,6 +31381,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -31016,6 +31568,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -31072,6 +31628,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -31140,6 +31700,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -31196,6 +31760,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -31264,6 +31832,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -31320,6 +31892,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -31472,6 +32048,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -31528,6 +32108,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -31638,6 +32222,10 @@
               "kind": "scalar"
             },
             {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
               "name": "position",
               "kind": "scalar"
             },
@@ -31703,6 +32291,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -31759,6 +32351,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -31942,6 +32538,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -31998,6 +32598,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -32066,6 +32670,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -32122,6 +32730,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -32190,6 +32802,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -32246,6 +32862,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {
@@ -32398,6 +33018,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
                 "name": "position",
                 "kind": "scalar"
               },
@@ -32454,6 +33078,10 @@
             },
             {
               "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
               "kind": "scalar"
             },
             {

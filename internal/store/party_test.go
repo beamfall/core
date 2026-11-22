@@ -147,12 +147,12 @@ func TestPartyGuestsJoinRequestAndEnd(t *testing.T) {
 	if len(results) != 1 || results[0].MediaID != "media-alpha" {
 		t.Fatalf("guest search = %+v, want only the visible Media", results)
 	}
-	if _, err := st.RequestPartyEntry(ctx, "hash-casey", "media-archive"); !errors.Is(err, ErrPartyInvalid) {
+	if _, err := st.RequestPartyEntry(ctx, "hash-casey", "media-archive", 0); !errors.Is(err, ErrPartyInvalid) {
 		t.Fatalf("request outside visibility = %v", err)
 	}
 	var entries []string
 	for range PartyMaxGuestWaiting {
-		id, err := st.RequestPartyEntry(ctx, "hash-casey", "media-alpha")
+		id, err := st.RequestPartyEntry(ctx, "hash-casey", "media-alpha", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,7 +161,7 @@ func TestPartyGuestsJoinRequestAndEnd(t *testing.T) {
 		}
 		entries = append(entries, id.ID)
 	}
-	if _, err := st.RequestPartyEntry(ctx, "hash-casey", "media-alpha"); !errors.Is(err, ErrPartyWaitingLimit) {
+	if _, err := st.RequestPartyEntry(ctx, "hash-casey", "media-alpha", 0); !errors.Is(err, ErrPartyWaitingLimit) {
 		t.Fatalf("fourth request = %v, want waiting limit", err)
 	}
 	view, _, _ = st.PartySessionForHost(ctx, "profile-default", host)
@@ -296,7 +296,7 @@ func TestPartyGuestsFollowHostAccess(t *testing.T) {
 	if results, err := st.SearchPartyMedia(ctx, "hash-casey", "Media", 10); err != nil || len(results) != 0 {
 		t.Fatalf("guest search after revocation = %+v, %v", results, err)
 	}
-	if _, err := st.RequestPartyEntry(ctx, "hash-casey", "media-alpha"); !errors.Is(err, ErrPartyInvalid) {
+	if _, err := st.RequestPartyEntry(ctx, "hash-casey", "media-alpha", 0); !errors.Is(err, ErrPartyInvalid) {
 		t.Fatalf("request after revocation = %v", err)
 	}
 }
@@ -345,5 +345,44 @@ func TestPartyScreenAdvanceAndDrop(t *testing.T) {
 	}
 	if err := st.AdvanceParty(ctx, "profile-managed", other, view.Current.ID); !errors.Is(err, ErrPartyNotFound) {
 		t.Fatalf("advance from a dropped screen = %v", err)
+	}
+}
+
+func TestPartyRequestedKeyStartsTheTurn(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	view := startTestParty(t, st, true)
+	host := partyHostFilter()
+	if _, err := st.JoinParty(ctx, view.Session.JoinCode, "Casey", "hash-casey"); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []int{13, -13} {
+		if _, err := st.RequestPartyEntry(ctx, "hash-casey", "media-alpha", bad); !errors.Is(err, ErrPartyInvalid) {
+			t.Fatalf("key %d request = %v, want invalid", bad, err)
+		}
+	}
+	created, err := st.RequestPartyEntry(ctx, "hash-casey", "media-alpha", -2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.PitchSemitones != -2 {
+		t.Fatalf("created key = %d, want -2", created.PitchSemitones)
+	}
+	view, _, err = st.PartySessionForHost(ctx, "profile-default", host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Waiting) != 1 || view.Waiting[0].PitchSemitones != -2 {
+		t.Fatalf("waiting = %+v, want one entry at key -2", view.Waiting)
+	}
+	if err := st.AdvanceParty(ctx, "profile-default", host, ""); err != nil {
+		t.Fatal(err)
+	}
+	view, _, err = st.PartySessionForHost(ctx, "profile-default", host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Current == nil || view.Current.ID != created.ID || view.Playback == nil || view.Playback.PitchSemitones != -2 {
+		t.Fatalf("current %+v playback %+v; want the requested entry at key -2", view.Current, view.Playback)
 	}
 }

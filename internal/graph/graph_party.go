@@ -34,6 +34,7 @@ type PartyEntryInfo struct {
 	Pinned          bool          `json:"pinned"`
 	Position        int           `json:"position"`
 	ETASeconds      int           `json:"etaSeconds"`
+	PitchSemitones  int           `json:"pitchSemitones"`
 	AddedAt         string        `json:"addedAt"`
 	LastPlayedAt    string        `json:"lastPlayedAt"`
 }
@@ -165,7 +166,7 @@ func (h *Handler) partyEntryInfo(entry store.PartyEntryView) PartyEntryInfo {
 		ID: entry.ID, MediaID: entry.MediaID, Title: entry.Title, Subtitle: entry.Subtitle,
 		DurationSeconds: entry.DurationSeconds, ParticipantID: entry.ParticipantID,
 		ParticipantName: entry.ParticipantName, State: entry.State, Pinned: entry.Pinned,
-		Position: entry.Position, ETASeconds: entry.ETASeconds,
+		Position: entry.Position, ETASeconds: entry.ETASeconds, PitchSemitones: entry.PitchSemitones,
 		AddedAt: PartyTime(entry.AddedAt), LastPlayedAt: PartyTime(entry.LastPlayedAt),
 	}
 	if entry.Title != "" {

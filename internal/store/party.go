@@ -113,6 +113,7 @@ type PartyEntryView struct {
 	Pinned          bool
 	Position        int
 	ETASeconds      int
+	PitchSemitones  int
 	AddedAt         time.Time
 	LastPlayedAt    time.Time
 }
@@ -235,6 +236,7 @@ type partyEntryRow struct {
 	mediaID           MediaID
 	state             string
 	pin               int
+	pitchSemitones    int
 	addedAtMS         int64
 	currentAtMS       int64
 	playedAtMS        int64
@@ -614,7 +616,7 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 		return partyState{}, err
 	}
 	rows, err = q.QueryContext(ctx, `SELECT entry_id, participant_id, media_id, state, COALESCE(pinned_position, 0),
-			added_at_ms, COALESCE(current_at_ms, 0), COALESCE(played_at_ms, 0), COALESCE(finished_at_ms, 0),
+			pitch_semitones, added_at_ms, COALESCE(current_at_ms, 0), COALESCE(played_at_ms, 0), COALESCE(finished_at_ms, 0),
 			COALESCE(removed_at_ms, 0)
 		FROM party_entry WHERE session_id = ? ORDER BY added_at_ms, entry_id`, session.ID)
 	if err != nil {
@@ -623,7 +625,7 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 	for rows.Next() {
 		var row partyEntryRow
 		if err := rows.Scan(&row.id, &row.participantID, &row.mediaID, &row.state, &row.pin,
-			&row.addedAtMS, &row.currentAtMS, &row.playedAtMS, &row.finishedAtMS, &row.removedAtMS); err != nil {
+			&row.pitchSemitones, &row.addedAtMS, &row.currentAtMS, &row.playedAtMS, &row.finishedAtMS, &row.removedAtMS); err != nil {
 			_ = rows.Close()
 			return partyState{}, err
 		}
@@ -770,7 +772,8 @@ func (s *Store) buildPartyViewLocked(ctx context.Context, state partyState, nowM
 		out := PartyEntryView{
 			ID: entry.id, MediaID: entry.mediaID, ParticipantID: entry.participantID,
 			ParticipantName: state.participants[entry.participantID].name, State: entry.state,
-			Pinned: entry.pin > 0 && entry.state == PartyEntryWaiting, AddedAt: millisToTime(entry.addedAtMS),
+			Pinned: entry.pin > 0 && entry.state == PartyEntryWaiting, PitchSemitones: entry.pitchSemitones,
+			AddedAt: millisToTime(entry.addedAtMS),
 		}
 		if m, ok := media[entry.mediaID]; ok {
 			out.Title, out.DurationSeconds = m.Title, m.DurationSeconds
@@ -1267,8 +1270,8 @@ func (s *Store) advancePartyLocked(ctx context.Context, tx *sql.Tx, session Part
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE party_session
 		SET current_entry_id = NULLIF(?, ''), playback_state = 'paused', position_ms = 0, anchor_at_ms = ?,
-			tempo = 1, pitch_semitones = 0
-		WHERE session_id = ?`, next, nowMS, session.ID)
+			tempo = 1, pitch_semitones = COALESCE((SELECT pitch_semitones FROM party_entry WHERE entry_id = ?), 0)
+		WHERE session_id = ?`, next, nowMS, next, session.ID)
 	return err
 }
 
@@ -1651,11 +1654,15 @@ func (s *Store) partyMediaLastCurrent(ctx context.Context, sessionID string) (ma
 	return out, closeRows(rows)
 }
 
-// RequestPartyEntry adds a guest request: waiting at once under auto-add,
-// otherwise pending host approval. It returns the new entry.
-func (s *Store) RequestPartyEntry(ctx context.Context, tokenHash string, mediaID MediaID) (PartyEntryView, error) {
+// RequestPartyEntry adds a guest request at the guest's chosen key: waiting
+// at once under auto-add, otherwise pending host approval. It returns the new
+// entry.
+func (s *Store) RequestPartyEntry(ctx context.Context, tokenHash string, mediaID MediaID, pitchSemitones int) (PartyEntryView, error) {
 	if mediaID == "" {
 		return PartyEntryView{}, partyInvalid("mediaID is required")
+	}
+	if pitchSemitones < -12 || pitchSemitones > 12 {
+		return PartyEntryView{}, partyInvalid("pitchSemitones must be between -12 and 12")
 	}
 	var created PartyEntryView
 	err := s.partyWrite(ctx, func(tx *sql.Tx, nowMS int64) error {
@@ -1694,13 +1701,15 @@ func (s *Store) RequestPartyEntry(ctx context.Context, tokenHash string, mediaID
 		if err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO party_entry (entry_id, session_id, participant_id, media_id, state, added_at_ms)
-			VALUES (?, ?, ?, ?, ?, ?)`, entryID, session.ID, guest.ParticipantID, mediaID, state, nowMS); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO party_entry (entry_id, session_id, participant_id, media_id, state,
+				pitch_semitones, added_at_ms)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, entryID, session.ID, guest.ParticipantID, mediaID, state, pitchSemitones, nowMS); err != nil {
 			return err
 		}
 		created = PartyEntryView{
 			ID: entryID, MediaID: mediaID, Title: m.Title, DurationSeconds: m.DurationSeconds,
-			ParticipantID: guest.ParticipantID, ParticipantName: guest.Name, State: state, AddedAt: millisToTime(nowMS),
+			ParticipantID: guest.ParticipantID, ParticipantName: guest.Name, State: state, PitchSemitones: pitchSemitones,
+			AddedAt: millisToTime(nowMS),
 		}
 		return nil
 	})

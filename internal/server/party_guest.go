@@ -44,7 +44,7 @@ type PartyGuestStore interface {
 	JoinParty(ctx context.Context, code, name, tokenHash string) (store.PartyGuest, error)
 	PartyGuestView(ctx context.Context, tokenHash string) (store.PartyGuest, store.PartyView, error)
 	SearchPartyMedia(ctx context.Context, tokenHash, query string, limit int) ([]store.PartyMediaView, error)
-	RequestPartyEntry(ctx context.Context, tokenHash string, mediaID store.MediaID) (store.PartyEntryView, error)
+	RequestPartyEntry(ctx context.Context, tokenHash string, mediaID store.MediaID, pitchSemitones int) (store.PartyEntryView, error)
 	CancelPartyEntry(ctx context.Context, tokenHash, entryID string) error
 	ReserveAuthAttempt(ctx context.Context, action string, keys []string, now time.Time, policy store.AuthBackoff) (store.AuthAttemptReservation, time.Time, error)
 	RecordAuthAttempt(ctx context.Context, attempt store.AuthAttempt) error
@@ -64,12 +64,13 @@ type partyGuestEntry struct {
 	State           string `json:"state"`
 	Position        int    `json:"position"`
 	ETASeconds      int    `json:"etaSeconds"`
+	PitchSemitones  int    `json:"pitchSemitones"`
 }
 
 func newPartyGuestEntry(entry store.PartyEntryView, withMedia bool) partyGuestEntry {
 	out := partyGuestEntry{
 		ID: entry.ID, Title: entry.Title, Subtitle: entry.Subtitle, ParticipantName: entry.ParticipantName,
-		State: entry.State, Position: entry.Position, ETASeconds: entry.ETASeconds,
+		State: entry.State, Position: entry.Position, ETASeconds: entry.ETASeconds, PitchSemitones: entry.PitchSemitones,
 	}
 	if withMedia {
 		out.MediaID = string(entry.MediaID)
@@ -307,7 +308,8 @@ func (s *Server) partyGuestRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		MediaID string `json:"mediaID"`
+		MediaID        string `json:"mediaID"`
+		PitchSemitones int    `json:"pitchSemitones"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxControlBody)).Decode(&req); err != nil {
 		writeDecodeError(w, r, err)
@@ -321,7 +323,7 @@ func (s *Server) partyGuestRequest(w http.ResponseWriter, r *http.Request) {
 	if !reservePartyAttempt(w, r, party, partyRequestAttemptAction, []string{"party-request:" + guest.ParticipantID}, partyRequestBackoff) {
 		return
 	}
-	created, err := party.RequestPartyEntry(r.Context(), hash, store.MediaID(req.MediaID))
+	created, err := party.RequestPartyEntry(r.Context(), hash, store.MediaID(req.MediaID), req.PitchSemitones)
 	if err != nil {
 		writePartyGuestError(w, r, err)
 		return
