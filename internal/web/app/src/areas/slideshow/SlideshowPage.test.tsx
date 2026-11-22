@@ -470,6 +470,22 @@ describe("screensaver helpers", () => {
     document.body.innerHTML = "";
   });
 
+  it("treats a search field in a form as unsaved until its form submits", () => {
+    const untrack = trackTyping(document);
+    document.body.innerHTML =
+      '<form><input id="feed" type="search"><button id="go">Search</button></form>';
+    const feed = document.getElementById("feed") as HTMLInputElement;
+    feed.value = "https://example.test/feed.xml";
+    feed.defaultValue = feed.value;
+    feed.dispatchEvent(new Event("input", { bubbles: true }));
+    (document.getElementById("go") as HTMLElement).focus();
+    expect(pageBusy(document)).toBe(true);
+    feed.form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(pageBusy(document)).toBe(false);
+    untrack();
+    document.body.innerHTML = "";
+  });
+
   it("treats playing media as busy", () => {
     document.body.innerHTML = "<video></video>";
     const video = document.querySelector("video") as HTMLVideoElement;
