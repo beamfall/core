@@ -889,7 +889,9 @@ func spectralSharedRun(self, sibling []uint32, limits runLimits) sharedRun {
 	var best sharedRun
 	bestShift := 0
 	var runs []sharedRun
-	// matched holds, for each offset that never diverges, its matching windows.
+	// matched holds, for each offset that never diverges, its fresh matching
+	// windows: held frames one step off a slow theme's alignment still match,
+	// but show no shared change, so they are no evidence of a duplicate.
 	type offsetMatches struct {
 		shift   int
 		windows []int
@@ -914,9 +916,9 @@ func spectralSharedRun(self, sibling []uint32, limits runLimits) sharedRun {
 			}
 			if verdict == windowMatches || verdict == windowSustains {
 				diffBits += d
-				matched = append(matched, w)
 				if verdict == windowMatches {
 					fresh++
+					matched = append(matched, w)
 				}
 				continue
 			}
@@ -1030,8 +1032,9 @@ func spectralWindowDistance(self, sibling []uint32, i, j int) (int, windowVerdic
 			total += dist
 			continue
 		}
-		repeatA := i+k > 0 && self[i+k-1] == a
-		repeatB := j+k > 0 && sibling[j+k-1] == b
+		// A frame with no predecessor shows no change, so it counts as held.
+		repeatA := i+k == 0 || self[i+k-1] == a
+		repeatB := j+k == 0 || sibling[j+k-1] == b
 		if repeatA && repeatB && !spectralFrameDetailed(a) {
 			continue
 		}

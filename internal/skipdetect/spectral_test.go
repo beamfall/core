@@ -616,3 +616,32 @@ func TestSpectralIdenticalLoopedBumperYieldsNoIntro(t *testing.T) {
 	)
 	wantNoSegment(t, markers, "intro")
 }
+
+// CORE-3111 review r7: a held chord at the very start has no predecessor, so
+// its first frame is no evidence of a change. Twenty held seconds before a
+// 14 s sting must not lift the sting to the 15-window minimum.
+func TestSpectralHeldOpeningBeforeShortStingYieldsNoIntro(t *testing.T) {
+	sting := noise(105, 14)
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Held 1", 100, join(constFrames(0x0f0f0f0f, 20), sting, noise(106, 66))},
+		spectralSibling{"Held 2", 100, join(constFrames(0x0f0f0f0e, 20), sting, noise(107, 66))},
+	)
+	wantNoSegment(t, markers, "intro")
+}
+
+// CORE-3111 review r7: a theme that changes chord every half second, opening
+// one episode and closing the other's 180 s head region. One frame off the
+// true alignment the held chords still match but never change together; that
+// offset is no duplicate evidence, so the intro stands.
+func TestSpectralThemeAtHeadBoundaryKeepsIntro(t *testing.T) {
+	chords := noise(108, 6)
+	var theme []uint32
+	for k := range 48 {
+		theme = append(theme, constFrames(chords[k], 0.5)...)
+	}
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Opens", 1200, join(theme, noise(109, 156))},
+		spectralSibling{"Closes", 1200, join(noise(110, 155), theme, noise(111, 1))},
+	)
+	wantSegment(t, markers, "intro", 0, 24)
+}

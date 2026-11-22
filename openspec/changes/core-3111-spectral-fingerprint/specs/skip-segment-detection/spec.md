@@ -49,13 +49,18 @@ under the existing segment guards.
 
 ### Requirement: Spectral held chords
 
-An agreeing pair in which either frame repeats its predecessor SHALL be held. A window whose
+An agreeing pair in which either frame repeats its predecessor, or has none, SHALL be held. A window whose
 agreeing pairs are all held SHALL extend a shared run but SHALL NOT count toward its 15-window
 minimum; one fresh agreeing pair makes it count.
 
 #### Scenario: Steady near-match
 
 - **WHEN** two files open on different steady chords one bit apart, followed by unrelated audio
+- **THEN** no intro is detected
+
+#### Scenario: Held opening before a short sting
+
+- **WHEN** two files open on near chords held for 20 s, then share a 14 s sting
 - **THEN** no intro is detected
 
 #### Scenario: Steady chord against vibrato
@@ -75,9 +80,10 @@ minimum; one fresh agreeing pair makes it count.
 
 ### Requirement: Spectral duplicate rejection
 
-When an offset with no differing window shares at least 15 windows the candidate does not explain,
-the sibling SHALL yield no segment, because the two files are one recording. The candidate explains
-only matches against a reprise of its audio on one file's side, not the candidate meeting itself.
+When an offset with no differing window shares at least 15 fresh windows the candidate does not
+explain, the sibling SHALL yield no segment, because the two files are one recording. The candidate
+explains only matches against a reprise of its audio on one file's side, not the candidate meeting
+itself.
 
 #### Scenario: Silence-padded copy
 
@@ -93,6 +99,11 @@ only matches against a reprise of its audio on one file's side, not the candidat
 
 - **WHEN** a sibling is an exact copy of a clip that loops a 4 s bumper six times
 - **THEN** that sibling yields no intro
+
+#### Scenario: Theme at the head boundary
+
+- **WHEN** a theme opens this Media and ends at its sibling's 180 s head boundary
+- **THEN** the intro is still detected
 
 #### Scenario: Theme reprise
 
