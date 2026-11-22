@@ -55,6 +55,7 @@ var archWhitelist = map[string][]string{
 	"skins":             {},                              // leaf; user-authored color Skins (ADR-0125) — server-side WCAG-2.2 contrast math for hard-role validation, stdlib only, no internal deps
 	"compat":            {"store", "auth"},               // ADR-0171 §2.2/§2.4 Jellyfin compat route group (JFCOMPAT-3): default-off, integration-session auth via auth, store for session/lookup; no other internal deps
 	"streamtoken":       {"store", "auth", "serverrole"}, // serverrole gates Issue on the ADR-0123 §2 / ADR-0129 §1 attached authority face
+	"subtitlesearch":    {},                              // leaf; CORE-1690 opt-in online subtitle providers over a consumer-side Egress seam; stdlib only
 	"updatecheck":       {"release"},                     // opt-in version check (ADR-0013 §7); imports release to verify the signed channel manifest before blessing an update (PANEL-11)
 	"jobs":              {"store", "redact"},             // operational job errors are redacted before they are logged
 	"auth":              {"store"},

@@ -991,6 +991,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// types onto it. Without this line the fetch seam stays unavailable — it
 	// never degrades to a raw client.
 	wireProviderSubtitleFetch(mediaHTTP, integrationhost.NewHardenedOutboundProxy(integrationController))
+	// Online subtitle search (CORE-1690) is opt-in: with no provider configured
+	// the routes refuse and nothing dials out. The key is read per request from
+	// the 0600 secrets directory through the same credential source scrapers use.
+	wireSubtitleSearch(mediaHTTP, cfg.SubtitleSearchProviders, scraperCredentials)
 	// Encrypted-Library key model: the libencrypt.Manager
 	// persists the per-Library DEK wraps + KEK to the same 0600 secretFiles store
 	// (invariant #5 — no key material in any DB column). It uses production

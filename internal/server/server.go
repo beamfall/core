@@ -380,6 +380,11 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	// which only that package derives.
 	s.handle(http.MethodPost, "/api/media/subtitle-pin", reveal.ContentJSON, s.media.SetSubtitlePin)
 	s.handle(http.MethodPost, "/api/media/subtitle-offset", reveal.ContentJSON, s.media.SetSubtitleOffset)
+	// Online subtitle search (CORE-1690): opt-in provider search and a download
+	// that lands as a sidecar caption. Profile-session JSON like the writes above.
+	s.handle(http.MethodGet, "/api/media/subtitle-search", reveal.ContentJSON, s.media.SubtitleSearchStatus)
+	s.handle(http.MethodPost, "/api/media/subtitle-search", reveal.ContentJSON, s.media.SearchSubtitles)
+	s.handle(http.MethodPost, "/api/media/subtitle-download", reveal.ContentJSON, s.media.DownloadSubtitle)
 	// Proxy-tee stream of a provisional Media: the server ranges
 	// the origin enclosure to the client through this Stream-Token'd endpoint and
 	// tees the bytes to disk, then promotes the copy in place on completion. It

@@ -1,0 +1,49 @@
+{
+  "total_pages": 1,
+  "total_count": 3,
+  "per_page": 60,
+  "page": 1,
+  "data": [
+    {
+      "id": "7001",
+      "type": "subtitle",
+      "attributes": {
+        "subtitle_id": "7001",
+        "language": "en",
+        "download_count": 120,
+        "hearing_impaired": false,
+        "foreign_parts_only": false,
+        "ratings": 6.5,
+        "from_trusted": true,
+        "moviehash_match": false,
+        "release": "Sample.Title.2019.1080p",
+        "files": [{ "file_id": 9001, "cd_number": 1, "file_name": "Sample.Title.2019.1080p.srt" }]
+      }
+    },
+    {
+      "id": "7002",
+      "type": "subtitle",
+      "attributes": {
+        "subtitle_id": "7002",
+        "language": "pt-BR",
+        "download_count": 40,
+        "hearing_impaired": true,
+        "foreign_parts_only": false,
+        "ratings": 0,
+        "moviehash_match": true,
+        "release": "",
+        "files": [{ "file_id": 9002, "cd_number": 1, "file_name": "sample.ptbr.srt" }]
+      }
+    },
+    {
+      "id": "7003",
+      "type": "subtitle",
+      "attributes": {
+        "subtitle_id": "7003",
+        "language": "<script>",
+        "download_count": 1,
+        "files": [{ "file_id": 9003, "file_name": "bad.srt" }]
+      }
+    }
+  ]
+}

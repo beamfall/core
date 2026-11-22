@@ -29,6 +29,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -36,6 +37,7 @@ import { Slider } from "@/components/ui/astryx-primitives";
 import { NativeSelect } from "@/components/ui/select";
 import type { MetadataAttribution } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { SubtitleSearchDialog } from "../components/SubtitleSearchDialog";
 import { songSecondsPerStreamSecond } from "../lib/playback";
 import { SKIP_INTERVALS, type SkipInterval } from "../lib/preferences";
 import {
@@ -43,6 +45,7 @@ import {
   type SubtitleAppearance,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
+import { useSubtitleSearchAvailable } from "../lib/subtitleSearch";
 import {
   buildChapterList,
   buildMarkerStripModel,
@@ -105,6 +108,8 @@ type GestureFeedback =
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const GESTURE_THRESHOLD = 24;
+/** The subtitle menu row that opens online search; never a track id. */
+const SUBTITLE_SEARCH_ROW = "subtitle-search-online";
 
 export function PlayerTransport({
   videoRef,
@@ -361,6 +366,40 @@ export function PlayerTransport({
     onSubtitleChanged: subtitle.applySync,
     renegotiate: onRenegotiate ? renegotiate : undefined,
   });
+
+  // Search online (CORE-1690): one extra subtitle row when the server has a
+  // provider enabled and this viewer may use it. A download is a new sidecar,
+  // so playback info is re-read at the current position to list it. The
+  // server is asked only once the subtitle menu has been opened.
+  const [subtitleMenuOpened, setSubtitleMenuOpened] = useState(false);
+  useEffect(() => {
+    if (openKey === "subtitle") setSubtitleMenuOpened(true);
+  }, [openKey]);
+  const subtitleSearch = useSubtitleSearchAvailable(subtitleMenuOpened && mediaID !== "");
+  const [subtitleSearchOpen, setSubtitleSearchOpen] = useState(false);
+  const subtitleOptions = useMemo(
+    () =>
+      subtitleSearch
+        ? [
+            ...tracks.subtitleOptions,
+            { id: SUBTITLE_SEARCH_ROW, label: t("subtitleSearchOnline"), selected: false },
+          ]
+        : tracks.subtitleOptions,
+    [subtitleSearch, tracks.subtitleOptions, t],
+  );
+  const selectSubtitle = tracks.selectSubtitle;
+  const onSubtitleRow = useCallback(
+    (id: string) => {
+      if (id !== SUBTITLE_SEARCH_ROW) {
+        selectSubtitle(id);
+        return;
+      }
+      // The dialog portals to the document, which stage fullscreen would hide.
+      if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+      setSubtitleSearchOpen(true);
+    },
+    [selectSubtitle],
+  );
 
   // Commands from the Profile's other devices drive this player (CORE-1678).
   useRemotePlayerTarget({
@@ -1133,10 +1172,10 @@ export function PlayerTransport({
                   icon={<Captions />}
                   container={layerRef}
                   side={menuSide}
-                  options={tracks.subtitleOptions}
+                  options={subtitleOptions}
                   open={openKey === "subtitle"}
                   onOpenChange={(open) => setOpen("subtitle", open)}
-                  onSelect={tracks.selectSubtitle}
+                  onSelect={onSubtitleRow}
                 />
                 {subtitle.stylingAvailable && (
                   <SubtitleStylePanel
@@ -1286,6 +1325,14 @@ export function PlayerTransport({
         container={layerRef}
         skipInterval={skipInterval}
       />
+      {subtitleSearchOpen && (
+        <SubtitleSearchDialog
+          mediaID={mediaID}
+          title={mediaTitle}
+          onClose={() => setSubtitleSearchOpen(false)}
+          onDownloaded={renegotiate}
+        />
+      )}
     </div>
   );
 }

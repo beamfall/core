@@ -184,6 +184,7 @@ resolver over `store` typed methods. No `internal/util`, no `internal/model`, no
 | `skipdetect` | Generic skip-segment detector over markers, ordered siblings, jobs, and FFmpeg | 0048 |
 | `store` | The single-writer storage gate: both DB handles, all SQL text, schema row types, typed query methods, typed IDs, `LibraryFilter`, FTS, migrations, backups, placement guard, refuse-on-newer | 0011 |
 | `streamtoken` | Stream Token issue + verify (HMAC, expiry, live revocation/reveal recheck); `Grant`, `Target` | 0010 §3 |
+| `subtitlesearch` | Opt-in, default-off online subtitle search providers (OpenSubtitles REST); requests travel through a consumer-side egress seam, no telemetry | CORE-1690 |
 | `updatecheck` | Opt-in, default-off version check against a signed public release manifest. No telemetry | 0013 §7 |
 | `watcher` | Filesystem watch state and change observation | 0009 |
 | `web` | Embedded Core Web UI static file shim | 0007 |
@@ -239,6 +240,7 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `web` | — (the `go:embed` shim only) |
 | `streamtoken` | store, auth (auth supplies the verifying `Scope`), serverrole (gates `Issue` on the ADR-0123 §2 / ADR-0129 §1 attached authority face — an attached Origin Node never issues) |
 | `release` | — (leaf; supply-chain integrity core — signed release manifest, ed25519 sign/verify, pinned trust-anchor public key, SBOM/provenance builders; stdlib only, PANEL-11 / ADR-0013 §A) |
+| `subtitlesearch` | — (leaf; CORE-1690 online subtitle providers over a consumer-side `Egress` seam the composition root adapts onto the hardened outbound proxy; stdlib only, no internal deps) |
 | `updatecheck` | release (opt-in version check, ADR-0013 §7; imports `release` to verify the signed channel manifest before blessing an update — PANEL-11) |
 | `jobs` | store, redact (operational job errors are redacted before they are logged) |
 | `auth` | store |
