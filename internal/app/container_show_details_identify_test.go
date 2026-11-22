@@ -224,7 +224,7 @@ func operatorOrdinalKeepsSiblingLinks(t *testing.T, route, secondCast string) {
 	cast := plugin.EntityMap{Kind: "person", Relation: "credited-in", Path: "seasons[season_number={sequence}].cast", NamePath: "name"}
 	if route == "lookup template" {
 		cast = plugin.EntityMap{Kind: "person", Relation: "credited-in", Path: "cast_ids", NamePath: "name",
-			LookupTemplate: "/tv/42/season/{sequence}/person/{id}", LookupIDPath: "id"}
+			LookupTemplate: "/tv/42/season/{sequence}/person/{id}", LookupIDPath: "id", MaxLookups: 1}
 	}
 	spec := &bundle.Scrapers[0]
 	spec.ItemLookupTemplate, spec.ItemFieldMap = "", nil
