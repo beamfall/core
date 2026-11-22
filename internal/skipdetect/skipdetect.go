@@ -870,14 +870,16 @@ func sharedTrailingRun(self, sibling []float64) sharedRun {
 // frames aligned to self's frame 0, so startWindow is a window of self's
 // analysed region; the sibling side may sit at any frame. Each window matches,
 // diverges or cannot be compared (spectralWindowDistance); a run is a maximal
-// stretch of matching windows. Only offsets with at least one diverging window
-// yield candidates: there the two signatures provably differ, so what they
-// share is a segment. An offset that never diverges shows only that the two
-// agree where they can be compared. When such an offset matches at least
-// minSharedWindows windows that lie outside the chosen run on both files'
-// timelines, the pair is one recording (a duplicate, perhaps padded with
-// silence) and yields nothing; a theme reprise that matches the run's audio on
-// either side is not.
+// stretch of matching windows, and it needs minSharedWindows windows that match
+// on fresh frames: a held chord may carry a run, but cannot make one. Only
+// offsets with at least one diverging window yield candidates: there the two
+// signatures provably differ, so what they share is a segment. An offset that
+// never diverges shows only that the two agree where they can be compared.
+// When such an offset shares more than the chosen run explains, the pair is one
+// recording (a duplicate, perhaps padded with silence or repeating a passage)
+// and yields nothing. The run explains matches against one reprise of its
+// audio, on either file's side; matches outside it on both timelines, or
+// against reprises on both sides at once, are what a duplicate adds.
 // compared is the number of windows the two signatures overlap at the run's
 // offset. Only maximal runs are judged against limits, so a run too long to be
 // a segment is never cut down to one; among those, beats picks.
@@ -903,19 +905,22 @@ func spectralSharedRun(self, sibling []uint32, limits runLimits) sharedRun {
 		runs = runs[:0]
 		var matched []int
 		diverged := false
-		runStart, diffBits := first, 0
+		runStart, diffBits, fresh := first, 0, 0
 		for w := first; w <= last; w++ {
 			d, verdict := 0, windowIncomparable
 			if w < last {
 				d, verdict = spectralWindowDistance(self, sibling, w*fpw, w*fpw-shift)
 				diverged = diverged || verdict == windowDiverges
 			}
-			if verdict == windowMatches {
+			if verdict == windowMatches || verdict == windowSustains {
 				diffBits += d
 				matched = append(matched, w)
+				if verdict == windowMatches {
+					fresh++
+				}
 				continue
 			}
-			if run := w - runStart; run >= minSharedWindows {
+			if run := w - runStart; run >= minSharedWindows && fresh >= minSharedWindows {
 				runs = append(runs, sharedRun{
 					startWindow: runStart,
 					windows:     run,
@@ -924,7 +929,7 @@ func spectralSharedRun(self, sibling []uint32, limits runLimits) sharedRun {
 					diffScale:   spectralChanceBits,
 				})
 			}
-			runStart, diffBits = w+1, 0
+			runStart, diffBits, fresh = w+1, 0, 0
 		}
 		if !diverged {
 			if len(matched) >= minSharedWindows {
@@ -946,14 +951,21 @@ func spectralSharedRun(self, sibling []uint32, limits runLimits) sharedRun {
 	selfStart, selfEnd := best.startWindow*fpw, (best.startWindow+best.windows)*fpw
 	sibStart, sibEnd := selfStart-bestShift, selfEnd-bestShift
 	for _, om := range unproven {
-		outside := 0
+		outside, selfReprise, sibReprise := 0, 0, 0
 		for _, w := range om.windows {
 			self, sib := w*fpw, w*fpw-om.shift
-			if (self+fpw <= selfStart || self >= selfEnd) && (sib+fpw <= sibStart || sib >= sibEnd) {
+			inSelf := self+fpw > selfStart && self < selfEnd
+			inSib := sib+fpw > sibStart && sib < sibEnd
+			switch {
+			case !inSelf && !inSib:
 				outside++
+			case inSelf && !inSib:
+				selfReprise++ // the run's audio in self against a reprise in sibling
+			case inSib && !inSelf:
+				sibReprise++
 			}
 		}
-		if outside >= minSharedWindows {
+		if outside+min(selfReprise, sibReprise) >= minSharedWindows {
 			return sharedRun{}
 		}
 	}
@@ -966,6 +978,8 @@ type windowVerdict int
 const (
 	windowIncomparable windowVerdict = iota
 	windowMatches
+	// windowSustains matches only through held detailed frames.
+	windowSustains
 	windowDiverges
 )
 
@@ -981,17 +995,19 @@ const (
 //     tones a few bits apart are different sounds;
 //   - an agreeing low-detail pair whose frames both repeat their predecessors
 //     is neutral instead: a held tone or a steady hum carries no timing, so
-//     shared hum can neither make a window match nor hide its differences. A
-//     held chord is detailed and still agrees.
+//     shared hum can neither make a window match nor hide its differences. An
+//     agreeing detailed pair that repeats (a held chord) still agrees, but is
+//     not fresh.
 //
 // The window matches when at least spectralMinWindowFrames pairs agree and at
 // most a quarter of its informative pairs disagree (a re-encode can clip a note
-// edge to silence); it diverges when at least spectralMinWindowFrames pairs
-// disagree and they outnumber the agreeing ones. Otherwise it cannot be
-// compared. Agreeing pairs add their Hamming distance (detailed) or nothing
+// edge to silence); it only sustains when fewer than spectralMinWindowFrames of
+// those agreeing pairs are fresh. It diverges when at least
+// spectralMinWindowFrames pairs disagree and they outnumber the agreeing ones.
+// Otherwise it cannot be compared. Agreeing pairs add their Hamming distance (detailed) or nothing
 // (identical); disagreeing pairs add spectralChanceBits.
 func spectralWindowDistance(self, sibling []uint32, i, j int) (int, windowVerdict) {
-	var total, agree, disagree int
+	var total, agree, held, disagree int
 	for k := range spectralFramesPerWindow {
 		a, b := self[i+k], sibling[j+k]
 		silentA, silentB := a == ffmpeg.SpectralSilentFrame, b == ffmpeg.SpectralSilentFrame
@@ -1014,16 +1030,21 @@ func spectralWindowDistance(self, sibling []uint32, i, j int) (int, windowVerdic
 			total += dist
 			continue
 		}
-		if !spectralFrameDetailed(a) && i+k > 0 && j+k > 0 && self[i+k-1] == a && sibling[j+k-1] == b {
-			continue
+		if i+k > 0 && j+k > 0 && self[i+k-1] == a && sibling[j+k-1] == b {
+			if !spectralFrameDetailed(a) {
+				continue
+			}
+			held++
 		}
 		agree++
 		total += dist
 	}
 	informative := agree + disagree
 	switch {
-	case agree >= spectralMinWindowFrames && 4*disagree <= informative:
+	case agree >= spectralMinWindowFrames && 4*disagree <= informative && agree-held >= spectralMinWindowFrames:
 		return total * spectralFramesPerWindow / informative, windowMatches
+	case agree >= spectralMinWindowFrames && 4*disagree <= informative:
+		return total * spectralFramesPerWindow / informative, windowSustains
 	case disagree >= spectralMinWindowFrames && disagree > agree:
 		return total * spectralFramesPerWindow / informative, windowDiverges
 	default:

@@ -539,3 +539,27 @@ func TestSpectralHeldChordKeepsIntroWhole(t *testing.T) {
 	)
 	wantSegment(t, markers, "intro", 5, 31)
 }
+
+// CORE-3111 review r5: an exact copy of a clip that plays one passage twice.
+// The passage matches its own repeat at a shifted offset, which diverges; the
+// aligned copy shares that run against reprises on both sides at once, which
+// the run does not explain.
+func TestSpectralIdenticalClipWithRepeatedPassageYieldsNoIntro(t *testing.T) {
+	passage := noise(91, 20)
+	clip := join(passage, passage, noise(92, 5))
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Clip", 45, clip},
+		spectralSibling{"Clip copy", 45, append([]uint32(nil), clip...)},
+	)
+	wantNoSegment(t, markers, "intro")
+}
+
+// CORE-3111 review r5: two different steady chords one bit apart. Held frames
+// can carry a run but cannot make one, so a steady near-match is no intro.
+func TestSpectralSteadyNearMatchYieldsNoIntro(t *testing.T) {
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Steady 1", 100, join(constFrames(0x11111111, 24), noise(93, 76))},
+		spectralSibling{"Steady 2", 100, join(constFrames(0x11111110, 24), noise(94, 76))},
+	)
+	wantNoSegment(t, markers, "intro")
+}

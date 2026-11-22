@@ -34,33 +34,48 @@ time in each file. Without a spectral fingerprint the loudness comparison SHALL 
 Each frame pair SHALL agree, disagree or carry no evidence; shared silence and a held tone or hum
 on both sides carry none. A one-second window SHALL count as shared when at least two pairs agree
 and at most a quarter disagree, and as differing when at least two pairs disagree and outnumber the
-agreeing ones. The best run of shared windows at an offset with a differing window SHALL become the
-candidate segment, under the existing segment guards.
+agreeing ones. The best run at an offset with a differing window SHALL become the candidate segment,
+under the existing segment guards.
 
 #### Scenario: Held hum is no evidence
 
 - **WHEN** after a shared intro both files hold the same hum while their other frames differ
 - **THEN** the intro ends where the shared intro ends
 
-#### Scenario: Held chord is evidence
-
-- **WHEN** a shared intro holds the same chord for 3 s
-- **THEN** the intro spans the chord
-
 #### Scenario: Longest run wins
 
 - **WHEN** two offsets each yield a shared run, of 20 s and of 26 s
 - **THEN** the 26 s run is the candidate segment
 
+### Requirement: Spectral held chords
+
+Windows that match only through a held chord SHALL extend a shared run but SHALL NOT count toward
+its 15-window minimum.
+
+#### Scenario: Steady near-match
+
+- **WHEN** two files open on different steady chords one bit apart, followed by unrelated audio
+- **THEN** no intro is detected
+
+#### Scenario: Held chord is evidence
+
+- **WHEN** a shared intro holds the same chord for 3 s
+- **THEN** the intro spans the chord
+
 ### Requirement: Spectral duplicate rejection
 
-When an offset with no differing window shares at least 15 windows that lie outside the candidate
-segment on both files' timelines, the sibling SHALL yield no segment, because the two files are one
-recording.
+When an offset with no differing window shares at least 15 windows the candidate does not explain,
+the sibling SHALL yield no segment, because the two files are one recording. The candidate explains
+matches against one reprise of its audio on either side, but not reprises on both sides at once.
 
 #### Scenario: Silence-padded copy
 
 - **WHEN** a sibling is this Media's audio after 100 s of leading silence
+- **THEN** that sibling yields no intro
+
+#### Scenario: Copy that repeats a passage
+
+- **WHEN** a sibling is an exact copy of a clip that plays one 20 s passage twice
 - **THEN** that sibling yields no intro
 
 #### Scenario: Theme reprise
