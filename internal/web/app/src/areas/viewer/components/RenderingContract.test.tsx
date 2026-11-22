@@ -156,6 +156,26 @@ describe("React Viewer rendering contract", () => {
     expect(fetchSectionItems).toHaveBeenCalledTimes(24);
   });
 
+  it("drops unknown Section kinds and names each one once (CORE-0203)", () => {
+    vi.mocked(fetchSectionItems).mockReturnValue(new Promise(() => {}));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sections: Section[] = [
+      section("known"),
+      { ...section("private-a"), kind: "carousel" },
+      { ...section("private-b"), kind: "carousel" },
+      { ...section("private-c"), kind: "timeline" },
+    ];
+
+    renderLayout({ id: "layout", sections });
+
+    expect(fetchSectionItems).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls).toEqual([
+      ["Beamfall rendering diagnostic: UnknownSectionKind carousel"],
+      ["Beamfall rendering diagnostic: UnknownSectionKind timeline"],
+    ]);
+    expect(warn.mock.calls.flat().join(" ")).not.toContain("private-");
+  });
+
   it("uses the full Section budget for the manifest while Home feeds are pending", () => {
     vi.mocked(fetchHomeLibraries).mockReturnValue(new Promise(() => {}));
     vi.mocked(fetchSectionItems).mockReturnValue(new Promise(() => {}));

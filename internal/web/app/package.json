@@ -16,6 +16,7 @@
     "verify:build": "npm run check && npm run typecheck && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "strings:rerecord": "STRINGS_RERECORD=1 vitest run src/strings.test.ts -t \"rerecords the BASE\" && vitest run src/strings.test.ts",
     "e2e": "playwright test"
   },
   "dependencies": {

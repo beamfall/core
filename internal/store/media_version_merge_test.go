@@ -342,37 +342,56 @@ func TestUndoVersionMergesOutOfOrderRestoresTheFirstVersionFacts(t *testing.T) {
 	}
 }
 
-// TestUndoVersionMergeLeavesARequeuedSurvivorEntry: an entry the Profile
-// queued for the survivor after the merge is the Profile's own, so undo
-// leaves it on the survivor.
+// A Version merge repoints each occurrence and undo follows the surviving entry
+// IDs, even when several entries were added at the same time.
 func TestUndoVersionMergeLeavesARequeuedSurvivorEntry(t *testing.T) {
 	st := openSeeded(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	filter := LibraryFilter{Revealed: true, AllLibraries: true}
+	const profile = "profile-default"
 	keep, drop, _, _ := splitTitle(t, st)
-	insertRawQueueRow(t, st, "profile-default", 0, drop)
+	read := func() []PlayQueueEntry {
+		t.Helper()
+		queue, err := st.PlayQueue(ctx, profile, filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return queue.Entries
+	}
+	if _, err := st.QueueAddMany(ctx, testQueueWriteAuthorization(profile, filter), []MediaID{keep, drop, drop}, QueueEnd); err != nil {
+		t.Fatal(err)
+	}
+	original := read()
+
 	now := time.Now().UTC()
 	result, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{keep, drop}, now)
 	if err != nil || len(result.Merged) != 1 {
 		t.Fatalf("merge = %+v err=%v", result, err)
 	}
-	tx, err := st.eventsW.BeginTx(ctx, nil)
-	if err != nil {
+	merged := read()
+	if len(merged) != len(original) {
+		t.Fatalf("merge changed queue length: %+v", merged)
+	}
+	for i, entry := range merged {
+		if entry.ID != original[i].ID || entry.Item.ID != keep {
+			t.Fatalf("entry %d after merge = %+v", i, entry)
+		}
+	}
+	if err := st.QueueRemoveEntry(ctx, profile, original[1].ID, filter); err != nil {
 		t.Fatal(err)
 	}
-	if err := deleteMyQueueMedia(ctx, tx, "profile-default", keep); err != nil {
-		t.Fatal(errors.Join(err, tx.Rollback()))
-	}
-	if err := tx.Commit(); err != nil {
+	if _, err := st.QueueAddMany(ctx, testQueueWriteAuthorization(profile, filter), []MediaID{keep}, QueueEnd); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond) // a new added time
-	insertRawQueueRow(t, st, "profile-default", 0, keep)
+	requeued := read()
 	if _, err := st.UndoBatch(ctx, result.BatchID, filter, now.Add(time.Minute)); err != nil {
 		t.Fatalf("UndoBatch: %v", err)
 	}
-	if got := queuedMedia(t, st); len(got) != 1 || got[0] != keep {
-		t.Fatalf("queue after undo = %v, want the Profile's own survivor entry", got)
+	undone := read()
+	if len(undone) != 3 || undone[0].ID != original[0].ID || undone[0].Item.ID != keep ||
+		undone[1].ID != original[2].ID || undone[1].Item.ID != drop ||
+		undone[2].ID != requeued[2].ID || undone[2].Item.ID != keep {
+		t.Fatalf("queue after undo = %+v", undone)
 	}
 }
 

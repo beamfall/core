@@ -50,6 +50,12 @@ type Result struct {
 	// Search candidates never carry entities. Nil when the spec declares no
 	// EntityMaps or none of their paths resolved.
 	Entities []EntityResult
+	// SkippedEntityMaps lists, by index into the spec's EntityMaps, the maps
+	// the engine did not evaluate because their Path names an ordinal the
+	// lookup does not know. A skipped map says nothing about the document, so
+	// a consumer must not read its missing Entities as "none". Nil when every
+	// map ran.
+	SkippedEntityMaps []int
 }
 
 // EntityResult is one hydrated Entity from a spec's EntityMaps: the declared
@@ -105,6 +111,15 @@ type EntityResult struct {
 	// Links holds every link under them this lookup resolved, so a relation
 	// with no Links resolved to none.
 	LinkRelations []string
+	// SequenceScoped marks a container result the item's {sequence} selected:
+	// its map Path or the lookup template names {sequence}, so it describes
+	// that sequence's container, not necessarily the one holding the Media.
+	SequenceScoped bool
+	// SequenceScopedLinks lists, sorted, the LinkRelations whose sibling map
+	// Path or LookupTemplate names {sequence}: those links describe the item's sequence even
+	// when the container itself is not sequence-scoped, so they replace a
+	// container's links only when it is that sequence's container.
+	SequenceScopedLinks []string
 	// containerRelations is the container map's ContainerRelations, which
 	// linkContainerResults resolves into Links once every map has resolved.
 	containerRelations map[string]string
@@ -208,9 +223,17 @@ const (
 	defaultMaxResponseBytes = 5 << 20
 	defaultTimeout          = 15 * time.Second
 	maxRedirects            = 3
-	// retryAfterRetries is the small 429 cap: one initial request plus three
-	// retries, enough to respect etiquette without stalling forever.
+	// maxStreamRedirects bounds anonymous media-payload chains, which stack
+	// several measurement prefixes (each a hop) in front of the CDN.
+	maxStreamRedirects = 10
+	// retryAfterRetries is the small retry cap for 429 and for 503 with
+	// Retry-After: one initial request plus three retries, enough to respect
+	// etiquette without stalling forever.
 	retryAfterRetries = 3
+	// maxRetryAfterWait bounds an honoured Retry-After. A provider asking for
+	// longer gets its error surfaced at once, so a walking caller ends its pass
+	// and requeues instead of holding a request open.
+	maxRetryAfterWait = 10 * time.Second
 	retryBackoffBase  = 25 * time.Millisecond
 	retryBackoffCap   = 250 * time.Millisecond
 	// maxCandidates bounds Search results — identification needs a short
@@ -241,16 +264,18 @@ type Engine struct {
 	maxResponseBytes int64
 	insecureLoopback bool
 	client           *http.Client
-	// streamClient serves DownloadResource: same hardened dialer and redirect
-	// pinning, but no whole-request timeout — media-sized bodies outlive any
+	// streamClient serves DownloadResource and OpenOriginRange: same hardened
+	// dialer, redirect pinning only for credentialed requests (see
+	// checkStreamRedirect), and no whole-request timeout — media-sized bodies outlive any
 	// fixed wall clock, and ctx bounds the download instead.
 	streamClient *http.Client
 	clock        requestClock
 
-	mu          sync.Mutex
-	tokens      map[string]cachedToken     // login-bearer cache, keyed endpoint+authref
-	lastRequest map[string]time.Time       // rate-limit anchor per scraper ID
-	references  map[string]cachedReference // reference documents, keyed by URL
+	mu             sync.Mutex
+	tokens         map[string]cachedToken     // login-bearer cache, keyed endpoint+authref
+	lastRequest    map[string]time.Time       // rate-limit anchor per scraper ID
+	references     map[string]cachedReference // reference documents, keyed by URL
+	childResponses childResponseCache
 
 	// extensions reads the scraper declarations the pinned plugin-sdk does
 	// not carry yet; New sets plugin.ScraperExtensionsOf.
@@ -317,7 +342,7 @@ func New(opts ...Option) *Engine {
 	e.streamClient = &http.Client{
 		// No Timeout: it covers the whole body read, which would cut large
 		// downloads short. Headers/TLS/dial stay capped via the transport.
-		CheckRedirect: e.checkRedirect,
+		CheckRedirect: e.checkStreamRedirect,
 		Transport:     transport,
 	}
 	return e
@@ -554,11 +579,18 @@ func (e *Engine) lookupDocument(ctx context.Context, spec plugin.ScraperSpec, te
 	}
 	fieldMap, artworkMap := e.referenceMaps(ctx, spec, config, spec.FieldMap), e.referenceMaps(ctx, spec, config, spec.ArtworkMap)
 	result := mapJSON(spec, fieldMap, artworkMap, root, config)
-	result.Entities, err = e.resolveEntityMaps(ctx, spec, root, v, config)
+	result.Entities, result.SkippedEntityMaps, err = e.resolveEntityMaps(ctx, spec, root, v, config)
 	if err != nil {
 		return Result{}, err
 	}
 	linkContainerResults(result.Entities)
+	if strings.Contains(template, "{sequence}") {
+		for i := range result.Entities {
+			if result.Entities[i].Container {
+				result.Entities[i].SequenceScoped = true
+			}
+		}
+	}
 	if template == spec.LookupTemplate {
 		if err := e.overlayItemLookup(ctx, spec, id, v, config, &result); err != nil {
 			return Result{}, err
@@ -604,6 +636,9 @@ func (e *Engine) overlayItemLookup(ctx context.Context, spec plugin.ScraperSpec,
 func (e *Engine) Search(ctx context.Context, spec plugin.ScraperSpec, query string, vars ...Variables) ([]Result, error) {
 	if spec.SearchTemplate == "" {
 		return nil, fmt.Errorf("scrape: scraper %q declares no search template", spec.ID)
+	}
+	if spec.CandidatesPath == "" {
+		return nil, fmt.Errorf("scrape: scraper %q declares no candidates path", spec.ID)
 	}
 	v := variablesArg(vars)
 	if !RequiredSearchHintsPresent(spec, v.Hints) {
@@ -762,8 +797,9 @@ func (e *Engine) lookupRSS(ctx context.Context, spec plugin.ScraperSpec, id stri
 // context-sensitively: path-escaped in the path, query-escaped after the
 // first "?" — so a free-text search term containing "&" or "=" cannot inject
 // extra query parameters.
-func buildURL(endpoint, template, placeholder, value string, vars Variables, config map[string]string, page int) string {
-	pairs := append([][2]string{{placeholder, value}}, vars.substitutions(page)...)
+func buildURL(endpoint, template, placeholder, value string, vars Variables, config map[string]string, page int, extra ...[2]string) string {
+	pairs := append([][2]string{{placeholder, value}}, extra...)
+	pairs = append(pairs, vars.substitutions(page)...)
 	path, query, hasQuery := strings.Cut(template, "?")
 	query = dropUnknownYear(query, vars)
 	if hasQuery {
@@ -902,11 +938,14 @@ func logSkippedField(spec plugin.ScraperSpec, field, fieldType, value string) {
 // ArtworkMap values; FieldMap values stay raw for the consumer to type-parse).
 // Unresolved paths and blank values are omitted, never errors — the FieldMap
 // posture. Validation already keeps EntityMaps off rss specs, whose documents
-// are not JSON.
-func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec, root any, vars Variables, config map[string]string) ([]EntityResult, error) {
+// are not JSON. It also returns the indices of the maps it skipped because
+// their Path names an unknown ordinal.
+func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec, root any, vars Variables, config map[string]string) ([]EntityResult, []int, error) {
 	var entities []EntityResult
-	for _, entityMap := range spec.EntityMaps {
+	var skipped []int
+	for mapIndex, entityMap := range spec.EntityMaps {
 		if vars.namesUnknownOrdinal(entityMap.Path) {
+			skipped = append(skipped, mapIndex)
 			continue
 		}
 		node, ok := resolveJSONNode(root, vars.substituteOrdinals(substituteConfig(entityMap.Path, config, identity)))
@@ -915,6 +954,8 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 		}
 		if entityMap.Container {
 			if entity, ok := containerEntityResult(spec, entityMap, node, config); ok {
+				entity.SequenceScoped = mapNamesSequence(entityMap)
+				entity.SequenceScopedLinks = sequenceScopedLinks(spec, entityMap)
 				entities = append(entities, entity)
 			}
 			continue
@@ -941,7 +982,7 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 				var err error
 				source, err = e.fetchJSONDocument(ctx, spec, entityMap.LookupTemplate, "{id}", id, vars, config, 0)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 			var name string
@@ -992,7 +1033,7 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 			entities = append(entities, entity)
 		}
 	}
-	return entities, nil
+	return entities, skipped, nil
 }
 
 // elementMatchesFilter reports whether one EntityMap element passes the map's
@@ -1076,6 +1117,30 @@ func containerEntityResult(spec plugin.ScraperSpec, entityMap plugin.EntityMap, 
 	return entity, entity.ArtworkURL != "" || len(entity.Fields) > 0 || len(entity.Artwork) > 0 || entity.Title != "" || len(entityMap.ContainerRelations) > 0
 }
 
+// mapNamesSequence reports whether an entity map selects what it hydrates by
+// the item's {sequence}: through its Path or its per-element LookupTemplate.
+func mapNamesSequence(entityMap plugin.EntityMap) bool {
+	return strings.Contains(entityMap.Path, "{sequence}") || strings.Contains(entityMap.LookupTemplate, "{sequence}")
+}
+
+// sequenceScopedLinks returns, sorted, the container relations of a container
+// map whose sibling map (any non-container map hydrating that relation) names
+// {sequence} in its Path or per-element LookupTemplate, so its Entities, or
+// their absence, belong to the item's sequence.
+func sequenceScopedLinks(spec plugin.ScraperSpec, container plugin.EntityMap) []string {
+	var scoped []string
+	for _, relation := range slices.Sorted(maps.Keys(container.ContainerRelations)) {
+		sibling := container.ContainerRelations[relation]
+		for _, entityMap := range spec.EntityMaps {
+			if !entityMap.Container && entityMap.Relation == sibling && mapNamesSequence(entityMap) {
+				scoped = append(scoped, relation)
+				break
+			}
+		}
+	}
+	return scoped
+}
+
 // linkContainerResults fills each container result's Links from its map's
 // ContainerRelations: every non-container result in the same lookup whose
 // relation is the one a container relation names.
@@ -1122,19 +1187,38 @@ func renderArtworkURL(base, tmpl, value string) string {
 // invalidate it, re-login once (inside the second authorizer call), and retry
 // the request once. A second 401 surfaces as the error.
 func (e *Engine) fetchAuthorized(ctx context.Context, spec plugin.ScraperSpec, method, rawURL string, payload []byte, contentType string) ([]byte, error) {
+	return e.fetchAuthorizedResponse(ctx, spec, method, rawURL, payload, contentType, false)
+}
+
+func (e *Engine) fetchAuthorizedResponse(ctx context.Context, spec plugin.ScraperSpec, method, rawURL string, payload []byte, contentType string, cache bool) ([]byte, error) {
 	attempt := func() ([]byte, error) {
 		authorize, err := e.authorizer(ctx, spec)
 		if err != nil {
-			return nil, err
-		}
-		if err := e.waitTurn(ctx, spec); err != nil {
 			return nil, err
 		}
 		var body io.Reader
 		if payload != nil {
 			body = bytes.NewReader(payload)
 		}
-		return e.fetch(ctx, method, rawURL, body, contentType, authorize)
+		req, err := e.newRequest(withPace(ctx, spec), method, rawURL, body, contentType, authorize)
+		if err != nil {
+			return nil, err
+		}
+		var key [32]byte
+		if cache {
+			key = childResponseKey(req)
+			if data := e.childResponses.get(key, e.clock.Now()); data != nil {
+				return data, nil
+			}
+		}
+		if err := e.waitTurn(ctx, spec); err != nil {
+			return nil, err
+		}
+		data, err := e.fetchRequest(req)
+		if cache && err == nil && json.Valid(data) {
+			e.childResponses.put(key, data, e.clock.Now())
+		}
+		return data, err
 	}
 	data, err := attempt()
 	var status *statusError
@@ -1294,7 +1378,7 @@ func (e *Engine) loginToken(ctx context.Context, spec plugin.ScraperSpec, secret
 	}
 	// The exchange itself carries no authorizer — the secret travels in the
 	// body — and passes the same SSRF gate and caps as every request.
-	response, err := e.fetch(ctx, http.MethodPost, spec.Endpoint+spec.Login.Path, bytes.NewReader(payload), "application/json", nil)
+	response, err := e.fetch(withPace(ctx, spec), http.MethodPost, spec.Endpoint+spec.Login.Path, bytes.NewReader(payload), "application/json", nil)
 	if err != nil {
 		return "", err
 	}
@@ -1324,16 +1408,24 @@ func (e *Engine) invalidateToken(spec plugin.ScraperSpec) {
 // authorize runs after the URL passes the SSRF gate; it may add headers or
 // query parameters but never changes scheme or host.
 func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reader, contentType string, authorize func(*http.Request)) ([]byte, error) {
+	req, err := e.newRequest(ctx, method, rawURL, body, contentType, authorize)
+	if err != nil {
+		return nil, err
+	}
+	return e.fetchRequest(req)
+}
+
+func (e *Engine) newRequest(ctx context.Context, method, rawURL string, body io.Reader, contentType string, authorize func(*http.Request)) (*http.Request, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: invalid request URL: %w", err)
+		return nil, fmt.Errorf("scrape: invalid request URL")
 	}
 	if err := e.vetURL(parsed); err != nil {
 		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, method, parsed.String(), body)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: %w", err)
+		return nil, safeFetchError("building request", err)
 	}
 	// Source etiquette: every request identifies the app (MusicBrainz
 	// rejects or throttles UA-less clients).
@@ -1344,7 +1436,12 @@ func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reade
 	if authorize != nil {
 		authorize(req)
 	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	return req, nil
+}
+
+func (e *Engine) fetchRequest(req *http.Request) ([]byte, error) {
+	parsed := req.URL
+	resp, err := e.requestWithRetry(req.Context(), req, func(attempt *http.Request) (*http.Response, error) {
 		return e.client.Do(attempt)
 	})
 	if err != nil {
@@ -1356,7 +1453,7 @@ func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reade
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("scrape: reading response: %w", err)
+		return nil, safeFetchError("reading response", err)
 	}
 	if int64(len(data)) > e.maxResponseBytes {
 		return nil, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
@@ -1377,7 +1474,7 @@ func (e *Engine) wait(ctx context.Context, wait time.Duration, label string) err
 	}
 }
 
-func (e *Engine) requestWith429Retry(ctx context.Context, req *http.Request, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
+func (e *Engine) requestWithRetry(ctx context.Context, req *http.Request, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
 	var retryAfter string
 	for attempt := 0; ; attempt++ {
 		attemptReq, err := cloneRequestForRetry(ctx, req, attempt)
@@ -1388,22 +1485,45 @@ func (e *Engine) requestWith429Retry(ctx context.Context, req *http.Request, do 
 		if err != nil {
 			return nil, err
 		}
-		if resp.StatusCode != http.StatusTooManyRequests {
+		retryAfter = resp.Header.Get("Retry-After")
+		if !retryableStatus(resp.StatusCode, retryAfter) {
 			return resp, nil
 		}
-		retryAfter = resp.Header.Get("Retry-After")
 		resp.Body.Close()
-		if attempt >= retryAfterRetries {
-			return nil, &statusError{host: req.URL.Hostname(), code: resp.StatusCode, retryAfter: retryAfter}
-		}
 		wait := retryBackoff(attempt)
 		if parsed, ok := parseRetryAfter(retryAfter, e.clock.Now()); ok {
 			wait = parsed
 		}
+		if attempt >= retryAfterRetries || wait > maxRetryAfterWait {
+			return nil, &statusError{host: req.URL.Hostname(), code: resp.StatusCode, retryAfter: retryAfter}
+		}
 		if err := e.wait(ctx, wait, "retry wait"); err != nil {
 			return nil, err
 		}
+		// The retry is a real request: it claims the scraper's rate-limit
+		// slot so the request after it still keeps the interval.
+		if spec, ok := ctx.Value(paceKey{}).(plugin.ScraperSpec); ok {
+			if err := e.waitTurn(ctx, spec); err != nil {
+				return nil, err
+			}
+		}
 	}
+}
+
+// paceKey carries the scraper spec whose rate limit a request counts against,
+// so requestWithRetry can charge in-place retries to the same slot.
+type paceKey struct{}
+
+func withPace(ctx context.Context, spec plugin.ScraperSpec) context.Context {
+	return context.WithValue(ctx, paceKey{}, spec)
+}
+
+// retryableStatus reports whether a response is a short-lived refusal worth
+// retrying in place: rate limiting (429), or an overloaded server (503) that
+// says when to come back.
+func retryableStatus(code int, retryAfter string) bool {
+	return code == http.StatusTooManyRequests ||
+		(code == http.StatusServiceUnavailable && strings.TrimSpace(retryAfter) != "")
 }
 
 func cloneRequestForRetry(ctx context.Context, req *http.Request, attempt int) (*http.Request, error) {
@@ -1436,9 +1556,12 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 		return 0, false
 	}
 	if seconds, err := strconv.Atoi(value); err == nil && seconds >= 0 {
+		// Clamp before converting so a huge value cannot overflow into a
+		// negative Duration that slips under the honoured-wait cap.
+		seconds = min(seconds, math.MaxInt32)
 		return time.Duration(seconds) * time.Second, true
 	}
-	if when, err := time.Parse(http.TimeFormat, value); err == nil {
+	if when, err := http.ParseTime(value); err == nil {
 		wait := when.Sub(now)
 		if wait < 0 {
 			wait = 0
@@ -1452,9 +1575,10 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 // recognize the 401-means-expired-token case. Message unchanged from the old
 // flat error.
 type statusError struct {
-	host       string
-	code       int
-	retryAfter string
+	host                  string
+	code                  int
+	retryAfter            string
+	temporaryFeedRedirect bool
 }
 
 func (s *statusError) Error() string {
@@ -1462,16 +1586,27 @@ func (s *statusError) Error() string {
 }
 
 // IsTransient reports whether err is worth retrying later: rate limiting
-// (HTTP 429), a server error (5xx) or a network failure reaching the provider.
+// (HTTP 429), a server error (5xx), a missing temporary feed destination or a
+// network failure reaching the provider.
 // Callers that walk many lookups end their pass on it instead of recording a
 // miss.
 func IsTransient(err error) bool {
 	var status *statusError
 	if errors.As(err, &status) {
-		return status.code == http.StatusTooManyRequests || status.code >= http.StatusInternalServerError
+		return status.code == http.StatusTooManyRequests || status.code >= http.StatusInternalServerError ||
+			status.temporaryFeedRedirect && (status.code == http.StatusNotFound || status.code == http.StatusGone)
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr)
+}
+
+// HTTPStatus returns the HTTP status code of a non-2xx response error.
+func HTTPStatus(err error) (int, bool) {
+	var status *statusError
+	if errors.As(err, &status) {
+		return status.code, true
+	}
+	return 0, false
 }
 
 func decodeJSON(data []byte) (any, error) {

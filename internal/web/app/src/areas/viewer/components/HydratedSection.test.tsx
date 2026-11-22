@@ -6,6 +6,11 @@ import { ApiError } from "@/lib/api";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
+import {
+  clearContinueWatchingRemoved,
+  removeFromContinueWatching,
+} from "../actions/continueWatching";
+import { notifyEngagementChanged } from "../actions/engagementSync";
 import { fetchSectionItems } from "../lib/sections";
 import { HydratedSection, SECTION_LOAD_TIMEOUT_MS, sectionCacheKey } from "./HydratedSection";
 
@@ -15,6 +20,17 @@ vi.mock("../lib/sections", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/sections")>();
   return { ...actual, fetchSectionItems: vi.fn() };
 });
+
+vi.mock("@/lib/graphql", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/graphql")>()),
+  setContinueWatchingHidden: vi.fn(async () => ({
+    id: "media-1",
+    kind: "media",
+    watched: false,
+    watchlisted: false,
+    rating: 0,
+  })),
+}));
 
 // No identity by default: the state-family cases run uncached, as without a
 // SessionProvider. The cache cases bind one explicitly.
@@ -233,5 +249,109 @@ describe("HydratedSection identity-scoped cache", () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement());
     expect(readViewerCache(identity, key)).toBeUndefined();
     expect(readViewerCache(identity, "entity:other")).toBeUndefined();
+  });
+});
+
+describe("HydratedSection Continue Watching removal (CORE-2017)", () => {
+  afterEach(() => act(() => clearContinueWatchingRemoved()));
+
+  it("drops a removed card at once and empties the row when it was the last", async () => {
+    const continueRow: Section = {
+      ...section,
+      id: "sec-continue",
+      title: { en: "Continue Watching" },
+      source: { kind: "continue-watching" } as Section["source"],
+    };
+    vi.mocked(fetchSectionItems).mockResolvedValue([item]);
+    const onHydrationStateChange = vi.fn();
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <HydratedSection
+            section={continueRow}
+            libraryID=""
+            entityID=""
+            onHydrationStateChange={onHydrationStateChange}
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(await screen.findByRole("link", { name: /^Visible item/ })).toBeVisible();
+    // The revalidation the removal starts never settles, so only the local
+    // removal can take the card off the row.
+    vi.mocked(fetchSectionItems).mockReturnValue(new Promise(() => {}));
+    await act(() => removeFromContinueWatching("media-1", "Visible item"));
+    expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
+    expect(onHydrationStateChange).toHaveBeenLastCalledWith("empty");
+  });
+
+  it("shows each row the server's answer to a read started after the write", async () => {
+    const continueRow = (id: string): Section => ({
+      ...section,
+      id,
+      title: { en: id },
+      source: { kind: "continue-watching" } as Section["source"],
+    });
+    const other: SourceItem = { ...item, id: "media-2", title: "Other item" };
+    const reads: Record<string, Array<(items: SourceItem[]) => void>> = { all: [], filtered: [] };
+    vi.mocked(fetchSectionItems).mockImplementation(
+      (s) => new Promise((resolve) => reads[s.id].push(resolve)),
+    );
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <HydratedSection section={continueRow("all")} libraryID="" entityID="" />
+          <HydratedSection section={continueRow("filtered")} libraryID="" entityID="" />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    await act(async () => {
+      reads.all[0]([item]);
+      reads.filtered[0]([other]);
+    });
+    expect(await screen.findByRole("link", { name: /^Visible item/ })).toBeVisible();
+    await act(() => removeFromContinueWatching("media-1", "Visible item"));
+    expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
+    // Both rows revalidate after the write. A filtered row that never listed
+    // the card answers first: the other row keeps it out.
+    expect(reads.all).toHaveLength(2);
+    expect(reads.filtered).toHaveLength(2);
+    await act(async () => reads.filtered[1]([other]));
+    expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
+    // The card's own row lists it again (it was played since): show it.
+    await act(async () => reads.all[1]([item]));
+    expect(screen.getByRole("link", { name: /^Visible item/ })).toBeVisible();
+  });
+
+  it("keeps a card a fresh read showed again through a cached revalidation", async () => {
+    identityMock.identity = "viewer-cw";
+    const continueRow: Section = {
+      ...section,
+      id: "sec-continue-cached",
+      title: { en: "Continue Watching" },
+      source: { kind: "continue-watching" } as Section["source"],
+    };
+    const reads: Array<(items: SourceItem[]) => void> = [];
+    vi.mocked(fetchSectionItems).mockImplementation(
+      () => new Promise((resolve) => reads.push(resolve)),
+    );
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <HydratedSection section={continueRow} libraryID="" entityID="" />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    await act(async () => reads[0]([item]));
+    await act(() => removeFromContinueWatching("media-1", "Visible item"));
+    expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
+    // The read after the write lists the card again (it was played since).
+    await act(async () => reads[1]([{ ...item }]));
+    expect(screen.getByRole("link", { name: /^Visible item/ })).toBeVisible();
+    // Another revalidation serves that read from the cache while it runs: the
+    // cached list keeps its read sequence, so the card stays.
+    act(() => notifyEngagementChanged());
+    expect(reads).toHaveLength(3);
+    expect(screen.getByRole("link", { name: /^Visible item/ })).toBeVisible();
   });
 });

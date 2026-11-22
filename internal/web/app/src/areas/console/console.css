@@ -1097,6 +1097,11 @@ a.console-step:hover {
   gap: 12px;
   margin-bottom: 16px;
 }
+.console-play-totals {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
 .console-window-toggle {
   display: flex;
   gap: 6px;

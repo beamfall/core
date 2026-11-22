@@ -13,6 +13,10 @@ export interface EventStreamHandlers {
   onEvent: (event: MessageEvent) => void;
   onError?: (err: Event) => void;
   onState?: (state: EventStreamState) => void;
+  /** Extra request headers, read again for every connection attempt. */
+  headers?: () => Record<string, string>;
+  /** A 409 refusal of a connection, with the extra headers it was sent with. */
+  onRefused?: (sent: Record<string, string>, status: number, payload: unknown) => void;
 }
 
 const FIRST_RETRY_MS = 1000;
@@ -70,7 +74,8 @@ export function openEventStream(url: string, handlers: EventStreamHandlers): () 
   let retryMs = FIRST_RETRY_MS;
 
   const readOnce = async () => {
-    const headers: Record<string, string> = { Accept: "text/event-stream" };
+    const extra = handlers.headers?.() ?? {};
+    const headers: Record<string, string> = { ...extra, Accept: "text/event-stream" };
     if (lastEventId) headers["Last-Event-ID"] = lastEventId;
     const response = await fetch(url, {
       credentials: "include",
@@ -78,6 +83,9 @@ export function openEventStream(url: string, handlers: EventStreamHandlers): () 
       headers,
       signal,
     });
+    if (response.status === 409 && handlers.onRefused) {
+      handlers.onRefused(extra, response.status, await response.json().catch(() => undefined));
+    }
     const contentType = response.headers.get("content-type") ?? "";
     if (!response.ok || !response.body || !contentType.includes("text/event-stream")) {
       throw new Error(`event stream unavailable (${response.status})`);

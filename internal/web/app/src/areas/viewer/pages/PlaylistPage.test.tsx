@@ -109,7 +109,7 @@ describe("PlaylistPage locked entries (CORE-1876)", () => {
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/m-1|m-1,m-3");
   });
 
-  it("leaves a muted entry, which has no lock state, out of Play all but plays it alone", async () => {
+  it("fails closed on a member with no lock state (CORE-2843)", async () => {
     // The lock feed drops muted entries, so m-2 may or may not be locked.
     vi.mocked(fetchEntryLocks).mockResolvedValue(
       new Map([
@@ -120,31 +120,24 @@ describe("PlaylistPage locked entries (CORE-1876)", () => {
     renderPage();
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Play Second tone" })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "Play First tone" })).toBeEnabled(),
     );
+    expect(screen.getByRole("button", { name: "Play Second tone" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "Play all" }));
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/m-1|m-1,m-3");
   });
 
-  it("plays a muted entry on its own, without the playlist queue", async () => {
-    vi.mocked(fetchEntryLocks).mockResolvedValue(new Map([["m-1", false]]));
-    renderPage();
-
-    const muted = await screen.findByRole("button", { name: "Play Third tone" });
-    await waitFor(() => expect(muted).toBeEnabled());
-    await userEvent.click(muted);
-    expect(screen.getByTestId("watch").textContent).toBe("/watch/m-3|");
-  });
-
-  it("plays the whole list when the lock read fails, leaving the server's check", async () => {
+  it("plays nothing when the lock read fails (CORE-2843)", async () => {
     vi.mocked(fetchEntryLocks).mockRejectedValue(new Error("offline"));
     renderPage();
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Play all" })).toBeInTheDocument(),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Play all" }));
-    expect(screen.getByTestId("watch")).toHaveTextContent("/watch/m-1|m-1,m-2,m-3");
+    const first = await screen.findByRole("button", { name: "Play First tone" });
+    await waitFor(() => expect(fetchEntryLocks).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(first).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Play Second tone" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Play Third tone" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Play all" })).toBeNull();
   });
 
   it("plays nothing until the lock state is known", async () => {

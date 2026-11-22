@@ -13,7 +13,7 @@ plugin-sdk v0.4.8 adds named search hints: `ParsedMedia.Hints`, `Bundle.Embedded
 
 ## What Changes
 
-- Core repins `github.com/beamfall/plugin-sdk` to v0.4.8.
+- Core uses the search-hint API in its existing `github.com/beamfall/plugin-sdk` dependency.
 - Scan fills the item's hints from its parser, then fills hints the parser left empty from the
   file's non-empty embedded tags named by the bundle's `EmbeddedTagHints` (the parser's value
   wins). A hint value that does not fit the SDK limits is dropped; a hint set that fails SDK
@@ -32,6 +32,6 @@ plugin-sdk v0.4.8 adds named search hints: `ParsedMedia.Hints`, `Bundle.Embedded
 
 - Code: `internal/scrape` (hint substitution, required-hint check), `internal/scan` (hint merge),
   `internal/identify` (hints in search and scraper choice, optional `MediaHintSource`),
-  `internal/app` (hint wiring and adapters), `go.mod`.
+  `internal/app` (hint wiring and adapters).
 - No store method, migration, GraphQL or wire-contract change. Core keeps no domain vocabulary:
   hint keys and tag names come from plugin bundles.

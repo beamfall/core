@@ -24,16 +24,25 @@ import (
 // Media-cluster opKindMerge so UndoBatch routes it to the entity-item replay.
 const opKindMergeEntity = "merge-entity"
 
+// ErrOperatorRelationUndoConflict indicates a newer operator edit owns rows
+// that a historical merge snapshot would otherwise overwrite.
+const ErrOperatorRelationUndoConflict = ValidationError("entity merge undo would replace a later operator relation edit")
+
 // entityRelationRow is one entity_relation row captured for the merge journal:
 // every column, so undo re-inserts it verbatim. Exactly one of ToEntityID /
-// ToMediaID is non-empty (the table's CHECK); SortOrder is nil when unordered.
+// ToMediaID is non-empty (the table's CHECK); SortOrder is nil when unordered
+// and Writer is nil for an operator's or unattributed row (CORE-3152).
 type entityRelationRow struct {
-	FromEntityID EntityID `json:"from"`
-	Relation     string   `json:"rel"`
-	ToEntityID   EntityID `json:"toEntity,omitempty"`
-	ToMediaID    MediaID  `json:"toMedia,omitempty"`
-	Attributes   *string  `json:"attrs,omitempty"`
-	SortOrder    *int64   `json:"sort,omitempty"`
+	FromEntityID   EntityID `json:"from"`
+	Relation       string   `json:"rel"`
+	ToEntityID     EntityID `json:"toEntity,omitempty"`
+	ToMediaID      MediaID  `json:"toMedia,omitempty"`
+	Attributes     *string  `json:"attrs,omitempty"`
+	SortOrder      *int64   `json:"sort,omitempty"`
+	Writer         *string  `json:"writer,omitempty"`
+	LockActivityID *string  `json:"lockActivityID,omitempty"`
+	LockedAtMS     *int64   `json:"lockedAtMS,omitempty"`
+	LockOne        bool     `json:"lockOne,omitempty"`
 }
 
 // entityMergeItemState is the per-loser merge journal snapshot: the winner's id,
@@ -46,10 +55,11 @@ type entityRelationRow struct {
 // winner and have its relations wiped (CORE-0743). Journals written before the
 // field existed carry no WinnerID and are refused on undo.
 type entityMergeItemState struct {
-	WinnerID        EntityID            `json:"winner,omitempty"`
-	LoserRelations  []entityRelationRow `json:"loserRelations"`
-	WinnerRelations []entityRelationRow `json:"winnerRelations"`
-	Trashed         bool                `json:"trashed"`
+	WinnerID           EntityID            `json:"winner,omitempty"`
+	LoserRelations     []entityRelationRow `json:"loserRelations"`
+	WinnerRelations    []entityRelationRow `json:"winnerRelations"`
+	Trashed            bool                `json:"trashed"`
+	RelationActivityID int64               `json:"relationActivityID,omitempty"`
 }
 
 // TrashEntity soft-deletes one Entity (hard invariant #6): it is hidden from
@@ -158,11 +168,26 @@ func (s *Store) mergeEntities(ctx context.Context, winnerID, loserID EntityID, f
 		return BulkOpBatch{}, err
 	}
 
+	// Automatic title folding must leave an operator's selected Entity
+	// in place, even when it has the same folded title as a derived Entity.
+	if titleFold {
+		for _, row := range loserRows {
+			if row.LockedAtMS != nil {
+				return BulkOpBatch{}, nil
+			}
+		}
+	}
+	var relationActivityID int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(id), 0) FROM media_relation_activity`).Scan(&relationActivityID); err != nil {
+		return BulkOpBatch{}, err
+	}
+
 	state, err := json.Marshal(entityMergeItemState{
-		WinnerID:        winnerID,
-		LoserRelations:  loserRows,
-		WinnerRelations: winnerRows,
-		Trashed:         true,
+		WinnerID:           winnerID,
+		LoserRelations:     loserRows,
+		WinnerRelations:    winnerRows,
+		Trashed:            true,
+		RelationActivityID: relationActivityID,
 	})
 	if err != nil {
 		return BulkOpBatch{}, err
@@ -192,24 +217,11 @@ func (s *Store) mergeEntities(ctx context.Context, winnerID, loserID EntityID, f
 		if row.ToMediaID == "" && from == toEntity {
 			continue
 		}
-		var toEntityArg, toMediaArg any
-		if row.ToMediaID != "" {
-			toMediaArg = row.ToMediaID
-		} else {
-			toEntityArg = toEntity
-		}
-		var attrsArg any
-		if row.Attributes != nil {
-			attrsArg = *row.Attributes
-		}
-		var sortArg any
-		if row.SortOrder != nil {
-			sortArg = *row.SortOrder
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT OR IGNORE INTO entity_relation(from_entity_id, relation, to_entity_id, to_media_id, attributes, sort_order)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`, from, row.Relation, toEntityArg, toMediaArg, attrsArg, sortArg); err != nil {
+		row.FromEntityID, row.ToEntityID = from, toEntity
+		// An operator's merge owns the re-pointed row: automated cleanup must
+		// not remove it as a scraper's link. Undo restores the original writer.
+		row.Writer = nil
+		if err := insertMergedEntityRelationTx(ctx, tx, row); err != nil {
 			return BulkOpBatch{}, err
 		}
 	}
@@ -318,7 +330,8 @@ func entityLibraryVisibleTx(ctx context.Context, tx *sql.Tx, id EntityID, filter
 // in either role (from or to), inside a transaction, for the merge journal.
 func entityRelationRowsTx(ctx context.Context, tx *sql.Tx, id EntityID) ([]entityRelationRow, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT from_entity_id, relation, to_entity_id, to_media_id, attributes, sort_order
+		SELECT from_entity_id, relation, to_entity_id, to_media_id, attributes, sort_order, writer,
+		       operator_lock_activity_id, operator_locked_at_ms, operator_lock_one
 		FROM entity_relation
 		WHERE from_entity_id = ? OR to_entity_id = ?
 	`, id, id)
@@ -332,7 +345,9 @@ func entityRelationRowsTx(ctx context.Context, tx *sql.Tx, id EntityID) ([]entit
 		var toEntity, attrs sql.NullString
 		var toMedia sql.NullString
 		var sortOrder sql.NullInt64
-		if err := rows.Scan(&row.FromEntityID, &row.Relation, &toEntity, &toMedia, &attrs, &sortOrder); err != nil {
+		var writer sql.NullString
+		if err := rows.Scan(&row.FromEntityID, &row.Relation, &toEntity, &toMedia, &attrs, &sortOrder, &writer,
+			&row.LockActivityID, &row.LockedAtMS, &row.LockOne); err != nil {
 			return nil, err
 		}
 		if toEntity.Valid {
@@ -348,6 +363,10 @@ func entityRelationRowsTx(ctx context.Context, tx *sql.Tx, id EntityID) ([]entit
 		if sortOrder.Valid {
 			value := sortOrder.Int64
 			row.SortOrder = &value
+		}
+		if writer.Valid {
+			value := writer.String
+			row.Writer = &value
 		}
 		out = append(out, row)
 	}
@@ -407,6 +426,33 @@ func undoMergeEntityItemTx(ctx context.Context, tx *sql.Tx, s *Store, item opBat
 		return ValidationError("entity merge journal does not record its winner; undo refused")
 	}
 
+	// A later operator write wins over this historical snapshot, including
+	// a removal that left no row to test for an active lock.
+	var changed bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM media_relation_activity a, json_each(a.before_rows) b
+			WHERE a.id > ? AND json_extract(b.value, '$.entityID') IN (?, ?)
+			UNION ALL
+			SELECT 1 FROM media_relation_activity a, json_each(a.after_rows) b
+			WHERE a.id > ? AND json_extract(b.value, '$.entityID') IN (?, ?)
+			UNION ALL
+			SELECT 1 FROM media_relation_activity a, json_each(?, '$.winnerRelations') b
+			WHERE a.id > ? AND a.media_id = json_extract(b.value, '$.toMedia')
+			  AND a.relation = json_extract(b.value, '$.rel')
+			UNION ALL
+			SELECT 1 FROM media_relation_activity a, json_each(?, '$.loserRelations') b
+			WHERE a.id > ? AND a.media_id = json_extract(b.value, '$.toMedia')
+			  AND a.relation = json_extract(b.value, '$.rel')
+		)
+	`, state.RelationActivityID, loserID, winnerID, state.RelationActivityID, loserID, winnerID,
+		item.PriorState, state.RelationActivityID, item.PriorState, state.RelationActivityID).Scan(&changed); err != nil {
+		return err
+	}
+	if changed {
+		return ErrOperatorRelationUndoConflict
+	}
+
 	// Clear the post-merge rows for both entities, then restore the exact prior
 	// sets. Deleting by both endpoints covers winner rows the merge created.
 	for _, id := range []EntityID{loserID, winnerID} {
@@ -417,24 +463,7 @@ func undoMergeEntityItemTx(ctx context.Context, tx *sql.Tx, s *Store, item opBat
 		}
 	}
 	for _, row := range append(append([]entityRelationRow{}, state.WinnerRelations...), state.LoserRelations...) {
-		var toEntityArg, toMediaArg any
-		if row.ToMediaID != "" {
-			toMediaArg = row.ToMediaID
-		} else if row.ToEntityID != "" {
-			toEntityArg = row.ToEntityID
-		}
-		var attrsArg any
-		if row.Attributes != nil {
-			attrsArg = *row.Attributes
-		}
-		var sortArg any
-		if row.SortOrder != nil {
-			sortArg = *row.SortOrder
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT OR IGNORE INTO entity_relation(from_entity_id, relation, to_entity_id, to_media_id, attributes, sort_order)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`, row.FromEntityID, row.Relation, toEntityArg, toMediaArg, attrsArg, sortArg); err != nil {
+		if err := insertMergedEntityRelationTx(ctx, tx, row); err != nil {
 			return err
 		}
 	}
@@ -448,6 +477,24 @@ func undoMergeEntityItemTx(ctx context.Context, tx *sql.Tx, s *Store, item opBat
 		}
 	}
 	return nil
+}
+
+// Preserve lock metadata when the operator explicitly merges Entities. A
+// locked loser row takes precedence over an unlocked colliding winner row.
+func insertMergedEntityRelationTx(ctx context.Context, tx *sql.Tx, row entityRelationRow) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO entity_relation(from_entity_id, relation, to_entity_id, to_media_id, attributes,
+			sort_order, writer, operator_lock_activity_id, operator_locked_at_ms, operator_lock_one)
+		VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(from_entity_id, relation, to_media_id) WHERE to_media_id IS NOT NULL
+		DO UPDATE SET attributes = excluded.attributes, sort_order = excluded.sort_order, writer = excluded.writer,
+			operator_lock_activity_id = excluded.operator_lock_activity_id,
+			operator_locked_at_ms = excluded.operator_locked_at_ms, operator_lock_one = excluded.operator_lock_one
+		WHERE entity_relation.operator_locked_at_ms IS NULL AND excluded.operator_locked_at_ms IS NOT NULL
+		ON CONFLICT DO NOTHING
+	`, row.FromEntityID, row.Relation, row.ToEntityID, row.ToMediaID, row.Attributes, row.SortOrder,
+		row.Writer, row.LockActivityID, row.LockedAtMS, row.LockOne)
+	return err
 }
 
 // resyncEntityFTSRowTx rebuilds one restored Entity's FTS document (title +

@@ -108,9 +108,9 @@ extern "C" {
 /* Release version of this header; equals the crate version in Cargo.toml. */
 #define OSCILLUX_VERSION_MAJOR 0u
 #define OSCILLUX_VERSION_MINOR 2u
-#define OSCILLUX_VERSION_PATCH 10u
+#define OSCILLUX_VERSION_PATCH 12u
 /* OSCILLUX_VERSION_MAJOR << 16 | OSCILLUX_VERSION_MINOR << 8 | OSCILLUX_VERSION_PATCH */
-#define OSCILLUX_VERSION 522u
+#define OSCILLUX_VERSION 524u
 
 /* Status: success. */
 #define OSCILLUX_OK 0
@@ -971,6 +971,71 @@ OSCILLUX_API int32_t oscillux_governor_record(OscilluxGovernor *handle,
                                               OscilluxGovernorStats *out);
 /* Clears the average and counters and sets the level, clamped to max_level. */
 OSCILLUX_API int32_t oscillux_governor_reset(OscilluxGovernor *handle, uint32_t level);
+
+/* ---- Frame-window governor ------------------------------------------------------------------
+ * Classifies telemetry and requests a single step. The host supplies the target intervals and
+ * delivery flags and owns the steps and device policy. Reset after an externally imposed change. */
+
+#define OSCILLUX_WINDOW_GOVERNOR_HOLD 0u
+#define OSCILLUX_WINDOW_GOVERNOR_DEMOTE 1u
+#define OSCILLUX_WINDOW_GOVERNOR_PROMOTE 2u
+
+typedef struct OscilluxWindowGovernorConfig {
+    uint32_t struct_size;            /* caller sets sizeof(OscilluxWindowGovernorConfig) */
+    uint32_t demote_windows;         /* default 30; >= 1 */
+    uint32_t promote_windows;        /* default 300; >= 1 */
+    double demote_budget_fraction;   /* default 0.85; (0, 1] */
+    double promote_budget_fraction; /* default 0.60; (0, demote_budget_fraction) */
+    double cooldown_s;              /* default 5.0; finite and >= 0; applies only to PROMOTE */
+} OscilluxWindowGovernorConfig;
+
+typedef struct OscilluxWindowGovernorSample {
+    double p95_ms;              /* finite and >= 0 when has_p95 is 1; may be unset otherwise */
+    double p99_ms;              /* finite and >= 0 when has_p99 is 1; may be unset otherwise */
+    double interval_ms;         /* current target interval; finite and > 0 */
+    double promotion_budget_ms; /* next step's interval, or 0 when unavailable; finite and >= 0 */
+    double now_s;               /* finite, nonnegative monotonic seconds; equal times are allowed */
+    uint32_t has_p95;           /* 0 or 1 */
+    uint32_t has_p99;           /* 0 or 1 */
+    uint32_t starved;           /* 0 or 1 */
+    uint32_t dropping;          /* 0 or 1 */
+    uint32_t at_floor;          /* 1 if no lower step is available; 0 otherwise (default) */
+} OscilluxWindowGovernorSample;
+
+typedef struct OscilluxWindowGovernorResult {
+    uint32_t decision;          /* OSCILLUX_WINDOW_GOVERNOR_* */
+    uint32_t over_budget;       /* classification of the recorded window; 0 or 1 */
+    uint32_t over_budget_streak; /* consecutive over-budget windows */
+    uint32_t promotion_streak;   /* consecutive promotion-eligible windows */
+    uint32_t stable_streak;      /* stable windows since create, reset, or the last step */
+} OscilluxWindowGovernorResult;
+
+typedef struct OscilluxWindowGovernor OscilluxWindowGovernor;
+
+/* Writes the defaults; out->struct_size must already hold the released size. */
+OSCILLUX_API int32_t oscillux_window_governor_config_default(OscilluxWindowGovernorConfig *out);
+/* Validates *config, creates a governor, and starts its clock and cooldown at now_s (finite and
+ * nonnegative). If provided, *out is null on failure. */
+OSCILLUX_API int32_t oscillux_window_governor_create(const OscilluxWindowGovernorConfig *config,
+                                                     double now_s,
+                                                     OscilluxWindowGovernor **out);
+/* Frees a governor; null is ignored. */
+OSCILLUX_API void oscillux_window_governor_destroy(OscilluxWindowGovernor *handle);
+/* A window with both percentiles is over budget if p95 > demote_budget_fraction * interval_ms,
+ * p99 > interval_ms, starved, or dropping. Otherwise it qualifies for promotion when
+ * p95 < promote_budget_fraction * promotion_budget_ms. A step requires the configured streak,
+ * and promotion also needs cooldown_s to elapse. Demotion is enabled by default (at_floor is 0).
+ * When the demotion threshold is reached with no lower step, HOLD continues counting the
+ * over-budget streak and preserves the stable count and cooldown origin. Other HOLDs add
+ * one stable window. An absent percentile clears over_budget and both pressure streaks.
+ * DEMOTE and PROMOTE clear all streaks and restart the cooldown. Streaks saturate at UINT32_MAX.
+ * An invalid sample (including a time earlier than the last sample or clock start) leaves the
+ * handle and *out unchanged. No allocation, locking, or I/O. */
+OSCILLUX_API int32_t oscillux_window_governor_record(OscilluxWindowGovernor *handle,
+                                                     const OscilluxWindowGovernorSample *sample,
+                                                     OscilluxWindowGovernorResult *out);
+/* Clears all streaks and restarts the sample clock and cooldown at a finite, nonnegative now_s. */
+OSCILLUX_API int32_t oscillux_window_governor_reset(OscilluxWindowGovernor *handle, double now_s);
 
 /* ---- Transition scheduler -------------------------------------------------------------------
  * Decides when a visual switch starts and how far its blend has progressed, as a function of

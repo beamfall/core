@@ -70,6 +70,7 @@ type ExportMediaInfo struct {
 	Fields          []EntityFieldInfo   `json:"fields"`
 	Markers         []ExportMarkerInfo  `json:"markers"`
 	ArtworkPins     []ExportArtworkInfo `json:"artworkPins"`
+	OperatorOrdinal *MediaOrdinalInfo   `json:"operatorOrdinal,omitempty"`
 }
 
 // ExportMarkerInfo is one exported authored Marker.
@@ -106,11 +107,12 @@ type ExportEntityInfo struct {
 // the relation name, exactly one target (entity or Media), and the render-only
 // attributes.
 type ExportEntityRelationInfo struct {
-	FromEntityID string            `json:"fromEntityID"`
-	Relation     string            `json:"relation"`
-	ToEntityID   string            `json:"toEntityID,omitempty"`
-	ToMediaID    string            `json:"toMediaID,omitempty"`
-	Attributes   map[string]string `json:"attributes,omitempty"`
+	FromEntityID   string            `json:"fromEntityID"`
+	Relation       string            `json:"relation"`
+	ToEntityID     string            `json:"toEntityID,omitempty"`
+	ToMediaID      string            `json:"toMediaID,omitempty"`
+	Attributes     map[string]string `json:"attributes,omitempty"`
+	OperatorLocked bool              `json:"operatorLocked,omitempty"`
 }
 
 // ExportMediaRelationInfo is one exported Media→Media relation (ADR-0009 fixed
@@ -180,6 +182,7 @@ func (h *Handler) metadataExport(ctx context.Context, scope auth.Scope) (Metadat
 			Fields:          make([]EntityFieldInfo, 0, len(m.Fields)),
 			Markers:         make([]ExportMarkerInfo, 0, len(m.Markers)),
 			ArtworkPins:     make([]ExportArtworkInfo, 0, len(m.ArtworkPin)),
+			OperatorOrdinal: mediaOrdinalInfo(m.OperatorOrdinal),
 		}
 		for _, f := range m.Fields {
 			mi.Fields = append(mi.Fields, EntityFieldInfo{
@@ -227,11 +230,12 @@ func (h *Handler) metadataExport(ctx context.Context, scope auth.Scope) (Metadat
 	}
 	for _, r := range export.EntityRelations {
 		info.Relations = append(info.Relations, ExportEntityRelationInfo{
-			FromEntityID: string(r.FromEntityID),
-			Relation:     r.Relation,
-			ToEntityID:   string(r.ToEntityID),
-			ToMediaID:    string(r.ToMediaID),
-			Attributes:   r.Attributes,
+			FromEntityID:   string(r.FromEntityID),
+			Relation:       r.Relation,
+			ToEntityID:     string(r.ToEntityID),
+			ToMediaID:      string(r.ToMediaID),
+			Attributes:     r.Attributes,
+			OperatorLocked: r.OperatorLocked,
 		})
 	}
 	for _, r := range export.MediaRelations {

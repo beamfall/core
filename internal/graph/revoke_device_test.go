@@ -14,7 +14,7 @@ import (
 // transcodes each session runs; TerminateSession stops and reports them, and a
 // session with none is the zero-stop no-op the real manager returns. aborted
 // records, in call order, the sessions that had something to stop, and
-// playbacks records every TerminatePlayback call.
+// playbacks records every DetachPlayback call.
 type fakeTerminator struct {
 	live      map[store.SessionID]int
 	aborted   []store.SessionID
@@ -35,12 +35,12 @@ func (f *fakeTerminator) TerminateSession(sessionID store.SessionID) int {
 	return n
 }
 
-// TerminatePlayback records the call. It does not change live, which lets a
+// DetachPlayback records the call. It does not change live, which lets a
 // test model a transcode still running after endPlayback (a late segment
 // request restarted it, or a pre-CORE-2345 server never stopped it).
-func (f *fakeTerminator) TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int {
+func (f *fakeTerminator) DetachPlayback(sessionID store.SessionID, mediaID store.MediaID) (int, func()) {
 	f.playbacks = append(f.playbacks, fakePlayback{sessionID: sessionID, mediaID: mediaID})
-	return 0
+	return 0, func() {}
 }
 
 // TestRevokeDeviceAbortsTranscodesForThatDeviceOnly is the SEC-4 transcode-abort

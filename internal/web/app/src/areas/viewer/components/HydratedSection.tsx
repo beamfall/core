@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
@@ -10,6 +10,11 @@ import {
   viewerCacheEntries,
   writeViewerCache,
 } from "@/lib/viewerCache";
+import {
+  continueWatchingKeepsOut,
+  continueWatchingReadSeq,
+  useContinueWatchingRemoved,
+} from "../actions/continueWatching";
 import { useEngagementEpoch } from "../actions/engagementSync";
 import { foldNewShelf, groupsNewByContainer } from "../lib/containerGroups";
 import { fetchSectionItems } from "../lib/sections";
@@ -37,6 +42,16 @@ export function sectionCacheKey(
     SECTION_CACHE_PREFIX +
     JSON.stringify([section, libraryID, entityID, extraFilters || null, home])
   );
+}
+
+// The write sequence each fetched item list was read at (CORE-2017), keyed by
+// the list itself, so the viewer cache restores a list and its read sequence
+// together. A list with no entry (seeded elsewhere) counts as read before any
+// removal.
+const itemsReadSeq = new WeakMap<readonly SourceItem[], number>();
+
+function readSeqOf(items: readonly SourceItem[] | null): number {
+  return (items && itemsReadSeq.get(items)) ?? -1;
 }
 
 /** An item already hydrated into some section for this identity, if any. */
@@ -91,12 +106,18 @@ export function HydratedSection({
   const [items, setItems] = useState<SourceItem[] | null>(
     () => readViewerCache<SourceItem[]>(identity, cacheKey) ?? null,
   );
+  // Cards removed from Continue Watching here leave the row at once, and stay
+  // out until this row holds a read that started after the removal's write
+  // (CORE-2017).
+  const continueRow = section.source?.kind === "continue-watching";
+  const removed = useContinueWatchingRemoved();
 
   useEffect(() => {
     let alive = true;
     const controller = new AbortController();
     const cached = readViewerCache<SourceItem[]>(identity, cacheKey);
     setItems(cached ?? null);
+    const readSeq = continueWatchingReadSeq();
     // A cached empty Section stays hidden but reports "loading" until the
     // server confirms it: it may have filled since (a Profile started something
     // that Continue Watching now holds), and the Layout must not act on a stale
@@ -126,6 +147,7 @@ export function HydratedSection({
       .then((next) => {
         if (!alive) return;
         window.clearTimeout(timeout);
+        itemsReadSeq.set(next, readSeq);
         writeViewerCache(identity, cacheKey, next);
         setItems(next);
         onHydrationStateChange?.(next.length ? "visible" : "empty");
@@ -152,13 +174,27 @@ export function HydratedSection({
 
   // Newly added items fold under their container (CORE-2524); a container's own
   // page lists its items as they are.
-  const shown = useMemo(
-    () =>
-      items && !entityID && groupsNewByContainer(section)
-        ? foldNewShelf(items, (count) => t("cardNewCount", { count }))
-        : items,
-    [items, entityID, section, t],
-  );
+  const shown = useMemo(() => {
+    const readSeq = readSeqOf(items);
+    const kept =
+      items && continueRow && removed.size
+        ? items.filter((item) => !continueWatchingKeepsOut(removed, item.id, readSeq))
+        : items;
+    return kept && !entityID && groupsNewByContainer(section)
+      ? foldNewShelf(kept, (count) => t("cardNewCount", { count }))
+      : kept;
+  }, [items, continueRow, removed, entityID, section, t]);
+  // A row emptied by removals reads as empty to the Layout, as a served empty
+  // row does, and as visible again when an Undo brings a card back.
+  const removedAll = Boolean(items?.length) && shown?.length === 0;
+  const reportRemoved = useRef(false);
+  useEffect(() => {
+    if (!continueRow || reportRemoved.current === removedAll) return;
+    reportRemoved.current = removedAll;
+    onHydrationStateChange?.(shown?.length ? "visible" : "empty");
+    // onHydrationStateChange is a fresh closure per Layout render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [continueRow, removedAll]);
 
   if (shown === null) {
     return <SectionSkeleton hero={section.kind === "hero"} />;

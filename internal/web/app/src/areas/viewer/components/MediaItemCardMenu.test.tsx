@@ -10,6 +10,7 @@ import {
   fetchMedia,
   fetchMutes,
   fetchTagAssignments,
+  setContinueWatchingHidden,
   setMute,
 } from "@/lib/graphql";
 import type { MediaCredit } from "@/lib/graphql/types";
@@ -28,6 +29,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   fetchItemState: vi.fn(),
   fetchMedia: vi.fn(),
   fetchTagAssignments: vi.fn(),
+  setContinueWatchingHidden: vi.fn(),
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -93,6 +95,7 @@ function renderMenu(
   onDetails?: () => void,
   locale: Locale = "en",
   credits?: readonly MediaCredit[],
+  continueWatching = false,
 ) {
   render(
     <I18nProvider initialLocale={locale}>
@@ -107,6 +110,7 @@ function renderMenu(
           target={{ mediaID: "t1" }}
           onPrimary={() => {}}
           onDetails={onDetails}
+          continueWatching={continueWatching}
         />
         <CurrentPath />
       </MemoryRouter>
@@ -204,5 +208,31 @@ describe("MediaItemCardMenu hide (CORE-2836)", () => {
     renderMenu(false);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Unhide" }));
     await vi.waitFor(() => expect(clearMute).toHaveBeenCalledWith("media", "t1"));
+  });
+});
+
+describe("MediaItemCardMenu Continue Watching (CORE-2017)", () => {
+  beforeEach(() => {
+    vi.mocked(setContinueWatchingHidden).mockReset().mockResolvedValue({
+      id: "t1",
+      kind: "media",
+      watched: false,
+      watchlisted: false,
+      rating: 0,
+    });
+  });
+
+  it("removes the Media from the row and keeps its progress", async () => {
+    renderMenu(false, undefined, "en", undefined, true);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Remove from Continue Watching" }));
+    await vi.waitFor(() =>
+      expect(setContinueWatchingHidden).toHaveBeenCalledWith("t1", true, undefined),
+    );
+  });
+
+  it("is offered only on the Continue Watching row", async () => {
+    renderMenu(false);
+    await screen.findByRole("menuitem", { name: "Mark watched" });
+    expect(screen.queryByRole("menuitem", { name: "Remove from Continue Watching" })).toBeNull();
   });
 });

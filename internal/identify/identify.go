@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -42,9 +43,9 @@ type Bundles interface {
 	Bundle(id plugin.ID) (plugin.Bundle, bool)
 }
 
-// MetadataStore is the metadata write seam; *store.Store satisfies it.
+// MetadataStore commits an identification's local Media changes together.
 type MetadataStore interface {
-	UpdateMediaMetadata(ctx context.Context, id store.MediaID, metadata store.MediaMetadata) error
+	ApplyMediaIdentification(ctx context.Context, id store.MediaID, metadata store.MediaMetadata, provenance store.MediaMetadataProvenance, fields []store.MediaField) error
 }
 
 // ArtworkCandidateStore persists scraped artwork alternatives. It is optional
@@ -53,13 +54,6 @@ type MetadataStore interface {
 type ArtworkCandidateStore interface {
 	UpsertArtworkCandidate(ctx context.Context, mediaID store.MediaID, slot, sourceURL, pluginID, scraperID string) error
 	MarkArtworkCandidateApplied(ctx context.Context, candidateID string) error
-}
-
-// ProvenanceStore records which plugin scraper supplied a Media item's
-// metadata so readers can credit that source with its declared attribution;
-// *store.Store satisfies it. Optional: nil keeps Apply provenance-free.
-type ProvenanceStore interface {
-	SetMediaMetadataProvenance(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string) error
 }
 
 // Fetcher downloads one remote resource through a hardened client;
@@ -96,13 +90,52 @@ type embeddedArtworkStore interface {
 	ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (bool, error)
 }
 
-// FieldStore is the Media field write seam; *store.Store satisfies it.
-// Upsert (not full-replace) semantics: fields other writers set survive.
-// Identification writes at the operator (identified) tier so a manual edit is
-// never clobbered by a re-identify / scheduled re-match.
-type FieldStore interface {
-	UpsertMediaFieldsWithSource(ctx context.Context, id store.MediaID, fields []store.MediaField, source store.MutationSource) error
+// sidecarLockReader reports a slot locked by a local sidecar marker;
+// *artwork.Service satisfies it. ImportArtwork refuses such a slot anyway,
+// so the probe only saves the fetch.
+type sidecarLockReader interface {
+	IsArtworkLocked(id store.MediaID, slot string) bool
 }
+
+// embeddedArtworkReader tells a poster extracted from the Media file apart
+// from fetched or supplied artwork; *artwork.Service satisfies it.
+type embeddedArtworkReader interface {
+	IsEmbeddedArtwork(id store.MediaID, slot string) bool
+}
+
+// importedArtworkReader reports artwork stored through ImportArtwork or a
+// manual pick; *artwork.Service satisfies it.
+type importedArtworkReader interface {
+	IsImportedArtwork(id store.MediaID, slot string) bool
+}
+
+// conditionalArtworkStore rechecks an import decision under the slot's
+// directory lock; *artwork.Service satisfies it.
+type conditionalArtworkStore interface {
+	ImportArtworkIf(ctx context.Context, id store.MediaID, slot string, data []byte, ok func() bool) (bool, error)
+}
+
+// appliedCandidateReader lists a slot's artwork candidates; *store.Store
+// satisfies it.
+type appliedCandidateReader interface {
+	ArtworkCandidates(ctx context.Context, mediaID store.MediaID, slot string, filter store.LibraryFilter) ([]store.ArtworkCandidate, error)
+}
+
+// mediaClassReader reads a Media item's playback class; *store.Store
+// satisfies it.
+type mediaClassReader interface {
+	MediaClass(ctx context.Context, id store.MediaID) (store.MediaClass, error)
+}
+
+var (
+	_ embeddedArtworkStore    = (*artwork.Service)(nil)
+	_ embeddedArtworkReader   = (*artwork.Service)(nil)
+	_ importedArtworkReader   = (*artwork.Service)(nil)
+	_ conditionalArtworkStore = (*artwork.Service)(nil)
+	_ sidecarLockReader       = (*artwork.Service)(nil)
+	_ appliedCandidateReader  = (*store.Store)(nil)
+	_ mediaClassReader        = (*store.Store)(nil)
+)
 
 // FingerprintStore is the content-identity read seam;
 // *store.Store satisfies it. The values feed the engine's fingerprint
@@ -117,7 +150,7 @@ type FingerprintStore interface {
 type EntityStore interface {
 	MediaLibrary(ctx context.Context, id store.MediaID) (store.LibraryID, error)
 	UpsertEntity(ctx context.Context, entity store.Entity) error
-	UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error
+	UpsertHydratedEntityRelation(ctx context.Context, relation store.EntityRelation) error
 }
 
 // MediaTitleSource supplies a Media item's parser-owned display title: the
@@ -165,10 +198,8 @@ type Service struct {
 	bundles      Bundles
 	store        MetadataStore
 	candidates   ArtworkCandidateStore
-	provenance   ProvenanceStore
 	fetcher      Fetcher
 	artwork      ArtworkStore
-	fields       FieldStore
 	entities     EntityStore
 	fingerprints FingerprintStore
 	titles       MediaTitleSource
@@ -181,8 +212,7 @@ type Service struct {
 	queue             UnmatchedStore
 	pins              MatchPinStore
 	optionalAuthSkips sync.Map
-	// writes serializes Apply's local writes per Media item, so the
-	// provenance row always names the scraper whose metadata was kept.
+	// writes serializes ordinal changes, lookups and hydration per Media item.
 	writes mediaWriteLocks
 }
 
@@ -227,13 +257,6 @@ func NewService(engine Engine, bundles Bundles, store MetadataStore) *Service {
 	return &Service{engine: engine, bundles: bundles, store: store}
 }
 
-// SetProvenance wires metadata provenance: every successful metadata write
-// in Apply records the plugin and scraper that supplied it, replacing the
-// item's earlier record.
-func (s *Service) SetProvenance(provenance ProvenanceStore) {
-	s.provenance = provenance
-}
-
 // SetArtwork wires scraped-artwork application: Apply downloads the chosen
 // candidate's poster through the fetcher and stores it. Nil (the default)
 // keeps Apply metadata-only.
@@ -245,14 +268,6 @@ func (s *Service) SetArtwork(fetcher Fetcher, artwork ArtworkStore) {
 // SetArtworkCandidates wires persistence for the candidate picker.
 func (s *Service) SetArtworkCandidates(store ArtworkCandidateStore) {
 	s.candidates = store
-}
-
-// SetFields wires implied-Media-field application: when the chosen scraper
-// declares ImpliedMediaFields, Apply writes them after the metadata write.
-// Nil (the default) makes Apply error on such scrapers rather than silently
-// drop declared values.
-func (s *Service) SetFields(fields FieldStore) {
-	s.fields = fields
 }
 
 // SetEntities wires entity hydration: when the chosen scraper's EntityMaps
@@ -378,6 +393,24 @@ func (s *Service) search(ctx context.Context, pluginID, scraperID, query string,
 	return candidates, nil
 }
 
+// ListChildren reads a declared level using the active bundle and scraper.
+func (s *Service) ListChildren(ctx context.Context, pluginID, scraperID, candidateID string, level int, parentKey *string) ([]scrape.ChildRow, error) {
+	_, spec, err := s.spec(pluginID, scraperID)
+	if err != nil {
+		return nil, err
+	}
+	if len(spec.Children) == 0 {
+		return nil, scrape.ErrNoChildListing
+	}
+	engine, ok := s.engine.(interface {
+		ListChildren(context.Context, plugin.ScraperSpec, int, string, *string, scrape.Variables) ([]scrape.ChildRow, error)
+	})
+	if !ok {
+		return nil, errors.New("identify: child listings unavailable")
+	}
+	return engine.ListChildren(ctx, spec, level, candidateID, parentKey, scrape.Variables{PluginID: pluginID})
+}
+
 // Lookup resolves ONE candidate by its scraper-native id and returns it WITHOUT
 // writing anything (METAPARITY-4, ADR-0068 §A). It is the read half Apply hides
 // inside itself, exposed for the two Fix-Match surfaces that need a candidate
@@ -388,7 +421,7 @@ func (s *Service) Lookup(ctx context.Context, pluginID, scraperID, candidateID s
 	if strings.TrimSpace(candidateID) == "" {
 		return Candidate{}, errors.New("identify: candidate ID is required")
 	}
-	_, _, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID)
+	_, _, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID, nil, false)
 	if err != nil {
 		return Candidate{}, err
 	}
@@ -399,11 +432,16 @@ func (s *Service) Lookup(ctx context.Context, pluginID, scraperID, candidateID s
 // the parser's title built from the lookup's plugin Media field values when
 // the title source builds one, else AppliedTitle's. The Fix-Match preview
 // reads it so the proposed title is the one Apply writes.
-func (s *Service) PreviewLookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID) (Candidate, string, error) {
+// clearLocks resolves the operator ordinal exactly as ApplyFixMatch does.
+func (s *Service) PreviewLookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID, clearLocks []string, ordinal *store.MediaOrdinal) (Candidate, string, error) {
 	if strings.TrimSpace(candidateID) == "" {
 		return Candidate{}, "", errors.New("identify: candidate ID is required")
 	}
-	bundle, spec, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID)
+	clearOrdinal, err := s.shouldClearOrdinal(ctx, mediaID, candidateID, clearLocks, ordinal)
+	if err != nil {
+		return Candidate{}, "", err
+	}
+	bundle, spec, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID, ordinal, clearOrdinal)
 	if err != nil {
 		return Candidate{}, "", err
 	}
@@ -413,9 +451,8 @@ func (s *Service) PreviewLookup(ctx context.Context, pluginID, scraperID, candid
 }
 
 // lookup resolves the scraper and runs the engine's lookup for candidateID
-// with mediaID's fingerprint and ordinal variables: the read Apply, Lookup and
-// PreviewLookup share.
-func (s *Service) lookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID) (plugin.Bundle, plugin.ScraperSpec, scrape.Result, error) {
+// with mediaID's fingerprint and effective ordinal variables.
+func (s *Service) lookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID, ordinal *store.MediaOrdinal, clearOrdinal bool) (plugin.Bundle, plugin.ScraperSpec, scrape.Result, error) {
 	bundle, spec, err := s.spec(pluginID, scraperID)
 	if err != nil {
 		return plugin.Bundle{}, plugin.ScraperSpec{}, scrape.Result{}, err
@@ -425,7 +462,11 @@ func (s *Service) lookup(ctx context.Context, pluginID, scraperID, candidateID s
 		return plugin.Bundle{}, plugin.ScraperSpec{}, scrape.Result{}, err
 	}
 	vars.PluginID = pluginID
-	s.applyOrdinal(ctx, mediaID, pluginID, &vars)
+	if ordinal != nil {
+		vars.Sequence, vars.Index = ordinal.Sequence, ordinal.Index
+	} else {
+		s.applyOrdinal(ctx, mediaID, pluginID, &vars, clearOrdinal)
+	}
 	result, err := s.engine.Lookup(ctx, spec, candidateID, vars)
 	if err != nil {
 		return plugin.Bundle{}, plugin.ScraperSpec{}, scrape.Result{}, err
@@ -468,36 +509,132 @@ func (s *Service) mediaHints(ctx context.Context, mediaID store.MediaID, pluginI
 	return hints
 }
 
-// applyOrdinal sets vars' sequence and index from the plugin parser's
-// ordinal for mediaID when the wired title source supplies one. A failed read
-// leaves them unknown, which skips the per-item lookup and ordinal entity
-// maps rather than failing the identification.
-func (s *Service) applyOrdinal(ctx context.Context, mediaID store.MediaID, pluginID string, vars *scrape.Variables) {
+// applyOrdinal reads the manual tier before falling back to the parser. A
+// failed read leaves the ordinal unknown.
+func (s *Service) applyOrdinal(ctx context.Context, mediaID store.MediaID, pluginID string, vars *scrape.Variables, clearOrdinal bool) {
+	if mediaID == "" {
+		return
+	}
+	if source, ok := s.store.(mediaOrdinalReader); ok && !clearOrdinal {
+		ordinal, err := source.MediaOperatorOrdinal(ctx, mediaID)
+		if err != nil {
+			slog.Debug("identify: operator ordinal unavailable", "media", mediaID, "error", err)
+			return
+		}
+		if ordinal != nil {
+			vars.Sequence, vars.Index = ordinal.Sequence, ordinal.Index
+			return
+		}
+	}
 	source, ok := s.titles.(MediaOrdinalSource)
-	if !ok || mediaID == "" {
+	if !ok {
 		return
 	}
 	sequence, index, err := source.ParsedMediaOrdinal(ctx, mediaID, pluginID)
 	if err != nil {
-		slog.Debug("identify: parser ordinal unavailable", "media", mediaID, "error", err.Error())
+		slog.Debug("identify: parser ordinal unavailable", "media", mediaID, "error", err)
 		return
 	}
 	vars.Sequence, vars.Index = sequence, index
 }
 
-// Apply looks up the chosen candidate and writes its title/summary/year and
-// sort title onto the Media row. The engine already returns transformed
-// values; a year that does not parse to an int is omitted, like an unresolved
-// path. Visibility gating belongs to the caller — this is the server-internal
-// write path.
+// effectiveOperatorOrdinal is the manual-tier ordinal the lookup used: the
+// edit's own, else the stored one unless the edit clears it. A failed read is
+// treated as an operator ordinal of unknown value, so container hydration
+// cannot write to a container it has not verified.
+func (s *Service) effectiveOperatorOrdinal(ctx context.Context, mediaID store.MediaID, edit store.MediaMetadata) *store.MediaOrdinal {
+	if edit.OperatorOrdinal != nil || edit.ClearOrdinal {
+		return edit.OperatorOrdinal
+	}
+	source, ok := s.store.(mediaOrdinalReader)
+	if !ok {
+		return nil
+	}
+	ordinal, err := source.MediaOperatorOrdinal(ctx, mediaID)
+	if err != nil {
+		slog.Debug("identify: operator ordinal unavailable for container hydration", "media", mediaID, "error", err)
+		return &store.MediaOrdinal{}
+	}
+	return ordinal
+}
+
+type mediaOrdinalReader interface {
+	MediaOperatorOrdinal(context.Context, store.MediaID) (*store.MediaOrdinal, error)
+}
+
+// Apply looks up the chosen candidate and writes its metadata onto the Media.
+// Visibility gating belongs to the caller.
 func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string) error {
+	unlock := s.writes.lock(mediaID)
+	defer unlock()
+	return s.apply(ctx, mediaID, pluginID, scraperID, candidateID, store.MediaMetadata{})
+}
+
+// ApplyFixMatch uses the prospective ordinal for lookup and commits the manual
+// edit with the replacement. No other identification can interleave its
+// lookup or change the remembered candidate while this match is being applied.
+func (s *Service) ApplyFixMatch(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, clearLocks []string, ordinal *store.MediaOrdinal, actor store.ProfileID) error {
+	unlock := s.writes.lock(mediaID)
+	defer unlock()
+	clearOrdinal, err := s.shouldClearOrdinal(ctx, mediaID, candidateID, clearLocks, ordinal)
+	if err != nil {
+		return err
+	}
+	locks := slices.DeleteFunc(slices.Clone(clearLocks), func(field string) bool {
+		return field == store.MediaOrdinalLockField
+	})
+	edit := store.MediaMetadata{
+		ClearLocks: locks, OperatorOrdinal: ordinal, OrdinalActor: actor, ClearOrdinal: clearOrdinal,
+	}
+	if err := s.apply(ctx, mediaID, pluginID, scraperID, candidateID, edit); err != nil {
+		return err
+	}
+	disposition := "kept"
+	if ordinal != nil {
+		disposition = "set"
+	} else if clearOrdinal {
+		disposition = "cleared"
+	}
+	slog.Info("identify: fixed match", "media", mediaID, "operatorOrdinal", disposition)
+	return nil
+}
+
+func (s *Service) shouldClearOrdinal(ctx context.Context, mediaID store.MediaID, candidateID string, clearLocks []string, ordinal *store.MediaOrdinal) (bool, error) {
+	if ordinal != nil {
+		return false, nil
+	}
+	if clearLocks != nil {
+		return slices.Contains(clearLocks, store.MediaOrdinalLockField), nil
+	}
+	reader, ok := s.store.(ProvenanceReader)
+	if !ok || mediaID == "" {
+		return false, nil
+	}
+	current, _, err := reader.MediaMetadataProvenance(ctx, mediaID)
+	return current.CandidateID != candidateID, err
+}
+
+// ClearMediaOrdinal serializes unlock with lookups and writes for the same Media.
+func (s *Service) ClearMediaOrdinal(ctx context.Context, mediaID store.MediaID) (bool, error) {
+	unlock := s.writes.lock(mediaID)
+	defer unlock()
+	writer, ok := s.store.(interface {
+		ClearMediaOrdinal(context.Context, store.MediaID) (bool, error)
+	})
+	if !ok {
+		return false, errors.New("identify: operator ordinal store unavailable")
+	}
+	return writer.ClearMediaOrdinal(ctx, mediaID)
+}
+
+func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, edit store.MediaMetadata) error {
 	if mediaID == "" {
 		return errors.New("identify: media ID is required")
 	}
 	if strings.TrimSpace(candidateID) == "" {
 		return errors.New("identify: candidate ID is required")
 	}
-	bundle, spec, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID)
+	bundle, spec, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID, edit.OperatorOrdinal, edit.ClearOrdinal)
 	if err != nil {
 		return err
 	}
@@ -515,35 +652,32 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 		title := s.appliedTitle(ctx, mediaID, pluginID, *metadata.Title, identifiedFieldTexts(bundle, spec, result))
 		metadata.Title = &title
 	}
-	if err := s.applyLocal(ctx, mediaID, pluginID, scraperID, candidateID, metadata, bundle, spec, result); err != nil {
+	metadata.ClearLocks = edit.ClearLocks
+	metadata.OperatorOrdinal = edit.OperatorOrdinal
+	metadata.OrdinalActor = edit.OrdinalActor
+	metadata.ClearOrdinal = edit.ClearOrdinal
+	provenance := store.MediaMetadataProvenance{PluginID: pluginID, ScraperID: scraperID, CandidateID: candidateID}
+	// A request that cannot hydrate is refused before anything commits, so an
+	// ordinal edit is never published by a request that could not finish.
+	// Hydration then follows the commit: it reads the committed year and the
+	// settled container chain, and a rejected commit leaves every link as it
+	// was. Its writes are idempotent, so a retry after a failed write converges.
+	if len(result.Entities) > 0 && s.entities == nil {
+		return fmt.Errorf("identify: scraper %q hydrates entities but no entity store is wired", spec.ID)
+	}
+	manual := s.effectiveOperatorOrdinal(ctx, mediaID, edit)
+	if err := s.store.ApplyMediaIdentification(ctx, mediaID, metadata, provenance, identifiedMediaFields(bundle, spec, result)); err != nil {
+		return err
+	}
+	if err := s.applyEntities(ctx, mediaID, bundle, spec, result, manual); err != nil {
 		return err
 	}
 	s.applyArtwork(ctx, mediaID, pluginID, scraperID, result)
 	return nil
 }
 
-// applyLocal writes one identification's local rows while holding the Media
-// item's write lock: two identifications racing each other then commit one
-// after the other, never metadata from one with provenance from the other.
-func (s *Service) applyLocal(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, metadata store.MediaMetadata, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
-	unlock := s.writes.lock(mediaID)
-	defer unlock()
-	if err := s.store.UpdateMediaMetadata(ctx, mediaID, metadata); err != nil {
-		return err
-	}
-	if s.provenance != nil {
-		if err := s.provenance.SetMediaMetadataProvenance(ctx, mediaID, pluginID, scraperID, candidateID); err != nil {
-			return err
-		}
-	}
-	if err := s.applyMediaFields(ctx, mediaID, bundle, spec, result); err != nil {
-		return err
-	}
-	return s.applyEntities(ctx, mediaID, bundle, spec, result)
-}
-
-// applyMediaFields writes the scraper's plugin-declared Media field values
-// onto the Media row, from two routes that share the BF-24 namespacing
+// identifiedMediaFields collects the scraper's plugin-declared Media field
+// values from two routes that share the BF-24 namespacing
 // contract (plugin.MediaFieldKeyPrefix):
 //
 //   - ImpliedMediaFields: constants the choice of scraper implies (ADR-0028
@@ -554,17 +688,9 @@ func (s *Service) applyLocal(ctx context.Context, mediaID store.MediaID, pluginI
 //     and logged, never failing the identification — the same posture the
 //     engine takes for numeric coercion and unresolved paths.
 //
-// These fields are identification-owned and written at the operator
-// (identified) tier via UpsertMediaFieldsWithSource: a re-identify (also
-// operator) heals them idempotently, but a manual edit (higher tier) is
-// preserved — the source-precedence record subsumes the per-field locks.
-// The bare built-in keys (title/summary/year) are written by
-// UpdateMediaMetadata, not here.
-//
-// Unlike artwork this is a local store write, so failures propagate: a
-// half-applied identification (metadata without its plugin fields) should be
-// visible, and re-running Apply heals it.
-func (s *Service) applyMediaFields(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
+// The store applies these values at operator precedence alongside the built-in
+// fields and provenance.
+func identifiedMediaFields(bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) []store.MediaField {
 	mediaFieldTypes := bundle.MediaFieldTypes()
 	// values collects field name → typed value, last writer wins. A document
 	// "media.<name>" value overrides the implied constant of the same name —
@@ -604,9 +730,6 @@ func (s *Service) applyMediaFields(ctx context.Context, mediaID store.MediaID, b
 	if len(values) == 0 {
 		return nil
 	}
-	if s.fields == nil {
-		return fmt.Errorf("identify: scraper %q writes media fields but no field store is wired", spec.ID)
-	}
 	names := make([]string, 0, len(values))
 	for name := range values {
 		names = append(names, name)
@@ -616,14 +739,13 @@ func (s *Service) applyMediaFields(ctx context.Context, mediaID store.MediaID, b
 	for i, name := range names {
 		fields[i] = values[name]
 	}
-	return s.fields.UpsertMediaFieldsWithSource(ctx, mediaID, fields, store.MutationSourceOperator)
+	return fields
 }
 
 // identifiedFieldTexts is the text of the plugin-declared Media field values
-// an identification writes (applyMediaFields' two routes, document values over
-// implied constants) by bare field name, blanks and values that do not parse
-// to the declared type dropped like applyMediaFields drops them: what a parser
-// builds an identified per-file title from.
+// an identification writes (identifiedMediaFields' two routes, document values over
+// implied constants), by bare field name. The title parser uses these values
+// with blanks and values that do not parse to the declared type removed.
 func identifiedFieldTexts(bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) map[string]string {
 	mediaFieldTypes := bundle.MediaFieldTypes()
 	texts := map[string]string{}
@@ -665,7 +787,9 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 		return store.MediaField{Name: name, Type: store.EntityFieldType(fieldType), Text: value}, true
 	case store.EntityFieldNumber:
 		number, err := strconv.ParseFloat(value, 64)
-		if err != nil {
+		if err != nil || math.IsNaN(number) || math.IsInf(number, 0) {
+			// NaN binds as SQL NULL and neither survives the wire, so an
+			// unusable number is absent like an unparseable one.
 			return store.MediaField{}, false
 		}
 		return store.MediaField{Name: name, Type: store.EntityFieldNumber, Number: number}, true
@@ -678,6 +802,12 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 	case store.EntityFieldDate:
 		for _, layout := range []string{"2006-01-02", time.RFC3339, time.RFC3339Nano} {
 			if when, err := time.Parse(layout, value); err == nil {
+				if when.IsZero() || when.UnixMilli() == 0 {
+					// The store keeps dates as Unix milliseconds with 0 for
+					// no value, so neither Go's zero time nor the epoch
+					// round-trips; a write it would refuse later is absent.
+					return store.MediaField{}, false
+				}
 				return store.MediaField{Name: name, Type: store.EntityFieldDate, Date: when.UTC()}, true
 			}
 		}
@@ -701,7 +831,23 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 // merge into one row first (mergeEntityLinks). An Entity hydrated without
 // typed fields keeps the fields an earlier identification wrote. Entity
 // posters ride along best-effort (applyEntityPoster) and never fail hydration.
-func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
+//
+// A map onto a container kind's single-holder relation places the Media in
+// that container (CORE-3152). Every link records the scraper as its writer
+// (relationWriter). A holder link with no ordinal from its map takes the
+// Media's stored year, after field precedence, as its sort order, so the
+// container lists its members in release order. A lookup whose holder map ran
+// and hydrated nothing removes the Media's earlier link, but only one this
+// scraper wrote (clearStaleHolderLinks). A holder link keeps an existing
+// holder's stored title (writeEntity), and a container map of a kind the scraper
+// links applies only to a holder it linked in this lookup: a link an operator's
+// lock kept from the scraper does not count.
+func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result, manual *store.MediaOrdinal) error {
+	holders := ContainerRelations(bundle)
+	writer := relationWriter(bundle, spec)
+	if err := s.clearStaleHolderLinks(ctx, mediaID, spec, writer, holders, result); err != nil {
+		return err
+	}
 	if len(result.Entities) == 0 {
 		return nil
 	}
@@ -713,6 +859,18 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 		return err
 	}
 	cardinality := relationCardinalities(bundle)
+	year, err := s.holderYear(ctx, mediaID, holders, result)
+	if err != nil {
+		return err
+	}
+	// holderLinks has a key for each kind the scraper declares a holder link
+	// map onto, listing the holders this lookup linked.
+	holderLinks := map[string][]store.EntityID{}
+	for _, entityMap := range spec.EntityMaps {
+		if !entityMap.Container && holders.Holds(entityMap.Kind, entityMap.Relation) {
+			holderLinks[entityMap.Kind] = nil
+		}
+	}
 	var containers, linked []scrape.EntityResult
 	for _, hydrated := range result.Entities {
 		if hydrated.Container {
@@ -730,25 +888,146 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 			Title:     hydrated.Name,
 			Fields:    entityFields(bundle, hydrated),
 		}
-		if err := s.writeEntity(ctx, entity); err != nil {
+		holds := holders.Holds(hydrated.Kind, hydrated.Relation)
+		if err := s.writeEntity(ctx, entity, holds); err != nil {
 			return err
 		}
-		if err := s.entities.UpsertEntityRelation(ctx, store.EntityRelation{
+		sortOrder := hydrated.SortOrder
+		if sortOrder == nil && year != nil && holds {
+			sortOrder = year
+		}
+		written, err := s.upsertHydratedLink(ctx, store.EntityRelation{
 			FromEntityID: id,
 			Name:         hydrated.Relation,
 			ToMediaID:    mediaID,
 			Attributes:   hydrated.RelationAttributes,
 			Cardinality:  cardinality[hydrated.Kind+"\x00"+hydrated.Relation],
-			SortOrder:    hydrated.SortOrder,
-		}); err != nil {
+			SortOrder:    sortOrder,
+			Writer:       writer,
+		})
+		if err != nil {
 			return err
+		}
+		if holds && written {
+			holderLinks[hydrated.Kind] = append(holderLinks[hydrated.Kind], id)
 		}
 		if err := s.applyEntityParent(ctx, library, id, hydrated); err != nil {
 			return err
 		}
 		s.applyEntityPoster(ctx, id, hydrated.ArtworkURL)
 	}
-	return s.applyContainerEntities(ctx, mediaID, library, bundle, containers)
+	return s.applyContainerEntities(ctx, mediaID, library, bundle, containers, holderLinks, manual)
+}
+
+// writtenRelationUpserter is the optional EntityStore extension that reports
+// whether a hydrated link was written; *store.Store satisfies it.
+type writtenRelationUpserter interface {
+	UpsertHydratedEntityRelationWritten(ctx context.Context, relation store.EntityRelation) (bool, error)
+}
+
+// upsertHydratedLink writes one scraper link and reports whether it landed:
+// false when an operator's lock kept the scraper's link out. A store without
+// the reporting extension counts every successful write as landed.
+func (s *Service) upsertHydratedLink(ctx context.Context, relation store.EntityRelation) (bool, error) {
+	if upserter, ok := s.entities.(writtenRelationUpserter); ok {
+		return upserter.UpsertHydratedEntityRelationWritten(ctx, relation)
+	}
+	if err := s.entities.UpsertHydratedEntityRelation(ctx, relation); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// relationWriter is the writer key a scraper's Entity→Media links carry, so
+// cleanup can tell them from an operator's or another scraper's links.
+func relationWriter(bundle plugin.Bundle, spec plugin.ScraperSpec) string {
+	return "scraper:" + string(bundle.ID) + "/" + spec.ID
+}
+
+// mediaYearReader is the optional MetadataStore extension that reads the
+// Media row; *store.Store satisfies it.
+type mediaYearReader interface {
+	Media(ctx context.Context, id store.MediaID, filter store.LibraryFilter) (store.Media, error)
+}
+
+// holderYear is the sort order a holder link without a map ordinal takes: the
+// Media's stored year, which field precedence may have kept from a manual
+// edit over the scraper's value. Nil when the lookup hydrated no holder link
+// or the Media has no year. A store that cannot read the Media falls back to
+// the scraper's year.
+func (s *Service) holderYear(ctx context.Context, mediaID store.MediaID, holders ContainerRelationIndex, result scrape.Result) (*int, error) {
+	needed := false
+	for _, hydrated := range result.Entities {
+		if !hydrated.Container && hydrated.SortOrder == nil && holders.Holds(hydrated.Kind, hydrated.Relation) {
+			needed = true
+			break
+		}
+	}
+	if !needed {
+		return nil, nil
+	}
+	reader, ok := s.store.(mediaYearReader)
+	if !ok {
+		return metadataFromResult(result).Year, nil
+	}
+	media, err := reader.Media(ctx, mediaID, store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		return nil, err
+	}
+	if media.Year == 0 {
+		return nil, nil
+	}
+	year := media.Year
+	return &year, nil
+}
+
+// writtenRelationRemover is the optional EntityStore extension that deletes a
+// Media's links one writer owns; *store.Store satisfies it.
+type writtenRelationRemover interface {
+	RemoveWrittenMediaRelations(ctx context.Context, mediaID store.MediaID, writer string, relations []store.WrittenRelation) error
+}
+
+// clearStaleHolderLinks removes the Media's link under each single-holder
+// relation the scraper declares a non-container map onto when that map ran
+// and hydrated no Entity, so a Media whose new match belongs to no container
+// leaves the old one. Only a link this scraper wrote, from an Entity of the
+// map's kind, is removed: an operator's link or another scraper's stays. A map
+// the engine skipped (an unknown ordinal in its Path) says nothing about the
+// document, so nothing under its kind and relation is removed, even when a
+// sibling map onto the same relation resolved nothing. A move to another container needs nothing
+// here: the relation's single cardinality replaces the old row on write. A
+// scraper without such a map, or a store without the remover, changes nothing.
+func (s *Service) clearStaleHolderLinks(ctx context.Context, mediaID store.MediaID, spec plugin.ScraperSpec, writer string, holders ContainerRelationIndex, result scrape.Result) error {
+	remover, ok := s.entities.(writtenRelationRemover)
+	if !ok {
+		return nil
+	}
+	// resolved holds each (kind, relation) a map hydrated or the engine
+	// skipped: neither may lose its link.
+	resolved := map[store.WrittenRelation]bool{}
+	for _, entity := range result.Entities {
+		if !entity.Container {
+			resolved[store.WrittenRelation{Kind: entity.Kind, Name: entity.Relation}] = true
+		}
+	}
+	for _, i := range result.SkippedEntityMaps {
+		if i >= 0 && i < len(spec.EntityMaps) {
+			resolved[store.WrittenRelation{Kind: spec.EntityMaps[i].Kind, Name: spec.EntityMaps[i].Relation}] = true
+		}
+	}
+	var stale []store.WrittenRelation
+	for _, entityMap := range spec.EntityMaps {
+		key := store.WrittenRelation{Kind: entityMap.Kind, Name: entityMap.Relation}
+		if entityMap.Container || resolved[key] || !holders.Holds(entityMap.Kind, entityMap.Relation) ||
+			slices.Contains(stale, key) {
+			continue
+		}
+		stale = append(stale, key)
+	}
+	if len(stale) == 0 {
+		return nil
+	}
+	return remover.RemoveWrittenMediaRelations(ctx, mediaID, writer, stale)
 }
 
 // entityFields parses one hydrated Entity's raw FieldMap values against its
@@ -814,7 +1093,7 @@ func (s *Service) applyEntityParent(ctx context.Context, library store.LibraryID
 	}); err != nil {
 		return err
 	}
-	return s.entities.UpsertEntityRelation(ctx, store.EntityRelation{
+	return s.entities.UpsertHydratedEntityRelation(ctx, store.EntityRelation{
 		FromEntityID: childID,
 		Name:         hydrated.ParentRelation,
 		ToEntityID:   parentID,
@@ -904,13 +1183,26 @@ type EntityEnsurer interface {
 	EnsureEntity(ctx context.Context, entity store.Entity) error
 }
 
+// EntityTitleKeeper is optionally implemented by an EntityStore:
+// UpsertEntityKeepTitle replaces an Entity's fields but titles only a new
+// row, keeping an existing row's stored title, trashed or not.
+type EntityTitleKeeper interface {
+	UpsertEntityKeepTitle(ctx context.Context, entity store.Entity) error
+}
+
 // writeEntity upserts a hydrated Entity. One hydrated without typed fields (a
 // name-only credit, or an element past its map's lookup cap) must not erase
 // the fields an earlier identification wrote, since UpsertEntity replaces
 // them, so it only ensures the Entity exists when the store can do that.
-func (s *Service) writeEntity(ctx context.Context, entity store.Entity) error {
+// A holder link's name is the provider's key (an id), not a title, so a
+// holder (keepTitle) titles only a new Entity: an existing one keeps the
+// title the container map's TitlePath or an operator wrote (CORE-3152).
+func (s *Service) writeEntity(ctx context.Context, entity store.Entity, keepTitle bool) error {
 	if ensurer, ok := s.entities.(EntityEnsurer); ok && len(entity.Fields) == 0 {
 		return ensurer.EnsureEntity(ctx, entity)
+	}
+	if keeper, ok := s.entities.(EntityTitleKeeper); ok && keepTitle {
+		return keeper.UpsertEntityKeepTitle(ctx, entity)
 	}
 	return s.entities.UpsertEntity(ctx, entity)
 }
@@ -997,28 +1289,39 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 		if s.artworkLocked(ctx, mediaID, slot) {
 			continue // an admin pinned this slot: keep their artwork
 		}
-		if slot == artwork.SlotPoster && (!s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)) {
-			if embedded, ok := s.artwork.(embeddedArtworkStore); ok {
-				found, err := embedded.ImportEmbeddedPoster(ctx, mediaID)
-				if err != nil {
-					slog.Debug("identify: embedded artwork import failed", "media", string(mediaID), "error", err.Error())
-				} else if found {
-					continue
-				}
-			}
-		}
-		if slot == artwork.SlotPoster && s.artwork.HasArtwork(mediaID, slot) && !s.artwork.IsGeneratedArtwork(mediaID, slot) {
+		video := slot == artwork.SlotPoster && s.mediaIsVideo(ctx, mediaID)
+		if slot == artwork.SlotPoster && !s.posterTakesProviderArtwork(ctx, mediaID, video) {
 			continue
 		}
 		data, err := s.fetcher.FetchResource(ctx, rawURL)
 		if err != nil {
 			slog.Debug("identify: artwork fetch failed",
 				"media", string(mediaID), "slot", slot, "error", err.Error())
+			s.embeddedPosterFallback(ctx, mediaID, video)
 			continue
 		}
-		if err := s.artwork.ImportArtwork(ctx, mediaID, slot, data); err != nil {
+		// A lock, pin or upload may land during the fetch, so the decision is
+		// made again under the slot's directory lock.
+		stillWanted := func() bool {
+			if s.artworkLocked(ctx, mediaID, slot) {
+				return false
+			}
+			switch {
+			case video:
+				return s.videoPosterReplaceable(ctx, mediaID)
+			case slot == artwork.SlotPoster:
+				return !s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)
+			}
+			return true
+		}
+		imported, err := s.importArtworkIf(ctx, mediaID, slot, data, stillWanted)
+		if err != nil {
 			slog.Debug("identify: artwork import failed",
 				"media", string(mediaID), "slot", slot, "error", err.Error())
+			s.embeddedPosterFallback(ctx, mediaID, video)
+			continue
+		}
+		if !imported {
 			continue
 		}
 		if s.candidates != nil {
@@ -1029,6 +1332,126 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 			}
 		}
 	}
+}
+
+// posterTakesProviderArtwork reports whether a fetched provider poster
+// should replace the Media item's current poster. A missing or generated
+// poster always yields; for audio and image Media a cover embedded in the
+// file is imported first and wins. For video Media (CORE-2901) the embedded
+// cover is only a fallback before a frame grab, so it yields too.
+func (s *Service) posterTakesProviderArtwork(ctx context.Context, mediaID store.MediaID, video bool) bool {
+	if video {
+		return s.videoPosterReplaceable(ctx, mediaID)
+	}
+	if s.artwork.HasArtwork(mediaID, artwork.SlotPoster) && !s.artwork.IsGeneratedArtwork(mediaID, artwork.SlotPoster) {
+		return false
+	}
+	return !s.importEmbeddedPoster(ctx, mediaID)
+}
+
+// videoPosterReplaceable reports whether a fetched provider poster should
+// replace a video's current poster. A sidecar lock keeps it, as does artwork
+// stored through ImportArtwork or a manual pick (fetched, pinned, uploaded,
+// integration-supplied). A missing poster, a frame grab and the file's
+// embedded cover yield. A poster with no provenance marker predates the
+// markers or was kept when its sidecar went away (local-artwork spec: a
+// scrape may replace it); it yields unless an applied candidate shows it was
+// fetched or pinned. Integration posters from before the markers have no
+// candidate, so they are replaced once.
+func (s *Service) videoPosterReplaceable(ctx context.Context, mediaID store.MediaID) bool {
+	const slot = artwork.SlotPoster
+	if locks, ok := s.artwork.(sidecarLockReader); ok && locks.IsArtworkLocked(mediaID, slot) {
+		return false
+	}
+	if !s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot) {
+		return true
+	}
+	if embedded, ok := s.artwork.(embeddedArtworkReader); ok && embedded.IsEmbeddedArtwork(mediaID, slot) {
+		return true
+	}
+	imported, ok := s.artwork.(importedArtworkReader)
+	if !ok || imported.IsImportedArtwork(mediaID, slot) {
+		return false
+	}
+	return !s.hasAppliedCandidate(ctx, mediaID, slot)
+}
+
+// hasAppliedCandidate reports whether one of the slot's candidates is marked
+// applied. A store that cannot say, or a failed read, counts as applied, so
+// the poster is kept.
+func (s *Service) hasAppliedCandidate(ctx context.Context, mediaID store.MediaID, slot string) bool {
+	reader, ok := s.candidates.(appliedCandidateReader)
+	if !ok {
+		return true
+	}
+	candidates, err := reader.ArtworkCandidates(ctx, mediaID, slot, store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		slog.Debug("identify: artwork candidate read failed", "media", string(mediaID), "slot", slot, "error", err.Error())
+		return true
+	}
+	for _, candidate := range candidates {
+		if candidate.Applied {
+			return true
+		}
+	}
+	return false
+}
+
+// importArtworkIf stores fetched artwork when stillWanted holds, rechecked
+// under the slot's directory lock when the artwork store supports it, and
+// reports whether it was stored.
+func (s *Service) importArtworkIf(ctx context.Context, mediaID store.MediaID, slot string, data []byte, stillWanted func() bool) (bool, error) {
+	if conditional, ok := s.artwork.(conditionalArtworkStore); ok {
+		return conditional.ImportArtworkIf(ctx, mediaID, slot, data, stillWanted)
+	}
+	if !stillWanted() {
+		return false, nil
+	}
+	return true, s.artwork.ImportArtwork(ctx, mediaID, slot, data)
+}
+
+// embeddedPosterFallback imports a video's embedded cover when the provider
+// poster could not be stored and the slot holds nothing better than a frame
+// grab. ImportEmbeddedPoster repeats the slot check under the directory lock.
+func (s *Service) embeddedPosterFallback(ctx context.Context, mediaID store.MediaID, video bool) {
+	if !video || s.artworkLocked(ctx, mediaID, artwork.SlotPoster) {
+		return
+	}
+	if s.artwork.HasArtwork(mediaID, artwork.SlotPoster) && !s.artwork.IsGeneratedArtwork(mediaID, artwork.SlotPoster) {
+		return
+	}
+	s.importEmbeddedPoster(ctx, mediaID)
+}
+
+// importEmbeddedPoster imports the cover embedded in the Media file and
+// reports whether one landed.
+func (s *Service) importEmbeddedPoster(ctx context.Context, mediaID store.MediaID) bool {
+	embedded, ok := s.artwork.(embeddedArtworkStore)
+	if !ok {
+		return false
+	}
+	found, err := embedded.ImportEmbeddedPoster(ctx, mediaID)
+	if err != nil {
+		slog.Debug("identify: embedded artwork import failed", "media", string(mediaID), "error", err.Error())
+		return false
+	}
+	return found
+}
+
+// mediaIsVideo reports whether mediaID is video-class Media. A store that
+// cannot say, or a failed read, is treated as not video, which keeps the
+// embedded-cover precedence.
+func (s *Service) mediaIsVideo(ctx context.Context, mediaID store.MediaID) bool {
+	classes, ok := s.store.(mediaClassReader)
+	if !ok {
+		return false
+	}
+	class, err := classes.MediaClass(ctx, mediaID)
+	if err != nil {
+		slog.Debug("identify: media class read failed", "media", string(mediaID), "error", err.Error())
+		return false
+	}
+	return class == store.MediaClassVideo
 }
 
 // artworkLocked reports whether an admin locked one artwork slot. A failed

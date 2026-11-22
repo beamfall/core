@@ -5,8 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -704,12 +709,16 @@ func newTestPluginRegistry(bundles []plugin.Bundle) (*plugin.Registry, error) {
 }
 
 func newTestHandlerWithStore(st *store.Store) *Handler {
-	return NewHandler(
+	h := NewHandler(
 		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, nil),
 		auth.NewService(st),
 		st,
 		nil,
 	)
+	// The feed catalogue is an in-memory fake in graph tests
+	// (graph_feeds_test.go); the store owns its own catalogue tests.
+	h.feedCatalogue = newFakeSubscriptionCatalogue()
+	return h
 }
 
 func authorizeViewer(req *http.Request) {
@@ -2628,11 +2637,11 @@ func TestUpdateProfilePartialWriteEchoesStoredProfile(t *testing.T) {
 
 	// First write sets the identity + cap + audio preference, second flips disabled only:
 	// the earlier fields must survive the partial write.
-	first := `{"query":"mutation UpdateProfile($profileID: String!) { updateProfile(profileID: $profileID) { id } }","variables":{"profileID":"profile-default","name":"Default Edited","kind":"adult","maxConcurrentStreams":3,"audioLanguages":["en"]}}`
+	first := `{"query":"mutation UpdateProfile($profileID: String!, $name: String, $kind: String, $disabled: Boolean, $maxConcurrentStreams: Int, $remoteMaxBitrate: Int, $transcodeAllowed: Boolean, $entryPIN: String, $audioLanguages: [String!], $subtitleLanguages: [String!], $subtitleMode: String, $preferSDH: Boolean) { updateProfile(profileID: $profileID, name: $name, kind: $kind, disabled: $disabled, maxConcurrentStreams: $maxConcurrentStreams, remoteMaxBitrate: $remoteMaxBitrate, transcodeAllowed: $transcodeAllowed, entryPIN: $entryPIN, audioLanguages: $audioLanguages, subtitleLanguages: $subtitleLanguages, subtitleMode: $subtitleMode, preferSDH: $preferSDH) { id } }","variables":{"profileID":"profile-default","name":"Default Edited","kind":"adult","maxConcurrentStreams":3,"audioLanguages":["en"]}}`
 	if rec := post(first, authorizeManager); !bytes.Contains(rec.Body.Bytes(), []byte("profile-default")) {
 		t.Fatalf("first updateProfile = %s", rec.Body.String())
 	}
-	second := `{"query":"mutation UpdateProfile($profileID: String!) { updateProfile(profileID: $profileID) { id name kind maxConcurrentStreams disabled audioLanguages } }","variables":{"profileID":"profile-default","disabled":true}}`
+	second := `{"query":"mutation UpdateProfile($profileID: String!, $name: String, $kind: String, $disabled: Boolean, $maxConcurrentStreams: Int, $remoteMaxBitrate: Int, $transcodeAllowed: Boolean, $entryPIN: String, $audioLanguages: [String!], $subtitleLanguages: [String!], $subtitleMode: String, $preferSDH: Boolean) { updateProfile(profileID: $profileID, name: $name, kind: $kind, disabled: $disabled, maxConcurrentStreams: $maxConcurrentStreams, remoteMaxBitrate: $remoteMaxBitrate, transcodeAllowed: $transcodeAllowed, entryPIN: $entryPIN, audioLanguages: $audioLanguages, subtitleLanguages: $subtitleLanguages, subtitleMode: $subtitleMode, preferSDH: $preferSDH) { id name kind maxConcurrentStreams disabled audioLanguages } }","variables":{"profileID":"profile-default","disabled":true}}`
 	rec := post(second, authorizeManager)
 
 	var resp struct {
@@ -2664,7 +2673,7 @@ func TestUpdateProfilePartialWriteEchoesStoredProfile(t *testing.T) {
 
 func TestUpdateProfileRequiresAdminSession(t *testing.T) {
 	handler := newTestHandler(t)
-	body := `{"query":"mutation UpdateProfile($profileID: String!) { updateProfile(profileID: $profileID) { id } }","variables":{"profileID":"profile-default","disabled":true}}`
+	body := `{"query":"mutation UpdateProfile($profileID: String!, $name: String, $kind: String, $disabled: Boolean, $maxConcurrentStreams: Int, $remoteMaxBitrate: Int, $transcodeAllowed: Boolean, $entryPIN: String, $audioLanguages: [String!], $subtitleLanguages: [String!], $subtitleMode: String, $preferSDH: Boolean) { updateProfile(profileID: $profileID, name: $name, kind: $kind, disabled: $disabled, maxConcurrentStreams: $maxConcurrentStreams, remoteMaxBitrate: $remoteMaxBitrate, transcodeAllowed: $transcodeAllowed, entryPIN: $entryPIN, audioLanguages: $audioLanguages, subtitleLanguages: $subtitleLanguages, subtitleMode: $subtitleMode, preferSDH: $preferSDH) { id } }","variables":{"profileID":"profile-default","disabled":true}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader([]byte(body)))
 	authorizeManager(req)
 	rec := httptest.NewRecorder()
@@ -2712,10 +2721,10 @@ func TestUpdateProfileRejectsBadInput(t *testing.T) {
 	handler := newTestHandlerWithStore(st)
 	openManagerAdminSession(t, st)
 	for name, body := range map[string]string{
-		"unknown subtitleMode": `{"query":"mutation UpdateProfile($profileID: String!) { updateProfile(profileID: $profileID) { id } }","variables":{"profileID":"profile-default","subtitleMode":"karaoke"}}`,
-		"empty name":           `{"query":"mutation UpdateProfile($profileID: String!) { updateProfile(profileID: $profileID) { id } }","variables":{"profileID":"profile-default","name":"  "}}`,
-		"unknown kind":         `{"query":"mutation UpdateProfile($profileID: String!) { updateProfile(profileID: $profileID) { id } }","variables":{"profileID":"profile-default","kind":"owner"}}`,
-		"no settings":          `{"query":"mutation UpdateProfile($profileID: String!) { updateProfile(profileID: $profileID) { id } }","variables":{"profileID":"profile-default"}}`,
+		"unknown subtitleMode": `{"query":"mutation UpdateProfile($profileID: String!, $name: String, $kind: String, $disabled: Boolean, $maxConcurrentStreams: Int, $remoteMaxBitrate: Int, $transcodeAllowed: Boolean, $entryPIN: String, $audioLanguages: [String!], $subtitleLanguages: [String!], $subtitleMode: String, $preferSDH: Boolean) { updateProfile(profileID: $profileID, name: $name, kind: $kind, disabled: $disabled, maxConcurrentStreams: $maxConcurrentStreams, remoteMaxBitrate: $remoteMaxBitrate, transcodeAllowed: $transcodeAllowed, entryPIN: $entryPIN, audioLanguages: $audioLanguages, subtitleLanguages: $subtitleLanguages, subtitleMode: $subtitleMode, preferSDH: $preferSDH) { id } }","variables":{"profileID":"profile-default","subtitleMode":"karaoke"}}`,
+		"empty name":           `{"query":"mutation UpdateProfile($profileID: String!, $name: String, $kind: String, $disabled: Boolean, $maxConcurrentStreams: Int, $remoteMaxBitrate: Int, $transcodeAllowed: Boolean, $entryPIN: String, $audioLanguages: [String!], $subtitleLanguages: [String!], $subtitleMode: String, $preferSDH: Boolean) { updateProfile(profileID: $profileID, name: $name, kind: $kind, disabled: $disabled, maxConcurrentStreams: $maxConcurrentStreams, remoteMaxBitrate: $remoteMaxBitrate, transcodeAllowed: $transcodeAllowed, entryPIN: $entryPIN, audioLanguages: $audioLanguages, subtitleLanguages: $subtitleLanguages, subtitleMode: $subtitleMode, preferSDH: $preferSDH) { id } }","variables":{"profileID":"profile-default","name":"  "}}`,
+		"unknown kind":         `{"query":"mutation UpdateProfile($profileID: String!, $name: String, $kind: String, $disabled: Boolean, $maxConcurrentStreams: Int, $remoteMaxBitrate: Int, $transcodeAllowed: Boolean, $entryPIN: String, $audioLanguages: [String!], $subtitleLanguages: [String!], $subtitleMode: String, $preferSDH: Boolean) { updateProfile(profileID: $profileID, name: $name, kind: $kind, disabled: $disabled, maxConcurrentStreams: $maxConcurrentStreams, remoteMaxBitrate: $remoteMaxBitrate, transcodeAllowed: $transcodeAllowed, entryPIN: $entryPIN, audioLanguages: $audioLanguages, subtitleLanguages: $subtitleLanguages, subtitleMode: $subtitleMode, preferSDH: $preferSDH) { id } }","variables":{"profileID":"profile-default","kind":"owner"}}`,
+		"no settings":          `{"query":"mutation UpdateProfile($profileID: String!, $name: String, $kind: String, $disabled: Boolean, $maxConcurrentStreams: Int, $remoteMaxBitrate: Int, $transcodeAllowed: Boolean, $entryPIN: String, $audioLanguages: [String!], $subtitleLanguages: [String!], $subtitleMode: String, $preferSDH: Boolean) { updateProfile(profileID: $profileID, name: $name, kind: $kind, disabled: $disabled, maxConcurrentStreams: $maxConcurrentStreams, remoteMaxBitrate: $remoteMaxBitrate, transcodeAllowed: $transcodeAllowed, entryPIN: $entryPIN, audioLanguages: $audioLanguages, subtitleLanguages: $subtitleLanguages, subtitleMode: $subtitleMode, preferSDH: $preferSDH) { id } }","variables":{"profileID":"profile-default"}}`,
 		"missing profileID":    `{"query":"mutation UpdateProfile { updateProfile { id } }","variables":{"disabled":true}}`,
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader([]byte(body)))
@@ -4481,6 +4490,83 @@ func TestPinArtworkCandidateFetchesImportsMarksAndAudits(t *testing.T) {
 	}
 }
 
+// TestPinUploadedArtworkCandidateWithoutKeptBytesFailsClearly: an upload made
+// before CORE-2937 kept no bytes, so pinning it again asks for a fresh upload
+// instead of fetching the synthetic upload URL.
+func TestPinUploadedArtworkCandidateWithoutKeptBytesFailsClearly(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	sourceURL := artwork.UploadedSourceURL([]byte("pre-fix upload"))
+	if err := st.UpsertArtworkCandidate(ctx, "media-alpha", artwork.SlotPoster, sourceURL, "upload", "upload"); err != nil {
+		t.Fatal(err)
+	}
+	fetcher := &fakeArtworkCandidateFetcher{data: []byte("must not be fetched")}
+	handler := newTestHandlerWithStore(st)
+	handler.SetArtworkCandidateServices(fetcher, artwork.NewService(st, nil, t.TempDir()))
+	candidateID := store.ArtworkCandidateID("media-alpha", artwork.SlotPoster, sourceURL)
+	body := `{"query":"mutation { pinArtworkCandidate(mediaID: \"media-alpha\", slot: \"poster\", candidateID: \"` + candidateID + `\") { id applied } }"}`
+
+	rec := postGraph(t, handler, body, authorizeManager)
+	if !bytes.Contains(rec.Body.Bytes(), []byte("uploaded artwork is no longer available; upload it again")) {
+		t.Fatalf("pin response = %s, want the upload-again error", rec.Body.String())
+	}
+	if len(fetcher.seen) != 0 {
+		t.Fatalf("fetcher saw %#v; an uploaded candidate must never be fetched", fetcher.seen)
+	}
+}
+
+// TestUploadedArtworkKeepRollsBackAndRepairs is CORE-2937: an upload whose
+// candidate write rolls back restores the slot's artwork (its content-addressed
+// original stays until the Media's artwork is purged), and uploading the
+// applied candidate's bytes again restores an original that is missing.
+func TestUploadedArtworkKeepRollsBackAndRepairs(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	svc := artwork.NewService(st, nil, dir)
+	handler := newTestHandlerWithStore(st)
+	handler.SetArtworkCandidateServices(nil, svc)
+	scope := auth.Scope{ProfileID: "profile-default", Revealed: true, AllLibraries: true}
+	data := testPNG(t)
+	sourceURL := artwork.UploadedSourceURL(data)
+
+	apply, err := handler.PrepareUploadedArtwork(ctx, scope, "media-alpha", artwork.SlotPoster, data)
+	if err != nil {
+		t.Fatalf("PrepareUploadedArtwork: %v", err)
+	}
+	rollback, err := apply.ApplyArtwork()
+	if err != nil {
+		t.Fatalf("ApplyArtwork: %v", err)
+	}
+	if _, err := svc.UploadedCandidate("media-alpha", sourceURL); err != nil {
+		t.Fatalf("applied upload kept no original: %v", err)
+	}
+	if err := rollback(); err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if _, err := os.Stat(svc.ArtworkPath("media-alpha", artwork.SlotPoster)); !os.IsNotExist(err) {
+		t.Fatalf("rolled-back upload left the poster in place: %v", err)
+	}
+
+	apply, err = handler.PrepareUploadedArtwork(ctx, scope, "media-alpha", artwork.SlotPoster, data)
+	if err != nil {
+		t.Fatalf("PrepareUploadedArtwork: %v", err)
+	}
+	if err := st.ApplyArtworkCandidate(ctx, apply); err != nil {
+		t.Fatalf("ApplyArtworkCandidate: %v", err)
+	}
+	kept := filepath.Join(dir, "artwork", "media-alpha", "uploads", strings.TrimPrefix(sourceURL, artwork.UploadedSourcePrefix)+".bin")
+	if err := os.Remove(kept); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handler.PrepareUploadedArtwork(ctx, scope, "media-alpha", artwork.SlotPoster, data); err != nil {
+		t.Fatalf("repeat PrepareUploadedArtwork: %v", err)
+	}
+	if got, err := svc.UploadedCandidate("media-alpha", sourceURL); err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("repeat upload of the applied candidate did not restore its original: %v", err)
+	}
+}
+
 func TestPinArtworkCandidateHidesRestrictedCandidateLikeUnknown(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := context.Background()
@@ -5482,8 +5568,9 @@ func TestIdentifySearchMediaIDGating(t *testing.T) {
 }
 
 type graphTestResponse struct {
-	Data   map[string]json.RawMessage `json:"data"`
-	Errors []graphError               `json:"errors"`
+	Data       map[string]json.RawMessage `json:"data"`
+	Errors     []graphError               `json:"errors"`
+	Extensions *GraphQLResponseExtensions `json:"extensions"`
 }
 
 func postGraphJSON(t *testing.T, handler *Handler, authorize func(*http.Request), query string, variables map[string]any) graphTestResponse {
@@ -5749,4 +5836,15 @@ func TestMediaReadCarriesCredits(t *testing.T) {
 	if plain.ID != "media-alpha" || plain.Credits != nil {
 		t.Fatalf("plugin-less media = %#v, want no credits", plain)
 	}
+}
+
+func testPNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 16, 24))
+	img.Set(3, 4, color.RGBA{R: 200, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }

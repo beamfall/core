@@ -241,10 +241,21 @@ describe("Renderer geometry (CORE-2516)", () => {
   type Limiter = { fG: unknown[]; fOut: unknown[]; cur: number };
   type Texels = [width: number, height: number, texel: number];
   const SPENT = [256, 65025, 65025, 0];
-  // A frame starts only at a geometry asked for twice running. The first draw of a test is
-  // therefore preceded by the same request, which presents black and starts nothing, unless the
-  // renderer is `fresh`: a restored one, whose black comes first anyway, or a mount under test.
-  const make = (restored = false, fresh = restored) => {
+  // A start's trackers: black, counted with nothing owed (CORE-2869).
+  const BLACK_TRACKER = [0, 32768, 0, 0];
+  // The black is credited a frame at a time, 100 ms at most, and is over once the credit less
+  // its longest interval reaches BLACK_S (Oscillux hostBlackLongEnough): this many frames an
+  // eighth of a second apart, each credited 100 ms.
+  const BLACK_FRAMES = 14;
+  const black = (frame: (shownMs: number) => void, n = BLACK_FRAMES) => {
+    for (let i = 0; i < n; i++) frame(125);
+  };
+  // A renderer is made with BLACK_S of black to show before its first start. A test renderer
+  // has shown it already unless it is `held`. A frame starts only at a geometry asked for twice
+  // running, so the first draw of a test is preceded by the same request, which presents black
+  // and starts nothing, unless the renderer is `fresh`: a held one, whose black comes first
+  // anyway, or a mount under test.
+  const make = (held = false, fresh = held) => {
     const { gl, ...recorded } = recordingGl();
     const r = Object.create(Renderer.prototype) as Record<string, unknown>;
     Object.assign(r, {
@@ -272,7 +283,8 @@ describe("Renderer geometry (CORE-2516)", () => {
       feedbackFormat: { internal: 0, type: 0, label: "float" },
       endSwitch: () => undefined,
       fadeLeft: 0,
-      black: restored ? BLACK_S : 0,
+      blackMs: held ? 0 : BLACK_S * 1000,
+      blackLongestMs: 0,
       blackShown: false,
       want: { width: 0, height: 0, texel: 0, visibleWidth: 0, visibleHeight: 0 },
       asked: { width: 0, height: 0, texel: 0, visibleWidth: 0, visibleHeight: 0 },
@@ -317,9 +329,10 @@ describe("Renderer geometry (CORE-2516)", () => {
       );
     };
     // Draws of a changed geometry an eighth of a second apart: one starts the fade, sixteen run
-    // it for FADE_S and end in black, and one more, the black shown for BLACK_S, starts the frame.
+    // it for FADE_S and end in black, and BLACK_FRAMES more show the black for BLACK_S, the
+    // last of them starting the frame.
     const through = (frame: (shownMs: number) => void) => {
-      for (let i = 0; i < 18; i++) frame(125);
+      for (let i = 0; i < 17 + BLACK_FRAMES; i++) frame(125);
     };
     const limiter = () => (r.size as { limiter: Limiter }).limiter;
     return { r, renderer, draw, drawIn, through, limiter, fadeGrant, ...recorded };
@@ -327,20 +340,21 @@ describe("Renderer geometry (CORE-2516)", () => {
 
   // Codex round 24: the host cannot know what the canvas replaced on screen, so the first frame
   // starts with every budget spent, like any other.
-  it("starts the output black, the trackers tracked black and every budget spent", () => {
+  it("starts the output black, the trackers seeded black and every budget spent", () => {
     const { draw, limiter, spent, canvas, blocks } = make();
     draw(640, 360);
     const L = limiter();
     expect([canvas.width, canvas.height]).toEqual([640, 360]);
-    for (const f of L.fOut) expect(spent).toContainEqual([f, [0, 0, 0, 0]]);
+    for (const f of L.fOut) expect(spent).toContainEqual([f, BLACK_TRACKER]);
     // The grant state the first frame read.
     expect(spent.at(-1)).toEqual([L.fG[L.cur ^ 1], SPENT]);
-    expect(spent.slice(0, -1).every(([, v]) => v.join() === "0,0,0,0")).toBe(true);
+    const others = spent.slice(0, -1).filter(([f]) => !L.fOut.includes(f));
+    expect(others.every(([, v]) => v.join() === "0,0,0,0")).toBe(true);
     // Codex round 17: the first draw earns no credit before a budget write it could repay.
     expect(blocks.at(-1)?.[3]).toBe(0);
   });
 
-  it("presents black after a restored context, timed from the first black frame shown", () => {
+  it("presents black before a start, timed from the first black frame shown", () => {
     const { r, renderer, draw, limiter, blits, spent, clears, blocks } = make(true);
     // This interval preceded the first black frame shown and cannot count toward the hold.
     draw(640, 360, BLACK_S);
@@ -348,22 +362,53 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(clears).toEqual([null]);
     expect(renderer.settled(640, 360, 1)).toBe(false);
 
-    draw(640, 360, BLACK_S / 2);
+    black((ms) => draw(640, 360, ms / 1000), BLACK_FRAMES - 1);
     expect(r.size).toBe(null);
-    expect(clears).toEqual([null, null]);
+    expect(clears).toEqual(new Array(BLACK_FRAMES).fill(null));
     expect(blits).toEqual([]);
     expect(blocks).toEqual([]);
     expect(renderer.settled(640, 360, 1)).toBe(false);
 
-    draw(640, 360, BLACK_S / 2);
+    draw(640, 360, 0.125);
     const L = limiter();
-    for (const f of L.fOut) expect(spent).toContainEqual([f, [0, 0, 0, 0]]);
+    for (const f of L.fOut) expect(spent).toContainEqual([f, BLACK_TRACKER]);
     expect(spent.at(-1)).toEqual([L.fG[L.cur ^ 1], SPENT]);
-    expect(clears).toHaveLength(3); // the canvas is cleared before the visible blit
+    // The canvas is cleared before the visible blit.
+    expect(clears).toHaveLength(BLACK_FRAMES + 1);
     expect(blits).toEqual([[0, 0, 640, 360, 0, 0, 640, 360]]);
     expect(blocks.at(-1)?.[3]).toBe(0);
     expect(renderer.settled(640, 360, 1)).toBe(true);
     expect(BLACK_S).toBeGreaterThan(1 / 15);
+    // An owed red change expires after more than a second of black, 1.25 s with the margin
+    // (Oscillux shaders/limiter/README.md): the seed is sound only after that much.
+    expect(BLACK_S).toBeGreaterThanOrEqual(1.25);
+  });
+
+  // Oscillux "Black credit before a black start": at 60 Hz the start waits for 76 credited
+  // intervals, as a credit may lead the display by a frame and 75 displayed frames are 1250 ms.
+  it("starts after 76 credited black intervals at 60 Hz, not 75", () => {
+    const { r, draw } = make(true);
+    draw(640, 360);
+    for (let i = 0; i < 75; i++) draw(640, 360);
+    expect(r.size).toBe(null);
+    expect(r.blackOver).toBe(false);
+    draw(640, 360);
+    expect(r.size).not.toBe(null);
+  });
+
+  it("credits a black frame 100 ms at most and counts its longest interval out", () => {
+    const { r, draw } = make(true);
+    draw(640, 360);
+    // Two long frames credit 200 ms, less the longest leaves 100: a credit that leads the
+    // display by one long frame cannot start the black's end early.
+    draw(640, 360, 2);
+    draw(640, 360, 2);
+    expect(r.blackMs).toBe(200);
+    expect(r.blackLongestMs).toBe(100);
+    for (let i = 0; i < 11; i++) draw(640, 360, 0.1);
+    expect(r.size).toBe(null);
+    draw(640, 360, 0.1);
+    expect(r.size).not.toBe(null);
   });
 
   // Codex round 18: bits 4 to 7 of the grant are the directions held. A grant that admits one
@@ -375,7 +420,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(reads).toHaveLength(0);
 
     grant.set([0x1e, 65025, 0, 0]);
-    draw(640, 360, BLACK_S);
+    black((ms) => draw(640, 360, ms / 1000));
     const L = limiter();
     expect(reads).toHaveLength(0);
     // The frame is held for the tick its grant is read in, then drawn again.
@@ -533,20 +578,20 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(renderer.shown).toBe(null);
     expect([...old.fOut, ...old.fG].every((f) => deleted.has(f))).toBe(true);
     expect([canvas.width, canvas.height]).toEqual([640, 360]);
-    draw(1100, 620, BLACK_S / 2);
+    black((ms) => draw(1100, 620, ms / 1000), BLACK_FRAMES - 1);
     expect(r.size).toBe(null);
-    expect(clears).toEqual([null, null]);
+    expect(clears).toEqual(new Array(BLACK_FRAMES).fill(null));
     expect(blits).toEqual([]);
     expect(blocks).toEqual([]);
 
     // The black is over, but the slot is still moving: nothing starts (Codex round 28).
-    draw(1200, 675, BLACK_S / 2);
+    draw(1200, 675, 0.125);
     expect(r.size).toBe(null);
     expect(blits).toEqual([]);
     draw(1200, 675);
     const L = limiter();
     expect([canvas.width, canvas.height]).toEqual([1200, 675]);
-    for (const f of L.fOut) expect(spent).toContainEqual([f, [0, 0, 0, 0]]);
+    for (const f of L.fOut) expect(spent).toContainEqual([f, BLACK_TRACKER]);
     expect(spent.at(-1)).toEqual([L.fG[L.cur ^ 1], SPENT]);
     expect(blocks.at(-1)?.slice(2, 4)).toEqual([limiterWindow(1200, 675).limit, 0]);
     expect(blits).toEqual([[0, 0, 1200, 675, 0, 0, 1200, 675]]);
@@ -630,7 +675,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     for (let i = 0; i < 16; i++) drawIn([1, 4096, 2], [1, 8193], 125);
     expect(r.size).toBe(null);
     expect(renderer.settled(1, 4096, 2, 1, 8193)).toBe(false);
-    drawIn([1, 4096, 2], [1, 8193], BLACK_S * 1000);
+    black((ms) => drawIn([1, 4096, 2], [1, 8193], ms));
     expect(r.size).toBe(null);
     expect(clears.at(-1)).toBe(null);
     expect(renderer.settled(1, 4096, 2, 1, 8193)).toBe(true);
@@ -683,7 +728,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(shown).toMatchObject({ visibleWidth: 2, visibleHeight: 36 });
     at(3, 125);
     expect(renderer.shown).toBe(null);
-    at(3, BLACK_S * 1000);
+    black((ms) => at(3, ms));
     expect(r.size).not.toBe(null);
     expect(r.size).not.toBe(size);
     expect(renderer.shown).toMatchObject({ visibleWidth: 1, visibleHeight: 36 });
@@ -752,7 +797,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(r.fadeLeft).toBe(0);
     expect(r.size).toBe(null);
     expect(renderer.shown).toBe(null);
-    expect(r.black).toBe(BLACK_S);
+    expect(r.blackMs).toBe(0);
     expect(clears).toEqual([null]);
     expect([...old.fOut, ...old.fG].every((f) => deleted.has(f))).toBe(true);
   });
@@ -773,7 +818,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(r.size).toBe(size);
     draw(800, 450);
     expect(r.size).toBe(null);
-    expect(r.black).toBe(BLACK_S);
+    expect(r.blackMs).toBe(0);
   });
 
   // Codex round 27: each frame of the fade read its grant into an array, which waits for the
@@ -805,7 +850,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(order.slice(-2)).toEqual(["fence", "sub"]);
     expect(order.filter((x) => x === "sub")).toHaveLength(1);
     expect(r.size).toBe(null);
-    expect(r.black).toBe(BLACK_S);
+    expect(r.blackMs).toBe(0);
     expect(blocking).toEqual([]);
     // Four polls of the grant and, with the frame fence polled at each draw (CORE-2720), six of
     // frames: none waits.
@@ -881,7 +926,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     draw(800, 450);
     for (let i = 0; i < 16; i++) draw(800, 450, 0.125);
     expect(r.size).toBe(null);
-    draw(800, 450, 0.125);
+    black((ms) => draw(800, 450, ms / 1000));
     const started = limiter();
     expect([canvas.width, canvas.height]).toEqual([800, 450]);
     const clock = r.clockMs;
@@ -892,16 +937,17 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(r.size).toBe(null);
     expect(renderer.shown).toBe(null);
     expect(r.fadeLeft).toBe(0);
-    expect(r.black).toBe(BLACK_S);
+    expect(r.blackMs).toBe(0);
     expect(r.clockMs).toBe((clock as number) - 125);
     expect(clears).toEqual([null]);
     expect(blits).toEqual([]);
     expect([...started.fOut, ...started.fG].every((f) => deleted.has(f))).toBe(true);
     expect(renderer.settled(900, 500, 1)).toBe(false);
 
-    draw(900, 500, BLACK_S);
+    // The slot moves until the black is over, the last move to the size asked for next.
+    for (let i = 0; i < BLACK_FRAMES; i++) draw(901 - BLACK_FRAMES + i, 500, 0.125);
     expect(r.size).toBe(null);
-    expect(r.black).toBe(0);
+    expect(r.blackOver).toBe(true);
     expect(blits).toEqual([]);
     draw(900, 500);
     const L = limiter();
@@ -957,7 +1003,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     renderer.withdraw();
     expect(renderer.settled(64, 36, 1)).toBe(false);
     expect(reads).toHaveLength(0);
-    draw(64, 36, BLACK_S);
+    black((ms) => draw(64, 36, ms / 1000));
     expect(renderer.settled(64, 36, 1)).toBe(true);
     expect(renderer.settled(64, 36, 1)).toBe(true);
     expect(reads).toHaveLength(1);
@@ -974,22 +1020,22 @@ describe("Renderer geometry (CORE-2516)", () => {
     const textures = count.textures;
     // The drag outlasts the black: a new size at every draw, each withdrawn at the observation
     // after it.
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 80; i++) {
       draw(801 + i, 450);
       renderer.withdraw();
     }
-    expect(r.black).toBe(0);
+    expect(r.blackOver).toBe(true);
     expect(r.size).toBe(null);
     expect(count.textures).toBe(textures);
     // The slot rests for two draws and moves again before the paint: one start, withdrawn.
-    draw(860, 450);
+    draw(880, 450);
     expect(r.size).not.toBe(null);
     const started = count.textures;
     expect(started).toBeGreaterThan(textures);
     renderer.withdraw();
-    expect(r.black).toBe(BLACK_S);
+    expect(r.blackMs).toBe(0);
     for (let i = 0; i < 5; i++) {
-      draw(860, 450);
+      draw(880, 450);
       renderer.withdraw();
     }
     expect(r.size).toBe(null);
@@ -1039,7 +1085,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(r.size).toBe(null);
     expect(renderer.shown).toBe(null);
     expect(r.fadeLeft).toBe(0);
-    expect(r.black).toBe(BLACK_S);
+    expect(r.blackMs).toBe(0);
     expect(clears.at(-1)).toBe(null);
     expect(first.fOut.every((f) => deleted.has(f))).toBe(true);
     // Dropping again does nothing more, and nothing is withdrawn.
@@ -1051,7 +1097,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     blits.length = 0;
     renderer.draw(640, 360, 1 / 60, silentFrame(), false);
     expect(r.size).toBe(null);
-    renderer.draw(640, 360, BLACK_S, silentFrame(), false);
+    black(() => renderer.draw(640, 360, 0.125, silentFrame(), false));
     expect(r.size).not.toBe(null);
     const L = limiter();
     expect(L).not.toBe(first);
@@ -1078,6 +1124,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     // The fade and the black of a resize, up to the draw that starts the second frame.
     draw(800, 450);
     for (let i = 0; i < 16; i++) draw(800, 450, 0.125);
+    black((ms) => draw(800, 450, ms / 1000), BLACK_FRAMES - 1);
     expect(r.size).toBe(null);
     const textures = count.textures;
     blits.length = 0;
@@ -1107,6 +1154,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     const checks = count.checks;
     draw(800, 450);
     for (let i = 0; i < 16; i++) draw(800, 450, 0.125);
+    black((ms) => draw(800, 450, ms / 1000), BLACK_FRAMES - 1);
     expect(r.size).toBe(null);
     blits.length = 0;
     // Feedback, history and output targets come in pairs; the second output is the sixth.

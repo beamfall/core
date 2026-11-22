@@ -39,3 +39,15 @@ func TestWaitForProcessExitAcceptsAnAlreadyExitedLeader(t *testing.T) {
 		t.Fatalf("leader exit status: %v", err)
 	}
 }
+
+// TestWaitForProcessExitRejectsAPidThatIsGone covers CORE-0661: an already
+// reaped pid is not a clean exit of a leader this process still owns.
+func TestWaitForProcessExitRejectsAPidThatIsGone(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "exit 0")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForProcessExit(cmd.Process.Pid); err == nil {
+		t.Fatal("wait for a reaped pid returned nil, want an error")
+	}
+}

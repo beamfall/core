@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import { reasonLabel } from "@/components/assign/matchLabels";
 import { EmptyLine, ErrorLine, ManageSection } from "@/components/beamfall/workbench";
 import { Badge } from "@/components/ui/badge";
 import { fetchUnmatchedRecords, fetchUnmatchedSuppressions } from "@/lib/graphql";
 import type { UnmatchedRecordInfo, UnmatchedSuppressionInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { CreateMediaForm } from "./CreateMediaForm";
-import { reasonLabel } from "./reasons";
 import { SuppressionPanel } from "./SuppressionPanel";
 
 /**

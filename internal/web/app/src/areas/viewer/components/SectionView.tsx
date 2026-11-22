@@ -122,6 +122,7 @@ export function SectionView({
               nameContainer={nameContainer}
               intrinsicArtwork={intrinsicArtwork}
               quickPlay={containerClass !== "bf-stack"}
+              continueWatching={section.source?.kind === "continue-watching"}
               focusAnchor={
                 navigationID
                   ? {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,12 +112,15 @@ type EmbeddedArtworkExtractor interface {
 
 // Service generates and locates artwork files under dataDir/artwork.
 type Service struct {
-	store     *store.Store
-	grabber   FrameGrabber
-	scaler    ImageScaler
-	embedded  EmbeddedArtworkExtractor
-	dir       string
-	sealed    SealedPredicate
+	store    *store.Store
+	grabber  FrameGrabber
+	scaler   ImageScaler
+	embedded EmbeddedArtworkExtractor
+	dir      string
+	sealed   SealedPredicate
+	// uploadsMu serializes keeping uploaded originals, so two keeps of the
+	// same bytes never race on one file.
+	uploadsMu sync.Mutex
 	encrypted EncryptedPredicate
 	deriveMu  [64]derivativeLock
 	// entityRules declares which Entity kinds inherit a poster (inherit.go);
@@ -287,6 +291,27 @@ func (s *Service) IsGeneratedArtwork(id store.MediaID, slot string) bool {
 
 func generatedMarkerPath(path string) string { return path + ".generated" }
 
+// IsEmbeddedArtwork reports whether a present slot holds the cover extracted
+// from the Media file itself rather than fetched or supplied artwork.
+func (s *Service) IsEmbeddedArtwork(id store.MediaID, slot string) bool {
+	return s.HasArtwork(id, slot) && regularFileExists(embeddedMarkerPath(s.ArtworkPath(id, slot)))
+}
+
+// embeddedMarkerPath marks a poster extracted from the Media file; any other
+// import over the slot removes it.
+func embeddedMarkerPath(path string) string { return path + ".embedded" }
+
+// IsImportedArtwork reports whether a present slot holds artwork stored
+// through ImportArtwork or a manual pick: fetched, pinned, uploaded or
+// integration-supplied. Local sidecar artwork carries its lock instead.
+func (s *Service) IsImportedArtwork(id store.MediaID, slot string) bool {
+	return s.HasArtwork(id, slot) && regularFileExists(importedMarkerPath(s.ArtworkPath(id, slot)))
+}
+
+// importedMarkerPath marks a slot stored through importMediaArtwork. Slots
+// imported before the marker existed have none.
+func importedMarkerPath(path string) string { return path + ".imported" }
+
 // HasEntityPoster reports whether a poster file exists for the Entity.
 func (s *Service) HasEntityPoster(id store.EntityID) bool {
 	_, ok := s.EntityArtworkVersion(id, SlotPoster)
@@ -438,6 +463,114 @@ func CandidateCacheID(candidateID string) store.MediaID {
 	return store.MediaID(candidatePrefix + candidateID)
 }
 
+// UploadedSourcePrefix marks the synthetic SourceURL of an artwork candidate a
+// manager uploaded. It names the upload's SHA-256 and is never fetched over the
+// network: the original bytes stay in the owning Media's artwork directory
+// (KeepUploadedCandidate), so purging that Media's artwork removes them too.
+const UploadedSourcePrefix = "beamfall-upload://sha256/"
+
+// uploadedCandidateDir holds kept upload originals inside a Media's artwork
+// directory. Slot files and their derivatives are plain files beside it.
+const uploadedCandidateDir = "uploads"
+
+// ErrUploadedCandidateMissing reports that an uploaded candidate's original
+// bytes were never kept (an upload from before CORE-2937, or one into a Sealed
+// or encrypted Library) or no longer match the candidate's SourceURL.
+var ErrUploadedCandidateMissing = errors.New("uploaded artwork is no longer available")
+
+// UploadedSourceURL is the synthetic SourceURL for uploaded artwork bytes.
+func UploadedSourceURL(data []byte) string {
+	sum := sha256.Sum256(data)
+	return UploadedSourcePrefix + hex.EncodeToString(sum[:])
+}
+
+// IsUploadedSource reports whether a candidate SourceURL names an upload.
+func IsUploadedSource(sourceURL string) bool {
+	return strings.HasPrefix(sourceURL, UploadedSourcePrefix)
+}
+
+// uploadedCandidatePath is where an upload's original is kept, or "" when
+// sourceURL is not a well-formed upload source.
+func (s *Service) uploadedCandidatePath(id store.MediaID, sourceURL string) string {
+	digest, ok := strings.CutPrefix(sourceURL, UploadedSourcePrefix)
+	if !ok || len(digest) != sha256.Size*2 {
+		return ""
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		return ""
+	}
+	return filepath.Join(s.dir, filepath.Base(string(id)), uploadedCandidateDir, digest+".bin")
+}
+
+// KeepUploadedCandidate keeps an uploaded candidate's original bytes under the
+// owning Media so the candidate can be previewed and pinned again later
+// (CORE-2937). Media in a Sealed or encrypted Library keeps nothing, so no
+// plaintext copy lands on disk there. Originals are never removed one by one:
+// a kept file is content-addressed and harmless if its upload was rolled back,
+// and it goes with the Media's artwork directory (PurgeMediaArtwork).
+func (s *Service) KeepUploadedCandidate(ctx context.Context, id store.MediaID, data []byte) error {
+	if len(data) == 0 {
+		return errors.New("artwork data is empty")
+	}
+	if s.isSealed(ctx, id) || s.isEncrypted(ctx, id) {
+		return nil
+	}
+	sourceURL := UploadedSourceURL(data)
+	s.uploadsMu.Lock()
+	defer s.uploadsMu.Unlock()
+	if _, err := s.UploadedCandidate(id, sourceURL); err == nil {
+		return nil
+	}
+	dst := s.uploadedCandidatePath(id, sourceURL)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	// Checked on both sides of the rename, as ImportArtwork does, so a Library
+	// encrypted meanwhile keeps no plaintext original. The guard fails closed
+	// (a canceled request reads as protected), so a protected result only
+	// skips this original: the Media's other artwork is left to the
+	// encrypted-Library reconciler.
+	guard := func() error {
+		if s.isSealed(ctx, id) || s.isEncrypted(ctx, id) {
+			return errProtectedArtwork
+		}
+		return nil
+	}
+	if err := writeAtomicFile(dst, data, guard); err != nil {
+		if errors.Is(err, errProtectedArtwork) {
+			// writeAtomicFile tried to remove anything it published; make
+			// sure no plaintext original survived that.
+			if rmErr := os.Remove(dst); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+				return rmErr
+			}
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// UploadedCandidate returns the kept original of an uploaded candidate. It
+// fails with ErrUploadedCandidateMissing when none was kept or when the file
+// does not hash to the candidate's SourceURL.
+func (s *Service) UploadedCandidate(id store.MediaID, sourceURL string) ([]byte, error) {
+	path := s.uploadedCandidatePath(id, sourceURL)
+	if path == "" {
+		return nil, ErrUploadedCandidateMissing
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- path is built from a validated hex digest under the artwork dir
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrUploadedCandidateMissing
+		}
+		return nil, err
+	}
+	if len(data) == 0 || UploadedSourceURL(data) != sourceURL {
+		return nil, ErrUploadedCandidateMissing
+	}
+	return data, nil
+}
+
 // SweepCandidatePreviewCache reconciles the candidate-preview cache on disk
 // against the live candidate set, removing the directory for every cached
 // candidate whose row no longer exists (orphan GC for fetched artwork-candidate
@@ -582,6 +715,12 @@ func (s *Service) derivative(ctx context.Context, original, owner, slot, bucket 
 	return dst, nil
 }
 
+// imageDerivativeVersion is stamped into the DeriveImage fingerprint marker.
+// Bump it when the scaler's output for an unchanged source changes, so existing
+// derivatives regenerate once. v2: RAW previews, EXIF orientation and sRGB
+// conversion (CORE-0310).
+const imageDerivativeVersion = "v2"
+
 // DeriveImage publishes the still-image poster and the two ADR-0043 buckets.
 // The fingerprint marker is written last, so a scan checkpoint can only pass
 // work whose complete derivative set is durable and current.
@@ -602,17 +741,26 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 	}
 	defer unlock()
 	marker := poster + ".source-fingerprint"
+	stamp := imageDerivativeVersion + ":" + fingerprint
 	buckets := []string{"w400", "w1920"}
 	// #nosec G304 -- marker is derived from the server-owned artwork root and validated Media ID.
-	if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) == fingerprint && nonEmptyRegularFile(poster) {
-		fresh := true
+	data, err := os.ReadFile(marker)
+	recorded := strings.TrimSpace(string(data))
+	// A pre-version marker (the bare fingerprint) still covers a poster the
+	// user imported over the generated one: the version bump regenerates only
+	// what the scaler made, never a selection.
+	imported := !regularFileExists(generatedMarkerPath(poster))
+	current := err == nil && nonEmptyRegularFile(poster) && (recorded == stamp || (recorded == fingerprint && imported))
+	var missing []string
+	if current {
 		for _, bucket := range buckets {
-			if !nonEmptyRegularFile(filepath.Join(filepath.Dir(poster), SlotPoster+"."+bucket+".jpg")) {
-				fresh = false
-				break
+			// Under a pre-version marker every bucket predates the current
+			// scaler, however new its modification time: rebuild them all.
+			if recorded != stamp || !nonEmptyRegularFile(filepath.Join(filepath.Dir(poster), SlotPoster+"."+bucket+".jpg")) {
+				missing = append(missing, bucket)
 			}
 		}
-		if fresh {
+		if len(missing) == 0 {
 			return nil
 		}
 	}
@@ -627,6 +775,11 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 			return errProtectedArtwork
 		}
 		return nil
+	}
+	if current && imported {
+		// The user's poster for this source stays: rebuild only the buckets
+		// that importing it removed, from the poster itself.
+		return s.deriveBucketsFrom(ctx, id, poster, missing, marker, stamp, guard)
 	}
 	err = s.scaleImageAtomic(ctx, path, posterWidth, poster, guard)
 	s.versions.forget(poster)
@@ -643,9 +796,16 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 		}
 		return err
 	}
+	return s.deriveBucketsFrom(ctx, id, path, buckets, marker, stamp, guard)
+}
+
+// deriveBucketsFrom scales src into the poster's named width buckets, then
+// records stamp as the derivatives' source fingerprint.
+func (s *Service) deriveBucketsFrom(ctx context.Context, id store.MediaID, src string, buckets []string, marker, stamp string, guard func() error) error {
+	dir := filepath.Dir(marker)
 	for _, bucket := range buckets {
-		dst := filepath.Join(filepath.Dir(poster), SlotPoster+"."+bucket+".jpg")
-		if err := s.scaleImageAtomic(ctx, path, bucketWidths[bucket], dst, guard); err != nil {
+		dst := filepath.Join(dir, SlotPoster+"."+bucket+".jpg")
+		if err := s.scaleImageAtomic(ctx, src, bucketWidths[bucket], dst, guard); err != nil {
 			if errors.Is(err, errProtectedArtwork) {
 				return s.PurgeMediaArtwork(id)
 			}
@@ -653,7 +813,7 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 			return fmt.Errorf("generating image derivative %s for %s: %w", bucket, id, err)
 		}
 	}
-	if err := writeAtomicFile(marker, []byte(fingerprint+"\n"), guard); err != nil {
+	if err := writeAtomicFile(marker, []byte(stamp+"\n"), guard); err != nil {
 		if errors.Is(err, errProtectedArtwork) {
 			return s.PurgeMediaArtwork(id)
 		}
@@ -876,7 +1036,11 @@ func (s *Service) GeneratePoster(ctx context.Context, id store.MediaID) error {
 }
 
 // ImportEmbeddedPoster extracts an attached picture from the primary media
-// file. It is imported provenance, so fetched artwork must not replace it.
+// file and marks it embedded (IsEmbeddedArtwork). Identify keeps it over
+// fetched artwork for audio and image Media; for video it is only a fallback
+// the provider poster replaces. It fills only a missing or generated poster,
+// checked under the directory lock, so it never replaces artwork another
+// import stored first.
 func (s *Service) ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (bool, error) {
 	if s.embedded == nil || s.isSealed(ctx, id) || s.isEncrypted(ctx, id) {
 		return false, nil
@@ -890,6 +1054,9 @@ func (s *Service) ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (b
 		return false, err
 	}
 	defer unlock()
+	if s.HasArtwork(id, SlotPoster) && !s.IsGeneratedArtwork(id, SlotPoster) {
+		return false, nil
+	}
 	return s.importEmbeddedPoster(ctx, id, file.Path)
 }
 
@@ -913,7 +1080,12 @@ func (s *Service) importEmbeddedPoster(ctx context.Context, id store.MediaID, sr
 	if err != nil || !found {
 		return false, err
 	}
-	if err := os.Remove(generatedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	for _, marker := range []string{generatedMarkerPath(dst), importedMarkerPath(dst)} {
+		if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+	}
+	if err := os.WriteFile(embeddedMarkerPath(dst), nil, 0o600); err != nil {
 		return false, err
 	}
 	for bucket := range bucketWidths {
@@ -1097,39 +1269,66 @@ func (s *Service) ImportPoster(ctx context.Context, id store.MediaID, data []byt
 // is refused with a *SlotLockedError (ADR-0072), so the caller does not mark
 // its candidate applied; ImportManualArtwork is the manual-pick bypass.
 func (s *Service) ImportArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error {
-	return s.importMediaArtwork(ctx, id, slot, data, true)
+	_, err := s.importMediaArtwork(ctx, id, slot, data, true, nil)
+	return err
 }
 
-func (s *Service) importMediaArtwork(ctx context.Context, id store.MediaID, slot string, data []byte, honourLock bool) error {
+// ImportArtworkIf is ImportArtwork that first asks ok, under the slot's
+// directory lock, whether the import should still happen, so a decision made
+// before a slow fetch cannot overwrite artwork another import stored in the
+// meantime. It reports whether the bytes were stored. ok runs with the lock
+// held and must not call back into the artwork Service's importers.
+func (s *Service) ImportArtworkIf(ctx context.Context, id store.MediaID, slot string, data []byte, ok func() bool) (bool, error) {
+	return s.importMediaArtwork(ctx, id, slot, data, true, ok)
+}
+
+func (s *Service) importMediaArtwork(ctx context.Context, id store.MediaID, slot string, data []byte, honourLock bool, ok func() bool) (bool, error) {
 	if !ValidSlot(slot) {
-		return fmt.Errorf("unknown artwork slot %q", slot)
+		return false, fmt.Errorf("unknown artwork slot %q", slot)
 	}
 	// Sealed Libraries get no plaintext poster on disk (ADR-0098 area 2): skip the
 	// import fail-closed so no plaintext artwork file is written.
 	if s.isSealed(ctx, id) {
-		return nil
+		return false, nil
 	}
 	// Encrypted Libraries fail closed even while Unsealed: the
 	// imported slot is a plaintext artwork derivative of the user's Media with no
 	// encrypted-plane write path yet, so refuse rather than write it to disk.
 	if s.isEncrypted(ctx, id) {
-		return nil
+		return false, nil
 	}
 	dst := s.ArtworkPath(id, slot)
 	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer unlock()
 	if lock, locked := readSlotLock(dst); honourLock && locked {
-		return &SlotLockedError{Slot: slot, Source: lock.Source}
+		return false, &SlotLockedError{Slot: slot, Source: lock.Source}
+	}
+	if ok != nil && !ok() {
+		return false, nil
 	}
 	if err := s.importArtwork(ctx, dst, string(id), slot, data); err != nil {
-		return err
+		return false, err
 	}
 	s.recordDominantColor(dst, slot)
-	if err := os.Remove(generatedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	// The marker follows the bytes: an interruption before it leaves the new
+	// image looking replaceable, so a later scrape fetches again, rather than
+	// leaving the old embedded cover or frame grab looking imported for good.
+	if err := removeProvenanceMarkers(dst); err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(importedMarkerPath(dst), nil, 0o600)
+}
+
+// removeProvenanceMarkers drops the generated, embedded and imported markers
+// once new artwork replaces the slot file.
+func removeProvenanceMarkers(dst string) error {
+	for _, marker := range []string{generatedMarkerPath(dst), embeddedMarkerPath(dst), importedMarkerPath(dst)} {
+		if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	return nil
 }
@@ -1250,7 +1449,7 @@ func (s *Service) removeLegacyOverlay(dst, legacy, slot string) {
 	if _, err := os.Lstat(lockMarkerPath(dst)); err != nil {
 		_ = os.Rename(lockMarkerPath(legacy), lockMarkerPath(dst))
 	}
-	for _, path := range []string{legacy, generatedMarkerPath(legacy), lockMarkerPath(legacy)} {
+	for _, path := range []string{legacy, generatedMarkerPath(legacy), embeddedMarkerPath(legacy), importedMarkerPath(legacy), lockMarkerPath(legacy)} {
 		_ = os.Remove(path)
 	}
 	for bucket := range bucketWidths {

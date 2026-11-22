@@ -2,18 +2,17 @@ import { channelLayout, codecName, type TrackLabelText } from "../player/streamT
 import type { MediaTrackVersion } from "./mediaDetail";
 import { hdrName } from "./playback";
 
-// The stream badges of a Media detail page's facts row (CORE-2469): the default
-// Version's resolution and HDR format and its default audio track's codec and
-// channel layout. Each is left out when unknown. The resolution is the server's
-// label for that Version (CORE-2485), so the row agrees with the track pickers.
+// The stream badges of a Media detail page's meta line (CORE-2469, CORE-2930):
+// the shown Version's resolution and HDR format and its default audio track's
+// codec and channel layout. Each is left out when unknown. The resolution is
+// the server's label for that Version (CORE-2485), and the Version is the one
+// the track pickers show, so a Version pick updates the badges.
 
-/** The facts row's stream badges, in order: resolution, HDR, audio. */
+/** The meta line's stream badges, in order: resolution, HDR, audio. */
 export function streamFacts(
-  versions: readonly MediaTrackVersion[],
+  version: MediaTrackVersion | undefined,
   text: Pick<TrackLabelText, "mono" | "stereo" | "channels">,
 ): Array<{ key: string; text: string }> {
-  // The server lists its default Version first, as the pickers' Auto does.
-  const version = versions[0];
   const audio = version?.audioTracks.find((track) => track.default) ?? version?.audioTracks[0];
   const audioText = audio?.codec
     ? [codecName(audio.codec), channelLayout(audio.channels, text)].filter(Boolean).join(" ")

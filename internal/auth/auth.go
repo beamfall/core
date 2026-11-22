@@ -33,7 +33,24 @@ const (
 	SessionHeader      = "X-Beamfall-Session"
 	DeviceHeader       = "X-Beamfall-Device"
 	DeviceSecretHeader = "X-Beamfall-Device-Secret" // #nosec G101 -- a header name, not a credential.
+
+	// ProfileHeader names the Profile a request was made for (CORE-2923). A
+	// browser tab keeps its own idea of the signed-in Profile while every tab
+	// shares one session cookie, so after another tab switches Profile the
+	// header lets the server refuse a request the tab made for the old one.
+	ProfileHeader = "X-Beamfall-Profile"
 )
+
+// ErrProfileMismatch is ScopeFromRequest's refusal of a request whose
+// ProfileHeader names a Profile other than the one its session is bound to.
+var ErrProfileMismatch = errors.New("the session is bound to another profile")
+
+// ProfileMismatch reports whether r names, in ProfileHeader, a Profile other
+// than the one scope is bound to. An absent or blank header names none.
+func ProfileMismatch(r *http.Request, scope Scope) bool {
+	expected := strings.TrimSpace(r.Header.Get(ProfileHeader))
+	return expected != "" && store.ProfileID(expected) != scope.ProfileID
+}
 
 // Admin Session policy (ADR-0007 §4 — "short-lived re-auth"; ADR-0012 §3 —
 // brute-force economics). The ADR pins neither the lifetime nor the lockout
@@ -228,12 +245,12 @@ func (s *Service) SetCertificationScales(scales map[string][]string) {
 	s.certificationScales = scales
 }
 
-// certificationConstraints resolves a Profile's stored ceilings against the
+// CertificationConstraints resolves a Profile's stored ceilings against the
 // wired scales: the allowed set is the scale prefix up to and including the
 // ceiling. A ceiling whose plugin scale is unknown, or whose value is not on
 // the scale, yields an empty allowed set — fail-closed, consistent with the
 // unrated-blocked-by-default posture.
-func (s *Service) certificationConstraints(ceilings []store.ProfileCertificationCeiling) []store.CertificationConstraint {
+func (s *Service) CertificationConstraints(ceilings []store.ProfileCertificationCeiling) []store.CertificationConstraint {
 	if len(ceilings) == 0 {
 		return nil
 	}
@@ -255,11 +272,36 @@ func (s *Service) certificationConstraints(ceilings []store.ProfileCertification
 	return constraints
 }
 
+// AddToQueue checks the authenticated scope again in the queue write transaction.
+func (s *Service) AddToQueue(ctx context.Context, scope Scope, expectedProfileID store.ProfileID, mediaID store.MediaID, position *int, filter store.LibraryFilter) (store.QueueAddResult, error) {
+	return s.store.QueueAddForProfile(ctx, scope.ProfileID, scope.SessionID, expectedProfileID, mediaID, position, filter, s.now, s.CertificationConstraints)
+}
+
+// QueueWriteAuthorization supplies policy for writes that target queue Media.
+func (s *Service) QueueWriteAuthorization(scope Scope, expected store.ProfileID, filter store.LibraryFilter) store.QueueWriteAuthorization {
+	return store.QueueWriteAuthorization{
+		ProfileID: scope.ProfileID, SessionID: scope.SessionID, ExpectedProfileID: expected,
+		Filter: filter, Now: s.now, ResolveCertification: s.CertificationConstraints,
+	}
+}
+
 // ScopeFromRequest resolves HTTP credentials into a Scope. A Bearer credential
 // wins when present — a scoped developer key (ADR-0040, bfk_ prefix) routes to
 // the scoped-key path, anything else to the admin API token; then
 // the X-Beamfall-* headers; then the browser cookie credential.
+//
+// Every resolution checks ProfileHeader, so a handler that resolves the scope
+// again after a wrapper checked it still never acts for a Profile the request
+// was not made for (CORE-2923): a mismatch is ErrProfileMismatch.
 func (s *Service) ScopeFromRequest(ctx context.Context, r *http.Request) (Scope, error) {
+	scope, err := s.scopeFromCredential(ctx, r)
+	if err == nil && ProfileMismatch(r, scope) {
+		return Scope{}, ErrProfileMismatch
+	}
+	return scope, err
+}
+
+func (s *Service) scopeFromCredential(ctx context.Context, r *http.Request) (Scope, error) {
 	if bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		token := strings.TrimSpace(bearer)
 		if strings.HasPrefix(token, store.ScopedKeyPrefix) {
@@ -372,7 +414,7 @@ func (s *Service) ScopeFromScopedKey(ctx context.Context, key string) (Scope, er
 	scope.ProfileID = profile.ID
 	scope.Profile = profile.Kind
 	scope.LibraryIDs = profile.Library
-	scope.Certification = s.certificationConstraints(profile.CertificationCeilings)
+	scope.Certification = s.CertificationConstraints(profile.CertificationCeilings)
 	if profile.Kind == store.ProfileManaged {
 		scope.GrantedMediaIDs, _ = s.store.GrantedMediaIDsForProfile(ctx, profile.ID)
 	}
@@ -406,7 +448,7 @@ func (s *Service) ReauthorizeProfileScope(ctx context.Context, scope Scope, prof
 	if !scope.AllLibraries {
 		scope.LibraryIDs = append([]store.LibraryID(nil), profile.Library...)
 	}
-	scope.Certification = s.certificationConstraints(profile.CertificationCeilings)
+	scope.Certification = s.CertificationConstraints(profile.CertificationCeilings)
 	scope.GrantedMediaIDs = nil
 	if profile.Kind == store.ProfileManaged {
 		scope.GrantedMediaIDs, _ = s.store.GrantedMediaIDsForProfile(ctx, profile.ID)
@@ -511,6 +553,9 @@ func (s *Service) scope(ctx context.Context, sessionID store.SessionID, credenti
 	if profile.Kind == store.ProfileManaged {
 		if err := s.enforceProfileAccessSchedule(ctx, profile, session.ID); err != nil {
 			noteCredentialRefusal(ctx, RefusalOutsideSchedule)
+			if errors.Is(err, ErrAccessOutsideSchedule) {
+				err = &sessionScheduleRefusal{snapshot: SessionBinding{SessionID: session.ID, ProfileID: profile.ID, DeviceID: session.DeviceID}}
+			}
 			return Scope{}, err
 		}
 	}
@@ -545,7 +590,7 @@ func (s *Service) scope(ctx context.Context, sessionID store.SessionID, credenti
 		AdminUntil:        adminUntil,
 		ExpiresAt:         session.ExpiresAt,
 		LibraryIDs:        profile.Library,
-		Certification:     s.certificationConstraints(profile.CertificationCeilings),
+		Certification:     s.CertificationConstraints(profile.CertificationCeilings),
 		GrantedMediaIDs:   grantedIDs,
 	}, nil
 }
@@ -775,7 +820,7 @@ func (s *Service) IntegrationScope(ctx context.Context, token string, required s
 	}
 	bearer.SessionKind = store.SessionKindIntegration
 	bearer.ProfileID, bearer.Profile, bearer.LibraryIDs = profile.ID, profile.Kind, profile.Library
-	bearer.Certification = s.certificationConstraints(profile.CertificationCeilings)
+	bearer.Certification = s.CertificationConstraints(profile.CertificationCeilings)
 	return bearer, nil
 }
 

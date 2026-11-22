@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -183,5 +184,54 @@ func TestScanJobRunBudgetStartsAtFirstCheckpoint(t *testing.T) {
 	}
 	if summary := completedScanSummary(t, st, job.ID); summary.FilesChecked != files || summary.Added != files {
 		t.Fatalf("resumed scan summary = %+v, want all %d files added", summary, files)
+	}
+}
+
+// TestScanJobQueuedForADeletedLibraryDoesNoWork: a scan queued before its
+// Library was deleted completes on its claim without walking its folder
+// (CORE-1279).
+func TestScanJobQueuedForADeletedLibraryDoesNoWork(t *testing.T) {
+	// feature:scan-pipeline
+	ctx := context.Background()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "clip.mp4"), []byte("clip"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(ctx, "Clips", false, "filmtv", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := NewJob(JobRequest{ID: "job-deleted-library", LibraryID: library.ID, Root: root, CreatedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnqueueJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteLibrary(ctx, library.ID); err != nil {
+		t.Fatal(err)
+	}
+	registry := jobs.NewRegistry(st, "worker")
+	registry.Register(JobKind, Handler(st, nil, nil, nil, nil, nil))
+	if _, err := registry.RunOne(ctx, nil, time.Now().UTC()); err != nil {
+		t.Fatalf("RunOne: %v", err)
+	}
+	got, err := st.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != store.JobStatusCompleted {
+		t.Fatalf("status = %q, want completed without work", got.Status)
+	}
+	// The scan never walked: it records no summary of a folder it checked.
+	events, err := st.ListJobEvents(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.Type == ScanSummaryEvent {
+			t.Fatalf("scan walked a deleted library's folder: %s", event.Payload)
+		}
 	}
 }

@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@/lib/api";
+import { ApiError, getExpectedProfile, noteProfileRefusal } from "@/lib/api";
 import {
   advanceCompatibilityEpoch,
   isBlocked,
@@ -1331,5 +1331,115 @@ describe("SessionProvider identity-epoch fetch lifecycle", () => {
     );
     expect(screen.getByTestId("profile")).toHaveTextContent("p2");
     expect(vi.mocked(fetchManifest)).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("SessionProvider names its Profile on requests (CORE-2923)", () => {
+  const mismatch = {
+    errors: [{ message: "x", extensions: { code: "CONFLICT", reason: "PROFILE_MISMATCH" } }],
+  };
+
+  it("names the Profile it read on a switch, and none while the switch is loading", async () => {
+    const switched = deferred<SessionInfo>();
+    vi.mocked(fetchCurrentSession)
+      .mockResolvedValueOnce(p1Session)
+      .mockReturnValueOnce(switched.promise);
+    const user = userEvent.setup();
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("profile")).toHaveTextContent("p1"));
+    expect(getExpectedProfile()).toBe("p1");
+
+    let namedBySwitch: string | undefined = "unset";
+    vi.mocked(switchProfileMutation).mockImplementationOnce(async () => {
+      namedBySwitch = getExpectedProfile();
+      return p2Session;
+    });
+    await user.click(screen.getByRole("button", { name: "Switch" }));
+    // The switch mutation still names the Profile this tab shows, so a stale
+    // tab's switch is refused; the reads after it name none.
+    expect(namedBySwitch).toBe("p1");
+    expect(getExpectedProfile()).toBeUndefined();
+    await act(async () => {
+      switched.resolve(p2Session);
+      await switched.promise;
+    });
+    await waitFor(() => expect(screen.getByTestId("profile")).toHaveTextContent("p2"));
+    expect(getExpectedProfile()).toBe("p2");
+  });
+
+  it("reloads to the session's Profile when a request for the shown one is refused", async () => {
+    vi.mocked(fetchCurrentSession)
+      .mockResolvedValueOnce(p1Session)
+      .mockResolvedValueOnce(p2Session);
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("profile")).toHaveTextContent("p1"));
+    vi.mocked(fetchManifest).mockResolvedValue(p2Manifest);
+    vi.mocked(fetchProfiles).mockResolvedValue(p2Roster);
+
+    // Another tab switched the shared session to p2; this tab's next write is refused.
+    act(() => noteProfileRefusal("p1", 409, mismatch));
+
+    await waitFor(() => expect(screen.getByTestId("profile")).toHaveTextContent("p2"));
+    expect(screen.getByTestId("manifest")).toHaveTextContent("p2-current-epoch-home");
+    expect(fetchCurrentSession).toHaveBeenCalledTimes(2);
+    expect(getExpectedProfile()).toBe("p2");
+
+    // A late refusal for p1 arrives after the tab moved on: nothing reloads.
+    act(() => noteProfileRefusal("p1", 409, mismatch));
+    expect(fetchCurrentSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("names the shown Profile on the Reveal mutation, so a stale tab's PIN is refused", async () => {
+    vi.mocked(fetchCurrentSession).mockResolvedValue(p1Session);
+    let namedByReveal: string | undefined = "unset";
+    vi.mocked(revealMutation).mockImplementationOnce(async () => {
+      namedByReveal = getExpectedProfile();
+      return { revealed: true } as Awaited<ReturnType<typeof revealMutation>>;
+    });
+    const user = userEvent.setup();
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(getExpectedProfile()).toBe("p1"));
+    await user.click(screen.getByRole("button", { name: "Reveal" }));
+    await waitFor(() => expect(revealMutation).toHaveBeenCalled());
+    expect(namedByReveal).toBe("p1");
+  });
+
+  it("ignores refusals that are not a Profile mismatch", async () => {
+    vi.mocked(fetchCurrentSession).mockResolvedValueOnce(p1Session);
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("profile")).toHaveTextContent("p1"));
+    act(() => {
+      noteProfileRefusal("p1", 409, { error: "conflict", code: "CONFLICT" });
+      noteProfileRefusal("p1", 400, { reason: "PROFILE_MISMATCH" });
+    });
+    expect(fetchCurrentSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("names no Profile once unmounted", async () => {
+    vi.mocked(fetchCurrentSession).mockResolvedValueOnce(p1Session);
+    const { unmount } = render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(getExpectedProfile()).toBe("p1"));
+    unmount();
+    expect(getExpectedProfile()).toBeUndefined();
   });
 });

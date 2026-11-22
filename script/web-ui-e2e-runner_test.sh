@@ -31,7 +31,9 @@ ceiling_scale=$((ceiling_scale * scale))
 HANG_RUNNER_TIMEOUT_SECONDS=$((10 * scale))
 # Stall budget for the slow case. The first fake npm invocation keeps beating for longer than
 # this; the runner's own silent steps between invocations (node, python) must fit within it.
-SLOW_STALL_SECONDS=$((20 * scale))
+# Load-scaled like the ceilings: on an overloaded host those silent steps alone can outrun a
+# fixed budget, and the slow case then fails as a stall it never had.
+SLOW_STALL_SECONDS=$((20 * ceiling_scale))
 # Ceilings. Runner timer for cases that must not time out (success, failure, leftover, livesibling):
 LONG_RUNNER_TIMEOUT_SECONDS=$((60 * ceiling_scale))
 # Independent backstop that SIGKILLs a case's whole process group; also bounds readiness waits.
@@ -46,6 +48,7 @@ KILL_WAIT_TICKS=$((600 * ceiling_scale))
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/beamfall-web-e2e-runner-test.XXXXXX")"
 ACTIVE_PIDS=()
 ACTIVE_GROUPS=()
+CURRENT_CASE_DIR=""
 PASS=0
 FAIL=0
 
@@ -56,6 +59,15 @@ cleanup() {
     kill -KILL -- "-${pgid}" 2>/dev/null || true
     wait "${pgid}" 2>/dev/null || true
   done
+  # CORE-0014: the full runner and the supervisor move commands into their own sessions, which the
+  # runner group kill above never reaches. A finished case was already reaped and checked; only the
+  # case in flight (the selftest itself was interrupted) can still own live sessions. The launcher
+  # is stopped first, and a second pass catches a session recorded while the first one ran.
+  if [[ -n "${CURRENT_CASE_DIR}" ]]; then
+    reap_case_processes "${CURRENT_CASE_DIR}"
+    sleep 0.2
+    reap_case_processes "${CURRENT_CASE_DIR}"
+  fi
   for pid in "${ACTIVE_PIDS[@]+"${ACTIVE_PIDS[@]}"}"; do
     kill -KILL "${pid}" 2>/dev/null || true
     wait "${pid}" 2>/dev/null || true
@@ -65,6 +77,36 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+# Process groups a case recorded at launch: every metadata/*.group file and the full runner's
+# output/runner-process-group. Recorded by the process itself when it started, never looked up later
+# from a pid that may have been recycled, nor by command name (concurrent copies of this test share
+# names). Never the selftest's own group.
+case_groups() {
+  local case_dir="$1" file pgid own
+  own="$(ps -o pgid= -p "$$" | tr -d ' ')"
+  for file in "${case_dir}"/metadata/*.group "${case_dir}/output/runner-process-group"; do
+    [[ -s "${file}" ]] || continue
+    pgid="$(tr -d ' \n' <"${file}")"
+    if [[ "${pgid}" =~ ^[0-9]+$ && "${pgid}" -gt 1 && "${pgid}" != "${own}" ]]; then
+      printf '%s\n' "${pgid}"
+    fi
+  done | sort -u
+}
+
+group_alive() {
+  ps -A -o pgid= | awk -v g="$1" '$1 == g { found = 1 } END { exit !found }'
+}
+
+# SIGKILLs every process group a case recorded. Each fake process records its own group, so the
+# groups cover every recorded pid. A SIGKILLed runner skips its EXIT trap, so this is the only path
+# that stops the sessions its supervisor created.
+reap_case_processes() {
+  local case_dir="$1" pgid
+  for pgid in $(case_groups "${case_dir}"); do
+    kill -KILL -- "-${pgid}" 2>/dev/null || true
+  done
+}
 
 ok() {
   PASS=$((PASS + 1))
@@ -181,6 +223,7 @@ trap '' INT TERM
 role="$1"
 metadata="$2"
 printf '%s\n' "$$" >"${metadata}/${role}.pid"
+ps -o pgid= -p "$$" | tr -d ' ' >"${metadata}/${role}.group"
 if [[ "${BEAMFALL_RUNNER_TEST_MODE:?}" == success || "${BEAMFALL_RUNNER_TEST_MODE}" == slow ]]; then
   bash -c 'printf "%s\n" "$$" >"$1"; sleep 0.05' \
     "${role}-child" "${metadata}/${role}-child.pid" &
@@ -206,6 +249,9 @@ printf '%s\n' "${invocation}" >"${metadata}/invocations"
 printf '%s\n' "$@" >>"${metadata}/args"
 printf '%s\n' "${BEAMFALL_E2E_URL:-}" >"${metadata}/url"
 printf '%s\n' "${BEAMFALL_WEB_E2E_SMOKE_GATE:-}" >"${metadata}/smoke-gate"
+# CORE-0014: the group this invocation runs in (the supervisor's session), so the harness can reap
+# it when a case is killed at the deadline.
+ps -o pgid= -p "$$" | tr -d ' ' >"${metadata}/npm-${invocation}.group"
 
 # Progress report the smoke runner's stall watchdog reads (the full runner sets no heartbeat).
 # Startup beats, so the stall budget counts from readiness and not from how long a loaded host
@@ -287,7 +333,7 @@ run_case() {
   local load_attribution="${5:-1000000}"
   local runner="${ROOT}/script/web-ui-e2e-${runner_name}.sh"
   local case_dir="${TMP}/${runner_name}-${mode}-${signal:-none}${5:+-load${5}}"
-  local runner_pid watchdog_pid status=0 pid_file pid
+  local runner_pid watchdog_pid status=0 pid_file pid pgid deadline
   local runner_timeout_seconds="${LONG_RUNNER_TIMEOUT_SECONDS}"
   # Only the silent hang case without a signal tests the runner's timer. The INT and TERM cases
   # test signal handling: their timer outlasts the harness deadline, which bounds the readiness
@@ -300,6 +346,7 @@ run_case() {
     runner_timeout_seconds="${SLOW_STALL_SECONDS}"
   fi
   mkdir -p "${case_dir}/metadata" "${case_dir}/output"
+  CURRENT_CASE_DIR="${case_dir}"
 
   local leftover_pid=""
   local sibling_pid=""
@@ -375,8 +422,12 @@ except ProcessLookupError:
   wait "${watchdog_pid}" 2>/dev/null || true
   forget_pid "${watchdog_pid}"
 
+  local case_groups_before
+  case_groups_before="$(case_groups "${case_dir}")"
   if [[ -e "${case_dir}/harness-timeout" ]]; then
     bad "${runner_name} ${mode} exceeded the independent test deadline"
+    # The deadline SIGKILLed the runner's group only: stop the supervised sessions it left behind.
+    reap_case_processes "${case_dir}"
   fi
 
   if [[ "${status}" -eq "${expected}" ]]; then
@@ -391,6 +442,20 @@ except ProcessLookupError:
     pid="$(<"${pid_file}")"
     assert_process_gone "${pid}" "${runner_name} ${mode} $(basename "${pid_file}")"
   done
+  # CORE-0014: no process group the case started survives it.
+  local group_survived=0
+  for pgid in ${case_groups_before}; do
+    deadline=$((SECONDS + EXIT_WAIT_SECONDS))
+    while group_alive "${pgid}" && [[ "${SECONDS}" -lt "${deadline}" ]]; do sleep 0.02; done
+    if group_alive "${pgid}"; then
+      bad "${runner_name} ${mode} process group ${pgid} survived"
+      group_survived=1
+    else
+      ok "${runner_name} ${mode} process group ${pgid} retired"
+    fi
+  done
+  # A detected leak is a failure, not a reason to leave the group running past the selftest.
+  if [[ "${group_survived}" -eq 1 ]]; then reap_case_processes "${case_dir}"; fi
   if kill -0 "${sentinel_pid}" 2>/dev/null; then
     ok "${runner_name} ${mode} leaves unrelated process"
   else
@@ -423,6 +488,7 @@ except ProcessLookupError:
   fi
   kill -KILL -- "-${runner_pid}" 2>/dev/null || true
   forget_group "${runner_pid}"
+  CURRENT_CASE_DIR=""
 }
 
 # CORE-0941: a progressing run (its first invocation alone longer than the stall budget) still passes

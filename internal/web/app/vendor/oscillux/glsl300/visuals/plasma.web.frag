@@ -560,6 +560,223 @@ vec3 tonemap(vec3 x) {
     return pow(clamp(x, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
 }
 
+// SPDX-License-Identifier: AGPL-3.0-only
+// Shared helpers for the Oscillux originals, joined after library.glsl: the
+// beat-locked flight speed, the eased roll, the detail level the host can
+// afford and a few common shapes. Every function is a pure function of its
+// arguments, so all targets agree.
+
+// Speed profile, in distance per beat, over a 32-beat cycle: cruise, build,
+// burst, a hard brake, a slow breakdown drift, then a build to a final burst.
+float osBeatSpeed(float n) {
+    float k = mod(n, 32.0);
+    if (k < 4.0) return 1.0;
+    if (k < 8.0) return 1.0 + 0.3 * (k - 3.0);
+    if (k < 12.0) return 3.5;
+    if (k < 13.0) return 1.6;
+    if (k < 14.0) return 0.45;
+    if (k < 20.0) return 0.9 + 0.1 * (k - 14.0);
+    if (k < 24.0) return 0.6;
+    if (k < 28.0) return 1.5 + 0.75 * (k - 24.0);
+    if (k < 31.0) return 4.5;
+    return 2.4;
+}
+
+// The flight state is a pure function of the uniforms, so every target and
+// frame rate computes the same camera. Within a beat the speed ramps linearly
+// from this beat's value to the next one's, so velocity never jumps and the
+// distance is its exact integral. x = distance, y = speed in beats' units.
+vec2 osFlight(VisualUniforms u, float cruise, float surge) {
+    float n = floor(u.beatCount);
+    float cycle = 0.0;
+    float before = 0.0;
+    float k0 = n - mod(n, 32.0);
+    for (int i = 0; i < 32; i++) {
+        float k = k0 + float(i);
+        float seg = 0.5 * (osBeatSpeed(k) + osBeatSpeed(k + 1.0));
+        cycle += seg;
+        before += k < n ? seg : 0.0;
+    }
+    float ph = saturate(u.beatPhase);
+    float v0 = osBeatSpeed(n);
+    float v1 = osBeatSpeed(n + 1.0);
+    float beats = floor(n / 32.0) * cycle + before + v0 * ph + 0.5 * (v1 - v0) * ph * ph;
+    float v = mix(v0, v1, ph);
+    // A fifth of the motion is steady; the rest follows the profile, so a burst
+    // runs about four times cruise and a brake drops to about half.
+    return vec2(u.time * cruise * 0.2 + beats * (cruise * 0.4 + surge), v);
+}
+
+// Detail the host can afford: 1, the default, down to 0. Hosts lower it with
+// presentation1.y, a reduction in [0, 1], to hold their frame rate.
+float osDetail(VisualUniforms u) { return 1.0 - saturate(u.presentation1.y); }
+
+// Bank angle: every eight beats the roll picks a new side (a golden-angle
+// walk) and eases toward it across the whole span, so it never stops and starts.
+float osBank(VisualUniforms u, float amount) {
+    float b = (u.beatCount + saturate(u.beatPhase)) / 8.0;
+    float k = floor(b);
+    return amount * mix(sin(k * 2.39996), sin((k + 1.0) * 2.39996), smoothstep(0.0, 1.0, b - k));
+}
+
+// Ray direction for a camera at ro looking at ta, rolled by roll, with
+// focal length fov (larger is narrower). p is the centred pixel position.
+vec3 osCamera(vec3 ro, vec3 ta, float roll, float fov, vec2 p) {
+    vec3 fw = normalize(ta - ro);
+    vec3 up = vec3(sin(roll), cos(roll), 0.0);
+    vec3 rt = normalize(cross(fw, up));
+    vec3 cu = cross(rt, fw);
+    return normalize(p.x * rt + p.y * cu + fov * fw);
+}
+
+float osBox(vec3 p, vec3 b) {
+    vec3 q = abs(p) - b;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+// Smooth union with blend radius k.
+float osSmin(float a, float b, float k) {
+    float h = saturate(0.5 + 0.5 * (b - a) / k);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// Round a march step count from a detail-scaled float, so every target
+// agrees on the count.
+int osSteps(float lo, float hi, float detail) { return int(mix(lo, hi, detail) + 0.5); }
+
+// ---- vivid palettes ----
+// In the hosts' free palette mode (palette.x < 0) the originals read this set
+// instead of the library's: sixteen loops of five saturated stops in linear
+// light, each a few hue families with a contrasting accent. palette.z tours
+// them, cross-fading from one to the next, and also walks t by a quarter loop
+// per palette (four whole loops per tour, so the wrap is seamless), so a visual
+// that reads only a narrow range of t still meets every stop. Manifest mode
+// (palette.x >= 0) keeps the library palettes, so reference renders do not
+// change.
+const vec3 OS_PAL[80] = vec3[80](
+    vec3(1.000, 0.033, 0.133), vec3(1.000, 0.262, 0.010), vec3(1.000, 0.807, 0.010), vec3(0.033, 1.000, 0.262), vec3(0.000, 0.578, 1.000), // 0 tropicPunch
+    vec3(0.000, 0.784, 1.000), vec3(0.027, 0.105, 1.000), vec3(0.479, 0.022, 1.000), vec3(1.000, 0.027, 0.309), vec3(1.000, 0.323, 0.014), // 1 synthSunset
+    vec3(0.000, 1.000, 0.578), vec3(0.000, 0.392, 1.000), vec3(1.000, 0.078, 0.366), vec3(1.000, 0.434, 0.000), vec3(1.000, 0.102, 0.037), // 2 lagoonPop
+    vec3(0.565, 1.000, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.000, 0.100), vec3(0.000, 1.000, 0.195), // 3 acidCitrus
+    vec3(0.000, 0.871, 1.000), vec3(0.000, 0.133, 1.000), vec3(1.000, 0.047, 0.000), vec3(1.000, 0.552, 0.000), vec3(1.000, 0.000, 0.156), // 4 iceFire
+    vec3(0.000, 1.000, 0.332), vec3(0.000, 0.658, 1.000), vec3(0.047, 0.102, 0.991), vec3(1.000, 0.823, 0.000), vec3(0.328, 1.000, 0.000), // 5 electricMint
+    vec3(1.000, 0.347, 0.000), vec3(1.000, 0.074, 0.000), vec3(0.791, 0.000, 0.195), vec3(0.144, 0.000, 0.905), vec3(0.000, 0.539, 1.000), // 6 mangoBerry
+    vec3(1.000, 0.050, 0.371), vec3(1.000, 0.347, 0.050), vec3(1.000, 0.784, 0.050), vec3(0.050, 1.000, 0.434), vec3(0.050, 0.479, 1.000), // 7 candyShop
+    vec3(0.000, 1.000, 0.235), vec3(0.000, 0.745, 0.565), vec3(0.000, 0.296, 1.000), vec3(0.254, 0.024, 1.000), vec3(1.000, 0.028, 0.631), // 8 aurora
+    vec3(1.000, 0.014, 0.014), vec3(1.000, 0.144, 0.000), vec3(1.000, 0.479, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.000, 0.212), // 9 lavaLamp
+    vec3(0.784, 1.000, 0.000), vec3(0.000, 1.000, 0.133), vec3(0.000, 0.694, 1.000), vec3(0.000, 0.080, 1.000), vec3(1.000, 0.434, 0.000), // 10 cyberLime
+    vec3(1.000, 0.102, 0.114), vec3(1.000, 0.026, 0.301), vec3(0.397, 0.045, 1.000), vec3(0.026, 0.198, 1.000), vec3(0.000, 0.807, 0.565), // 11 coralReef
+    vec3(1.000, 0.631, 0.000), vec3(1.000, 0.254, 0.000), vec3(1.000, 0.044, 0.044), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.871, 0.074), // 12 goldRush
+    vec3(0.000, 0.010, 1.000), vec3(0.000, 0.283, 1.000), vec3(0.000, 0.913, 0.658), vec3(0.328, 1.000, 0.000), vec3(1.000, 0.791, 0.000), // 13 deepNeon
+    vec3(1.000, 0.195, 0.565), vec3(0.571, 0.205, 1.000), vec3(0.195, 0.392, 1.000), vec3(0.195, 1.000, 0.745), vec3(1.000, 0.871, 0.195), // 14 bubbleTea
+    vec3(1.000, 0.000, 0.091), vec3(0.133, 0.000, 1.000), vec3(0.000, 0.451, 1.000), vec3(0.000, 1.000, 0.665), vec3(0.468, 1.000, 0.000) // 15 neonTokyo
+);
+const float OS_PAL_COUNT = 16.0;
+
+// Linear mix that keeps the endpoints' channel range, so a blend between two
+// saturated colours stays saturated instead of passing through grey.
+vec3 osVividMix(vec3 a, vec3 b, float w) {
+    vec3 m = mix(a, b, w);
+    float lo = min(m.r, min(m.g, m.b)), hi = max(m.r, max(m.g, m.b));
+    float tlo = mix(min(a.r, min(a.g, a.b)), min(b.r, min(b.g, b.b)), w);
+    float thi = mix(max(a.r, max(a.g, a.b)), max(b.r, max(b.g, b.b)), w);
+    return tlo + (m - lo) * ((thi - tlo) / max(hi - lo, 1e-3));
+}
+
+vec3 osPalLoop(float t, int idx) {
+    float f = fract(t) * 5.0;
+    int i = int(floor(f));
+    i = clamp(i, 0, 4);
+    int j = i == 4 ? 0 : i + 1;
+    return osVividMix(OS_PAL[idx * 5 + i], OS_PAL[idx * 5 + j], smoothstep(0.0, 1.0, f - float(i)));
+}
+
+vec3 osPalVisual(float t, VisualUniforms u) {
+    if (u.palette.x >= 0.0) return palVisual(t, u);
+    float phase = u.palette.z;
+    int a = int(mod(floor(phase), OS_PAL_COUNT));
+    int b = int(mod(float(a + 1), OS_PAL_COUNT));
+    float blend = smoothstep(0.18, 0.82, fract(phase));
+    float nudge = phase * 0.25 + u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    return osVividMix(osPalLoop(t + nudge, a), osPalLoop(t + nudge, b), blend);
+}
+
+// The calm visuals' audio response, 0..0.25: the music's level, which rises
+// and falls with the song, scaled by the sensitivity. Not the kick: a calm
+// visual's light never jumps on the beat.
+float osCalmBreath(VisualUniforms u) {
+    return 0.25 * saturate(u.level) * (0.5 + 0.5 * u.sensitivity);
+}
+
+// The calm visuals' palette read: the visual's own library palette `own`
+// (its manifest palette) at t, with no beat or spectral nudge. Under the vivid
+// palette tour (palette.x < 0) a calm visual keeps `own`: the tour moves
+// through sixteen neon palettes of very different brightness every few
+// seconds, which turns a moonlit sea orange and swells the light, so vivid
+// leaves a calm visual only its present-pass saturation. A host's manifest
+// palette (palette.x >= 0) still replaces it.
+vec3 osPalCalm(float t, int own, VisualUniforms u) {
+    return palByIndex(t, u.palette.x >= 0.0 ? int(floor(u.palette.x + 0.5)) : own);
+}
+
+// The library's palette roles, reading osPalVisual.
+vec3 osPalRoleTrace(float t, VisualUniforms u) { return osPalVisual(t + 0.03 * u.beatPhase, u); }
+vec3 osPalRoleBass(float t, VisualUniforms u) {
+    vec3 hot = osPalVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 body = osPalVisual(t + 0.10, u);
+    return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
+}
+vec3 osPalRoleTreble(float t, VisualUniforms u) {
+    vec3 spark = osPalVisual(0.62 + t * 0.28 + 0.10 * u.spectralCentroid, u);
+    return peakWhite(spark, u.treble * u.onset * 0.14);
+}
+vec3 osPalRolePeak(float t, VisualUniforms u) {
+    return peakWhite(osPalVisual(t + 0.08 * u.spectralCentroid, u), saturate(u.onset * 0.18 + u.bassImpact * 0.10));
+}
+vec3 osPalRoleFog(float t, VisualUniforms u) {
+    vec3 c = osPalVisual(t + 0.04 * u.spectralCentroid, u);
+    return mix(vec3(luma(c) * 0.62), c, 0.42);
+}
+vec3 osPalRoleRim(float t, VisualUniforms u) {
+    return mix(osPalVisual(t, u), osPalRolePeak(t + 0.18, u), 0.35 + 0.35 * u.flux);
+}
+
+// Every original finishes through osOffRed. The present pass grades with the vivid saturation
+// and vibrance (palette.rs), which pushes a nearly pure red past the 0.8 red share at which the
+// flash limiter counts saturated red and holds it. Where green plus blue is under 0.55 of red
+// (linear light), both rise by half the difference, so the graded red presents under a 0.77
+// share. Near black the present dither can still split a dim red into a saturated-red byte
+// triple such as (1, 0, 0), so a dim colour becomes exactly grey and a dim red loses its excess
+// over green and blue, which then ramps back in (limiter-red-expire-black, design.md section 3;
+// tools/shader/test-originals-red.mjs). A quality measure: the frame limiter carries the safety
+// claim. NaN becomes 0 by a boolean select, exact on targets honouring IEEE NaN.
+const float OS_GREY_BELOW = 0.006;  // below it the colour becomes exactly grey
+const float OS_RED_FROM = 0.012;    // below it red is at most the larger of green and blue
+const float OS_RED_FULL = 0.05;     // red's excess is whole from here, and red returned as it stands
+vec3 osOffRed(vec3 c) {
+    c = mix(c, vec3(0.0), notEqual(c, c));      // NaN -> 0
+    c = clamp(c, vec3(0.0), vec3(16.0));
+    float s = c.g + c.b, t = 0.55 * c.r;        // gated on the rounded sum and product, so a
+    if (s < t) c += vec3(0.0, 0.5 * (t - s), 0.5 * (t - s));  // colour that meets the share is kept
+    float m = max(c.r, max(c.g, c.b));
+    if (m < OS_GREY_BELOW) return vec3(luma(c));  // three identical channels
+    float p = max(c.g, c.b);
+    if (c.r > p && m < OS_RED_FULL) {           // no saturated red byte from the present dither
+        float w = clamp((m - OS_RED_FROM) / (OS_RED_FULL - OS_RED_FROM), 0.0, 1.0);
+        c.r = w <= 0.0 ? p : p + w * (c.r - p);  // red equal to a partner below OS_RED_FROM
+    }
+    return c;
+}
+
+// Everything joined after this file reads the vivid set through the usual names.
+#define palVisual osPalVisual
+#define palRoleTrace osPalRoleTrace
+#define palRoleBass osPalRoleBass
+#define palRoleTreble osPalRoleTreble
+#define palRolePeak osPalRolePeak
+#define palRoleFog osPalRoleFog
+#define palRoleRim osPalRoleRim
+
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
@@ -574,14 +791,26 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
-// Plasma — a domain-warped, self-folding colour field of ionized gas.
-// Two nested warps of a rotated-octave fbm fold the field into flowing lobes,
-// shaded on a temperature ramp (cool sheath -> vivid body -> hot crest). Bass
-// deepens the fold, mids steer the flow, treble frays crests into fine glints,
-// and beats/onsets discharge along crests and sheath only (never a full-frame pulse).
+// Plasma.
+// A domain-warped, self-folding sheet of ionized gas, lit as a glossy surface.
+// Two nested warps of a smooth rotated-octave fbm fold the field into broad lobes,
+// shaded on a temperature ramp (black void, vivid body, hot crest). The field
+// is also a height: a key light rakes across it, so lobes read as raised,
+// wet folds with specular sheen. The palette's opposite hue is the ion colour:
+// a sheath on the gas edge and clean pixel-width contour lines that nest
+// round every lobe and creep outward, with packets of charge streaming along
+// them. The flow advances on the shared 32-beat speed profile, so it
+// cruises, surges, brakes and drifts, and the gas runs hotter through bursts;
+// the view turns slowly on the eased bank. Bass deepens the fold, mids steer
+// the flow, treble frays crests into glints, and each beat sends a crisp
+// discharge line through the gas from a re-seeded point, lighting the
+// contours it crosses; it eases in and spreads slowly, so it never sweeps a
+// large area at once (never a full-frame pulse). The palette never shifts
+// with the beat or the timbre, and under the vivid palette tour the colours
+// change hue but keep their brightness.
 // param0 = Scale ; param1 = Turbulence ; param2 = Filaments
 
-float plz_noise(vec2 p) {
+float plzNoise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
     vec2 w = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     float a = hash21(i);
@@ -591,92 +820,241 @@ float plz_noise(vec2 p) {
     return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);
 }
 
-// Rotated octaves: no axis-aligned grain.
-float plz_fbm(vec2 p) {
+// Rotated octaves: no axis-aligned grain. n octaves (3 or 4), normalised.
+float plzFbm(vec2 p, int n) {
     const mat2 R = mat2(0.80, 0.60, -0.60, 0.80);
-    float v = 0.0, a = 0.5;
+    float v = 0.0, a = 0.5, s = 0.0;
     for (int i = 0; i < 4; ++i) {
-        v += a * plz_noise(p);
+        if (i >= n) break;
+        v += a * plzNoise(p);
+        s += a;
         p = R * p * 2.03 + vec2(1.7, 9.2);
         a *= 0.5;
     }
-    return v / 0.9375;
+    return v / s;
 }
 
-vec3 visual(vec2 uv, VisualUniforms u) {
+// Complementary accent: the colour reflected through the grey axis (a 180
+// degree hue turn), renormalised so its brightest channel is 1. Derived from
+// the palette, so every palette gets its own opposite.
+vec3 plzOpposite(vec3 c) {
+    vec3 o = max(vec3(2.0 * dot(c, vec3(0.33333))) - c, vec3(0.0));
+    return o / max(max(o.r, max(o.g, o.b)), 0.08);
+}
+
+// The palette read without osPalVisual's per-beat and spectral-centroid hue
+// nudge (common.glsl), and with its brightness evened out, so the gas never
+// shifts colour with the beat or the timbre and the vivid palette tour's
+// cross-fades change hue, not brightness (manifest mode has no nudge or tour).
+vec3 plzPalStill(float t, VisualUniforms u) {
+    if (u.palette.x >= 0.0) return palVisual(t, u);
+    vec3 c = palVisual(t - 0.015 * u.beatPhase - 0.08 * u.spectralCentroid, u);
+    return c * pow(0.3 / max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 0.02), 0.75);
+}
+
+// The palette read once per pixel at its five stops and blended here; the
+// library read walks the whole stop table on every call.
+struct PlzPalette { vec3 c0; vec3 c1; vec3 c2; vec3 c3; vec3 c4; };
+
+PlzPalette plzPalLoad(VisualUniforms u) {
+    PlzPalette P;
+    P.c0 = plzPalStill(0.0, u);
+    P.c1 = plzPalStill(0.26, u);
+    P.c2 = plzPalStill(0.52, u);
+    P.c3 = plzPalStill(0.78, u);
+    P.c4 = plzPalStill(0.999, u);
+    return P;
+}
+
+vec3 plzPal(PlzPalette P, float t) {
+    t = fract(t) * 4.0;
+    vec3 c = mix(P.c0, P.c1, smoothstep(0.0, 1.0, t));
+    c = mix(c, P.c2, smoothstep(1.0, 2.0, t));
+    c = mix(c, P.c3, smoothstep(2.0, 3.0, t));
+    return mix(c, P.c4, smoothstep(3.0, 4.0, t));
+}
+
+// Speed over the shared 32-beat profile, as osFlight, with the cycle's
+// running distance read from a table instead of summed per pixel.
+const float PLZ_RUN[33] = float[33](0.0, 1.0, 2.0, 3.0, 4.15, 5.6, 7.35, 9.4, 12.25, 15.75, 19.25, 22.75, 25.3, 26.325, 27.0, 27.95, 29.0, 30.15, 31.4, 32.75, 33.75, 34.35, 34.95, 35.55, 36.6, 38.475, 41.1, 44.475, 48.6, 53.1, 57.6, 61.05, 62.75);
+vec2 plzFlight(VisualUniforms u, float cruise, float surge) {
+    float n = floor(u.beatCount);
+    int k = int(mod(n, 32.0));
+    float ph = saturate(u.beatPhase);
+    float v0 = osBeatSpeed(n);
+    float v1 = osBeatSpeed(n + 1.0);
+    float beats = floor(n / 32.0) * PLZ_RUN[32] + PLZ_RUN[k] + v0 * ph + 0.5 * (v1 - v0) * ph * ph;
+    return vec2(u.time * cruise * 0.2 + beats * (cruise * 0.4 + surge), mix(v0, v1, ph));
+}
+
+vec3 osBody(vec2 uv, VisualUniforms u) {
     vec2 p = motionCentered(uv, u);
     float scale = mix(0.62, 1.45, u.param0);
     float turb = mix(0.6, 1.4, u.param1);
     float filGain = mix(0.4, 1.6, u.param2);
+    float detail = osDetail(u);
+    int oct = detail > 0.5 ? 3 : 2;
 
-    float bass = clamp(u.bass, 0.0, 1.0);
-    float mid = clamp(u.mid, 0.0, 1.0);
-    float treble = clamp(u.treble, 0.0, 1.0);
-    float level = clamp(u.level, 0.0, 1.0);
+    float bass = saturate(u.bass);
+    float mid = saturate(u.mid);
+    float treble = saturate(u.treble);
+    float level = saturate(u.level);
 
-    // Slow drift in silence; the field never freezes.
-    float t = u.time * 0.045;
-    vec2 sp = p * scale * 0.9;
+    // Flow distance on the speed profile: the gas advects faster in a burst and
+    // nearly stalls in a brake, and the whole sheet drifts past along a slowly
+    // turning heading. Audio never moves the view.
+    PlzPalette P = plzPalLoad(u);
+    vec2 fl = plzFlight(u, 0.7, 0.1);
+    float t = fl.x * 0.028;
+    float rush = saturate((fl.y - 1.0) / 3.5);
+    float heading = 0.6 + 0.05 * u.time * 0.1 + osBank(u, 0.5);
+    p = rot2(osBank(u, 0.12) + 0.004 * mod(u.time, 1570.0)) * p;
+    vec2 sp = p * scale * 0.55 + vec2(cos(heading), sin(heading)) * t * 2.2;
 
     // First warp: large lobes. Mids steer them sideways (bounded offset).
     vec2 steer = vec2(0.35, -0.22) * mid;
-    vec2 q = vec2(plz_fbm(sp + vec2(t, -0.6 * t) + steer),
-                  plz_fbm(sp + vec2(5.2, 1.3) + vec2(-0.7 * t, t) - steer));
+    vec2 q = vec2(plzFbm(sp + vec2(t, -0.6 * t) + steer, oct),
+                  plzFbm(sp + vec2(5.2, 1.3) + vec2(-0.7 * t, t) - steer, oct));
 
-    // Second warp folds the lobes; bass deepens the fold.
-    float warp = (2.1 + 0.55 * bass) * turb;
-    vec2 r = vec2(plz_fbm(sp + warp * q + vec2(1.7, 9.2) + 0.8 * t),
-                  plz_fbm(sp + warp * q + vec2(8.3, 2.8) - 0.9 * t));
-    float f = plz_fbm(sp + warp * r);
+    // Second warp folds the lobes; bass deepens the fold on a smooth swell
+    // through the beat (a sharp refold on the kick moves the whole sheet at once).
+    float swell = sin(3.14159265 * saturate(u.beatPhase));
+    swell *= swell;
+    float warp = (1.75 + 0.15 * level + 0.1 * bass * swell) * turb;
+    vec2 r = vec2(plzFbm(sp + warp * q + vec2(1.7, 9.2) + 0.8 * t, oct),
+                  plzFbm(sp + warp * q + vec2(8.3, 2.8) - 0.9 * t, oct));
+    vec2 fp = sp + warp * r;
+    // the outer field is smooth (three octaves at most): broad glossy lobes
+    // and clean contour lines
+    int octO = oct;
+    float f = plzFbm(fp, octO);
+
+    // Surface slope: the outer fbm at two offsets with the warp held, which is
+    // the dominant term of the true gradient and costs two fbm, not six.
+    float e = 0.035;
+    float fx = plzFbm(fp + vec2(e, 0.0), octO);
+    float fy = plzFbm(fp + vec2(0.0, e), octO);
+    vec2 grad = vec2(fx - f, fy - f) / e;
 
     // Treble adds a fine turbulent fbm to the field (ragged, lacy crests),
     // faded by the field's screen rate so it never aliases.
-    float grain = plz_fbm(sp * (5.5 + 2.0 * turb) + r * 3.0 + vec2(u.time * 0.3, -u.time * 0.2));
+    float grain = plzFbm(sp * (5.5 + 2.0 * turb) + r * 3.0 + vec2(t * 6.0, -t * 4.0), 2);
     float aa = clamp(1.0 - fwidth(f) * 14.0, 0.2, 1.0);
-    float fd = f + (grain - 0.5) * (0.03 + 0.16 * treble) * aa;
+    float fd = f + (grain - 0.5) * (0.012 + 0.07 * treble) * aa;
 
-    // Temperature ramp by density: cool sheath -> vivid body -> hot core.
+    // Palette drifts on builds and bursts: the gas runs hotter (the ramp walks
+    // toward its warm end) as the flow surges and cools back in the drift, so
+    // colour follows the song's arc.
+    float hs = -0.08 * rush + 0.03 * sin(mod(u.time, 600.0) * 0.11);
+
+    // Temperature ramp by density: black void -> vivid body -> hot core.
     // r and q shift the ramp so neighbouring lobes differ in hue.
-    float dens = smoothstep(0.30, 0.86, fd);
-    vec3 cool = palVisual(0.93 - 0.12 * q.y, u);
-    vec3 vivid = palVisual(0.66 + 0.08 * r.x + 0.06 * mid, u);
-    vec3 warm = palVisual(0.24 + 0.05 * r.y, u);
+    float dens = smoothstep(0.4, 0.84, fd);
+    vec3 vivid = plzPal(P, 0.71 + 0.07 * r.x + 0.05 * mid + hs);
+    vec3 warm = plzPal(P, 0.24 + 0.05 * r.y + hs);
+    vec3 deep = plzPal(P, 0.02 + 0.04 * q.x + hs);
+    // The opposite of the hot body is the ionisation colour: sheath, field
+    // lines and the discharge front glow in it, so every frame carries a
+    // complementary pair against black.
+    vec3 ion = plzOpposite(mix(warm, vivid, 0.35));
     float shift = 0.22 * (r.x - 0.5);
-    vec3 tint = mix(cool, vivid, smoothstep(0.08, 0.50, dens + shift));
-    tint = mix(tint, warm, smoothstep(0.62, 1.0, dens - shift) * 0.75);
+    vec3 tint = mix(deep, vivid, smoothstep(0.05, 0.45, dens + shift));
+    tint = mix(tint, warm, smoothstep(0.58, 1.0, dens - shift) * 0.8);
     // Shadowed folds where the first warp is strongest.
-    float shadow = clamp(length(q) * 1.3 - 0.55, 0.0, 0.7);
-    vec3 col = tint * (0.018 + 0.09 * dens + 0.48 * dens * dens * dens) * (1.0 - shadow);
-    // Ionized sheath: a thin cool glow where the gas thins into the void.
-    float sheath = smoothstep(0.02, 0.16, dens) * (1.0 - smoothstep(0.16, 0.40, dens));
-    // Beats and onsets discharge along crests and the sheath only, and each beat lights a
-    // different patch of the field (zone re-seeded per beat): the synchronous change stays
-    // far under the WCAG 2.3.1 25% area, whatever the palette or loudness.
-    float accent = clamp(max(u.onset * 0.7, u.beat), 0.0, 1.0);
-    float zone = smoothstep(0.52, 0.78, plz_noise(sp * 0.7 + vec2(u.beatCount * 3.17, u.beatCount * 1.71)));
-    float hit = accent * zone;
-    col += cool * sheath * (0.07 + 0.05 * mid) * (1.0 + 0.8 * hit) * (1.0 - shadow);
-    float crest = smoothstep(0.74 - 0.03 * hit, 0.92, fd);
+    float shadow = clamp(length(q) * 1.3 - 0.55, 0.0, 0.75);
 
-    // Hot crest colour: palette warm end lifted toward white.
-    vec3 hot = mix(palVisual(0.30 + 0.08 * r.y, u), vec3(1.0, 0.94, 0.86), 0.3);
-    // Discharge gain is normalised by the crest's own luminance so near-white palettes
-    // (Porcelain) get the same luminance step as saturated ones.
-    float heat = 0.6 + 0.2 * level + 0.1 * accent + 0.45 * hit / (0.15 + luma(hot));
-    col += hot * crest * crest * crest * heat * filGain;
+    // Relief lighting: height grows with density, so hot lobes stand proud.
+    float relief = 1.1 * (0.6 + 0.4 * turb) * aa;
+    vec3 n = normalize(vec3(-grad * relief, 1.0));
+    float la = 2.1 + 0.25 * sin(u.time * 0.07);
+    vec3 L = normalize(vec3(cos(la), sin(la), 0.85));
+    vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
+    float ndl = saturate(dot(n, L));
+    float diffuse = mix(0.55, 1.25, ndl);
+    float nh = saturate(dot(n, H));
+    float spec = pow(nh, 64.0) * 1.1 + pow(nh, 12.0) * 0.06;
+    float rim = pow(1.0 - saturate(n.z), 2.0);
+
+    vec3 col = tint * (0.004 + 0.2 * dens + 0.45 * dens * dens * dens) * (1.0 - shadow) * diffuse;
+
+    // Beat discharge: each beat a shock front eases in at a re-seeded point and
+    // spreads slowly outward through the gas over the beat, then fades; it lights only
+    // the gas it crosses (a thin moving ring, far under a quarter of the frame).
+    float bc = mod(u.beatCount, 256.0);
+    float ph = saturate(u.beatPhase);
+    vec2 seed = (hash22(vec2(bc * 1.37, 7.1)) - 0.5) * vec2(2.6, 1.3);
+    float front = length(p - seed) - (0.15 + 0.8 * ph) + (r.x - 0.5) * 0.55 + (f - 0.5) * 0.3;
+    float env = pow(1.0 - ph, 1.3) * smoothstep(0.0, 0.3, ph) * (0.6 + 0.3 * bass);
+    float wave = exp(-front * front * 220.0) * env;
+    float wake = exp(-max(-front, 0.0) * 9.0) * step(front, 0.0) * env * 0.3;
+    // the front's own line: a crisp pixel-width core with a tight halo
+    float fpx = abs(front) / max(fwidth(front), 1e-4);
+    float frontLine = (exp(-fpx * fpx * 0.5) + 0.12 * exp(-front * front * 900.0)) * env * 0.7;
+    float accent = swell * bass;
+
+    // Ionized sheath: a thin electric glow where the gas thins into the void.
+    // A bright edge with a soft halo in field space: thin where the gas
+    // boundary is sharp, diffuse where it thins out slowly.
+    float ed = f - 0.355;
+    float sheath = exp(-ed * ed * 5000.0) + 0.05 * exp(-abs(ed) * 45.0);
+    col += ion * sheath * (0.04 + 0.07 * mid + 0.3 * wave) * (0.4 + 0.6 * smoothstep(0.1, 0.9, r.y));
+
+    // Field lines: fine iso-contours of the inner warp, so they run with the
+    // folds like the plasma's magnetic striations, drawn in the ion colour
+    // over the body and its fringe. Packets of charge stream along them; they
+    // fade with their own screen density, so they never alias, and flare
+    // where the discharge front passes.
+    // Field lines: evenly spaced iso-contours of the gas density, so they
+    // nest round every lobe like a contour map, drawn at a constant pixel
+    // width with a soft halo; every fourth is a brighter major line. The
+    // levels creep down the slopes with the flow, so the lines stream outward
+    // from each hot core. They fade where they would crowd and alias.
+    float lp = fd * (9.0 + 3.0 * turb) + fl.x * 0.12;
+    float lw = max(fwidth(lp), 1e-4);
+    float dpx = abs(fract(lp) - 0.5) / lw;
+    float major = 1.0 - step(0.5, mod(floor(lp), 4.0));
+    float lines = (exp(-dpx * dpx * 0.6) + 0.12 * exp(-dpx * 0.35)) * (1.0 - smoothstep(0.12, 0.3, lw))
+                * (0.45 + 0.9 * major);
+    float body = smoothstep(0.06, 0.3, dens) * (1.0 - 0.75 * smoothstep(0.65, 1.0, dens));
+    float stream = 0.5 + 0.5 * sin(dot(fp, vec2(3.1, -2.3)) * 2.2 + r.x * 9.0 - fl.x * 0.9);
+    stream *= stream;
+    stream *= stream * stream;
+    float lineGain = (0.2 + 1.3 * stream * (0.4 + 0.6 * level) + 1.0 * wave + 0.1 * wake) * filGain;
+    col += mix(ion, vec3(1.0), 0.18 * stream) * lines * body * lineGain * (1.0 - 0.6 * shadow);
+
+    float crest = smoothstep(0.74, 0.92, fd);
+    // Hot crest colour: palette warm end, only slightly lifted toward white so
+    // it stays saturated.
+    vec3 hot = mix(plzPal(P, 0.30 + 0.08 * r.y + hs), vec3(1.0, 0.94, 0.86), 0.12);
+    float heat = 0.65 + 0.25 * level + 0.1 * accent + 0.25 * wave / (0.15 + luma(hot));
+    col += hot * crest * crest * crest * heat * filGain * mix(0.8, 1.2, ndl);
+
+    // Specular sheen in the hot colour, strongest on the dense body.
+    vec3 specCol = mix(hot, vec3(1.0, 0.97, 0.92), 0.08);
+    float wet = smoothstep(0.3, 0.8, dens) * (1.0 - 0.6 * shadow);
+    col += specCol * spec * wet * (0.22 + 0.18 * level + 0.25 * rush + 0.15 * wave);
+    // Rim: the steep flanks of each lobe catch the ion-coloured back light.
+    col += ion * rim * rim * smoothstep(0.05, 0.5, dens) * (0.06 + 0.08 * mid) * (1.0 - shadow);
+
+    // The discharge front itself: the gas it crosses flares in the ion colour.
+    col += mix(ion, vec3(1.0), 0.3) * frontLine * smoothstep(0.0, 0.25, dens) * (0.5 + 0.4 * level) * (1.0 - 0.5 * shadow);
+    col += ion * wave * smoothstep(0.0, 0.25, dens) * 0.08;
 
     // Treble glints: the fine turbulence catches light inside the lobes.
-    float glint = smoothstep(0.62, 0.80, grain) * dens * dens * aa;
-    col += mix(vivid, hot, 0.7) * glint * treble * 0.6 * filGain;
+    float glint = smoothstep(0.70, 0.86, grain) * dens * dens * aa;
+    col += mix(ion, hot, 0.5) * glint * treble * 0.15 * filGain * (0.6 + 0.8 * nh);
 
-    // Faint cold haze in the voids so silence is never black.
-    col += cool * 0.018 * (1.0 - dens);
+    // Faint ion haze in the voids so silence is never dead black.
+    col += ion * 0.003 * (1.0 - dens) * (1.0 - shadow);
 
     // Calm-but-alive in silence, gentle lift with level.
-    col *= 0.75 + 0.25 * level;
+    col *= 0.85 + 0.25 * level;
 
     return col; // LINEAR HDR — post chain tonemaps
 }
+
+// Reds stay off saturated red through the vivid present (common.glsl).
+vec3 visual(vec2 uv, VisualUniforms u) { return osOffRed(osBody(uv, u)); }
 
 in vec2 vUV;
 layout(location=0) out vec4 fragColor;

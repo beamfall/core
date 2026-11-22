@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
   ErrorLine,
@@ -7,7 +8,6 @@ import {
   StatusBadge,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchMediaFieldLocks, setMediaFieldLock } from "@/lib/graphql";
@@ -32,45 +32,73 @@ function fieldLabel(t: (key: StringKey) => string, field: string): string {
 export function FieldLocksPage() {
   const t = useT();
   const [mediaID, setMediaID] = useState("");
+  // The Media ID the shown locks belong to; toggles write to it.
+  const [loadedID, setLoadedID] = useState("");
   const [locks, setLocks] = useState<FieldLockInfo[] | null>(null);
   const [error, setError] = useState("");
+  // Only the newest load may land, so a slow earlier pick cannot replace it.
+  const loadSeq = useRef(0);
 
-  const onLoad = async () => {
+  const onLoad = async (picked?: string) => {
     setError("");
-    const id = mediaID.trim();
+    const id = (picked ?? mediaID).trim();
     if (!id) return;
+    const seq = ++loadSeq.current;
+    // Hide the old table while loading so no toggle can write to it mid-load.
+    setLoadedID("");
+    setLocks(null);
     try {
-      setLocks(await fetchMediaFieldLocks(id));
+      const next = await fetchMediaFieldLocks(id);
+      if (seq !== loadSeq.current) return;
+      setLoadedID(id);
+      setLocks(next);
     } catch {
-      setError(t("fieldLocksUnavailable"));
+      if (seq === loadSeq.current) setError(t("fieldLocksUnavailable"));
     }
+  };
+
+  const onClear = () => {
+    loadSeq.current++;
+    setLoadedID("");
+    setLocks(null);
   };
 
   const onToggle = async (lock: FieldLockInfo) => {
     setError("");
-    const id = mediaID.trim();
+    const id = loadedID;
+    if (!id) return;
+    // A load or Clear started since the write owns the table.
+    const seq = loadSeq.current;
     try {
-      setLocks(await setMediaFieldLock(id, lock.field, !lock.locked));
+      const next = await setMediaFieldLock(id, lock.field, !lock.locked);
+      if (seq === loadSeq.current) setLocks(next);
     } catch {
-      setError(t("fieldLocksUnavailable"));
+      if (seq === loadSeq.current) setError(t("fieldLocksUnavailable"));
     }
   };
 
   return (
     <ManageSection>
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <div className="space-y-1">
           <Label htmlFor="field-locks-media">{t("fieldLocksMediaLabel")}</Label>
-          <Input
+          <EntityPicker
             id="field-locks-media"
             value={mediaID}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setMediaID(e.target.value)}
-            className="w-72"
+            onChange={(id) => {
+              setMediaID(id);
+              if (id) void onLoad(id);
+              else onClear();
+            }}
           />
         </div>
-        <Button type="button" variant="outline" onClick={onLoad} disabled={!mediaID.trim()}>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-6"
+          onClick={() => void onLoad()}
+          disabled={!mediaID.trim()}
+        >
           {t("fieldLocksLoad")}
         </Button>
       </div>

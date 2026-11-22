@@ -185,8 +185,8 @@ func testTrashDisabledAutonomousRejection(t *testing.T) {
 	// unattended destruction, and the trashed item survives, still restorable.
 	farFuture := time.Now().Add(2 * store.TrashRetention).UTC()
 	purged, skipped, err := st.SweepPurgeTrashedBefore(ctx, farFuture)
-	if !errors.Is(err, store.ErrTrashDisabledConfirmationRequired) || !skipped || purged != 0 || st.TrashDisabledSweepSkips() < 1 {
-		t.Fatalf("autonomous purge with Trash disabled = purged %d skipped %v skips %d err %v, want confirmation-required skip", purged, skipped, st.TrashDisabledSweepSkips(), err)
+	if !errors.Is(err, store.ErrTrashDisabledConfirmationRequired) || !skipped || len(purged) != 0 || st.TrashDisabledSweepSkips() < 1 {
+		t.Fatalf("autonomous purge with Trash disabled = purged %d skipped %v skips %d err %v, want confirmation-required skip", len(purged), skipped, st.TrashDisabledSweepSkips(), err)
 	}
 	survivors, err := st.TrashedMediaList(ctx, store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}})
 	if err != nil {

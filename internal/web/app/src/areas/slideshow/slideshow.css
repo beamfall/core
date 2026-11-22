@@ -1,0 +1,221 @@
+/* Web photo slideshow (CORE-2981, photos design §3.1). The picture fills the
+ * stage on the scrim. Slides hard-cut: transitions and motion come only from
+ * Oscillux (see lib/slideshowMotion.ts). Tokens only; no blur, fade or pan. */
+
+.bf-slideshow {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
+  background: var(--scrim);
+  color: var(--on-scrim);
+}
+
+.bf-slideshow[data-chrome="hidden"] {
+  cursor: none;
+}
+
+.bf-slideshow-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bf-slideshow-media {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.bf-slideshow-dim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  opacity: 0.82;
+  pointer-events: none;
+}
+
+.bf-slideshow-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  color: var(--on-scrim-muted);
+  font-size: 15px;
+  text-align: center;
+}
+
+.bf-slideshow-overlay {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 32px;
+  pointer-events: none;
+  text-shadow: 0 1px 3px var(--scrim);
+}
+
+.bf-slideshow-caption {
+  min-width: 0;
+}
+
+.bf-slideshow-caption p {
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bf-slideshow-caption p + p,
+.bf-slideshow-now-playing {
+  color: var(--on-scrim-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.bf-slideshow-clock {
+  font-size: 40px;
+  font-weight: 300;
+  line-height: 44px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bf-slideshow-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
+}
+
+.bf-slideshow-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.bf-slideshow-bar[hidden] {
+  display: none;
+}
+
+.bf-slideshow-bar-spacer {
+  flex: 1;
+}
+
+.bf-slideshow-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--scrim) 50%, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+
+.bf-slideshow-button:hover {
+  background: color-mix(in srgb, var(--on-scrim) 16%, transparent);
+}
+
+.bf-slideshow-button:focus-visible {
+  outline: 2px solid var(--on-scrim);
+  outline-offset: 2px;
+}
+
+.bf-slideshow-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.bf-slideshow-sheet {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  transform: translate(-50%, -50%);
+  padding: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  box-shadow: 0 12px 32px var(--shadow-color);
+}
+
+.bf-slideshow-sheet h2 {
+  margin-bottom: 16px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.bf-slideshow-sheet fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+
+.bf-slideshow-sheet legend,
+.bf-slideshow-label {
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bf-slideshow-sheet select,
+.bf-slideshow-sheet input[type="range"] {
+  width: 100%;
+}
+
+.bf-slideshow-sheet select {
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.bf-slideshow-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.bf-slideshow-option small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.bf-slideshow-sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.bf-slideshow-keys {
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}

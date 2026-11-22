@@ -48,9 +48,20 @@ const SPENT = new Uint32Array([256, TOKEN, TOKEN, 0]);
  * with (Oscillux shaders/limiter/README.md, "Ping-pong and reset"). The fade ends sooner, at the
  * first frame after one whose grant held nothing (draw): this is the backstop. */
 export const FADE_S = 2;
-/** How long black is presented before a frame starts after a fade or a restored context: longer
- * than the limiter's coverage interval, 1 / (5 maxFlashHz) s (same section). */
-export const BLACK_S = 0.1;
+/** How long black is presented before every start, the first included: longer than a second by
+ * the expiry's margin, so the trackers start tracked black and a red change owed from before has
+ * expired (WCAG 2.3.1 counts flashes in any one second), and longer than the coverage interval,
+ * 1 / (5 maxFlashHz) s. The black is credited a presented frame at a time from the first black
+ * frame shown, in time the limiter is credited with and BLACK_CREDIT_MS at most a frame, and is
+ * over once the credit less its longest interval reaches BLACK_S, as a credit may lead the display
+ * by a frame (Oscillux hostBlackLongEnough, shaders/limiter/README.md, "Restart seeds and the black
+ * hold"): 76 intervals at 60 Hz. */
+export const BLACK_S = 1.25;
+/** The longest interval one black frame is credited with (Oscillux "Black credit before a black
+ * start"). */
+const BLACK_CREDIT_MS = 100;
+/** The tracker texel a start writes after BLACK_S of black: black, its red memory counted. */
+const BLACK_TRACKER = new Uint32Array([0, 32768, 0, 0]);
 /** What the host shows wherever the canvas shows no judged pixel (past its edge, through its clip,
  * with no frame on screen): the black every tracker starts at (clearOutput), whatever the theme,
  * so a pixel that comes into view rises from what its tracker holds (Codex round 25). */
@@ -438,8 +449,11 @@ export class Renderer {
   private size: Size | null = null;
   // Seconds left of a geometry change's fade to black, or 0 outside one.
   private fadeLeft = 0;
-  // Seconds of black left before a frame starts, counted once black is shown.
-  private black: number;
+  // The black credited before a frame starts, counted once black is shown, and its longest
+  // interval, in ms (BLACK_S). Black comes first at every start, a mount's and a restored
+  // context's included.
+  private blackMs = 0;
+  private blackLongestMs = 0;
   private blackShown = false;
   // The geometry this draw asks for and the one the last draw asked for, none before the first:
   // a frame starts only at one asked for twice running. Both are written in place.
@@ -468,11 +482,7 @@ export class Renderer {
    * (SwiftShader, say) runs every full-frame pass on the CPU and stalls the page, so it is
    * refused rather than used for decoration.
    */
-  static async create(
-    canvas: HTMLCanvasElement,
-    osc: Oscillux,
-    restored = false,
-  ): Promise<Renderer | null> {
+  static async create(canvas: HTMLCanvasElement, osc: Oscillux): Promise<Renderer | null> {
     const gl = canvas.getContext("webgl2", {
       failIfMajorPerformanceCaveat: true,
       alpha: false,
@@ -488,7 +498,7 @@ export class Renderer {
       shaderSource("switch/switch.frag"),
       ...LIMITER.map((name) => shaderSource(`limiter/${name}.frag`)),
     ]);
-    return new Renderer(gl, osc, vertex, present, blend, limiter, restored);
+    return new Renderer(gl, osc, vertex, present, blend, limiter);
   }
 
   private constructor(
@@ -498,12 +508,9 @@ export class Renderer {
     present: string,
     blend: string,
     limiter: string[],
-    restored: boolean,
   ) {
     this.gl = gl;
     this.osc = osc;
-    // A restored context replaces whatever the lost one left on screen: black comes first.
-    this.black = restored ? BLACK_S : 0;
     this.vivid = osc.vividPresent();
     // Whatever was allocated before a failure is released here, as no caller holds the
     // instance to dispose it.
@@ -772,9 +779,10 @@ export class Renderer {
     const still = sameGeometry(last, want);
     this.asked = want;
     this.want = last;
-    // The fade and the black run on the time the limiter is credited with, the credited share
-    // of shownMs up to one token's refill a frame, so the fall's grant has come by the end of
-    // the fade whatever the frame rate and paint lag (Codex rounds 18, 22; CORE-2744).
+    // The fade runs on the time the limiter is credited with, the credited share of shownMs up
+    // to one token's refill a frame, so the fall's grant has come by the end of the fade whatever
+    // the frame rate and paint lag (Codex rounds 18, 22; CORE-2744). The black runs on the same
+    // share, BLACK_CREDIT_MS at most a frame.
     const shownS = Math.min(shownMs * creditScale(lagMs, recentLagMs), CREDIT_MS) / 1000;
     let size = this.size;
     let started = false;
@@ -793,7 +801,7 @@ export class Renderer {
         // The frame is black by now. A size change ends a switch, as in the reference host.
         this.endSwitch();
         this.freeSize();
-        this.black = BLACK_S;
+        this.resetBlack();
         this.blackShown = false;
         size = null;
       }
@@ -813,8 +821,12 @@ export class Renderer {
       // every target at full resolution, which a drag would otherwise do at every frame. So
       // does any slot while a visual compiles: a start checks its framebuffers, and a check
       // waits for the compile.
-      if (this.black > 0 && this.blackShown) this.black = Math.max(0, this.black - shownS);
-      const wait = this.black > 0 || !still || this.building > 0;
+      if (this.blackShown && !this.blackOver) {
+        const ms = Math.min(shownMs * creditScale(lagMs, recentLagMs), BLACK_CREDIT_MS);
+        this.blackMs += ms;
+        this.blackLongestMs = Math.max(this.blackLongestMs, ms);
+      }
+      const wait = !this.blackOver || !still || this.building > 0;
       if (wait || want.visibleWidth < 1 || want.visibleHeight < 1) {
         this.blackShown = true;
         this.presentBlack();
@@ -926,7 +938,7 @@ export class Renderer {
     if (u.started) {
       this.endSwitch();
       this.freeSize();
-      this.black = BLACK_S;
+      this.resetBlack();
       this.blackShown = true;
       this.presentBlack();
       return;
@@ -950,10 +962,20 @@ export class Renderer {
       this.fadeLeft = 0;
       this.endSwitch();
       this.freeSize();
-      this.black = BLACK_S;
+      this.resetBlack();
     }
     if (size || !this.blackShown) this.presentBlack();
     this.blackShown = true;
+  }
+
+  // Whether the black before a start has been credited long enough (BLACK_S).
+  private get blackOver(): boolean {
+    return this.blackMs - this.blackLongestMs >= BLACK_S * 1000 - 1e-3;
+  }
+
+  private resetBlack(): void {
+    this.blackMs = 0;
+    this.blackLongestMs = 0;
   }
 
   // Black to the canvas: all it shows with no frame on screen.
@@ -1002,7 +1024,7 @@ export class Renderer {
     const want = setGeometry(this.want, width, height, texel, slotWidth, slotHeight);
     const size = this.size;
     // With no frame the canvas is black: all a slot with no whole texel in view ever shows.
-    if (!size) return this.black <= 0 && (want.visibleWidth < 1 || want.visibleHeight < 1);
+    if (!size) return this.blackOver && (want.visibleWidth < 1 || want.visibleHeight < 1);
     if (this.fadeLeft > 0 || !sameGeometry(size, want)) return false;
     // A grant state the host wrote spent has judged no frame, so its clear held bits say nothing
     // about the input: a withdrawn first draw would otherwise hold black (Codex round 24).
@@ -1582,13 +1604,14 @@ export class Renderer {
     for (let i = 0; i < attachments; i++) gl.clearBufferuiv(gl.COLOR, i, new Uint32Array(4));
   }
 
-  // An output target: the frame black and the trackers tracked black (zero), so the limiter
-  // counts the first frame's rises from black (Oscillux shaders/limiter/README.md).
+  // An output target: the frame black and the trackers seeded black, counted with nothing owed,
+  // as every start follows BLACK_S of black, so the limiter counts the first frame's rises from
+  // black (Oscillux shaders/limiter/README.md).
   private clearOutput(fbo: WebGLFramebuffer): void {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.clearBufferfv(gl.COLOR, 0, new Float32Array(4));
-    gl.clearBufferuiv(gl.COLOR, 1, new Uint32Array(4));
+    gl.clearBufferuiv(gl.COLOR, 1, BLACK_TRACKER);
   }
 
   private link(vertex: string, fragment: string): WebGLProgram {

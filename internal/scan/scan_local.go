@@ -11,20 +11,35 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
-func extractLocalMetadata(ctx context.Context, root, path string, extractors []LocalExtractor) []LocalMetadata {
+func extractLocalMetadata(ctx context.Context, class store.MediaClass, root, path string, extractors []LocalExtractor) []LocalMetadata {
 	metadata := make([]LocalMetadata, 0, len(extractors))
 	for _, extractor := range extractors {
 		if extractor == nil {
 			continue
 		}
-		value, err := extractor.ExtractLocal(ctx, string(store.MediaClassImage), root, path)
+		value, err := extractor.ExtractLocal(ctx, string(class), root, path)
 		if err != nil {
-			slog.Debug("scan: local image metadata extraction failed", "path", path, "error", err.Error())
+			slog.Debug("scan: local metadata extraction failed", "path", path, "error", err.Error())
 			continue
 		}
 		metadata = append(metadata, value)
 	}
 	return metadata
+}
+
+// localMetadataClass is the class a file's local extractors see: still images
+// by extension, anything else by its probed streams, so a camera-roll clip is
+// offered to extractors as video rather than as an image. Empty means the file
+// has no local-metadata class (an unprobed or audio-only file).
+func localMetadataClass(path string, probe probeOutcome) store.MediaClass {
+	switch {
+	case imageClassForPath(path):
+		return store.MediaClassImage
+	case probe.succeeded && probe.hasVideo:
+		return store.MediaClassVideo
+	default:
+		return ""
+	}
 }
 
 func applyLocalMetadata(ctx context.Context, st *store.Store, libraryID store.LibraryID, mediaID store.MediaID, metadata []LocalMetadata) error {
@@ -192,7 +207,7 @@ func upsertLocalEntity(ctx context.Context, st *store.Store, libraryID store.Lib
 	}); err != nil {
 		return err
 	}
-	return st.UpsertEntityRelation(ctx, store.EntityRelation{
+	return st.UpsertHydratedEntityRelation(ctx, store.EntityRelation{
 		FromEntityID: id,
 		Name:         relation,
 		ToMediaID:    mediaID,

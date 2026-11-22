@@ -214,7 +214,7 @@ func (s *Server) decideDevicePairingRequest(w http.ResponseWriter, r *http.Reque
 func (s *Server) devicePairingAdminScope(w http.ResponseWriter, r *http.Request) (auth.Scope, bool) {
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return auth.Scope{}, false
 	}
 	return scope, true

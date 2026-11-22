@@ -560,6 +560,223 @@ vec3 tonemap(vec3 x) {
     return pow(clamp(x, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
 }
 
+// SPDX-License-Identifier: AGPL-3.0-only
+// Shared helpers for the Oscillux originals, joined after library.glsl: the
+// beat-locked flight speed, the eased roll, the detail level the host can
+// afford and a few common shapes. Every function is a pure function of its
+// arguments, so all targets agree.
+
+// Speed profile, in distance per beat, over a 32-beat cycle: cruise, build,
+// burst, a hard brake, a slow breakdown drift, then a build to a final burst.
+float osBeatSpeed(float n) {
+    float k = mod(n, 32.0);
+    if (k < 4.0) return 1.0;
+    if (k < 8.0) return 1.0 + 0.3 * (k - 3.0);
+    if (k < 12.0) return 3.5;
+    if (k < 13.0) return 1.6;
+    if (k < 14.0) return 0.45;
+    if (k < 20.0) return 0.9 + 0.1 * (k - 14.0);
+    if (k < 24.0) return 0.6;
+    if (k < 28.0) return 1.5 + 0.75 * (k - 24.0);
+    if (k < 31.0) return 4.5;
+    return 2.4;
+}
+
+// The flight state is a pure function of the uniforms, so every target and
+// frame rate computes the same camera. Within a beat the speed ramps linearly
+// from this beat's value to the next one's, so velocity never jumps and the
+// distance is its exact integral. x = distance, y = speed in beats' units.
+vec2 osFlight(VisualUniforms u, float cruise, float surge) {
+    float n = floor(u.beatCount);
+    float cycle = 0.0;
+    float before = 0.0;
+    float k0 = n - mod(n, 32.0);
+    for (int i = 0; i < 32; i++) {
+        float k = k0 + float(i);
+        float seg = 0.5 * (osBeatSpeed(k) + osBeatSpeed(k + 1.0));
+        cycle += seg;
+        before += k < n ? seg : 0.0;
+    }
+    float ph = saturate(u.beatPhase);
+    float v0 = osBeatSpeed(n);
+    float v1 = osBeatSpeed(n + 1.0);
+    float beats = floor(n / 32.0) * cycle + before + v0 * ph + 0.5 * (v1 - v0) * ph * ph;
+    float v = mix(v0, v1, ph);
+    // A fifth of the motion is steady; the rest follows the profile, so a burst
+    // runs about four times cruise and a brake drops to about half.
+    return vec2(u.time * cruise * 0.2 + beats * (cruise * 0.4 + surge), v);
+}
+
+// Detail the host can afford: 1, the default, down to 0. Hosts lower it with
+// presentation1.y, a reduction in [0, 1], to hold their frame rate.
+float osDetail(VisualUniforms u) { return 1.0 - saturate(u.presentation1.y); }
+
+// Bank angle: every eight beats the roll picks a new side (a golden-angle
+// walk) and eases toward it across the whole span, so it never stops and starts.
+float osBank(VisualUniforms u, float amount) {
+    float b = (u.beatCount + saturate(u.beatPhase)) / 8.0;
+    float k = floor(b);
+    return amount * mix(sin(k * 2.39996), sin((k + 1.0) * 2.39996), smoothstep(0.0, 1.0, b - k));
+}
+
+// Ray direction for a camera at ro looking at ta, rolled by roll, with
+// focal length fov (larger is narrower). p is the centred pixel position.
+vec3 osCamera(vec3 ro, vec3 ta, float roll, float fov, vec2 p) {
+    vec3 fw = normalize(ta - ro);
+    vec3 up = vec3(sin(roll), cos(roll), 0.0);
+    vec3 rt = normalize(cross(fw, up));
+    vec3 cu = cross(rt, fw);
+    return normalize(p.x * rt + p.y * cu + fov * fw);
+}
+
+float osBox(vec3 p, vec3 b) {
+    vec3 q = abs(p) - b;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+// Smooth union with blend radius k.
+float osSmin(float a, float b, float k) {
+    float h = saturate(0.5 + 0.5 * (b - a) / k);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// Round a march step count from a detail-scaled float, so every target
+// agrees on the count.
+int osSteps(float lo, float hi, float detail) { return int(mix(lo, hi, detail) + 0.5); }
+
+// ---- vivid palettes ----
+// In the hosts' free palette mode (palette.x < 0) the originals read this set
+// instead of the library's: sixteen loops of five saturated stops in linear
+// light, each a few hue families with a contrasting accent. palette.z tours
+// them, cross-fading from one to the next, and also walks t by a quarter loop
+// per palette (four whole loops per tour, so the wrap is seamless), so a visual
+// that reads only a narrow range of t still meets every stop. Manifest mode
+// (palette.x >= 0) keeps the library palettes, so reference renders do not
+// change.
+const vec3 OS_PAL[80] = vec3[80](
+    vec3(1.000, 0.033, 0.133), vec3(1.000, 0.262, 0.010), vec3(1.000, 0.807, 0.010), vec3(0.033, 1.000, 0.262), vec3(0.000, 0.578, 1.000), // 0 tropicPunch
+    vec3(0.000, 0.784, 1.000), vec3(0.027, 0.105, 1.000), vec3(0.479, 0.022, 1.000), vec3(1.000, 0.027, 0.309), vec3(1.000, 0.323, 0.014), // 1 synthSunset
+    vec3(0.000, 1.000, 0.578), vec3(0.000, 0.392, 1.000), vec3(1.000, 0.078, 0.366), vec3(1.000, 0.434, 0.000), vec3(1.000, 0.102, 0.037), // 2 lagoonPop
+    vec3(0.565, 1.000, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.000, 0.100), vec3(0.000, 1.000, 0.195), // 3 acidCitrus
+    vec3(0.000, 0.871, 1.000), vec3(0.000, 0.133, 1.000), vec3(1.000, 0.047, 0.000), vec3(1.000, 0.552, 0.000), vec3(1.000, 0.000, 0.156), // 4 iceFire
+    vec3(0.000, 1.000, 0.332), vec3(0.000, 0.658, 1.000), vec3(0.047, 0.102, 0.991), vec3(1.000, 0.823, 0.000), vec3(0.328, 1.000, 0.000), // 5 electricMint
+    vec3(1.000, 0.347, 0.000), vec3(1.000, 0.074, 0.000), vec3(0.791, 0.000, 0.195), vec3(0.144, 0.000, 0.905), vec3(0.000, 0.539, 1.000), // 6 mangoBerry
+    vec3(1.000, 0.050, 0.371), vec3(1.000, 0.347, 0.050), vec3(1.000, 0.784, 0.050), vec3(0.050, 1.000, 0.434), vec3(0.050, 0.479, 1.000), // 7 candyShop
+    vec3(0.000, 1.000, 0.235), vec3(0.000, 0.745, 0.565), vec3(0.000, 0.296, 1.000), vec3(0.254, 0.024, 1.000), vec3(1.000, 0.028, 0.631), // 8 aurora
+    vec3(1.000, 0.014, 0.014), vec3(1.000, 0.144, 0.000), vec3(1.000, 0.479, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.000, 0.212), // 9 lavaLamp
+    vec3(0.784, 1.000, 0.000), vec3(0.000, 1.000, 0.133), vec3(0.000, 0.694, 1.000), vec3(0.000, 0.080, 1.000), vec3(1.000, 0.434, 0.000), // 10 cyberLime
+    vec3(1.000, 0.102, 0.114), vec3(1.000, 0.026, 0.301), vec3(0.397, 0.045, 1.000), vec3(0.026, 0.198, 1.000), vec3(0.000, 0.807, 0.565), // 11 coralReef
+    vec3(1.000, 0.631, 0.000), vec3(1.000, 0.254, 0.000), vec3(1.000, 0.044, 0.044), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.871, 0.074), // 12 goldRush
+    vec3(0.000, 0.010, 1.000), vec3(0.000, 0.283, 1.000), vec3(0.000, 0.913, 0.658), vec3(0.328, 1.000, 0.000), vec3(1.000, 0.791, 0.000), // 13 deepNeon
+    vec3(1.000, 0.195, 0.565), vec3(0.571, 0.205, 1.000), vec3(0.195, 0.392, 1.000), vec3(0.195, 1.000, 0.745), vec3(1.000, 0.871, 0.195), // 14 bubbleTea
+    vec3(1.000, 0.000, 0.091), vec3(0.133, 0.000, 1.000), vec3(0.000, 0.451, 1.000), vec3(0.000, 1.000, 0.665), vec3(0.468, 1.000, 0.000) // 15 neonTokyo
+);
+const float OS_PAL_COUNT = 16.0;
+
+// Linear mix that keeps the endpoints' channel range, so a blend between two
+// saturated colours stays saturated instead of passing through grey.
+vec3 osVividMix(vec3 a, vec3 b, float w) {
+    vec3 m = mix(a, b, w);
+    float lo = min(m.r, min(m.g, m.b)), hi = max(m.r, max(m.g, m.b));
+    float tlo = mix(min(a.r, min(a.g, a.b)), min(b.r, min(b.g, b.b)), w);
+    float thi = mix(max(a.r, max(a.g, a.b)), max(b.r, max(b.g, b.b)), w);
+    return tlo + (m - lo) * ((thi - tlo) / max(hi - lo, 1e-3));
+}
+
+vec3 osPalLoop(float t, int idx) {
+    float f = fract(t) * 5.0;
+    int i = int(floor(f));
+    i = clamp(i, 0, 4);
+    int j = i == 4 ? 0 : i + 1;
+    return osVividMix(OS_PAL[idx * 5 + i], OS_PAL[idx * 5 + j], smoothstep(0.0, 1.0, f - float(i)));
+}
+
+vec3 osPalVisual(float t, VisualUniforms u) {
+    if (u.palette.x >= 0.0) return palVisual(t, u);
+    float phase = u.palette.z;
+    int a = int(mod(floor(phase), OS_PAL_COUNT));
+    int b = int(mod(float(a + 1), OS_PAL_COUNT));
+    float blend = smoothstep(0.18, 0.82, fract(phase));
+    float nudge = phase * 0.25 + u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    return osVividMix(osPalLoop(t + nudge, a), osPalLoop(t + nudge, b), blend);
+}
+
+// The calm visuals' audio response, 0..0.25: the music's level, which rises
+// and falls with the song, scaled by the sensitivity. Not the kick: a calm
+// visual's light never jumps on the beat.
+float osCalmBreath(VisualUniforms u) {
+    return 0.25 * saturate(u.level) * (0.5 + 0.5 * u.sensitivity);
+}
+
+// The calm visuals' palette read: the visual's own library palette `own`
+// (its manifest palette) at t, with no beat or spectral nudge. Under the vivid
+// palette tour (palette.x < 0) a calm visual keeps `own`: the tour moves
+// through sixteen neon palettes of very different brightness every few
+// seconds, which turns a moonlit sea orange and swells the light, so vivid
+// leaves a calm visual only its present-pass saturation. A host's manifest
+// palette (palette.x >= 0) still replaces it.
+vec3 osPalCalm(float t, int own, VisualUniforms u) {
+    return palByIndex(t, u.palette.x >= 0.0 ? int(floor(u.palette.x + 0.5)) : own);
+}
+
+// The library's palette roles, reading osPalVisual.
+vec3 osPalRoleTrace(float t, VisualUniforms u) { return osPalVisual(t + 0.03 * u.beatPhase, u); }
+vec3 osPalRoleBass(float t, VisualUniforms u) {
+    vec3 hot = osPalVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 body = osPalVisual(t + 0.10, u);
+    return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
+}
+vec3 osPalRoleTreble(float t, VisualUniforms u) {
+    vec3 spark = osPalVisual(0.62 + t * 0.28 + 0.10 * u.spectralCentroid, u);
+    return peakWhite(spark, u.treble * u.onset * 0.14);
+}
+vec3 osPalRolePeak(float t, VisualUniforms u) {
+    return peakWhite(osPalVisual(t + 0.08 * u.spectralCentroid, u), saturate(u.onset * 0.18 + u.bassImpact * 0.10));
+}
+vec3 osPalRoleFog(float t, VisualUniforms u) {
+    vec3 c = osPalVisual(t + 0.04 * u.spectralCentroid, u);
+    return mix(vec3(luma(c) * 0.62), c, 0.42);
+}
+vec3 osPalRoleRim(float t, VisualUniforms u) {
+    return mix(osPalVisual(t, u), osPalRolePeak(t + 0.18, u), 0.35 + 0.35 * u.flux);
+}
+
+// Every original finishes through osOffRed. The present pass grades with the vivid saturation
+// and vibrance (palette.rs), which pushes a nearly pure red past the 0.8 red share at which the
+// flash limiter counts saturated red and holds it. Where green plus blue is under 0.55 of red
+// (linear light), both rise by half the difference, so the graded red presents under a 0.77
+// share. Near black the present dither can still split a dim red into a saturated-red byte
+// triple such as (1, 0, 0), so a dim colour becomes exactly grey and a dim red loses its excess
+// over green and blue, which then ramps back in (limiter-red-expire-black, design.md section 3;
+// tools/shader/test-originals-red.mjs). A quality measure: the frame limiter carries the safety
+// claim. NaN becomes 0 by a boolean select, exact on targets honouring IEEE NaN.
+const float OS_GREY_BELOW = 0.006;  // below it the colour becomes exactly grey
+const float OS_RED_FROM = 0.012;    // below it red is at most the larger of green and blue
+const float OS_RED_FULL = 0.05;     // red's excess is whole from here, and red returned as it stands
+vec3 osOffRed(vec3 c) {
+    c = mix(c, vec3(0.0), notEqual(c, c));      // NaN -> 0
+    c = clamp(c, vec3(0.0), vec3(16.0));
+    float s = c.g + c.b, t = 0.55 * c.r;        // gated on the rounded sum and product, so a
+    if (s < t) c += vec3(0.0, 0.5 * (t - s), 0.5 * (t - s));  // colour that meets the share is kept
+    float m = max(c.r, max(c.g, c.b));
+    if (m < OS_GREY_BELOW) return vec3(luma(c));  // three identical channels
+    float p = max(c.g, c.b);
+    if (c.r > p && m < OS_RED_FULL) {           // no saturated red byte from the present dither
+        float w = clamp((m - OS_RED_FROM) / (OS_RED_FULL - OS_RED_FROM), 0.0, 1.0);
+        c.r = w <= 0.0 ? p : p + w * (c.r - p);  // red equal to a partner below OS_RED_FROM
+    }
+    return c;
+}
+
+// Everything joined after this file reads the vivid set through the usual names.
+#define palVisual osPalVisual
+#define palRoleTrace osPalRoleTrace
+#define palRoleBass osPalRoleBass
+#define palRoleTreble osPalRoleTreble
+#define palRolePeak osPalRolePeak
+#define palRoleFog osPalRoleFog
+#define palRoleRim osPalRoleRim
+
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
@@ -574,96 +791,254 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
-// Spectral City / frequency + beat.
-// A pulse-array skyline over a glossy black floor.
+// Spectral City.
+// A dawn flight high above the clouds, weaving between supertall glass spires.
+// The towers rise out of a luminous cloud sea lit from below by the hidden
+// city; each one carries vertical light columns that fill with its band of the
+// spectrum like a giant level meter, crowned by a ring and an aviation beacon.
+// Dark glass mirrors the dawn sky, corners catch the low sun, and the deck
+// fades into a cold blue aerial haze. The camera glides at a steady, slow
+// pace along a winding gap with a gentle bank into the turns. Audio drives
+// light only, and softly: the meters fill with the smoothed level and a modest
+// band term, lit and unlit segments sit close in brightness, the crown rings
+// hold steady, the off-red beacons blink gently and the colours drift slowly
+// with the palette, never shimmering with the music.
 // param0 = Density ; param1 = Speed ; param2 = Reflection
 
-// AA helpers with the derivative width passed in. The tower loop below visits
-// only the cells nearest each pixel, so neighbouring pixels evaluate different
-// towers in the same iteration and fwidth() of the per-tower SDF is garbage at
-// cell boundaries; the widths are derived from fwidth(uv) once, outside.
-float boxFillW(vec2 p, vec2 b, vec2 px) {
-    vec2 q = abs(p) - b;
-    vec2 qo = max(q, vec2(0.0));
-    float lo = length(qo);
-    float d = lo + min(max(q.x, q.y), 0.0);
-    vec2 g = lo > 0.0 ? qo / lo : (q.x > q.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
-    float w = max(dot(g, px), 1e-5);
-    return clamp(0.5 - d / w, 0.0, 1.0);
-}
-float aaLineW(float d, float halfWidth, float w) {
-    return 1.0 - smoothstep(halfWidth, halfWidth + max(w, 1e-5), abs(d));
-}
-float aaLineCyclicW(float phase, float halfWidth, float w) {
-    return 1.0 - smoothstep(halfWidth, halfWidth + max(w, 1e-5), abs(fract(phase) - 0.5));
+// The palette read without the library's per-beat and spectral-centroid hue
+// nudge, so large lit areas never shimmer with the music; under the host's
+// palette tour the cross-fade between palettes is spread over the whole tour
+// step, so the colours change slowly.
+vec3 scPalStill(float t, VisualUniforms u) {
+    if (u.palette.x >= 0.0) return palByIndex(t, int(floor(u.palette.x + 0.5)));
+    int a = int(mod(floor(u.palette.z), 32.0));
+    int b = int(mod(float(a + 1), 32.0));
+    float blend = smoothstep(0.0, 1.0, fract(u.palette.z));
+    return mix(palByIndex(t, a), palByIndex(t, b), blend);
 }
 
-vec3 visual(vec2 uv, VisualUniforms u) {
-    float floorY = 0.64;
-    vec3 col = vec3(0.002, 0.004, 0.008);
+const float SC_CELL = 11.0;
+const float SC_CLOUD = 0.0;   // cloud deck height
 
-    float road = smoothstep(floorY, 1.0, uv.y);
-    if (road > 0.0) {
-        float z = 1.0 / max(0.045, uv.y - floorY + 0.05);
-        float lane = (uv.x - 0.5) * z;
-        float grid = aaLineCyclic(lane * 0.34, 0.018) + aaLineCyclic(z * 0.10 - u.time * 0.22, 0.018);
-        // lift green under the warm end so the red-orange lane lines never
-        // read as saturated red
-        vec3 rc = palVisual(fract(lane * 0.04 + z * 0.02), u);
-        rc.g = max(rc.g, 0.6 * rc.r - rc.b);
-        col += rc * grid * road * 0.26 * smoothstep(13.0, 1.2, z);
+float scPath(float z) { return 16.0 * sin(z * 0.010) + 7.0 * sin(z * 0.023 + 1.3); }
+
+// Tower for a cell: xy = half widths, z = height (0 = empty), w = hash.
+vec4 scTower(vec2 c, float density) {
+    vec2 ctr = (c + 0.5) * SC_CELL;
+    float h0 = hash21(c * vec2(1.0, 7.31) + 0.5);
+    float keep = step(h0, density) * step(8.0, abs(ctr.x - scPath(ctr.y)));
+    float h1 = hash21(c * vec2(3.1, 1.7) + 4.0);
+    float h2 = hash21(c + 9.0);
+    float hw = 1.5 + 2.2 * h1;
+    float hh = 14.0 + 62.0 * h2 * h2;
+    return vec4(hw, hw * mix(0.7, 1.3, hash21(c + 2.2)), hh * keep, hash21(c + 17.0));
+}
+
+float scBox(vec3 p, vec3 b) {
+    vec3 q = abs(p) - b;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+// Distance to the tower standing in cell c (1e3 when the cell is empty).
+float scTowerSdf(vec3 p, vec2 c, vec4 tw) {
+    vec2 l = p.xz - (c + 0.5) * SC_CELL;
+    float d = 1e3;
+    if (tw.z > 0.0) {
+        float base = SC_CLOUD - 20.0;
+        float hy = 0.5 * (tw.z - base);
+        d = scBox(vec3(l.x, p.y - base - hy, l.y), vec3(tw.x, hy, tw.y));
+        // slim setback crown and mast
+        d = min(d, scBox(vec3(l.x, p.y - tw.z - 1.5, l.y), vec3(tw.x * 0.6, 1.5, tw.y * 0.6)));
+        d = min(d, scBox(vec3(l.x, p.y - tw.z - 3.0 - 0.06 * tw.z, l.y), vec3(0.12, 0.06 * tw.z, 0.12)));
+    }
+    return d;
+}
+
+float scMap(vec3 p, float density) {
+    vec2 c = floor(p.xz / SC_CELL);
+    vec2 l = p.xz - (c + 0.5) * SC_CELL;
+    float d = scTowerSdf(p, c, scTower(c, density));
+    // never step past the cell boundary, so neighbours are not skipped
+    vec2 bnd = 0.5 * SC_CELL - abs(l);
+    return min(d, max(min(bnd.x, bnd.y), 0.0) + 0.3);
+}
+
+vec3 scNormal(vec3 p, float density) {
+    vec2 e = vec2(0.01, -0.01);
+    return normalize(e.xyy * scMap(p + e.xyy, density) + e.yyx * scMap(p + e.yyx, density)
+                   + e.yxy * scMap(p + e.yxy, density) + e.xxx * scMap(p + e.xxx, density));
+}
+
+vec3 scSky(vec3 rd, vec3 sun, VisualUniforms u) {
+    float h = rd.y;
+    float sd = max(dot(rd, sun), 0.0);
+    vec3 zen = vec3(0.004, 0.010, 0.040);
+    vec3 hor = mix(vec3(0.025, 0.05, 0.13), scPalStill(0.02, u) * 0.3, pow(sd, 3.0));
+    vec3 col = mix(hor, zen, smoothstep(-0.02, 0.45, h));
+    // a magenta band above the dawn glow, then the orange core over the sun
+    col += scPalStill(0.27, u) * 0.05 * exp(-max(h, 0.0) * 7.0) * (0.4 + 0.6 * sd);
+    col += scPalStill(0.04, u) * (0.3 * pow(sd, 8.0) + 1.4 * pow(sd, 70.0)) * smoothstep(-0.1, 0.05, h + 0.05);
+    // stars still out overhead
+    vec2 sp = rd.xz / max(h + 0.25, 0.05) * 60.0;
+    float st = hash21(floor(sp));
+    col += vec3(0.7, 0.8, 1.0) * step(0.985, st) * smoothstep(0.35, 0.0, length(fract(sp) - 0.5))
+         * smoothstep(0.15, 0.5, h) * 0.6;
+    return col;
+}
+
+vec3 osBody(vec2 uv, VisualUniforms u) {
+    vec2 p = centered(uv, u.resolution);
+    p.y = -p.y;
+    float detail = osDetail(u);
+    float density = mix(0.25, 0.8, u.param0);
+    float refl = mix(0.2, 1.0, u.param2);
+    float tm = mod(u.time, 600.0);
+
+    float speed = mix(0.5, 1.5, u.param1);
+    // a slow glide: the shared beat profile only nudges the pace, because
+    // faster flight over the dense LED meters reads as large-area flashing
+    float z = 25.0 + speed * u.time * 0.8;
+    float alt = 30.6 + 2.0 * sin(u.time * 0.07);
+    vec3 ro = vec3(scPath(z), alt, z);
+    vec3 ta = vec3(scPath(z + 24.0), alt, z + 24.0);
+    float curve = scPath(z + 30.0) - 2.0 * scPath(z + 15.0) + scPath(z);
+    float roll = -0.03 * curve;
+    // a level camera with a shifted lens keeps the spires vertical; longer
+    // focal length than a wide angle so edge towers do not lean
+    float focal = 2.0;
+    vec3 rd = osCamera(ro, ta, roll, focal, p - vec2(0.0, 0.11 * focal));
+    vec3 fw = normalize(ta - ro);
+    vec3 sun = normalize(vec3(fw.x * 0.6 + 0.35, -0.015, 1.0));
+
+    // march the spires; rays heading down stop at the cloud deck
+    float tCloud = rd.y < -1e-4 ? (SC_CLOUD - ro.y) / rd.y : 1e4;
+    float tmax = min(mix(220.0, 320.0, detail), tCloud);
+    int steps = osSteps(56.0, 110.0, detail);
+    float t = 0.1;
+    float hit = -1.0;
+    float open = 0.0;   // 1 once the ray is clear of everything
+    // walk the grid cell by cell: sphere-trace the cell's own tower, but never
+    // step past the point where the ray leaves the cell
+    vec2 dirS = step(0.0, rd.xz);
+    vec2 invR = 1.0 / (mix(vec2(-1.0), vec2(1.0), dirS) * max(abs(rd.xz), vec2(1e-5)));
+    for (int i = 0; i < 110; i++) {
+        if (i >= steps) break;
+        vec3 pp = ro + rd * t;
+        vec2 c = floor(pp.xz / SC_CELL);
+        vec2 tb = ((c + dirS) * SC_CELL - pp.xz) * invR;
+        float tExit = max(min(tb.x, tb.y), 0.0) + 0.02;
+        float d = scTowerSdf(pp, c, scTower(c, density));
+        if (d < min(0.002 * t, 0.06)) { hit = t; break; }
+        t += min(d, tExit);
+        if (t > tmax || (rd.y > 0.0 && ro.y + rd.y * t > 90.0)) { open = 1.0; break; }
     }
 
-    // Towers sit on a 72-cell grid with half-width <= 0.014 (~1 cell),
-    // so only the cells within +-2 of this pixel can touch it: visit those 5
-    // instead of all 72 (identical output, 14x fewer iterations).
-    // On a narrow frame the grid has fewer, wider cells (frame fit): x distances
-    // and widths are measured in authored-grid units, scaled by sx.
-    int ncells = fitColumns(u, 72, 16);
-    float sx = float(ncells) / 72.0;
-    vec2 px = fwidth(uv) * vec2(sx, 1.0);
-    int i0 = int(floor(uv.x * float(ncells)));
-    for (int j = 0; j < 5; j++) {
-        int i = i0 - 2 + j;
-        if (i < 0 || i >= ncells) continue;
-        float fi = float(i);
-        float x = (fi + 0.5) / float(ncells);
-        float perspective = mix(0.50, 1.0, hash11(fi * 2.3));
-        float bandv = bandAt(u, x);
-        float w = mix(0.004, 0.014, perspective);
-        // most of the skyline stands on its own; the band only lifts the
-        // roofline, since the kick jumps every low band at once and a full
-        // band-driven height relit half the sky each beat
-        float h = 0.07 + 0.17 * perspective + bandv * mix(0.07, 0.16, perspective) + hash11(fi * 5.1) * 0.12;
-        float base = floorY - 0.01 * perspective;
-        vec2 bp = vec2((uv.x - x) * sx, uv.y - (base - h * 0.5));
-        float tower = boxFillW(bp, vec2(w, h * 0.5), px);
-        float edge = aaLineW(abs(bp.x) - w, 0.0014, px.x) * step(abs(bp.y), h * 0.52);
-        // window rows are anchored to the base, not the roof: tied to the
-        // band-driven height, every sub-pixel row line in the tower slid and
-        // aliased each time the band moved, relighting the skyline (18 luma/s)
-        float rows = aaLineCyclicW((uv.y - base) * 42.0, 0.03, px.y * 42.0) * tower;
-        vec3 c = palVisual(x + u.time * 0.018, u);
-        // keep G+B >= 0.6 R: the warm end of the palette drifting across a
-        // tower made a large saturated-red area
-        c.g = max(c.g, 0.6 * c.r - c.b);
-        col += c * tower * (0.12 + bandv * 0.65);
-        col += peakWhite(c, rows * u.treble * 0.08) * rows * (0.7 + bandv * 3.0);
-        // edges glint with the kick rather than flare: 72 lit outlines at once
-        // add up to a large area
-        col += c * edge * (0.9 + u.bassImpact * 0.5);
-
-        float reflY = floorY + (base - h * 0.5 - uv.y) * 0.34;
-        float refl = boxFillW(vec2((uv.x - x) * sx, uv.y - reflY), vec2(w, h * 0.18), px * vec2(1.0, 1.34))
-                   * smoothstep(floorY, 1.0, uv.y) * (1.0 - smoothstep(floorY, 1.0, uv.y));
-        col += c * refl * bandv * 0.45;
+    vec3 col;
+    float dist;
+    if (hit > 0.0) {
+        dist = hit;
+        vec3 pos = ro + rd * hit;
+        vec3 n = scNormal(pos, density);
+        vec2 c = floor(pos.xz / SC_CELL);
+        vec2 l = pos.xz - (c + 0.5) * SC_CELL;
+        vec4 tw = scTower(c, density);
+        float fy = saturate((pos.y - SC_CLOUD) / max(tw.z - SC_CLOUD, 1.0));
+        float vert = step(n.y, 0.5);
+        float along = abs(n.x) > 0.5 ? l.y : l.x;
+        float halfFace = abs(n.x) > 0.5 ? tw.y : tw.x;
+        // curtain-wall panes, each set at a slightly different angle so the
+        // dawn breaks into a mosaic instead of one flat dark face
+        vec2 pc = vec2(along * 2.6, pos.y * 1.6);
+        vec2 pf = fract(pc);
+        float ph = hash21(floor(pc) + c * 7.0 + n.xz * 3.0);
+        float nearF = exp(-hit * 0.03) * vert;
+        vec3 rr = reflect(rd, n);
+        rr.y += (ph - 0.5) * 0.09 * nearF;
+        float fres = 0.06 + 0.94 * pow(1.0 - saturate(dot(-rd, n)), 4.0);
+        vec3 skyR = rr.y > 0.0 ? scSky(rr, sun, u) : vec3(0.05, 0.06, 0.12) + scPalStill(0.3, u) * 0.03;
+        col = vec3(0.002, 0.003, 0.009) + skyR * (0.13 + fres) * refl * mix(0.35, 1.0, ph * nearF + 0.5 * (1.0 - nearF));
+        // the low sun glinting off the glass
+        col += scPalStill(0.05, u) * pow(max(dot(rr, sun), 0.0), 90.0) * 4.0 * refl * vert;
+        // sun-side faces catch a warm wash, the rest an uplight from the city under the clouds
+        col += scPalStill(0.06, u) * 0.025 * pow(saturate(dot(n, sun) + 0.15), 2.0) * vert * (0.4 + 0.6 * fy);
+        col += mix(scPalStill(0.36, u), scPalStill(0.74, u), ph) * 0.03 * exp(-(pos.y - SC_CLOUD) * 0.06) * vert;
+        // mullions and floor lines
+        float mull = max(smoothstep(0.1, 0.0, min(pf.x, 1.0 - pf.x)), smoothstep(0.12, 0.0, min(pf.y, 1.0 - pf.y)));
+        col = mix(col, vec3(0.004, 0.006, 0.014) + skyR * 0.12, mull * nearF * 0.8);
+        // a scatter of lit offices
+        float lit = step(0.955, ph) * (0.25 + 0.75 * nearF);
+        col += scPalStill(0.1, u) * lit * 0.14 * (1.0 - mull);
+        // segmented level meters running up the faces, one per band
+        float cols = halfFace > 2.6 ? 2.0 : 1.0;
+        float cx = cols > 1.5 ? abs(abs(along) - halfFace * 0.45) : abs(along);
+        float housing = smoothstep(0.44, 0.38, cx) * vert;
+        float strip = smoothstep(0.32, 0.24, cx) * vert;
+        float y0 = max(SC_CLOUD + 1.0, tw.z - 38.0);
+        float fm = (pos.y - y0) / max(tw.z - 1.5 - y0, 1.0);
+        float inM = step(0.0, fm) * step(fm, 1.0);
+        float bi = fract(tw.w * 3.7 + (n.x + n.z) * 0.21 + 0.13 * cols * sign(along));
+        float lvl = saturate(0.3 + 0.25 * u.level + 0.3 * bandAt(u, bi));
+        float sidx = floor(fm * 14.0);
+        float sf = fract(fm * 14.0);
+        float segm = smoothstep(0.0, 0.12, sf) * smoothstep(1.0, 0.82, sf);
+        float nLit = floor(lvl * 14.0 + 0.5);
+        float on = step(sidx + 0.5, nLit);
+        float topSeg = on * step(nLit - 1.5, sidx);
+        // cool at the foot, through violet and magenta, amber at the peak
+        vec3 sc = scPalStill(mix(0.84, 0.1, saturate(fm)), u);
+        col *= 1.0 - 0.85 * housing * inM;
+        float ledL = segm * (on * (0.6 + 0.3 * lvl) + (1.0 - on) * 0.3);
+        col += sc * strip * inM * ledL;
+        col += mix(sc, vec3(1.0), 0.55) * strip * inM * topSeg * segm * 0.8;
+        // crown ring, warm against the cold columns, steady
+        float ring = smoothstep(0.35, 0.0, abs(pos.y - tw.z - 2.6)) * step(n.y, 0.5);
+        col += scPalStill(0.08, u) * ring * (1.5 + 0.05 * u.level);
+        // vertical corners catch the low sun
+        float edge = smoothstep(0.12, 0.0, halfFace - abs(along)) * vert;
+        col += scPalStill(0.1, u) * edge * (0.08 + 0.5 * pow(saturate(dot(n, sun) + 0.3), 2.0));
+        // aviation beacon on the mast tip, a slow gentle off-red blink
+        float tipY = tw.z + 3.0 + 0.12 * tw.z;
+        float bl = smoothstep(0.6, 1.0, sin(tm * 2.2 + tw.w * 30.0));
+        col += vec3(1.0, 0.3, 0.15) * exp(-length(vec3(l.x, pos.y - tipY, l.y)) * 4.0) * (0.4 + 1.0 * bl);
+        // cold mist creeping up the base from the clouds
+        col = mix(col, vec3(0.06, 0.09, 0.2), exp(-(pos.y - SC_CLOUD) * 0.18) * 0.8);
+    } else if (rd.y < -1e-4 && tCloud < tmax + 1.0) {
+        // the cloud sea, lit by the dawn above and the city glowing beneath
+        dist = tCloud;
+        vec3 pos = ro + rd * tCloud;
+        vec2 q = pos.xz * 0.035 + vec2(tm * 0.02, 0.0);
+        float c1 = vnoise(q) * 0.55 + vnoise(q * 2.3 + 3.0) * 0.3;
+        c1 += detail * vnoise(q * 5.1 - 1.0) * 0.15;
+        float glowN = vnoise(pos.xz * 0.006 + 7.0);
+        // billows: tops lit orange toward the sun, violet in their shadows
+        float toward = pow(max(dot(normalize(vec3(rd.x, 0.0, rd.z) + 1e-4), sun), 0.0), 3.0);
+        float lit = smoothstep(0.3, 0.75, c1);
+        vec3 shade = vec3(0.012, 0.016, 0.05);
+        vec3 sunlit = mix(vec3(0.05, 0.08, 0.2), scPalStill(0.03, u) * 0.45, toward);
+        col = mix(shade, sunlit, lit);
+        vec3 city = mix(scPalStill(0.3, u), scPalStill(0.72, u), glowN);
+        // the hidden city shows through the gaps between billows
+        col += city * smoothstep(0.45, 0.85, 1.0 - c1) * smoothstep(0.35, 0.75, glowN) * (0.55 + 0.03 * u.level);
+        dist *= 0.55; // the deck shows through the haze further than the towers
+    } else if (open < 0.5) {
+        // out of steps among the spires: a distant silhouette, never a hole of sky
+        dist = t;
+        col = vec3(0.003, 0.005, 0.014);
+    } else {
+        dist = 1e4;
+        col = scSky(rd, sun, u);
     }
 
-    col += palVisual(0.55, u) * aaLine(uv.y - floorY, 0.0015) * 0.65;
-    // steady zoom: a kick-pumped zoom smeared the lit skyline over the sky
-    col = feedbackTrail(col, uv, min(u.trailDecay, 0.82), 0.002 + 0.001 * u.bassImpact, 0.0);
+    // aerial haze toward the horizon, warmer toward the sun
+    float sd = max(dot(rd, sun), 0.0);
+    vec3 hazeCol = mix(vec3(0.03, 0.045, 0.13) + scPalStill(0.3, u) * 0.012, scPalStill(0.03, u) * 0.32, pow(sd, 28.0));
+    float fog = dist > 9e3 ? 0.0 : 1.0 - exp(-dist * mix(0.0075, 0.0055, detail));
+    col = mix(col, hazeCol, fog);
     return col; // LINEAR HDR — post chain tonemaps
 }
+
+// Reds stay off saturated red through the vivid present (common.glsl).
+vec3 visual(vec2 uv, VisualUniforms u) { return osOffRed(osBody(uv, u)); }
 
 in vec2 vUV;
 layout(location=0) out vec4 fragColor;

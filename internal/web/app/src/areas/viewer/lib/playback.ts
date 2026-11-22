@@ -264,14 +264,17 @@ export const END_PLAYBACK_MUTATION =
  * endPlayback ends the caller's session for a Media. It is sent with
  * keepalive, so the same call works from an unmount and from a closing tab's
  * pagehide; best effort and never throws, since the server's idle expiry
- * still ends a session this call could not reach.
+ * still ends a session this call could not reach. `profile` is the Profile
+ * the player opened for: an unmount after another tab switched the session
+ * is then refused rather than ending the other Profile's playback (CORE-2923).
  */
-export function endPlayback(mediaID: string): void {
+export function endPlayback(mediaID: string, profile?: string | null): void {
   if (!mediaID) return;
-  postKeepalive("/api/graphql", {
-    query: END_PLAYBACK_MUTATION,
-    variables: { mediaId: mediaID },
-  });
+  postKeepalive(
+    "/api/graphql",
+    { query: END_PLAYBACK_MUTATION, variables: { mediaId: mediaID } },
+    profile,
+  );
 }
 
 export async function fetchPlaybackInfo(

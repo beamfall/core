@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { isRelativePreviewURL, candidateProvenance as provenance } from "@/lib/artworkCandidate";
 import { fetchArtworkCandidates, pinArtworkCandidate } from "@/lib/graphql";
 import type { ArtworkCandidate } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -13,18 +14,6 @@ const SLOTS: { slot: string; key: StringKey }[] = [
   { slot: "backdrop", key: "artworkSlotBackdrop" },
   { slot: "thumb", key: "artworkSlotThumb" },
 ];
-
-// Only relative same-origin preview URLs render an <img> (app.js
-// isRelativePreviewURL) — artwork bytes are served by the server at
-// /api/media/artwork-candidate/...; an absolute or protocol-relative URL is
-// never followed.
-function isRelativePreviewURL(value: string | undefined): value is string {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//");
-}
-
-function provenance(candidate: ArtworkCandidate): string {
-  return [candidate.pluginID, candidate.scraperID].filter(Boolean).join(" / ");
-}
 
 // Artwork candidates (ADR-0009): the candidate artwork per Media slot. Loaded by
 // Media ID across the three core slots (poster / backdrop / thumb);
@@ -38,21 +27,27 @@ export function ArtworkPage() {
   // undefined = loading, null = unavailable, array = candidates.
   const [slots, setSlots] = useState<Record<string, ArtworkCandidate[] | null | undefined>>({});
   const [error, setError] = useState("");
+  // Only slots from the newest load may land, so a slow earlier pick cannot
+  // fill the grid under a different Media ID.
+  const loadSeq = useRef(0);
 
   const loadSlot = async (id: string, slot: string) => {
+    const seq = loadSeq.current;
     try {
       const candidates = await fetchArtworkCandidates(id, slot);
-      setSlots((prev) => ({ ...prev, [slot]: candidates }));
+      if (seq === loadSeq.current) setSlots((prev) => ({ ...prev, [slot]: candidates }));
     } catch {
+      if (seq !== loadSeq.current) return;
       setSlots((prev) => ({ ...prev, [slot]: null }));
       setError(t("artworkCandidatesUnavailable"));
     }
   };
 
-  const onLoad = async () => {
+  const onLoad = async (picked?: string) => {
     setError("");
-    const id = mediaID.trim();
+    const id = (picked ?? mediaID).trim();
     if (!id) return;
+    loadSeq.current++;
     setLoadedID(id);
     setSlots({}); // every slot reads as undefined → "loading" until each lands
     await Promise.all(SLOTS.map(({ slot }) => loadSlot(id, slot)));
@@ -71,19 +66,30 @@ export function ArtworkPage() {
 
   return (
     <ManageSection>
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <div className="space-y-1">
           <Label htmlFor="artwork-media">{t("fieldLocksMediaLabel")}</Label>
-          <Input
+          <EntityPicker
             id="artwork-media"
             value={mediaID}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setMediaID(e.target.value)}
-            className="w-72"
+            onChange={(id) => {
+              setMediaID(id);
+              if (id) void onLoad(id);
+              else {
+                loadSeq.current++;
+                setLoadedID("");
+                setSlots({});
+              }
+            }}
           />
         </div>
-        <Button type="button" variant="outline" onClick={onLoad} disabled={!mediaID.trim()}>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-6"
+          onClick={() => void onLoad()}
+          disabled={!mediaID.trim()}
+        >
           {t("fieldLocksLoad")}
         </Button>
       </div>

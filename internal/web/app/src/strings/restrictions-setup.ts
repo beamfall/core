@@ -1,6 +1,6 @@
 // Setting up Restrictions from the web: the Restrictions PIN in Manage ›
 // Restrictions and the per-Library Restricted switch in Console › Libraries
-// (CORE-2463).
+// (CORE-2463), plus direction PIN setup for Restrictions and Profile entry (CORE-2464).
 export const restrictionsSetupStrings = {
   en: {
     restrictionsSetupSubtitle: "Set a Restrictions PIN to control who can show restricted content.",
@@ -25,6 +25,22 @@ export const restrictionsSetupStrings = {
     libraryRestrictedNeedsUnlock:
       "Unlock with the Restrictions PIN first (Manage › Restrictions) to change this.",
     libraryRestrictedNotSaved: "The change was not saved. Try again.",
+    pinSetupDigits: "Digits",
+    pinSetupDigitsOnly: "Use only digits 0–9 for the PIN.",
+    pinSetupDirections: "Directions",
+    pinSetupDirectionsHelp:
+      "Use at least 6 steps. Use the arrow buttons or the keyboard arrow keys.",
+    pinSetupTVWarning:
+      "This PIN cannot be entered with a TV remote. Use only 2, 4, 6 and 8 for TV entry.",
+    pinSetupSwipePrivacy: "Swipes are easier for someone nearby to see than keypad taps.",
+    pinDirectionUp: "Up",
+    pinDirectionLeft: "Left",
+    pinDirectionRight: "Right",
+    pinDirectionDown: "Down",
+    pinSetupRemoveStep: "Remove last step",
+    pinSetupProfileAction: "Entry PIN",
+    pinSetupProfileTitle: "Entry PIN for {name}",
+    pinSetupProfileHelp: "Use this PIN when switching to this profile.",
   },
   fr: {
     restrictionsSetupSubtitle:
@@ -51,6 +67,23 @@ export const restrictionsSetupStrings = {
     libraryRestrictedNeedsUnlock:
       "Déverrouillez d’abord avec le PIN de restriction (Gérer › Restrictions) pour modifier ce réglage.",
     libraryRestrictedNotSaved: "La modification n’a pas été enregistrée. Réessayez.",
+    pinSetupDigits: "Chiffres",
+    pinSetupDigitsOnly: "Utilisez uniquement les chiffres de 0 à 9 pour le PIN.",
+    pinSetupDirections: "Directions",
+    pinSetupDirectionsHelp:
+      "Saisissez au moins 6 directions avec les boutons fléchés ou les flèches du clavier.",
+    pinSetupTVWarning:
+      "Ce PIN ne peut pas être saisi avec une télécommande TV. Pour la TV, utilisez uniquement 2, 4, 6 et 8.",
+    pinSetupSwipePrivacy:
+      "Une personne à proximité voit plus facilement les gestes de balayage que les pressions sur le pavé numérique.",
+    pinDirectionUp: "Haut",
+    pinDirectionLeft: "Gauche",
+    pinDirectionRight: "Droite",
+    pinDirectionDown: "Bas",
+    pinSetupRemoveStep: "Supprimer la dernière direction",
+    pinSetupProfileAction: "PIN d’accès",
+    pinSetupProfileTitle: "PIN d’accès de {name}",
+    pinSetupProfileHelp: "Utilisez ce PIN pour passer à ce profil.",
   },
   de: {
     restrictionsSetupSubtitle:
@@ -77,6 +110,23 @@ export const restrictionsSetupStrings = {
     libraryRestrictedNeedsUnlock:
       "Entsperren Sie zuerst mit der Einschränkungs-PIN (Verwalten › Einschränkungen), um dies zu ändern.",
     libraryRestrictedNotSaved: "Die Änderung wurde nicht gespeichert. Versuchen Sie es erneut.",
+    pinSetupDigits: "Ziffern",
+    pinSetupDigitsOnly: "Verwenden Sie für die PIN nur die Ziffern 0 bis 9.",
+    pinSetupDirections: "Richtungen",
+    pinSetupDirectionsHelp:
+      "Geben Sie mindestens 6 Richtungen über die Pfeilschaltflächen oder die Pfeiltasten ein.",
+    pinSetupTVWarning:
+      "Diese PIN lässt sich nicht mit einer TV-Fernbedienung eingeben. Verwenden Sie dafür nur 2, 4, 6 und 8.",
+    pinSetupSwipePrivacy:
+      "Personen in Ihrer Nähe können Wischgesten leichter beobachten als Eingaben auf dem Ziffernfeld.",
+    pinDirectionUp: "Oben",
+    pinDirectionLeft: "Links",
+    pinDirectionRight: "Rechts",
+    pinDirectionDown: "Unten",
+    pinSetupRemoveStep: "Letzte Richtung entfernen",
+    pinSetupProfileAction: "Profil-PIN",
+    pinSetupProfileTitle: "Profil-PIN für {name}",
+    pinSetupProfileHelp: "Verwenden Sie diese PIN, um zu diesem Profil zu wechseln.",
   },
   es: {
     restrictionsSetupSubtitle:
@@ -103,6 +153,23 @@ export const restrictionsSetupStrings = {
     libraryRestrictedNeedsUnlock:
       "Desbloquea primero con el PIN de restricción (Gestionar › Restricciones) para cambiar esto.",
     libraryRestrictedNotSaved: "No se guardó el cambio. Inténtalo de nuevo.",
+    pinSetupDigits: "Dígitos",
+    pinSetupDigitsOnly: "Usa solo los dígitos del 0 al 9 para el PIN.",
+    pinSetupDirections: "Direcciones",
+    pinSetupDirectionsHelp:
+      "Introduce al menos 6 direcciones con los botones de flecha o las flechas del teclado.",
+    pinSetupTVWarning:
+      "Este PIN no se puede introducir con el mando del televisor. Para usar el mando, elige solo 2, 4, 6 y 8.",
+    pinSetupSwipePrivacy:
+      "Quien esté cerca puede ver más fácilmente los gestos de deslizamiento que las pulsaciones en el teclado numérico.",
+    pinDirectionUp: "Arriba",
+    pinDirectionLeft: "Izquierda",
+    pinDirectionRight: "Derecha",
+    pinDirectionDown: "Abajo",
+    pinSetupRemoveStep: "Quitar la última dirección",
+    pinSetupProfileAction: "PIN de acceso",
+    pinSetupProfileTitle: "PIN de acceso de {name}",
+    pinSetupProfileHelp: "Usa este PIN para cambiar a este perfil.",
   },
   pt: {
     restrictionsSetupSubtitle:
@@ -129,5 +196,22 @@ export const restrictionsSetupStrings = {
     libraryRestrictedNeedsUnlock:
       "Desbloqueie primeiro com o PIN de restrição (Gerir › Restrições) para alterar isto.",
     libraryRestrictedNotSaved: "A alteração não foi guardada. Tente novamente.",
+    pinSetupDigits: "Dígitos",
+    pinSetupDigitsOnly: "Utilize apenas os algarismos de 0 a 9 para o PIN.",
+    pinSetupDirections: "Direções",
+    pinSetupDirectionsHelp:
+      "Introduza pelo menos 6 direções com os botões de seta ou as teclas de seta.",
+    pinSetupTVWarning:
+      "Não é possível introduzir este PIN com o comando da TV. Para usar o comando, utilize apenas 2, 4, 6 e 8.",
+    pinSetupSwipePrivacy:
+      "Quem está por perto vê mais facilmente os gestos de deslizar do que os toques no teclado numérico.",
+    pinDirectionUp: "Cima",
+    pinDirectionLeft: "Esquerda",
+    pinDirectionRight: "Direita",
+    pinDirectionDown: "Baixo",
+    pinSetupRemoveStep: "Remover a última direção",
+    pinSetupProfileAction: "PIN de acesso",
+    pinSetupProfileTitle: "PIN de acesso de {name}",
+    pinSetupProfileHelp: "Use este PIN para mudar para este perfil.",
   },
 };

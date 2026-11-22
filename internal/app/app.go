@@ -667,6 +667,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// CORE-2393: a live transcode preempts scans like generation.
 	scanHandler = scanYieldsToPlayback(resourceGovernor, logger, scanHandler)
 	jobRegistry.Register(scanpkg.JobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
+		// A scan queued before its Library was deleted completes at once:
+		// no playback wait, no walk and no post-scan follow-ups (CORE-1279).
+		if deleted, err := scanpkg.JobLibraryDeleted(ctx, st, job); err != nil || deleted {
+			return jobs.Result{}, err
+		}
 		floor, floorErr := st.MaxMediaInsertSeq(ctx)
 		if floorErr != nil {
 			logger.Warn("asset catch-up watermark failed; skipping catch-up", "error", floorErr)
@@ -918,8 +923,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	identifyService := identify.NewService(scrapeEngine, executablePlugins, st)
 	identifyService.SetArtwork(scrapeEngine, artworkService)
 	identifyService.SetArtworkCandidates(st)
-	identifyService.SetProvenance(st)
-	identifyService.SetFields(st)
 	identifyService.SetEntities(st)
 	identifyService.SetFingerprints(st)
 	identifyService.SetMediaTitles(parserMediaTitles{store: st, parsers: parsers})
@@ -1354,6 +1357,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		st,
 		server.WithUnmatchedArtworkCreator(graphServer),
 		server.WithCompatRefusalJournalDir(filepath.Join(cfg.DataDir, "compat-refusals")),
+		server.WithSubscriptionLibrarySealed(sealedPredicate),
 	)
 	// Guideline 1.2 UGC moderation substrate (NATIVEMGR-4, apple ADR-0004 §4):
 	// file-backed per-Profile content report/block store + published moderation
@@ -1578,6 +1582,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	graphHandler.SetJellyfinCompatController(compatSettings)
 	srv.SetProxyTee(proxyTee.ServeProxy)
+	playbackInfo.SetFeedStreams(feedStreamRegistrar{tee: proxyTee})
+	feedHookAdapter := feedHooks{poller: subscriptionPoller, logger: logger}
+	graphHandler.SetFeedProber(feedHookAdapter)
+	graphHandler.SetSubscriptionPoller(feedHookAdapter)
+	graphHandler.SetFeedErrorClassifier(ingest.ClassifyFeedError)
 	app := &App{
 		cfg:                    cfg,
 		store:                  st,
@@ -2717,16 +2726,20 @@ func runRetentionPurge(ctx context.Context, st *store.Store, art *artwork.Servic
 		logger.Info("retention rules trashed media", "media", trashed)
 	}
 	trashPurgeSkipped := false
-	if purged, skipped, err := st.SweepPurgeTrashedBefore(ctx, time.Now().UTC().Add(-store.TrashRetention)); trashDisabledConfirmationRequired(skipped, err) {
+	purged, skipped, err := st.SweepPurgeTrashedBefore(ctx, time.Now().UTC().Add(-store.TrashRetention))
+	// Purged Media take their generated artwork with them, a failure part-way
+	// included (CORE-1281).
+	removePurgedMediaArtwork(ctx, st, art, logger, purged)
+	if trashDisabledConfirmationRequired(skipped, err) {
 		trashPurgeSkipped = true
 		logger.Info("trash purge skipped: confirmation required", "reason", "trash disabled", "skips", st.TrashDisabledSweepSkips())
 	} else if err != nil {
-		logger.Warn("trash purge failed", "media", purged, "error", err)
+		logger.Warn("trash purge failed", "media", len(purged), "error", err)
 	} else if skipped {
 		trashPurgeSkipped = true
 		logger.Info("trash purge skipped")
-	} else if purged > 0 {
-		logger.Info("trash purged", "media", purged)
+	} else if len(purged) > 0 {
+		logger.Info("trash purged", "media", len(purged))
 	}
 	// Deleted Libraries share the trashed-Media window and rules (CORE-1201):
 	// records and generated artwork go, the owner's files never do.
@@ -4263,7 +4276,7 @@ func registerBuiltInSchedules(ctx context.Context, st *store.Store, service *sch
 	if composesPictures && precomputeBudgetBytes > 0 && precomputeCacheRoot != "" {
 		service.Register(singleJobSchedule(playback.ComposedSweepJobKind, schedulepkg.Every(1, schedulepkg.Hours)))
 	}
-	service.Register(singleJobSchedule(ingest.PollJobKind, schedulepkg.Every(1, schedulepkg.Hours)))
+	service.Register(singleJobSchedule(ingest.PollJobKind, schedulepkg.Every(int(ingest.MinPollInterval/time.Minute), schedulepkg.Minutes)))
 	service.Register(singleJobSchedule(qbittorrent.PollJobKind, schedulepkg.Every(5, schedulepkg.Minutes)))
 	// Decode-verify sampling: weekly on Sunday at 05:00,
 	// heavy I/O / low urgency. Disableable like every seeded Schedule; the
@@ -4487,10 +4500,13 @@ type libraryMutationObserver struct {
 
 func (o libraryMutationObserver) LibraryCreated(ctx context.Context, libraryID store.LibraryID, roots []string) {
 	if o.schedule != nil {
+		// Reconcile, not Reload: the new Library's schedule has no stored
+		// row yet, and only Reconcile writes one, so a Reload left it unfired
+		// until the next restart (CORE-1284).
 		o.schedule.Register(scanScheduleSpec(o.store, libraryID))
 		o.precompute.register(o.schedule, libraryID)
-		if err := o.schedule.Reload(ctx); err != nil {
-			o.logger.Warn("schedule reload after library create failed", "library", string(libraryID), "error", err)
+		if err := o.schedule.Reconcile(ctx, time.Now().UTC()); err != nil {
+			o.logger.Warn("schedule reconcile after library create failed", "library", string(libraryID), "error", err)
 		}
 	}
 	o.LibraryRootsChanged(ctx, libraryID, roots)
@@ -4500,8 +4516,14 @@ func (o libraryMutationObserver) LibraryRootsChanged(ctx context.Context, librar
 	if o.watcher == nil {
 		return
 	}
-	for _, root := range roots {
-		_ = o.watcher.Observe(libraryID, root)
+	// The saved folder set is read inside SyncRoots, so overlapping edits end
+	// on the newest one and a removed folder stops being watched (CORE-1280).
+	load := func() ([]string, error) { return roots, nil }
+	if o.store != nil {
+		load = func() ([]string, error) { return o.store.LibraryRoots(ctx, libraryID) }
+	}
+	if err := o.watcher.SyncRoots(libraryID, load); err != nil {
+		o.logger.Warn("watcher sync after library folder change failed", "library", string(libraryID), "error", err)
 	}
 }
 
@@ -4563,6 +4585,30 @@ func (o libraryMutationObserver) LibraryPurged(ctx context.Context, purge store.
 		}
 	}
 	removePurgedLibraryArtwork(o.artwork, o.logger, purge)
+}
+
+// MediaPurged removes the generated artwork of trashed Media an owner purged
+// (CORE-1281).
+func (o libraryMutationObserver) MediaPurged(ctx context.Context, ids []store.MediaID) {
+	removePurgedMediaArtwork(ctx, o.store, o.artwork, o.logger, ids)
+}
+
+// removePurgedMediaArtwork deletes the server-generated artwork directory of
+// each purged Media. It never touches the Media's own files. A Media ID is
+// derived from its file, so one a scan re-imported since the purge keeps its
+// new artwork.
+func removePurgedMediaArtwork(ctx context.Context, st *store.Store, art *artwork.Service, logger *slog.Logger, ids []store.MediaID) {
+	if art == nil {
+		return
+	}
+	for _, id := range ids {
+		if _, err := st.MediaLibraryID(ctx, id); err == nil {
+			continue
+		}
+		if err := art.PurgeMediaArtwork(id); err != nil {
+			logger.Warn("purged media artwork removal failed", "media", string(id), "error", err)
+		}
+	}
 }
 
 // removePurgedLibraryArtwork deletes the server-generated artwork of a purged

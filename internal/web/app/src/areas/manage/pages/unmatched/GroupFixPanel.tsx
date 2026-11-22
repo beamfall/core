@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useState } from "react";
 import { Link } from "react-router";
+import { AssignPanel } from "@/components/assign/AssignPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,27 +12,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  dismissUnmatched,
-  fixMatch,
-  fixMatchCandidates,
-  fixMatchPreview,
-  identifyLookup,
-} from "@/lib/graphql";
-import type { FixMatchCandidateInfo, FixMatchFieldDiff } from "@/lib/graphql/types";
+import { dismissUnmatched } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import type { FolderHint, UnmatchedGroup } from "./groups";
-import { groupProblem, percent, reasonLabel } from "./reasons";
-
-/**
- * GroupFixPanel fixes every item of one UnmatchedGroup in one step
- * (CORE-2910). It opens with the folder's title and year already searched, so
- * the common fix is one click on "Match all"; a pasted catalog ID, a preview
- * that writes nothing, naming advice and Hide stay one step away.
- */
+import { groupProblem } from "./reasons";
 
 /** The scraper id the queue records for a source with no catalog to search. */
 const MANUAL_SCRAPER_ID = "manual";
@@ -62,166 +47,18 @@ export function GroupFixPanel({
 }) {
   const t = useT();
   const hideNoteID = useId();
-  const first = group.items[0];
-  const source = { pluginID: group.pluginID, scraperID: group.scraperID };
+  const [first, ...rest] = group.items;
   const manual = group.scraperID === MANUAL_SCRAPER_ID;
-  const [query, setQuery] = useState(hint?.title || group.candidateTitle || first?.title || "");
-  const [year, setYear] = useState(hint?.year ? String(hint.year) : "");
-  const [candidates, setCandidates] = useState<FixMatchCandidateInfo[]>([]);
-  const [selectedID, setSelectedID] = useState("");
-  const [pastedID, setPastedID] = useState("");
-  const [diff, setDiff] = useState<FixMatchFieldDiff[]>([]);
   const [busy, setBusy] = useState(false);
-  const blocked = busy || locked;
-  const [progress, setProgress] = useState("");
-  // The year the shown candidates were searched with: it picks the default
-  // selection and the Suggested badge, so a corrected year wins over the folder.
-  const [suggestedYear, setSuggestedYear] = useState<number | undefined>(undefined);
-  // The year the last title search used: null before any search, undefined
-  // for a search with no year. The naming hint follows it.
+  const [panelBusy, setPanelBusy] = useState(false);
+  const blocked = busy || locked || panelBusy;
   const [lastSearchYear, setLastSearchYear] = useState<number | undefined | null>(null);
-  const searched = useRef(false);
-  // Bumped on every selection; a preview answered for an older one is dropped.
-  const selection = useRef(0);
-  // False once a panel for another group replaces this one: its late
-  // failures are not reported against the new group.
-  const live = useRef(true);
-  const report = (message: string) => {
-    if (live.current) onError(message);
-  };
-
-  // Once a search ran with a corrected year, the hint names that year, not
-  // the folder's.
   const problem = groupProblem(
     t,
     group,
     lastSearchYear === null || !hint ? hint : { ...hint, year: lastSearchYear },
   );
   const count = group.items.length;
-
-  // A new selection invalidates the preview: a diff for one entry next to
-  // another entry's Match button would misreport what is about to be written.
-  const select = (candidateID: string) => {
-    selection.current++;
-    setSelectedID(candidateID);
-    setDiff([]);
-  };
-
-  const runSearch = async (text: string, yearText: string) => {
-    if (manual || !text.trim() || !first) return;
-    const parsedYear = Number.parseInt(yearText, 10);
-    const searchYear = parsedYear > 0 ? parsedYear : undefined;
-    setBusy(true);
-    try {
-      const scored = await fixMatchCandidates({
-        mediaID: first.mediaID,
-        ...source,
-        query: text.trim(),
-        ...(searchYear ? { year: searchYear } : {}),
-      });
-      setCandidates(scored);
-      setSuggestedYear(searchYear);
-      setLastSearchYear(searchYear);
-      const preferred = searchYear
-        ? scored.find((candidate) => candidate.year === searchYear)
-        : undefined;
-      select((preferred ?? scored[0])?.id ?? "");
-    } catch {
-      report(t("unmatchedUnavailable"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // A panel for another group replaces this one: its late answers are dropped.
-  // Setting live on mount keeps a development double mount working.
-  useEffect(() => {
-    live.current = true;
-    return () => {
-      selection.current++;
-      live.current = false;
-    };
-  }, []);
-
-  // The panel is keyed by group, so this runs once per group: the operator
-  // lands on candidates already searched with the folder's name and year.
-  useEffect(() => {
-    if (searched.current) return;
-    searched.current = true;
-    void runSearch(query, year);
-  }, []);
-
-  // Paste-an-id: the fetched entry becomes the single candidate and flows
-  // through the same preview-then-match path. It carries no score — nothing
-  // was compared, so a 0% confidence would be a lie.
-  const onFetchByID = async () => {
-    const candidateID = pastedID.trim();
-    if (!candidateID || !first) return;
-    setBusy(true);
-    try {
-      const fetched = await identifyLookup({ mediaID: first.mediaID, ...source, candidateID });
-      setSuggestedYear(undefined);
-      setCandidates([
-        {
-          ...fetched,
-          ...source,
-          confidence: 0,
-          threshold: group.threshold,
-          scored: false,
-          reason: "unscored",
-        },
-      ]);
-      select(fetched.id || candidateID);
-    } catch {
-      report(t("unmatchedPasteIDFailed"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onPreview = async () => {
-    if (!selectedID || !first) return;
-    const asked = selection.current;
-    setBusy(true);
-    try {
-      const rows = await fixMatchPreview({
-        mediaID: first.mediaID,
-        ...source,
-        candidateID: selectedID,
-      });
-      if (asked === selection.current) setDiff(rows);
-    } catch {
-      if (asked === selection.current) report(t("unmatchedUnavailable"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // Match all writes one item at a time so progress is honest and a refusal
-  // names exactly which items are still unmatched.
-  const onMatch = async () => {
-    if (!selectedID) return;
-    onWriteStart();
-    setBusy(true);
-    const failed: string[] = [];
-    let done = 0;
-    for (const item of group.items) {
-      setProgress(t("unmatchedMatching", { done: done + failed.length + 1, total: count }));
-      try {
-        await fixMatch({ mediaID: item.mediaID, ...source, candidateID: selectedID });
-        done++;
-      } catch {
-        failed.push(item.title || item.mediaID);
-      }
-    }
-    setProgress("");
-    setBusy(false);
-    onFinished(
-      failed.length > 0
-        ? t("unmatchedMatchedSome", { done, total: count, titles: failed.join(", ") })
-        : "",
-    );
-  };
 
   const hide = async (mediaIDs: string[]) => {
     onWriteStart();
@@ -242,145 +79,47 @@ export function GroupFixPanel({
         {manual ? (
           <p className="text-xs text-muted-foreground">{t("unmatchedManualNoCatalog")}</p>
         ) : (
-          <>
-            <form
-              className="flex flex-wrap gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void runSearch(query, year);
+          first && (
+            <AssignPanel
+              items={[first, ...rest]}
+              sources={[
+                {
+                  pluginID: group.pluginID,
+                  scraperID: group.scraperID,
+                  label: group.scraperID,
+                  acceptsPastedID: true,
+                },
+              ]}
+              initialQuery={hint?.title || group.candidateTitle || first.title}
+              initialYear={hint?.year}
+              unmatched={{ threshold: group.threshold, onSearchYear: setLastSearchYear, onError }}
+              blocked={busy || locked}
+              onActivityChange={setPanelBusy}
+              onWriteChange={(writing) => {
+                if (writing) onWriteStart();
               }}
-            >
-              <Input
-                className="min-w-0 flex-1 basis-48"
-                aria-label={t("unmatchedSearchLabel")}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-              <Input
-                className="w-24"
-                aria-label={t("unmatchedYearLabel")}
-                inputMode="numeric"
-                placeholder="YYYY"
-                value={year}
-                onChange={(e) => setYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
-              />
-              <Button type="submit" size="sm" variant="outline" disabled={blocked || !query.trim()}>
-                {t("unmatchedSearch")}
-              </Button>
-            </form>
-
-            {candidates.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                {busy ? t("loading") : t("unmatchedNoCandidates")}
-              </p>
-            ) : (
-              <>
-                <p className="text-xs text-muted-foreground">{t("unmatchedPickHint")}</p>
-                <ul className="space-y-2">
-                  {candidates.map((candidate) => (
-                    <li key={candidate.id}>
-                      <button
-                        type="button"
-                        className="grid w-full gap-1 rounded-md border px-3 py-2 text-left hover:bg-muted/50 data-[active=true]:border-primary data-[active=true]:bg-muted/40"
-                        data-active={selectedID === candidate.id}
-                        aria-pressed={selectedID === candidate.id}
-                        onClick={() => select(candidate.id)}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="min-w-0 break-words text-sm font-medium text-foreground">
-                            {candidate.title}
-                            {candidate.year ? ` (${candidate.year})` : ""}
-                          </span>
-                          <span className="flex shrink-0 gap-1">
-                            {suggestedYear !== undefined && candidate.year === suggestedYear && (
-                              <Badge>{t("unmatchedSuggested")}</Badge>
-                            )}
-                            <Badge variant={candidate.scored ? "secondary" : "outline"}>
-                              {candidate.scored
-                                ? percent(candidate.confidence)
-                                : t("unmatchedCandidateUnscored")}
-                            </Badge>
-                          </span>
-                        </div>
-                        {candidate.reason && (
-                          <span className="text-xs text-muted-foreground">
-                            {reasonLabel(t, candidate.reason)}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" disabled={blocked || !selectedID} onClick={() => void onMatch()}>
-                {count === 1 ? t("unmatchedApplyPin") : t("unmatchedMatchAll", { count })}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={blocked || !selectedID}
-                onClick={() => void onPreview()}
-              >
-                {t("unmatchedPreviewLoad")}
-              </Button>
-              {progress && (
-                <span className="text-xs text-muted-foreground" role="status">
-                  {progress}
-                </span>
-              )}
-            </div>
-
-            {diff.length > 0 && (
-              <dl className="grid gap-2 rounded-md border p-2">
-                {diff.map((row) => (
-                  <div key={row.field} className="grid gap-0.5">
-                    <dt className="text-xs text-muted-foreground">{row.field}</dt>
-                    <dd className="break-words text-sm text-foreground">
-                      {row.changed ? (
-                        <>
-                          <span className="text-muted-foreground line-through">
-                            {row.current || "—"}
-                          </span>{" "}
-                          → <span className="font-medium">{row.proposed}</span>
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          {t("unmatchedPreviewUnchanged")}
-                        </span>
-                      )}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-
-            <details className="rounded-md border px-3 py-2">
-              <summary className="cursor-pointer text-sm text-foreground">
-                {t("unmatchedKnowID")}
-              </summary>
-              <div className="mt-2 grid gap-1">
-                <p className="text-xs text-muted-foreground">{t("unmatchedPasteIDHint")}</p>
-                <div className="flex gap-2">
-                  <Input
-                    aria-label={t("unmatchedPasteIDLabel")}
-                    value={pastedID}
-                    onChange={(e) => setPastedID(e.target.value)}
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={blocked || !pastedID.trim()}
-                    onClick={() => void onFetchByID()}
-                  >
-                    {t("unmatchedPasteIDFetch")}
-                  </Button>
-                </div>
-              </div>
-            </details>
-          </>
+              onFinished={(results, interrupted) => {
+                if (interrupted !== undefined) {
+                  onFinished(t("assignInterrupted", { done: interrupted, total: count }));
+                  return;
+                }
+                const failed = results.filter((result) => result.error);
+                const titles = failed.map(
+                  ({ mediaID }) =>
+                    group.items.find((item) => item.mediaID === mediaID)?.title || mediaID,
+                );
+                onFinished(
+                  failed.length
+                    ? t("unmatchedMatchedSome", {
+                        done: count - failed.length,
+                        total: count,
+                        titles: titles.join(", "),
+                      })
+                    : "",
+                );
+              }}
+            />
+          )
         )}
 
         <div className="grid gap-2 border-t pt-3">

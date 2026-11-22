@@ -1124,7 +1124,7 @@ func getOrCreateSubscription(ctx context.Context, st Store, payload Payload, sub
 		LibraryID: store.LibraryID(strings.TrimSpace(payload.LibraryID)),
 		FeedURL:   sub.FeedURL,
 		Root:      root,
-		Title:     sub.Title,
+		Title:     store.SubscriptionTitle(sub.Title, sub.FeedURL),
 	}, now)
 	if err != nil {
 		return store.Subscription{}, err

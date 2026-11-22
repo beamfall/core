@@ -36,7 +36,7 @@ func seedEngagement(t *testing.T, st *Store, mediaID MediaID) {
 	if err := st.SetMediaFavorite(ctx, "profile-default", mediaID, true, revealed); err != nil {
 		t.Fatalf("seed favorite %s: %v", mediaID, err)
 	}
-	if err := st.QueueAdd(ctx, "profile-default", mediaID, nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", mediaID, nil, revealed); err != nil {
 		t.Fatalf("seed queue %s: %v", mediaID, err)
 	}
 }

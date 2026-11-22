@@ -8,9 +8,10 @@ import (
 )
 
 // Per-field source-precedence locks. A field is locked when its recorded
-// write source is manual (media_field_provenance.source = 'manual'): nothing
-// below a manual edit in the precedence order (an identification, a per-item
-// refresh, a re-match, a scan) may overwrite it. An admin edit locks the
+// write source is manual or local (media_field_provenance.source): nothing
+// below it in the precedence order (an identification, a per-item refresh, a
+// re-match, a scan) may overwrite it. Local values come from sidecar files the
+// operator keeps beside the media and unlock when the sidecar goes away. An admin edit locks the
 // fields it writes; the Console reads and toggles the lock explicitly here.
 // Fields with a legacy media.<field>_identified column keep it in step, so a
 // scan import also leaves a locked value alone. The fields are named by the
@@ -57,6 +58,10 @@ func lockMirror(field string) (string, bool) {
 type MediaFieldLock struct {
 	Field  string
 	Locked bool
+	// Local reports a lock held by a local sidecar rather than an operator: it
+	// lifts only when the sidecar stops stating the field, so it is not one an
+	// operator clears.
+	Local bool
 }
 
 // MediaFieldLocks returns the per-field source-precedence lock state for one
@@ -112,21 +117,39 @@ func (s *Store) SetMediaFieldLock(ctx context.Context, id MediaID, field string,
 	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, id, filter); err != nil {
 		return nil, err
 	}
-	mirror, fixed := lockMirror(field)
 	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
+	if err := setMediaFieldLockTx(ctx, tx, id, field, locked, false); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return mediaFieldLocksFrom(ctx, plane.reader, id)
+}
+
+func setMediaFieldLockTx(ctx context.Context, tx *sql.Tx, id MediaID, field string, locked, onlyManual bool) error {
+	mirror, fixed := lockMirror(field)
 	if !fixed {
 		held, err := mediaFieldHeldTx(ctx, tx, id, field)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if !held {
-			return nil, ValidationError("unknown lockable field")
+			return ValidationError("unknown lockable field")
 		}
 	}
+	if onlyManual {
+		// A stale clearLocks selection must preserve an already unlocked field's provenance.
+		source, err := fieldProvenanceTx(ctx, tx, id, field)
+		if err != nil || source != MutationSourceManual {
+			return err
+		}
+	}
+	var err error
 	if locked {
 		err = recordFieldProvenanceTx(ctx, tx, id, field, MutationSourceManual)
 	} else {
@@ -134,17 +157,12 @@ func (s *Store) SetMediaFieldLock(ctx context.Context, id MediaID, field string,
 			"DELETE FROM media_field_provenance WHERE media_id = ? AND field = ?", id, field)
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if mirror != "" {
-		if _, err := tx.ExecContext(ctx, mirror, boolInt(locked), id); err != nil {
-			return nil, err
-		}
+		_, err = tx.ExecContext(ctx, mirror, boolInt(locked), id)
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return mediaFieldLocksFrom(ctx, plane.reader, id)
+	return err
 }
 
 // mediaFieldHeldTx reports whether a plugin-declared field holds a value or a
@@ -169,20 +187,22 @@ func mediaFieldHeldTx(ctx context.Context, tx *sql.Tx, id MediaID, field string)
 // re-checking visibility — the caller already gated. Held under s.mu.RLock.
 func mediaFieldLocksFrom(ctx context.Context, db *sql.DB, id MediaID) ([]MediaFieldLock, error) {
 	rows, err := db.QueryContext(ctx,
-		"SELECT field FROM media_field_provenance WHERE media_id = ? AND source = ? ORDER BY field",
-		id, string(MutationSourceManual))
+		"SELECT field, source FROM media_field_provenance WHERE media_id = ? AND source IN (?, ?) ORDER BY field",
+		id, string(MutationSourceManual), string(MutationSourceLocal))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	manual := map[string]bool{}
+	locked := map[string]bool{}
+	local := map[string]bool{}
 	var order []string
 	for rows.Next() {
-		var field string
-		if err := rows.Scan(&field); err != nil {
+		var field, source string
+		if err := rows.Scan(&field, &source); err != nil {
 			return nil, err
 		}
-		manual[field] = true
+		locked[field] = true
+		local[field] = source == string(MutationSourceLocal)
 		order = append(order, field)
 	}
 	if err := rows.Err(); err != nil {
@@ -190,11 +210,11 @@ func mediaFieldLocksFrom(ctx context.Context, db *sql.DB, id MediaID) ([]MediaFi
 	}
 	locks := make([]MediaFieldLock, 0, len(lockableFields)+len(order))
 	for _, f := range lockableFields {
-		locks = append(locks, MediaFieldLock{Field: f.Field, Locked: manual[f.Field]})
+		locks = append(locks, MediaFieldLock{Field: f.Field, Locked: locked[f.Field], Local: local[f.Field]})
 	}
 	for _, field := range order {
 		if _, fixed := lockMirror(field); !fixed {
-			locks = append(locks, MediaFieldLock{Field: field, Locked: true})
+			locks = append(locks, MediaFieldLock{Field: field, Locked: true, Local: local[field]})
 		}
 	}
 	return locks, nil

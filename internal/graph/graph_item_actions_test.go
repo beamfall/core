@@ -243,15 +243,60 @@ func TestSetRatingSetsClearsAndValidates(t *testing.T) {
 	}
 }
 
+func TestSetContinueWatchingHiddenRemovesAndRestoresKeepingProgress(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	ctx := context.Background()
+	if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
+		ProfileID: "profile-default", MediaID: "media-alpha", PositionSeconds: 30, DurationSeconds: 120,
+	}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
+		t.Fatal(err)
+	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}}
+	shelf := func() int {
+		t.Helper()
+		items, err := st.SourceItems(ctx, filter, store.SourceQuery{Kind: "continue-watching", ProfileID: "profile-default"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(items)
+	}
+	if shelf() != 1 {
+		t.Fatal("continue-watching should list media-alpha before the removal")
+	}
+	state, errs := itemActionCall(t, handler, authorizeViewer, "mutation", "setContinueWatchingHidden", map[string]any{"mediaID": "media-alpha", "hidden": true})
+	if len(errs) != 0 || state.ID != "media-alpha" || state.Watched {
+		t.Fatalf("setContinueWatchingHidden = %+v errors %v", state, errs)
+	}
+	if progress, ok, err := st.PlaybackProgressFor(ctx, "profile-default", "media-alpha"); err != nil || !ok || progress.PositionSeconds != 30 {
+		t.Fatalf("removal changed progress: %+v ok=%v err=%v", progress, ok, err)
+	}
+	if shelf() != 0 {
+		t.Fatal("removed Media still on continue-watching")
+	}
+	if got := engagementInvalidations(t, st, "profile-default"); got != 1 {
+		t.Fatalf("engagement invalidations = %d, want 1", got)
+	}
+	if _, errs := itemActionCall(t, handler, authorizeViewer, "mutation", "setContinueWatchingHidden", map[string]any{"mediaID": "media-alpha", "hidden": false}); len(errs) != 0 {
+		t.Fatalf("undo errors %v", errs)
+	}
+	if shelf() != 1 {
+		t.Fatal("undo did not restore the shelf")
+	}
+	if _, errs := itemActionCall(t, handler, authorizeViewer, "mutation", "setContinueWatchingHidden", map[string]any{"mediaID": "media-alpha"}); len(errs) == 0 {
+		t.Fatal("setContinueWatchingHidden accepted a call with no hidden value")
+	}
+}
+
 func TestItemActionsRefuseHiddenAndMalformedTargets(t *testing.T) {
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)
-	hidden := map[string]any{"mediaID": "media-archive", "watched": true, "watchlisted": true, "rating": 5}
-	for _, call := range [][2]string{{"mutation", "setWatched"}, {"mutation", "setWatchlisted"}, {"mutation", "setRating"}, {"query", "itemState"}} {
+	hidden := map[string]any{"mediaID": "media-archive", "watched": true, "watchlisted": true, "rating": 5, "hidden": true}
+	for _, call := range [][2]string{{"mutation", "setWatched"}, {"mutation", "setWatchlisted"}, {"mutation", "setRating"}, {"mutation", "setContinueWatchingHidden"}, {"query", "itemState"}} {
 		if _, errs := itemActionCall(t, handler, authorizeViewer, call[0], call[1], hidden); len(errs) == 0 {
 			t.Fatalf("%s accepted a Media in a hidden Library", call[1])
 		}
-		if _, errs := itemActionCall(t, handler, authorizeViewer, call[0], call[1], map[string]any{"watched": true, "watchlisted": true, "rating": 5}); len(errs) == 0 {
+		if _, errs := itemActionCall(t, handler, authorizeViewer, call[0], call[1], map[string]any{"watched": true, "watchlisted": true, "rating": 5, "hidden": true}); len(errs) == 0 {
 			t.Fatalf("%s accepted a call with no target", call[1])
 		}
 	}

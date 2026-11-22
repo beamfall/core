@@ -207,6 +207,45 @@ func TestPathPickerRoleEligibilityAndPreview(t *testing.T) {
 	}
 }
 
+func TestPathPickerHidesDotChildrenButBrowsesDotPathDirectly(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	for _, dir := range []string{"Films", ".Trash-99", ".cache", managedFileTrashDir} {
+		if err := os.MkdirAll(filepath.Join(base, dir), 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(base, ".hidden.mp4"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{base}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	picker, err := st.PathPicker(ctx, PathPickerRequest{Role: PathRoleLibraryRoot, Path: base, Depth: 1})
+	if err != nil {
+		t.Fatalf("PathPicker: %v", err)
+	}
+	if len(picker.Entries) != 1 {
+		t.Fatalf("entries = %#v", picker.Entries)
+	}
+	var names []string
+	for _, child := range picker.Entries[0].Children {
+		names = append(names, child.Name)
+	}
+	if len(names) != 1 || names[0] != "Films" {
+		t.Fatalf("children = %v, want only Films", names)
+	}
+	direct, err := st.PathPicker(ctx, PathPickerRequest{Role: PathRoleLibraryRoot, Path: filepath.Join(base, ".cache"), Depth: 0})
+	if err != nil {
+		t.Fatalf("direct dot PathPicker: %v", err)
+	}
+	if len(direct.Entries) != 1 || direct.Entries[0].Name != ".cache" || !direct.Entries[0].Selectable {
+		t.Fatalf("direct dot entry = %#v, want a selectable .cache", direct.Entries)
+	}
+}
+
 func TestPathPickerAppStoreSuppressesDownloadNamedRoots(t *testing.T) {
 	ctx := context.Background()
 	oldGOOS, oldVolumesRoot := pathPickerGOOS, pathPickerVolumesRoot

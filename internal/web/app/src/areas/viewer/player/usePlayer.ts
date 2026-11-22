@@ -1,6 +1,12 @@
 import Hls from "hls.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, getIdentityEpochSignal, graphql, resetIdentityEpoch } from "@/lib/api";
+import {
+  ApiError,
+  getExpectedProfile,
+  getIdentityEpochSignal,
+  graphql,
+  resetIdentityEpoch,
+} from "@/lib/api";
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker, ReportPlaybackVars } from "@/lib/graphql/types";
 import {
@@ -163,44 +169,112 @@ const REPORT_INTERVAL_MS = 15000;
 /** The song as recorded: no pitch shift, the recorded tempo. */
 export const DEFAULT_ADJUSTMENT: PlaybackAdjustment = { pitchShiftSemitones: 0, tempo: 1 };
 const REPORT_PLAYBACK_MUTATION =
-  "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS) { mediaID } }";
+  "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!, $paused: Boolean, $playbackID: String, $playedMS: Int) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS, paused: $paused, playbackID: $playbackID, playedMS: $playedMS) { mediaID } }";
 let lastPlaybackEventTimeMS = 0;
 
-interface ProgressQueue {
-  active: boolean;
-  finalQueued: boolean;
-  // Set when the player moved on (track change, unmount) with a finish report
-  // still owed: no new reports are accepted, but the queued final one is sent.
-  retiring: boolean;
-  onDrained: (() => void) | null;
-  inFlight: { controller: AbortController; progress: ReportPlaybackVars } | null;
-  pending: ReportPlaybackVars | null;
+/** A random ID for one play of an item (CORE-1703): play history groups the
+ *  play's reports by it. getRandomValues, unlike randomUUID, works on a server
+ *  reached over plain HTTP. */
+function newPlaybackID(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function createProgressQueue(): ProgressQueue {
+interface QueuedProgress {
+  progress: ReportPlaybackVars;
+  // Sent by the periodic timer rather than a play, pause, seek or end.
+  heartbeat: boolean;
+}
+
+interface ProgressQueue {
+  playbackID: string;
+  // How long this play has actually played, in milliseconds, and the
+  // performance.now() it last started playing (null: not playing now); see
+  // syncPlayedClock. Play history credits the growth of the count it sends.
+  playedMS: number;
+  playingSince: number | null;
+  active: boolean;
+  finalQueued: boolean;
+  // Set when the player moved on (another item or play, unmount): no new
+  // reports are accepted, but the ones it holds are still sent, in order.
+  retiring: boolean;
+  // A replay's queue waits behind the previous play's until that one has
+  // delivered its finish, so the finish always arrives first (CORE-1703).
+  blocked: boolean;
+  next: ProgressQueue | null;
+  onDrained: (() => void) | null;
+  inFlight: { controller: AbortController; progress: ReportPlaybackVars } | null;
+  // Reports waiting for the one in flight, sent one at a time in the order
+  // they were made: play history reads each step between them, so none is
+  // dropped or reordered (CORE-1703).
+  queued: QueuedProgress[];
+}
+
+function createProgressQueue(playbackID: string): ProgressQueue {
   return {
+    playbackID,
+    playedMS: 0,
+    playingSince: null,
     active: true,
     finalQueued: false,
     retiring: false,
+    blocked: false,
+    next: null,
     onDrained: null,
     inFlight: null,
-    pending: null,
+    queued: [],
   };
 }
 
-function enqueueProgress(queue: ProgressQueue, progress: ReportPlaybackVars): void {
+// openProgressQueue starts the reporting for a new play: a new playback ID
+// and queue, stopped outright if the revealed identity changes (CORE-1143).
+// Given a previous play still delivering its reports, the new queue sends
+// nothing until that one is done.
+function openProgressQueue(after?: ProgressQueue): ProgressQueue {
+  const queue = createProgressQueue(newPlaybackID());
+  if (after?.active) {
+    queue.blocked = true;
+    after.next = queue;
+  }
+  const identitySignal = getIdentityEpochSignal();
+  const stopForIdentityChange = () => stopProgressQueue(queue);
+  queue.onDrained = () => identitySignal?.removeEventListener("abort", stopForIdentityChange);
+  if (identitySignal?.aborted) {
+    stopForIdentityChange();
+  } else {
+    identitySignal?.addEventListener("abort", stopForIdentityChange, { once: true });
+  }
+  return queue;
+}
+
+function enqueueProgress(
+  queue: ProgressQueue,
+  progress: ReportPlaybackVars,
+  heartbeat: boolean,
+): void {
   if (!queue.active || queue.retiring) return;
   if (queue.finalQueued && !progress.finished) return;
   if (progress.finished) queue.finalQueued = true;
-  sendProgress(queue, progress);
+  if (!queue.inFlight && !queue.blocked) {
+    sendProgress(queue, progress);
+    return;
+  }
+  // The one merge allowed: a heartbeat replaces the heartbeat queued just
+  // before it, in the same state, since the later one says all it did.
+  const last = queue.queued.at(-1);
+  if (
+    heartbeat &&
+    last?.heartbeat &&
+    last.progress.paused === progress.paused &&
+    last.progress.playbackID === progress.playbackID
+  ) {
+    last.progress = progress;
+    return;
+  }
+  queue.queued.push({ progress, heartbeat });
 }
 
 function sendProgress(queue: ProgressQueue, progress: ReportPlaybackVars): void {
-  if (queue.inFlight) {
-    if (!queue.inFlight.progress.finished) queue.pending = progress;
-    return;
-  }
-
   const controller = new AbortController();
   queue.inFlight = { controller, progress };
   void graphql<{ reportPlayback: { mediaID: string } }>(
@@ -215,19 +289,34 @@ function sendProgress(queue: ProgressQueue, progress: ReportPlaybackVars): void 
 function completeProgress(queue: ProgressQueue, controller: AbortController): void {
   if (queue.inFlight?.controller !== controller) return;
   queue.inFlight = null;
-  if (!queue.active) return;
-  const pending = queue.pending;
-  queue.pending = null;
-  if (pending) {
-    sendProgress(queue, pending);
+  advanceProgressQueue(queue);
+}
+
+// advanceProgressQueue sends a queue's next report once nothing is in flight
+// and no earlier play holds it back. A retired queue that has sent everything
+// stops, and the replay waiting behind it may send. A failed report is not
+// sent again, so a failed finish releases the replay too and can never arrive
+// after it. A queue stopped by an identity change releases nothing; the
+// replay's own queue stops for the same change.
+function advanceProgressQueue(queue: ProgressQueue): void {
+  if (!queue.active || queue.blocked || queue.inFlight) return;
+  const next = queue.queued.shift();
+  if (next) {
+    sendProgress(queue, next.progress);
     return;
   }
-  if (queue.retiring) stopProgressQueue(queue);
+  if (!queue.retiring) return;
+  stopProgressQueue(queue);
+  const after = queue.next;
+  queue.next = null;
+  if (!after) return;
+  after.blocked = false;
+  advanceProgressQueue(after);
 }
 
 function stopProgressQueue(queue: ProgressQueue): void {
   queue.active = false;
-  queue.pending = null;
+  queue.queued = [];
   queue.inFlight?.controller.abort();
   queue.inFlight = null;
   const onDrained = queue.onDrained;
@@ -235,33 +324,38 @@ function stopProgressQueue(queue: ProgressQueue): void {
   onDrained?.();
 }
 
-// retireProgressQueue ends a queue when playback moves to another item. A
-// finish report already queued (an auto-advance at `ended`) is still delivered,
-// so a fully played track counts as finished; anything else is cancelled. An
-// identity change still stops the queue outright (CORE-1143).
-function retireProgressQueue(queue: ProgressQueue, onDrained: () => void): void {
-  queue.onDrained = onDrained;
-  const finalOwed =
-    queue.active &&
-    queue.finalQueued &&
-    (queue.inFlight?.progress.finished === true || queue.pending?.finished === true);
-  if (!finalOwed) {
-    stopProgressQueue(queue);
-    return;
-  }
+// retireProgressQueue ends a play's queue when playback moves to another
+// item or play. It accepts no new reports but never drops one it holds: they
+// are sent in order, a finish last, even while the queue still waits behind an
+// earlier play's. An identity change still stops it outright (CORE-1143).
+function retireProgressQueue(queue: ProgressQueue): void {
+  if (!queue.active || queue.retiring) return;
   queue.retiring = true;
-  // Drop the in-flight periodic report so the final one goes out now.
-  if (queue.inFlight && !queue.inFlight.progress.finished) {
-    const final = queue.pending;
-    queue.pending = null;
-    queue.inFlight.controller.abort();
-    queue.inFlight = null;
-    if (final) sendProgress(queue, final);
-  }
+  advanceProgressQueue(queue);
 }
 
+// syncPlayedClock brings a play's played count up to now, then keeps it
+// running only while the video actually plays: not paused, seeking, ended or
+// waiting for data. A seek adds nothing, and the wall clock plays no part
+// (CORE-1703).
+function syncPlayedClock(queue: ProgressQueue, video: HTMLVideoElement): void {
+  const now = performance.now();
+  if (queue.playingSince !== null) queue.playedMS += now - queue.playingSince;
+  const playing =
+    !video.paused &&
+    !video.seeking &&
+    !video.ended &&
+    video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
+  queue.playingSince = playing ? now : null;
+}
+
+// nextPlaybackEventTimeMS is the wall clock, never before the last time sent,
+// so the server's latest-report-wins check never sees this player go
+// backward. A clock set back holds it only until the wall clock passes the
+// last time sent again, so a corrected fast clock stops leading. It orders
+// and dates reports; play history measures a play by its played count.
 function nextPlaybackEventTimeMS(): number {
-  const eventTimeMS = Math.max(Date.now(), lastPlaybackEventTimeMS);
+  const eventTimeMS = Math.max(lastPlaybackEventTimeMS, Date.now());
   lastPlaybackEventTimeMS = eventTimeMS;
   return eventTimeMS;
 }
@@ -460,10 +554,21 @@ export function usePlayer(
   const hlsRef = useRef<Hls | null>(null);
   const progressTimerRef = useRef<number | null>(null);
   const progressQueueRef = useRef<ProgressQueue | null>(null);
+  // The playback ID of the play under way and the item it is for.
+  // The play under way and its queue. A reload of the same item (Try again, a
+  // quality or key change) carries on this play and its queue, so the queued
+  // reports go out in order before the reload's (CORE-1703).
+  const playRef = useRef<{ mediaID: string; queue: ProgressQueue } | null>(null);
   const [state, setState] = useState<PlayerState>(emptyState);
   // Bumped by retry() so the load effect re-runs for the same mediaID after a
   // non-terminal failure.
   const [retryKey, setRetryKey] = useState(0);
+  // The <video> the current load plays on. Try again after an error plays on
+  // a new element, so the reporting listeners follow this, not the first
+  // element the ref held (CORE-1703). Each load sets a new object, so the
+  // listeners rebind even when two loads in a row start with no element (an
+  // error screen shows none) and the ref fills in on the next render.
+  const [loadedVideo, setLoadedVideo] = useState<{ element: HTMLVideoElement | null } | null>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   // A ref, not an effect dependency: the next item rides along with the load
@@ -566,15 +671,16 @@ export function usePlayer(
   }, []);
 
   const reportProgress = useCallback(
-    (finished: boolean) => {
+    (finished: boolean, heartbeat = false) => {
       const video = videoRef.current;
       if (!video || !mediaID || !video.duration) return;
       notePresentedPosition(video);
       const position = presentedPositionRef.current;
       if (position === null) return;
-      const eventTimeMS = nextPlaybackEventTimeMS();
       const queue = progressQueueRef.current;
       if (!queue) return;
+      syncPlayedClock(queue, video);
+      const eventTimeMS = nextPlaybackEventTimeMS();
       const songScale = songScaleRef.current;
       // The probed length, not a live transcode's growing video.duration:
       // the server derives "time left" from this (CORE-2314).
@@ -582,16 +688,33 @@ export function usePlayer(
         stateRef.current.info?.timeline?.durationSeconds,
         video.duration * songScale,
       );
-      enqueueProgress(queue, {
-        mediaID,
-        positionSeconds: Math.floor(position * songScale),
-        durationSeconds: Math.floor(durationSeconds),
-        finished,
-        eventTimeMS,
-      });
+      enqueueProgress(
+        queue,
+        {
+          mediaID,
+          positionSeconds: Math.floor(position * songScale),
+          durationSeconds: Math.floor(durationSeconds),
+          finished,
+          eventTimeMS,
+          paused: video.paused,
+          playbackID: queue.playbackID,
+          playedMS: Math.round(queue.playedMS),
+        },
+        heartbeat,
+      );
     },
     [mediaID, notePresentedPosition],
   );
+
+  // Periodic progress beacon while playing.
+  const startHeartbeat = useCallback(() => {
+    if (progressTimerRef.current) return;
+    progressTimerRef.current = window.setInterval(() => {
+      if (videoRef.current && !videoRef.current.paused) {
+        reportProgress(false, true);
+      }
+    }, REPORT_INTERVAL_MS);
+  }, [reportProgress]);
 
   const stopProgressReporting = useCallback(
     (finished: boolean) => {
@@ -611,9 +734,11 @@ export function usePlayer(
   useEffect(() => {
     if (!mediaID) return;
     let ended = false;
+    // The Profile this player opened for (null: none); see endPlayback.
+    const profile = getExpectedProfile() ?? null;
     const onPageHide = () => {
       ended = true;
-      endPlayback(mediaID);
+      endPlayback(mediaID, profile);
     };
     const onPageShow = (event: PageTransitionEvent) => {
       if (!event.persisted || !ended) return;
@@ -626,7 +751,7 @@ export function usePlayer(
     return () => {
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("pageshow", onPageShow);
-      if (!ended) endPlayback(mediaID);
+      if (!ended) endPlayback(mediaID, profile);
     };
   }, [mediaID]);
 
@@ -646,14 +771,26 @@ export function usePlayer(
     // ref before this effect's cleanup runs, so cleanup cannot re-read it.
     let boundVideo: HTMLVideoElement | null = null;
     let recoveryTimer: number | null = null;
-    const progressQueue = createProgressQueue();
-    const identitySignal = getIdentityEpochSignal();
-    const stopForIdentityChange = () => stopProgressQueue(progressQueue);
-    progressQueueRef.current = progressQueue;
-    if (identitySignal?.aborted) {
-      stopForIdentityChange();
+    // Point the reporting listeners at this load's element before anything
+    // can play on it.
+    setLoadedVideo({ element: videoRef.current });
+    // A reload of this item (Try again, a quality or key change) carries on
+    // the same play and its queue, still sending what it holds; anything else
+    // starts a new play, with a new playback ID and queue.
+    const previousPlay = playRef.current;
+    if (
+      retryFromRef.current?.mediaID === mediaID &&
+      previousPlay?.mediaID === mediaID &&
+      previousPlay.queue.active &&
+      !previousPlay.queue.retiring
+    ) {
+      progressQueueRef.current = previousPlay.queue;
     } else {
-      identitySignal?.addEventListener("abort", stopForIdentityChange, { once: true });
+      // A play the last cleanup kept for a reload that did not come.
+      if (previousPlay) retireProgressQueue(previousPlay.queue);
+      const queue = openProgressQueue();
+      playRef.current = { mediaID, queue };
+      progressQueueRef.current = queue;
     }
     const msg = messagesRef.current;
     // A pause sent from another device after this load began, or after
@@ -1359,12 +1496,7 @@ export function usePlayer(
         },
       );
 
-      // Periodic progress beacon while playing.
-      progressTimerRef.current = window.setInterval(() => {
-        if (videoRef.current && !videoRef.current.paused) {
-          reportProgress(false);
-        }
-      }, REPORT_INTERVAL_MS);
+      startHeartbeat();
     }
 
     void start();
@@ -1382,10 +1514,11 @@ export function usePlayer(
         clearInterval(progressTimerRef.current);
         progressTimerRef.current = null;
       }
-      retireProgressQueue(progressQueue, () =>
-        identitySignal?.removeEventListener("abort", stopForIdentityChange),
-      );
-      if (progressQueueRef.current === progressQueue) progressQueueRef.current = null;
+      // A reload of this item keeps the play's queue for the next load, which
+      // sends after what it holds; any other teardown retires it.
+      progressQueueRef.current = null;
+      const play = playRef.current;
+      if (play && retryFromRef.current?.mediaID !== mediaID) retireProgressQueue(play.queue);
       destroyHls();
       const video = boundVideo ?? videoRef.current;
       if (video) {
@@ -1413,25 +1546,59 @@ export function usePlayer(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mediaID, startAtSeconds, retryKey, startID]);
 
-  // Report on pause / seek / end edges.
+  // Report on pause / seek / end edges of the element the load plays on.
   useEffect(() => {
-    const video = videoRef.current;
+    const video = loadedVideo?.element ?? videoRef.current;
     if (!video) return;
+    // Play history credits time only after a playing report, so resuming
+    // reports too (CORE-1703).
+    // Playing again after the finish (Play on an ended item, in place) is a
+    // new play: a new playback ID and queue, and the beacon restarted. The
+    // old queue still delivers its finish, before any of the new play's
+    // reports. The end position is forgotten, so the new play reports only a
+    // presented frame: none while the seek back to the start is pending, the
+    // start once `seeked` fires.
+    const onPlay = () => {
+      const play = playRef.current;
+      if (play && play.queue === progressQueueRef.current && play.queue.finalQueued) {
+        retireProgressQueue(play.queue);
+        presentedPositionRef.current = null;
+        const queue = openProgressQueue(play.queue);
+        playRef.current = { mediaID: play.mediaID, queue };
+        progressQueueRef.current = queue;
+        startHeartbeat();
+      }
+      reportProgress(false);
+    };
     const onPause = () => reportProgress(false);
     const onSeeked = () => reportProgress(false);
     const onEnded = () => stopProgressReporting(true);
-    const onTimeUpdate = () => notePresentedPosition(video);
-    video.addEventListener("pause", onPause);
-    video.addEventListener("seeked", onSeeked);
-    video.addEventListener("ended", onEnded);
-    video.addEventListener("timeupdate", onTimeUpdate);
-    return () => {
-      video.removeEventListener("pause", onPause);
-      video.removeEventListener("seeked", onSeeked);
-      video.removeEventListener("ended", onEnded);
-      video.removeEventListener("timeupdate", onTimeUpdate);
+    // The played clock starts and stops with every change in whether the
+    // video is actually playing; a report brings it up to date as well.
+    const syncPlayed = () => {
+      const queue = progressQueueRef.current;
+      if (queue) syncPlayedClock(queue, video);
     };
-  }, [reportProgress, stopProgressReporting]);
+    const onTimeUpdate = () => {
+      syncPlayed();
+      notePresentedPosition(video);
+    };
+    const listeners: Array<[string, () => void]> = [
+      ["play", onPlay],
+      ["pause", onPause],
+      ["seeked", onSeeked],
+      ["ended", onEnded],
+      ["timeupdate", onTimeUpdate],
+      ["playing", syncPlayed],
+      ["waiting", syncPlayed],
+      ["seeking", syncPlayed],
+      ["emptied", syncPlayed],
+    ];
+    for (const [type, listener] of listeners) video.addEventListener(type, listener);
+    return () => {
+      for (const [type, listener] of listeners) video.removeEventListener(type, listener);
+    };
+  }, [loadedVideo, reportProgress, startHeartbeat, stopProgressReporting]);
 
   const trackControl = useMemo<StreamTrackControl>(() => {
     const bumpTracks = () =>

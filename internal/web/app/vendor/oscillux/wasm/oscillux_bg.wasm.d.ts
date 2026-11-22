@@ -317,6 +317,11 @@ export const oscillux_transition_request: (a: number, b: number, c: number, d: n
 export const oscillux_transition_reset: (a: number) => number;
 export const oscillux_transition_status: (a: number, b: number, c: number) => number;
 export const oscillux_version: () => number;
+export const oscillux_window_governor_config_default: (a: number) => number;
+export const oscillux_window_governor_create: (a: number, b: number, c: number) => number;
+export const oscillux_window_governor_destroy: (a: number) => void;
+export const oscillux_window_governor_record: (a: number, b: number, c: number) => number;
+export const oscillux_window_governor_reset: (a: number, b: number) => number;
 export const flashconfig_set_max_red_flashes: (a: number, b: number) => void;
 export const flashconfig_set_red_rule: (a: number, b: number) => void;
 export const flashconfig_set_rows: (a: number, b: number) => void;

@@ -77,6 +77,7 @@ export function MiniPlayer({
     previous: onPrevious,
     stop: onStop,
     restart: onRestart,
+    songScale,
   });
 
   function togglePlay() {

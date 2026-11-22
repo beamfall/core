@@ -372,6 +372,7 @@ export function PlayerTransport({
     previous: onPreviousInQueue,
     stop: onRemoteStop ?? onStop,
     restart: onRemoteRestart,
+    songScale,
   });
   // The Media's Versions (CORE-1676), listed by playbackInfo only when there
   // are two or more; the default Version takes the client's own name.

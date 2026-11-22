@@ -1,0 +1,11 @@
+{
+  "data": {
+    "groups": [
+      {"key":true,"name":"Invalid key","type":{"type":"official"}},
+      {"key":0,"name":"Extras","number":0,"index":0,"date":"2024-04-02","image":"/extras.jpg","type":{"type":"official"}},
+      {"key":"primary","name":"Primary","number":"A","index":"one","date":"unknown","image":"https://images.example.test/primary.jpg","type":{"type":"official"}},
+      {"key":"dvd","name":"Duplicate","number":0,"type":{"type":"dvd"}},
+      {"key":"truncated","name":"Outside the cap","type":{"type":"official"}}
+    ]
+  }
+}
