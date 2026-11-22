@@ -31,6 +31,7 @@ import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 import { RemotePage } from "./pages/RemotePage";
 import { SearchPage } from "./pages/SearchPage";
 import { SeeAllPage } from "./pages/SeeAllPage";
+import { SmartPlaylistPage } from "./pages/SmartPlaylistPage";
 import { LazyPlayerPage } from "./player/LazyPlayerPage";
 import { PlayerHost } from "./player/PlayerHost";
 import "./player/player-deferred.css";
@@ -169,6 +170,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/favorites" element={<FavoritesPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/playlists" element={<PlaylistsPage />} />
+        <Route path="/playlists/smart/:smartId" element={<SmartPlaylistPage />} />
         <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/remote" element={<RemotePage />} />

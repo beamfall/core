@@ -3828,6 +3828,9 @@ func (s *Store) smartCollectionSourceItemsLocked(ctx context.Context, filter Lib
 	}
 	filter.AllowedIDs = []LibraryID{collection.LibraryID}
 	filter.AllLibraries = false
+	if isSmartRuleSourceExpr(collection.SourceExpr) {
+		return s.smartRuleItemsLocked(ctx, filter, collection.LibraryID, query.ProfileID, collection.ID, collection.SourceExpr, collection.SortExpr, limit, offset)
+	}
 	source, err := decodeSmartCollectionSourceExpr(collection.SourceExpr)
 	if err != nil {
 		return nil, err

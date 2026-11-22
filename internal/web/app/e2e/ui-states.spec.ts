@@ -66,6 +66,15 @@ const FIXTURE_COLLECTION = {
   members: [],
 };
 
+// A smart playlist (CORE-2771) with no rules; its item read is answered empty.
+const FIXTURE_SMART_PLAYLIST = {
+  id: "smart-fixture",
+  libraryID: "library-fixture",
+  name: "Fixture Smart Playlist",
+  sourceExpr: JSON.stringify({ kind: "rules", match: "all", rules: [], limit: 25 }),
+  sortExpr: JSON.stringify({ by: "title", dir: "asc" }),
+};
+
 // The development seed has no Tags; the tag manager reads this small tree, a long name included.
 const FIXTURE_TAGS = [
   { id: "tag-fav", name: "Favorites", assignmentCount: 42 },
@@ -149,6 +158,16 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
       await page.goto(`/web/playlists/${FIXTURE_COLLECTION.id}`);
       await expect(
         page.getByRole("heading", { level: 1, name: FIXTURE_COLLECTION.name }),
+      ).toBeVisible();
+      return;
+    case "/playlists/smart/:smartId":
+      await routeOperation(page, "SmartCollections", {
+        data: { smartCollections: [FIXTURE_SMART_PLAYLIST] },
+      });
+      await routeOperation(page, "SmartCollectionItems", { data: { sourceItems: [] } });
+      await page.goto(`/web/playlists/smart/${FIXTURE_SMART_PLAYLIST.id}`);
+      await expect(
+        page.getByRole("heading", { level: 1, name: FIXTURE_SMART_PLAYLIST.name }),
       ).toBeVisible();
       return;
     case "/manage/items/:mediaID":

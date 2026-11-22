@@ -45,6 +45,7 @@ export const VIEWER_ROUTES = Object.freeze([
   "/favorites",
   "/history",
   "/playlists",
+  "/playlists/smart/:smartId",
   "/playlists/:playlistId",
   "/notifications",
   "/remote",

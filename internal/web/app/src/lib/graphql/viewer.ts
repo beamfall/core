@@ -212,6 +212,24 @@ export async function fetchSourceItems(
   return data.sourceItems ?? [];
 }
 
+const SMART_COLLECTION_ITEMS_QUERY =
+  "query SmartCollectionItems($kind: String, $value: String, $limit: Int, $offset: Int) { sourceItems(kind: $kind, value: $value, limit: $limit, offset: $offset) { id title durationSeconds mediaClass locked } }";
+
+/** One page of a Smart Collection's items, evaluated by the server for the calling Profile. */
+export async function fetchSmartCollectionItems(
+  id: string,
+  limit: number,
+  offset: number,
+  signal?: AbortSignal,
+): Promise<SourceItem[]> {
+  const data = await graphql<{ sourceItems: SourceItem[] | null }>(
+    SMART_COLLECTION_ITEMS_QUERY,
+    { kind: "smart-collection", value: id, limit, offset },
+    signal,
+  );
+  return data.sourceItems ?? [];
+}
+
 // --- Entity detail --------------------------------------------------------
 
 const ENTITY_QUERY =
