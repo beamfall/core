@@ -667,7 +667,9 @@ func (h *Handler) fixMatchLockedFields(ctx context.Context, scope auth.Scope, re
 	}
 	var pluginValues map[string]string
 	for _, lock := range locks {
-		if !lock.Locked || (ordinal != nil && lock.Field == store.MediaOrdinalLockField) {
+		// A sidecar's lock is not one Fix Match clears: clearLocks lifts only
+		// manual locks, so listing it would promise a clear that never lands.
+		if !lock.Locked || lock.Local || (ordinal != nil && lock.Field == store.MediaOrdinalLockField) {
 			continue
 		}
 		var value string

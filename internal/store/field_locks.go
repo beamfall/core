@@ -58,6 +58,10 @@ func lockMirror(field string) (string, bool) {
 type MediaFieldLock struct {
 	Field  string
 	Locked bool
+	// Local reports a lock held by a local sidecar rather than an operator: it
+	// lifts only when the sidecar stops stating the field, so it is not one an
+	// operator clears.
+	Local bool
 }
 
 // MediaFieldLocks returns the per-field source-precedence lock state for one
@@ -183,20 +187,22 @@ func mediaFieldHeldTx(ctx context.Context, tx *sql.Tx, id MediaID, field string)
 // re-checking visibility — the caller already gated. Held under s.mu.RLock.
 func mediaFieldLocksFrom(ctx context.Context, db *sql.DB, id MediaID) ([]MediaFieldLock, error) {
 	rows, err := db.QueryContext(ctx,
-		"SELECT field FROM media_field_provenance WHERE media_id = ? AND source IN (?, ?) ORDER BY field",
+		"SELECT field, source FROM media_field_provenance WHERE media_id = ? AND source IN (?, ?) ORDER BY field",
 		id, string(MutationSourceManual), string(MutationSourceLocal))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	manual := map[string]bool{}
+	locked := map[string]bool{}
+	local := map[string]bool{}
 	var order []string
 	for rows.Next() {
-		var field string
-		if err := rows.Scan(&field); err != nil {
+		var field, source string
+		if err := rows.Scan(&field, &source); err != nil {
 			return nil, err
 		}
-		manual[field] = true
+		locked[field] = true
+		local[field] = source == string(MutationSourceLocal)
 		order = append(order, field)
 	}
 	if err := rows.Err(); err != nil {
@@ -204,11 +210,11 @@ func mediaFieldLocksFrom(ctx context.Context, db *sql.DB, id MediaID) ([]MediaFi
 	}
 	locks := make([]MediaFieldLock, 0, len(lockableFields)+len(order))
 	for _, f := range lockableFields {
-		locks = append(locks, MediaFieldLock{Field: f.Field, Locked: manual[f.Field]})
+		locks = append(locks, MediaFieldLock{Field: f.Field, Locked: locked[f.Field], Local: local[f.Field]})
 	}
 	for _, field := range order {
 		if _, fixed := lockMirror(field); !fixed {
-			locks = append(locks, MediaFieldLock{Field: field, Locked: true})
+			locks = append(locks, MediaFieldLock{Field: field, Locked: true, Local: local[field]})
 		}
 	}
 	return locks, nil

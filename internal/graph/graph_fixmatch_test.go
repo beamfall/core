@@ -735,3 +735,38 @@ func TestFixMatchCandidatesYearBreaksTie(t *testing.T) {
 		t.Fatal("fractional year accepted, want a client error")
 	}
 }
+
+// A sidecar's local-tier lock is not offered for clearing: Fix Match's clear
+// lifts only manual locks, so the listing names only those.
+func TestFixMatchLockedFieldsOmitsLocalTierLocks(t *testing.T) {
+	handler, st := newIdentifyTestHandler(t)
+	ctx := t.Context()
+	const id = store.MediaID("media-alpha")
+	summary := "Sidecar Summary"
+	if err := st.ApplyLocalMetadata(ctx, id, store.LocalMetadata{
+		Metadata:       store.MediaMetadata{Summary: &summary},
+		SignatureField: "demo.sidecarSignature",
+		Signature:      "sig-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	title := "Operator Title"
+	if err := st.UpdateMediaMetadata(ctx, id, store.MediaMetadata{Title: &title, Source: store.MutationSourceManual}); err != nil {
+		t.Fatal(err)
+	}
+	locks, err := st.MediaFieldLocks(ctx, id, store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lock := range locks {
+		if lock.Field == "summary" && (!lock.Locked || !lock.Local) || lock.Field == "title" && (!lock.Locked || lock.Local) {
+			t.Fatalf("lock %+v", lock)
+		}
+	}
+	var listed []FixMatchLockedFieldInfo
+	execGraph(t, handler, authorizeManager, `query($mediaID: String!) { fixMatchLockedFields(mediaID: $mediaID) { field value } }`,
+		map[string]any{"mediaID": string(id)}, "fixMatchLockedFields", &listed)
+	if want := []FixMatchLockedFieldInfo{{Field: "title", Value: title}}; !slices.Equal(listed, want) {
+		t.Fatalf("locked fields = %+v, want %+v", listed, want)
+	}
+}
