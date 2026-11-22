@@ -3,14 +3,13 @@ package identify_test
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
 )
 
 type provenanceRecord struct {
@@ -46,8 +45,7 @@ func twoScraperBundles() fakeBundles {
 func TestApplyRecordsMetadataProvenance(t *testing.T) {
 	engine := &fakeEngine{lookupResult: scrape.Result{Fields: map[string]any{"title": "Blue Harvest"}}}
 	provenance := &fakeProvenanceStore{}
-	service := identify.NewService(engine, twoScraperBundles(), &fakeStore{})
-	service.SetProvenance(provenance)
+	service := identify.NewService(engine, twoScraperBundles(), &fakeStore{provenance: provenance})
 
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
 		t.Fatal(err)
@@ -60,8 +58,7 @@ func TestApplyRecordsMetadataProvenance(t *testing.T) {
 func TestApplyOverwritesMetadataProvenanceOnReidentify(t *testing.T) {
 	engine := &fakeEngine{lookupResult: scrape.Result{Fields: map[string]any{"title": "Blue Harvest"}}}
 	provenance := &fakeProvenanceStore{}
-	service := identify.NewService(engine, twoScraperBundles(), &fakeStore{})
-	service.SetProvenance(provenance)
+	service := identify.NewService(engine, twoScraperBundles(), &fakeStore{provenance: provenance})
 	ctx := context.Background()
 
 	if err := service.Apply(ctx, "media-alpha", "demo", "lookup", "42"); err != nil {
@@ -81,8 +78,7 @@ func TestApplyOverwritesMetadataProvenanceOnReidentify(t *testing.T) {
 func TestApplyPropagatesProvenanceWriteError(t *testing.T) {
 	engine := &fakeEngine{lookupResult: scrape.Result{Fields: map[string]any{"title": "Blue Harvest"}}}
 	boom := errors.New("provenance write failed")
-	service := identify.NewService(engine, twoScraperBundles(), &fakeStore{})
-	service.SetProvenance(&fakeProvenanceStore{err: boom})
+	service := identify.NewService(engine, twoScraperBundles(), &fakeStore{provenance: &fakeProvenanceStore{err: boom}})
 
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); !errors.Is(err, boom) {
 		t.Fatalf("Apply err = %v, want %v", err, boom)
@@ -92,8 +88,7 @@ func TestApplyPropagatesProvenanceWriteError(t *testing.T) {
 func TestApplyFailureBeforeMetadataWriteRecordsNoProvenance(t *testing.T) {
 	engine := &fakeEngine{err: errors.New("lookup failed")}
 	provenance := &fakeProvenanceStore{}
-	service := identify.NewService(engine, twoScraperBundles(), &fakeStore{})
-	service.SetProvenance(provenance)
+	service := identify.NewService(engine, twoScraperBundles(), &fakeStore{provenance: provenance})
 
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err == nil {
 		t.Fatal("Apply succeeded despite lookup failure")
@@ -117,64 +112,32 @@ func (scraperEngine) Lookup(_ context.Context, spec plugin.ScraperSpec, _ string
 	return scrape.Result{Fields: map[string]any{"title": spec.ID}}, nil
 }
 
-// interleavingStore holds the "lookup" scraper's metadata write open until a
-// second write lands or a short wait passes, so an unserialized Apply lets
-// the "second" scraper's metadata and provenance commit in between.
-type interleavingStore struct {
-	mu          sync.Mutex
-	title       string
-	firstWrote  chan struct{}
-	secondWrote chan struct{}
-}
-
-func (s *interleavingStore) UpdateMediaMetadata(_ context.Context, _ store.MediaID, metadata store.MediaMetadata) error {
-	s.mu.Lock()
-	s.title = *metadata.Title
-	s.mu.Unlock()
-	if *metadata.Title == "lookup" {
-		close(s.firstWrote)
-		select {
-		case <-s.secondWrote:
-		case <-time.After(200 * time.Millisecond):
-		}
-		return nil
-	}
-	close(s.secondWrote)
-	return nil
-}
-
-type lockedProvenanceStore struct {
-	mu      sync.Mutex
-	scraper string
-}
-
-func (s *lockedProvenanceStore) SetMediaMetadataProvenance(_ context.Context, _ store.MediaID, _, scraperID, _ string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.scraper = scraperID
-	return nil
-}
-
-// TestConcurrentApplyKeepsMetadataAndProvenanceTogether pins that two
-// identifications of one Media item racing each other leave the attribution
-// naming the scraper whose metadata was kept.
+// Independent service instances share the catalog but have separate item locks.
 func TestConcurrentApplyKeepsMetadataAndProvenanceTogether(t *testing.T) {
-	metadata := &interleavingStore{firstWrote: make(chan struct{}), secondWrote: make(chan struct{})}
-	provenance := &lockedProvenanceStore{}
-	service := identify.NewService(scraperEngine{}, twoScraperBundles(), metadata)
-	service.SetProvenance(provenance)
-	ctx := context.Background()
-
+	st := storetest.Open(t)
+	ctx := t.Context()
+	start := make(chan struct{})
 	errs := make(chan error, 2)
-	go func() { errs <- service.Apply(ctx, "media-alpha", "demo", "lookup", "42") }()
-	<-metadata.firstWrote
-	go func() { errs <- service.Apply(ctx, "media-alpha", "demo", "second", "43") }()
+	for _, scraperID := range []string{"lookup", "second"} {
+		service := identify.NewService(scraperEngine{}, twoScraperBundles(), st)
+		go func() {
+			<-start
+			errs <- service.Apply(ctx, "media-alpha", "demo", scraperID, scraperID)
+		}()
+	}
+	close(start)
 	for range 2 {
 		if err := <-errs; err != nil {
 			t.Fatal(err)
 		}
 	}
-	if metadata.title != provenance.scraper {
-		t.Fatalf("metadata from %q attributed to %q", metadata.title, provenance.scraper)
+	filter := store.LibraryFilter{AllLibraries: true, Revealed: true}
+	media, err := st.Media(ctx, "media-alpha", filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provenance, found, err := st.MediaMetadataProvenance(ctx, "media-alpha")
+	if err != nil || !found || media.Title != provenance.ScraperID || media.Title != provenance.CandidateID {
+		t.Fatalf("title = %q, provenance = %+v, found %v, err %v", media.Title, provenance, found, err)
 	}
 }

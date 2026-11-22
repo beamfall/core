@@ -59,7 +59,7 @@ describe("Beamfall shell service worker", () => {
       },
       fetch: vi.fn(),
       self: {
-        addEventListener: (type: keyof WorkerHandlers, handler: WorkerHandlers[typeof type]) => {
+        addEventListener: <K extends keyof WorkerHandlers>(type: K, handler: WorkerHandlers[K]) => {
           handlers[type] = handler;
         },
         clients: { claim: vi.fn().mockResolvedValue(undefined) },
@@ -93,7 +93,7 @@ describe("Beamfall shell service worker", () => {
       caches: { match },
       fetch: networkFetch,
       self: {
-        addEventListener: (type: keyof WorkerHandlers, handler: WorkerHandlers[typeof type]) => {
+        addEventListener: <K extends keyof WorkerHandlers>(type: K, handler: WorkerHandlers[K]) => {
           handlers[type] = handler;
         },
         clients: { claim: vi.fn() },
@@ -136,7 +136,7 @@ describe("Beamfall shell service worker", () => {
       },
       fetch: networkFetch,
       self: {
-        addEventListener: (type: keyof WorkerHandlers, handler: WorkerHandlers[typeof type]) => {
+        addEventListener: <K extends keyof WorkerHandlers>(type: K, handler: WorkerHandlers[K]) => {
           handlers[type] = handler;
         },
         clients: { claim: vi.fn() },
@@ -187,7 +187,7 @@ describe("Beamfall shell service worker", () => {
       caches: { match: vi.fn().mockResolvedValue(undefined), open },
       fetch: networkFetch,
       self: {
-        addEventListener: (type: keyof WorkerHandlers, handler: WorkerHandlers[typeof type]) => {
+        addEventListener: <K extends keyof WorkerHandlers>(type: K, handler: WorkerHandlers[K]) => {
           handlers[type] = handler;
         },
         clients: { claim: vi.fn() },

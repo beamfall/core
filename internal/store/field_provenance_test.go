@@ -225,10 +225,10 @@ func TestMachineRemovalTombstoneBlocksScraperRefresh(t *testing.T) {
 }
 
 // TestMetadataSourceRankTotalOrder pins the precedence chain
-// user/manual > identified > parsed > hydrated > machine-derived.
+// user/manual > local sidecar > identified > parsed > hydrated > machine-derived.
 func TestMetadataSourceRankTotalOrder(t *testing.T) {
 	order := []MutationSource{
-		MutationSourceManual, MutationSourceOperator, MutationSourceScan,
+		MutationSourceManual, MutationSourceLocal, MutationSourceOperator, MutationSourceScan,
 		MutationSourceHydrated, MutationSourceAI,
 	}
 	for i := 1; i < len(order); i++ {

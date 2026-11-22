@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"slices"
@@ -25,6 +26,7 @@ import (
 	"github.com/beamfall/core/internal/config"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/identify"
+	"github.com/beamfall/core/internal/ingest"
 	"github.com/beamfall/core/internal/integrationhost"
 	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/manifest"
@@ -365,6 +367,9 @@ type LibraryMutationObserver interface {
 	// LibraryPurged follows a permanent removal, so state kept outside the
 	// catalog for the removed Media and entities can go too.
 	LibraryPurged(context.Context, store.LibraryPurge)
+	// MediaPurged follows a purge of trashed Media, so state kept outside the
+	// catalog for them can go too (CORE-1281).
+	MediaPurged(context.Context, []store.MediaID)
 }
 
 type ScheduleUpdater interface {
@@ -512,7 +517,13 @@ type Handler struct {
 	jobRunner       JobRunner
 	governor        GovernorStatusProvider
 	feedSearcher    FeedSearcher
-	prePlayPolicy   PrePlayPolicy
+	feedProber      FeedProber
+	feedErrorClass  func(error) store.FeedErrorClass
+	feedPoller      SubscriptionPoller
+	// feedCatalogue overrides the store's feed-catalogue reads and writes;
+	// nil uses the store (graph_feeds.go).
+	feedCatalogue subscriptionCatalogue
+	prePlayPolicy PrePlayPolicy
 	// playbackCache wires the precomputed-playback-rendition cache controls:
 	// explicit operator generation, on-demand eviction, and the
 	// cache-health snapshot the Console surfaces. Nil (the default) reports the
@@ -775,7 +786,10 @@ type UpdateChecker interface {
 // stopped so the mutations can report propagation honestly.
 type TranscodeTerminator interface {
 	TerminateSession(sessionID store.SessionID) int
-	TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int
+	// DetachPlayback detaches one Session's transcodes for one Media and
+	// returns a wait that joins their teardown, so a caller can detach under a
+	// lock and wait after releasing it.
+	DetachPlayback(sessionID store.SessionID, mediaID store.MediaID) (int, func())
 }
 
 // TranscodeCapacityProbe reports whether a normal-priority transcode for
@@ -1112,10 +1126,14 @@ func (h *Handler) SetUpdateChecker(checker UpdateChecker, serverVersion string) 
 // does not carry: each media item's class (for its placeholder), its
 // container, and the acting Profile's engagement.
 func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []store.SourceItem) error {
+	return h.annotateCardsForProfile(ctx, scope.ProfileID, scope.LibraryFilter(), items)
+}
+
+func (h *Handler) annotateCardsForProfile(ctx context.Context, profileID store.ProfileID, filter store.LibraryFilter, items []store.SourceItem) error {
 	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
 		return err
 	}
-	if err := h.annotateBylines(ctx, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateBylines(ctx, filter, items); err != nil {
 		return err
 	}
 	if err := h.annotateContainers(ctx, items); err != nil {
@@ -1125,7 +1143,7 @@ func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []s
 		return err
 	}
 	h.annotateScoreLabels(ctx, items)
-	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items, h.engagementContainers)
+	return h.store.AnnotateEngagement(ctx, profileID, filter, items, h.engagementContainers)
 }
 
 // cardBylineArchetype is the Entity archetype whose linked titles an audio
@@ -1217,7 +1235,7 @@ func (h *Handler) annotateBylines(ctx context.Context, filter store.LibraryFilte
 	return nil
 }
 
-func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
+func basicSourceItem(item store.SourceItem, revealed bool) SourceItem {
 	resp := SourceItem{
 		ID:                 string(item.ID),
 		LibraryID:          string(item.LibraryID),
@@ -1238,11 +1256,16 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		AudienceScore:      item.AudienceScore,
 		AudienceScoreLabel: plugin.LocaleString(item.AudienceScoreLabel),
 		AudienceScoreVotes: item.AudienceScoreVotes,
-		Container:          h.sourceItemContainer(item),
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
 	}
+	return resp
+}
+
+func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
+	resp := basicSourceItem(item, revealed)
+	resp.Container = h.sourceItemContainer(item)
 	if h.artwork == nil {
 		return resp
 	}
@@ -1342,7 +1365,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if auditErr := h.recordPrivilegedAudit(r.Context(), privilegedNames, observability.AuditActor{}, observability.AuditRefused); auditErr != nil {
 				slog.Error("privileged refusal audit failed", "error", auditErr)
 			}
-			writeGraphError(w, http.StatusUnauthorized, ErrorCodeUnauthenticated, "invalid session")
+			if errors.Is(err, auth.ErrProfileMismatch) {
+				// The session moved to another Profile after the route's
+				// precondition passed (CORE-2923): the same refusal it gives.
+				w.Header().Set("Cache-Control", "no-store")
+				refusal := newGraphError(errorCode(errProfileMismatch), errProfileMismatch.Error())
+				refusal.Extensions.Reason = errorReason(errProfileMismatch)
+				writeJSON(w, http.StatusConflict, response{Errors: []graphError{refusal}})
+				return
+			}
+			status, refusal := scopeRefusal(err)
+			if requestCarriesScopedKey(r) {
+				// This surface refuses scoped keys whatever their Profile's
+				// schedule, so the schedule reason belongs to session
+				// credentials only; a key keeps the generic refusal.
+				status, refusal = invalidSessionRefusal()
+			}
+			writeJSON(w, status, response{Errors: []graphError{refusal}})
 			return
 		}
 	}
@@ -1417,7 +1456,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.Error("mutation finish audit append failed", "operation", operationID, "error", err)
 		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	status := http.StatusOK
+	if resp.refusalStatus != 0 {
+		status = resp.refusalStatus
+	}
+	writeJSON(w, status, resp)
 }
 
 // postDispatchAuditTimeout bounds the outcome records written after dispatch,
@@ -1558,7 +1601,11 @@ func (h *Handler) recordPrivilegedResults(ctx context.Context, plan operationPla
 			continue
 		}
 		outcome := privilegedOperationOutcome(occurrence.responseKey, resp)
-		errs = append(errs, h.recordPrivilegedAudit(ctx, []string{occurrence.canonical}, actor, outcome))
+		occurrenceActor := actor
+		if effective, ok := resp.privilegedActors[occurrence.responseKey]; ok {
+			occurrenceActor = effective
+		}
+		errs = append(errs, h.recordPrivilegedAudit(ctx, []string{occurrence.canonical}, occurrenceActor, outcome))
 	}
 	return errors.Join(errs...)
 }
@@ -1639,25 +1686,60 @@ func selectedFieldDispatchOrders(fields map[string]bool) fieldDispatchPlan {
 
 func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, plan operationPlan) response {
 	out := response{Data: map[string]any{}, privilegedOutcomes: map[string]observability.AuditOutcome{}}
+	// Each privileged occurrence is audited under the scope it last ran or
+	// was refused under; one never reached keeps the latest scope.
+	actors := map[string]observability.AuditActor{}
+	finish := func(resp response) response {
+		for _, occurrence := range plan.occurrences {
+			if _, ok := actors[occurrence.responseKey]; !ok && adminFields[occurrence.canonical] {
+				actors[occurrence.responseKey] = privilegedAuditActor(scope)
+			}
+		}
+		resp = completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+		resp.privilegedActors = actors
+		return resp
+	}
 	// Authorize the whole operation before any resolver runs. This keeps a later
 	// privileged occurrence from turning an earlier mutation into a partial,
 	// unauthorized batch.
 	for _, occurrence := range plan.occurrences {
-		probe := fieldDispatchContext{scope: scope, fields: map[string]bool{occurrence.canonical: true}}
+		probe := fieldDispatchContext{
+			scope:  scope,
+			req:    request{Variables: occurrence.input},
+			fields: map[string]bool{occurrence.canonical: true},
+		}
 		for _, order := range selectedFieldDispatchOrders(probe.fields) {
 			if resp := authorizeDispatchOrder(&probe, order); len(resp.Errors) > 0 {
-				return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+				return finish(resp)
 			}
 		}
+	}
+	abort := func(resp response, responseKey string) response {
+		if out.Extensions != nil && len(out.Extensions.QueueAdds) > 0 {
+			// Keep the committed queue pages and receipts on a batch error.
+			resp.Data = out.Data
+			resp.Extensions = out.Extensions
+			resp.Data[responseKey] = nil
+			for i := range resp.Errors {
+				resp.Errors[i].Path = []string{responseKey}
+			}
+			resp.Errors = append(out.Errors, resp.Errors...)
+		}
+		return finish(resp)
 	}
 	mutated := false
 	for _, occurrence := range plan.occurrences {
 		if mutated {
-			refreshed, resp := h.reauthorizeAfterMutation(ctx, scope, occurrence.canonical)
-			if len(resp.Errors) > 0 {
-				return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+			refreshed, resp := h.reauthorizeAfterMutation(ctx, scope, occurrence)
+			if refreshed.SessionID != "" || len(resp.Errors) == 0 {
+				scope = refreshed
 			}
-			scope = refreshed
+			if len(resp.Errors) > 0 {
+				return abort(resp, occurrence.responseKey)
+			}
+		}
+		if adminFields[occurrence.canonical] {
+			actors[occurrence.responseKey] = privilegedAuditActor(scope)
 		}
 		occurrenceRequest := req
 		occurrenceRequest.Variables = occurrence.input
@@ -1675,18 +1757,22 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 		for _, order := range selectedFieldDispatchOrders(dispatch.fields) {
 			resp := fieldDispatchRuns[order](&dispatch)
 			if len(resp.Errors) > 0 {
-				// Mutation errors abort with no data. Read errors are accumulated by
-				// readField and do not reach this branch.
-				return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+				return abort(resp, occurrence.responseKey)
 			}
 		}
 		for key, value := range dispatch.data {
 			out.Data[key] = value
 		}
+		if dispatch.queueAddReceipt != nil {
+			if out.Extensions == nil {
+				out.Extensions = &GraphQLResponseExtensions{}
+			}
+			out.Extensions.QueueAdds = append(out.Extensions.QueueAdds, *dispatch.queueAddReceipt)
+		}
 		out.Errors = append(out.Errors, dispatch.errs...)
 		mutated = mutated || mutationFields[occurrence.canonical]
 	}
-	return completePrivilegedOutcomes(out, plan, out.privilegedOutcomes)
+	return finish(out)
 }
 
 // reauthorizeAfterMutation re-resolves a session scope after an earlier
@@ -1696,21 +1782,34 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 // state or Admin authority; every later field must act on that, never on the
 // scope resolved when the request arrived. Admin API tokens carry no session
 // and cannot change their authority mid-request, so they keep their scope.
-func (h *Handler) reauthorizeAfterMutation(ctx context.Context, scope auth.Scope, field string) (auth.Scope, response) {
+func (h *Handler) reauthorizeAfterMutation(ctx context.Context, scope auth.Scope, occurrence operationOccurrence) (auth.Scope, response) {
 	if !scope.IsEnrolledDeviceSession() {
 		return scope, response{}
 	}
 	refreshed, err := h.auth.Scope(ctx, scope.SessionID)
 	if err != nil {
-		return auth.Scope{}, response{
-			Errors:               []graphError{newGraphError(ErrorCodeUnauthenticated, "invalid session")},
+		status, refusal := scopeRefusal(err)
+		resp := response{
+			Errors:               []graphError{refusal},
 			authorizationRefused: true,
 		}
+		// The schedule refusal keeps its 403 after a mutation, as at the
+		// request gate; every other re-resolution failure stays a 200
+		// GraphQL error, as before (CORE-2950).
+		if status == http.StatusForbidden {
+			resp.refusalStatus = status
+		}
+		return auth.Scope{}, resp
 	}
-	probe := fieldDispatchContext{scope: refreshed, fields: map[string]bool{field: true}}
+	probe := fieldDispatchContext{
+		scope:  refreshed,
+		req:    request{Variables: occurrence.input},
+		fields: map[string]bool{occurrence.canonical: true},
+	}
 	for _, order := range selectedFieldDispatchOrders(probe.fields) {
 		if resp := authorizeDispatchOrder(&probe, order); len(resp.Errors) > 0 {
-			return auth.Scope{}, resp
+			// The refreshed scope names who was refused, for the audit.
+			return refreshed, resp
 		}
 	}
 	return refreshed, response{}
@@ -1776,11 +1875,14 @@ func clientCanceled(ctx context.Context, err error) bool {
 }
 
 // graphFail resolves the abort-the-batch wire response for one failed top-level
-// field. MUTATION fields use this: a half-applied mutation batch is worse than
-// none, so the first mutation error discards the whole response (M2). READ
-// fields instead accumulate a per-field error via readField and resolve the
-// rest of the batch.
+// field. Mutation fields stop the batch on the first error. If a queueAdd
+// committed, execute keeps the data already produced. Read fields accumulate
+// per-field errors via readField and resolve the rest of the batch.
 func graphFail(ctx context.Context, field string, err error) response {
+	if auth.AccessScheduleEnded(err) {
+		status, refusal := scopeRefusal(err)
+		return response{Errors: []graphError{refusal}, authorizationRefused: true, refusalStatus: status}
+	}
 	return response{Errors: []graphError{fieldGraphError(ctx, field, err)}}
 }
 
@@ -2497,10 +2599,11 @@ func (h *Handler) createProfile(ctx context.Context, scope auth.Scope, req reque
 	return profileInfo(profile), nil
 }
 
-// updateProfile applies a partial Profile policy write (manager-gated in
-// execute). Disabling a Profile refuses new sessions and hides it from
+// updateProfile applies a partial Profile policy write (Admin Session gated
+// in execute, except a session writing only its own Profile's track
+// preferences, CORE-1937 — see ownTrackPreferenceWrite). Disabling a Profile refuses new sessions and hides it from
 // pickers; engagement history stays untouched.
-func (h *Handler) updateProfile(ctx context.Context, req request) (ProfileInfo, error) {
+func (h *Handler) updateProfile(ctx context.Context, scope auth.Scope, req request) (ProfileInfo, error) {
 	profileID := trimmedVariable(req, "profileID")
 	if profileID == "" {
 		return ProfileInfo{}, clientError("profileID is required")
@@ -2547,7 +2650,35 @@ func (h *Handler) updateProfile(ctx context.Context, req request) (ProfileInfo, 
 			return ProfileInfo{}, err
 		}
 	}
-	return profileInfo(profile), nil
+	info := profileInfo(profile)
+	if !scope.Admin {
+		// Only the own-track-preference write (CORE-1937) runs without an
+		// Admin Session. Its reply lists only the Library grants the caller
+		// can see, so an unrevealed session learns no restricted Library ID.
+		if info.LibraryIDs, err = h.visibleLibraryIDs(ctx, scope, info.LibraryIDs); err != nil {
+			return ProfileInfo{}, err
+		}
+	}
+	return info, nil
+}
+
+// visibleLibraryIDs keeps the Library IDs the scope can currently see, in order.
+func (h *Handler) visibleLibraryIDs(ctx context.Context, scope auth.Scope, ids []string) ([]string, error) {
+	libraries, err := h.store.Libraries(ctx, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	visible := make(map[string]bool, len(libraries))
+	for _, library := range libraries {
+		visible[string(library.ID)] = true
+	}
+	kept := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if visible[id] {
+			kept = append(kept, id)
+		}
+	}
+	return kept, nil
 }
 
 func (h *Handler) setProfileLibraries(ctx context.Context, scope auth.Scope, req request) (ProfileInfo, error) {
@@ -2738,7 +2869,8 @@ type LibraryInfo struct {
 	DefaultIcon string `json:"defaultIcon,omitempty"`
 }
 
-// createLibrary inserts a Library granted to the manager's Profile.
+// createLibrary inserts a Library granted to the manager's Profile, or to the
+// owner's Profile when the caller is a token with no Profile.
 // A restricted Library may only be created by a revealed session — otherwise
 // its existence would leak into the unrevealed world that just created it.
 func (h *Handler) createLibrary(ctx context.Context, scope auth.Scope, req request) (LibraryInfo, error) {
@@ -2787,7 +2919,18 @@ func (h *Handler) createLibrary(ctx context.Context, scope auth.Scope, req reque
 	if err := store.CheckLibraryRoots(roots); err != nil {
 		return LibraryInfo{}, localizeLibraryRootError(err)
 	}
-	library, err := h.store.CreateLibraryWithRoots(ctx, title, restricted, pluginID, scope.ProfileID, roots, familyScope)
+	var library store.Library
+	var err error
+	if scope.ProfileID == "" {
+		// An admin API token carries no Profile, so its Library is granted to
+		// the server owner's Profile (CORE-2921).
+		library, err = h.store.CreateOwnerLibraryWithRoots(ctx, title, restricted, pluginID, roots, familyScope)
+		if errors.Is(err, store.ErrNoOwnerProfile) {
+			return LibraryInfo{}, clientError("no owner Profile is designated to grant the library to")
+		}
+	} else {
+		library, err = h.store.CreateLibraryWithRoots(ctx, title, restricted, pluginID, scope.ProfileID, roots, familyScope)
+	}
 	if err != nil {
 		return LibraryInfo{}, err
 	}
@@ -3223,7 +3366,44 @@ type SubscriptionInfo struct {
 	Followed      bool   `json:"followed"`
 	RetentionKind string `json:"retentionKind"`
 	RetentionN    *int   `json:"retentionN"`
+	// Download policy and catalogue counts (CORE-2953).
+	DownloadPolicy  string `json:"downloadPolicy"`
+	DownloadLatestN int    `json:"downloadLatestN"`
+	EntryCount      int    `json:"entryCount"`
+	DownloadedCount int    `json:"downloadedCount"`
+	CatalogBytes    int64  `json:"catalogBytes"`
+	// Feed health (ADR-0238 §2.2). healthStatus is ok, failing, warning
+	// (failing for seven days or more) or retired (the origin answered 410);
+	// lastErrorClass is the closed class of the latest failure, never its text.
+	HealthStatus   string `json:"healthStatus"`
+	LastErrorClass string `json:"lastErrorClass"`
+	FailingSince   string `json:"failingSince,omitempty"`
+	NextPollAt     string `json:"nextPollAt,omitempty"`
+	RetiredAt      string `json:"retiredAt,omitempty"`
+	MovedAt        string `json:"movedAt,omitempty"`
 }
+
+// SubscriptionRefreshInfo is the viewer-safe refreshSubscription echo: the
+// Subscription's identity, display title and feed health. Like FollowInfo it
+// never carries feedURL or root.
+type SubscriptionRefreshInfo struct {
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	HealthStatus   string `json:"healthStatus"`
+	LastErrorClass string `json:"lastErrorClass"`
+	FailingSince   string `json:"failingSince,omitempty"`
+	NextPollAt     string `json:"nextPollAt,omitempty"`
+}
+
+// SubscriptionRefreshAllInfo reports how many Subscriptions a Refresh all
+// made due.
+type SubscriptionRefreshAllInfo struct {
+	Refreshed int `json:"refreshed"`
+}
+
+// subscriptionRefreshGap is the minimum time between two manual refreshes of
+// one Subscription (ADR-0238 §2.2).
+const subscriptionRefreshGap = 5 * time.Minute
 
 type SubscriptionEntryAssociationInfo struct {
 	SubscriptionID         string `json:"subscriptionID"`
@@ -3234,6 +3414,16 @@ type SubscriptionEntryAssociationInfo struct {
 }
 
 func (h *Handler) subscriptionInfo(ctx context.Context, scope auth.Scope, subscription store.Subscription) (SubscriptionInfo, error) {
+	info, err := h.subscriptionBaseInfo(ctx, scope, subscription)
+	if err != nil {
+		return SubscriptionInfo{}, err
+	}
+	return h.withSubscriptionCatalogue(ctx, info, subscription)
+}
+
+// subscriptionBaseInfo is the Subscription row and the caller's follow state,
+// without the feed catalogue (a removed Subscription has none).
+func (h *Handler) subscriptionBaseInfo(ctx context.Context, scope auth.Scope, subscription store.Subscription) (SubscriptionInfo, error) {
 	followed, err := h.store.SubscriptionFollowed(ctx, scope.ProfileID, subscription.ID)
 	if err != nil {
 		return SubscriptionInfo{}, err
@@ -3250,7 +3440,115 @@ func (h *Handler) subscriptionInfo(ctx context.Context, scope auth.Scope, subscr
 		Followed:      followed,
 		RetentionKind: string(subscription.RetentionKind),
 		RetentionN:    subscription.RetentionN,
+
+		HealthStatus:   string(subscription.Health.Status(time.Now().UTC())),
+		LastErrorClass: string(subscription.Health.LastErrorClass),
+		FailingSince:   formatOptionalTime(subscription.Health.FailingSince),
+		NextPollAt:     formatOptionalTime(subscription.Health.NextPollAt),
+		RetiredAt:      formatOptionalTime(subscription.Health.RetiredAt),
+		MovedAt:        formatOptionalTime(subscription.Health.MovedAt),
 	}, nil
+}
+
+// refreshSubscription makes one Subscription due for polling now, a retired
+// one included, and enqueues the poll job. A Manager may refresh any
+// Subscription in a Library it can see; anyone else only one they follow.
+// One refresh per Subscription per subscriptionRefreshGap.
+func (h *Handler) refreshSubscription(ctx context.Context, scope auth.Scope, req request) (SubscriptionRefreshInfo, error) {
+	if scope.DeviceRole != store.DeviceRoleManager && !canFollowFeeds(scope) {
+		return SubscriptionRefreshInfo{}, clientError("adult profile or manager role required")
+	}
+	id := store.SubscriptionID(trimmedVariable(req, "id"))
+	if _, err := h.visibleSubscription(ctx, scope, id); err != nil {
+		return SubscriptionRefreshInfo{}, err
+	}
+	if scope.DeviceRole != store.DeviceRoleManager {
+		followed, err := h.store.SubscriptionFollowed(ctx, scope.ProfileID, id)
+		if err != nil {
+			return SubscriptionRefreshInfo{}, err
+		}
+		if !followed {
+			return SubscriptionRefreshInfo{}, clientError("unknown subscription")
+		}
+	}
+	now := time.Now().UTC()
+	refreshed, err := h.store.RequestSubscriptionRefresh(ctx, id, now, subscriptionRefreshGap)
+	if errors.Is(err, store.ErrSubscriptionRefreshRateLimited) {
+		return SubscriptionRefreshInfo{}, clientError("subscription was refreshed recently; try again later")
+	}
+	if errors.Is(err, store.ErrSubscriptionNotFound) {
+		return SubscriptionRefreshInfo{}, clientError("unknown subscription")
+	}
+	if err != nil {
+		return SubscriptionRefreshInfo{}, err
+	}
+	if err := h.enqueueSubscriptionPoll(ctx, now); err != nil {
+		return SubscriptionRefreshInfo{}, err
+	}
+	health := refreshed.Health
+	return SubscriptionRefreshInfo{
+		ID:             string(refreshed.ID),
+		Title:          refreshed.Title,
+		HealthStatus:   string(health.Status(now)),
+		LastErrorClass: string(health.LastErrorClass),
+		FailingSince:   formatOptionalTime(health.FailingSince),
+		NextPollAt:     formatOptionalTime(health.NextPollAt),
+	}, nil
+}
+
+// refreshAllSubscriptions (manager-gated in execute) makes every
+// Subscription in a Library the caller can see, and outside its refresh gap,
+// due now and enqueues the poll job. Hidden Libraries are neither refreshed
+// nor counted.
+func (h *Handler) refreshAllSubscriptions(ctx context.Context, scope auth.Scope, _ request) (SubscriptionRefreshAllInfo, error) {
+	now := time.Now().UTC()
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return SubscriptionRefreshAllInfo{}, err
+	}
+	refreshed, err := h.store.RequestAllSubscriptionsRefresh(ctx, filter, now, subscriptionRefreshGap)
+	if err != nil {
+		return SubscriptionRefreshAllInfo{}, err
+	}
+	if refreshed > 0 {
+		if err := h.enqueueSubscriptionPoll(ctx, now); err != nil {
+			return SubscriptionRefreshAllInfo{}, err
+		}
+	}
+	return SubscriptionRefreshAllInfo{Refreshed: refreshed}, nil
+}
+
+// enqueueSubscriptionPoll enqueues the deduped poll job. A poll already
+// queued picks the refresh up; one already running reaches it on its next
+// run.
+func (h *Handler) enqueueSubscriptionPoll(ctx context.Context, now time.Time) error {
+	job, err := ingest.NewPollJob(now)
+	if err != nil {
+		return err
+	}
+	_, err = h.store.EnqueueJob(ctx, job)
+	return err
+}
+
+// visibleSubscriptionLibrary is visibleLibrary for the Subscription surface,
+// with the caller's filter run through sealedFilter: a Sealed Library serves
+// nothing, so its Subscriptions read exactly like a Library that does not
+// exist (CORE-2955).
+func (h *Handler) visibleSubscriptionLibrary(ctx context.Context, scope auth.Scope, id store.LibraryID) (bool, error) {
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return false, err
+	}
+	libraries, err := h.store.Libraries(ctx, filter)
+	if err != nil {
+		return false, err
+	}
+	for _, library := range libraries {
+		if library.ID == id {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // visibleLibrary reports whether the scope can currently see the Library —
@@ -3287,7 +3585,7 @@ func (h *Handler) addSubscription(ctx context.Context, scope auth.Scope, req req
 	if hasAuth && h.subscriptionSecrets == nil {
 		return SubscriptionInfo{}, clientError("private-feed credentials are unavailable on this server")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, store.LibraryID(libraryID))
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, store.LibraryID(libraryID))
 	if err != nil {
 		return SubscriptionInfo{}, err
 	}
@@ -3338,7 +3636,7 @@ func (h *Handler) removeSubscription(ctx context.Context, scope auth.Scope, req 
 	if err != nil {
 		return SubscriptionInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return SubscriptionInfo{}, err
 	}
@@ -3357,7 +3655,7 @@ func (h *Handler) removeSubscription(ctx context.Context, scope auth.Scope, req 
 	if removed.AuthRef != "" && h.subscriptionSecrets != nil {
 		_ = h.subscriptionSecrets.SetSecret(removed.AuthRef, "")
 	}
-	return h.subscriptionInfo(ctx, scope, removed)
+	return h.subscriptionBaseInfo(ctx, scope, removed)
 }
 
 // subscriptions lists a visible Library's feed Subscriptions.
@@ -3366,7 +3664,7 @@ func (h *Handler) subscriptions(ctx context.Context, scope auth.Scope, req reque
 	if libraryID == "" {
 		return nil, clientError("libraryID is required")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, store.LibraryID(libraryID))
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, store.LibraryID(libraryID))
 	if err != nil {
 		return nil, err
 	}
@@ -3411,7 +3709,7 @@ func (h *Handler) setFollow(ctx context.Context, scope auth.Scope, req request) 
 	if err != nil {
 		return FollowInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return FollowInfo{}, err
 	}
@@ -3441,7 +3739,7 @@ func (h *Handler) setSubscriptionRetention(ctx context.Context, scope auth.Scope
 	if err != nil {
 		return SubscriptionInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return SubscriptionInfo{}, err
 	}
@@ -3485,7 +3783,7 @@ func (h *Handler) associateSubscriptionEntry(ctx context.Context, scope auth.Sco
 	if err != nil {
 		return SubscriptionEntryAssociationInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return SubscriptionEntryAssociationInfo{}, err
 	}
@@ -4017,7 +4315,9 @@ func (h *Handler) revealOps(ctx context.Context, scope auth.Scope, fields map[st
 			}
 			return nil, clientError("reveal PIN mismatch")
 		}
-		if err := h.store.SetSessionRevealed(ctx, scope.SessionID, true); err != nil {
+		if err := h.whileScopeProfile(ctx, scope, func() error {
+			return h.store.SetSessionRevealed(ctx, scope.SessionID, true)
+		}); err != nil {
 			return nil, err
 		}
 		if err := h.logActivity(ctx, scope, store.ActivityReveal, "", "", ""); err != nil {
@@ -4026,7 +4326,9 @@ func (h *Handler) revealOps(ctx context.Context, scope auth.Scope, fields map[st
 		data["reveal"] = RevealState{Revealed: true, RevealPinSet: true}
 	}
 	if fields["relock"] {
-		if err := h.store.SetSessionRevealed(ctx, scope.SessionID, false); err != nil {
+		if err := h.whileScopeProfile(ctx, scope, func() error {
+			return h.store.SetSessionRevealed(ctx, scope.SessionID, false)
+		}); err != nil {
 			return nil, err
 		}
 		if err := h.logActivity(ctx, scope, store.ActivityRelock, "", "", ""); err != nil {
@@ -4047,6 +4349,34 @@ type TrashEntry struct {
 	LibraryID string `json:"libraryID"`
 	Title     string `json:"title"`
 	TrashedAt string `json:"trashedAt"`
+	// MergedInto is set when the Version merge folded this Media into another
+	// rather than anyone deleting it; undoBatch(batchID) reverses it.
+	MergedInto *TrashMergeInfo `json:"mergedInto,omitempty"`
+}
+
+// TrashMergeInfo names the merge batch that trashed a Media and the Media that
+// kept its files as Versions.
+type TrashMergeInfo struct {
+	BatchID       string `json:"batchID"`
+	SurvivorID    string `json:"survivorID"`
+	SurvivorTitle string `json:"survivorTitle"`
+	MergedAt      string `json:"mergedAt"`
+}
+
+// DuplicateCopySetInfo is one Media whose live Versions include likely identical
+// on-disk copies. Read-only: the server never deletes these files.
+type DuplicateCopySetInfo struct {
+	MediaID   string              `json:"mediaID"`
+	Title     string              `json:"title"`
+	LibraryID string              `json:"libraryID"`
+	Copies    []DuplicateCopyInfo `json:"copies"`
+}
+
+// DuplicateCopyInfo is one file of a DuplicateCopySetInfo.
+type DuplicateCopyInfo struct {
+	Path      string `json:"path"`
+	SizeBytes int64  `json:"sizeBytes"`
+	Label     string `json:"label"`
 }
 
 // trashMedia soft-deletes a visible Media item and returns the updated trash.
@@ -4121,11 +4451,14 @@ func (h *Handler) purgeTrash(ctx context.Context, scope auth.Scope, req request)
 	if err != nil {
 		return BulkOpResult{}, clientError("before must be an RFC3339 date-time")
 	}
-	purged, err := h.store.PurgeTrashedBefore(ctx, before.UTC())
+	purged, err := h.store.PurgeTrashedMediaBefore(ctx, before.UTC())
+	if len(purged) > 0 && h.libraryObserver != nil {
+		h.libraryObserver.MediaPurged(ctx, purged)
+	}
 	if err != nil {
 		return BulkOpResult{}, err
 	}
-	return BulkOpResult{Affected: purged}, nil
+	return BulkOpResult{Affected: len(purged)}, nil
 }
 
 func (h *Handler) trashList(ctx context.Context, scope auth.Scope) ([]TrashEntry, error) {
@@ -4140,6 +4473,37 @@ func (h *Handler) trashList(ctx context.Context, scope auth.Scope) ([]TrashEntry
 			LibraryID: string(entry.LibraryID),
 			Title:     entry.Title,
 			TrashedAt: entry.TrashedAt.UTC().Format(time.RFC3339),
+		}
+		if merge := entry.Merge; merge != nil {
+			resp[i].MergedInto = &TrashMergeInfo{
+				BatchID:       merge.BatchID,
+				SurvivorID:    string(merge.Survivor),
+				SurvivorTitle: merge.SurvivorTitle,
+				MergedAt:      merge.MergedAt.UTC().Format(time.RFC3339),
+			}
+		}
+	}
+	return resp, nil
+}
+
+// duplicateCopies lists Media whose live Versions include likely identical
+// on-disk copies, for a manager to clean up on disk.
+func (h *Handler) duplicateCopies(ctx context.Context, scope auth.Scope) ([]DuplicateCopySetInfo, error) {
+	sets, err := h.store.DuplicateCopies(ctx, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	resp := make([]DuplicateCopySetInfo, len(sets))
+	for i, set := range sets {
+		copies := make([]DuplicateCopyInfo, len(set.Copies))
+		for j, file := range set.Copies {
+			copies[j] = DuplicateCopyInfo{Path: file.Path, SizeBytes: file.SizeBytes, Label: file.VersionLabel}
+		}
+		resp[i] = DuplicateCopySetInfo{
+			MediaID:   string(set.MediaID),
+			Title:     set.Title,
+			LibraryID: string(set.LibraryID),
+			Copies:    copies,
 		}
 	}
 	return resp, nil
@@ -4162,6 +4526,10 @@ type ActivityEntryInfo struct {
 	LibraryID  string `json:"libraryID,omitempty"`
 	TokenID    string `json:"tokenID,omitempty"`
 	APIKeyID   string `json:"apiKeyID,omitempty"`
+	// SystemActor names the server subsystem that wrote the entry on its own
+	// ("scan"), when no session, token or key acted.
+	SystemActor         string                     `json:"systemActor,omitempty"`
+	MediaRelationChange *store.MediaRelationChange `json:"mediaRelationChange,omitempty"`
 }
 
 // activityReversible returns true for operations routed through Trash and
@@ -4196,16 +4564,17 @@ func (h *Handler) activityLog(ctx context.Context, scope auth.Scope, req request
 	resp := make([]ActivityEntryInfo, len(entries))
 	for i, entry := range entries {
 		resp[i] = ActivityEntryInfo{
-			ID:         strconv.FormatInt(entry.ID, 10),
-			OccurredAt: entry.OccurredAt.UTC().Format(time.RFC3339),
-			Action:     entry.Action,
-			Reversible: activityReversible(entry.Action),
-			SessionID:  string(entry.SessionID),
-			DeviceID:   string(entry.DeviceID),
-			ProfileID:  string(entry.ProfileID),
-			TargetType: entry.TargetType,
-			TargetID:   entry.TargetID,
-			LibraryID:  string(entry.LibraryID),
+			ID:          strconv.FormatInt(entry.ID, 10),
+			OccurredAt:  entry.OccurredAt.UTC().Format(time.RFC3339),
+			Action:      entry.Action,
+			Reversible:  activityReversible(entry.Action),
+			SessionID:   string(entry.SessionID),
+			DeviceID:    string(entry.DeviceID),
+			ProfileID:   string(entry.ProfileID),
+			TargetType:  entry.TargetType,
+			TargetID:    entry.TargetID,
+			LibraryID:   string(entry.LibraryID),
+			SystemActor: entry.SystemActor(),
 		}
 		if scope.DeviceRole == store.DeviceRoleManager {
 			resp[i].TokenID = entry.TokenID
@@ -4235,20 +4604,22 @@ func (h *Handler) activityEntry(ctx context.Context, scope auth.Scope, req reque
 		return ActivityEntryInfo{}, clientError("not found")
 	}
 	info := ActivityEntryInfo{
-		ID:         strconv.FormatInt(entry.ID, 10),
-		OccurredAt: entry.OccurredAt.UTC().Format(time.RFC3339),
-		Action:     entry.Action,
-		Reversible: activityReversible(entry.Action),
-		SessionID:  string(entry.SessionID),
-		DeviceID:   string(entry.DeviceID),
-		ProfileID:  string(entry.ProfileID),
-		TargetType: entry.TargetType,
-		TargetID:   entry.TargetID,
-		LibraryID:  string(entry.LibraryID),
+		ID:          strconv.FormatInt(entry.ID, 10),
+		OccurredAt:  entry.OccurredAt.UTC().Format(time.RFC3339),
+		Action:      entry.Action,
+		Reversible:  activityReversible(entry.Action),
+		SessionID:   string(entry.SessionID),
+		DeviceID:    string(entry.DeviceID),
+		ProfileID:   string(entry.ProfileID),
+		TargetType:  entry.TargetType,
+		TargetID:    entry.TargetID,
+		LibraryID:   string(entry.LibraryID),
+		SystemActor: entry.SystemActor(),
 	}
 	if scope.DeviceRole == store.DeviceRoleManager {
 		info.TokenID = entry.TokenID
 		info.APIKeyID = entry.APIKeyID
+		info.MediaRelationChange = entry.MediaRelationChange
 	}
 	return info, nil
 }
@@ -4285,6 +4656,32 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 	// client omits it (int64Var reads missing/zero the same, 0), which the store
 	// guard treats as "no event-time" (legacy unconditional-overwrite behavior).
 	eventTimeMS := int64Var(req, "eventTimeMS")
+	// paused says whether the player was paused when it reported, so play
+	// history credits no time after a paused report (CORE-1703). Optional: a
+	// client that omits it reads as playing.
+	var paused *bool
+	if p, ok := req.Variables["paused"].(bool); ok {
+		paused = &p
+	}
+	// playedMS is the time, in milliseconds, the client has actually played
+	// under playbackID so far (not paused, seeking or buffering); play history
+	// credits its growth (CORE-1703). Optional: nil when omitted.
+	var playedMS *int64
+	if raw, ok := req.Variables["playedMS"]; ok && raw != nil {
+		v, ok := playedMSVar(raw)
+		if !ok {
+			return PlaybackReport{}, clientError("playedMS must be a non-negative integer")
+		}
+		playedMS = &v
+	}
+	// playbackID is the client's random ID for this play: new each time the
+	// player starts the item, kept across pauses and seeks. Play history
+	// groups a play by it (CORE-1703). Optional for older clients.
+	// It is checked exactly as sent, never trimmed (store.ValidatePlaybackID).
+	playbackID := stringVar(req, "playbackID")
+	if err := store.ValidatePlaybackID(playbackID); err != nil {
+		return PlaybackReport{}, clientError(err.Error())
+	}
 	media, err := h.store.Media(ctx, store.MediaID(mediaID), scope.PlaybackFilter())
 	if err != nil {
 		return PlaybackReport{}, clientError("unknown media")
@@ -4312,6 +4709,9 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 		PositionSeconds: positionSeconds,
 		DurationSeconds: durationSeconds,
 		EventTimeMS:     eventTimeMS,
+		Paused:          paused,
+		PlaybackID:      playbackID,
+		PlayedMS:        playedMS,
 	}, finished)
 	if err != nil {
 		return PlaybackReport{}, err
@@ -4349,6 +4749,25 @@ func (h *Handler) notePlaybackActivity(ctx context.Context, scope auth.Scope, me
 	_ = h.store.TouchStreamTokenActivity(ctx, scope.SessionID, scope.ProfileID, mediaID, time.Now().UTC())
 }
 
+// playedMSVar reads reportPlayback's playedMS as /v1 does: a whole number,
+// not negative. A fraction is refused, never truncated, so -0.5 cannot pass
+// as zero.
+func playedMSVar(raw any) (int64, bool) {
+	switch v := raw.(type) {
+	case int:
+		return int64(v), v >= 0
+	case int64:
+		return v, v >= 0
+	case float64:
+		if v < 0 || v != math.Trunc(v) || v >= math.MaxInt64 {
+			return 0, false
+		}
+		return int64(v), true
+	default:
+		return 0, false
+	}
+}
+
 // recordPlaybackProgress writes one non-ambient position report for an already
 // reveal-resolved Media and returns the stored state.
 func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, media store.Media, report store.PlaybackProgress, finished bool) (store.PlaybackProgress, error) {
@@ -4366,6 +4785,11 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		PositionSeconds: report.PositionSeconds,
 		DurationSeconds: report.DurationSeconds,
 		EventTimeMS:     report.EventTimeMS,
+		DeviceID:        scope.DeviceID,
+		PlayMethod:      h.heldPlayMethod(scope.SessionID, media.ID),
+		PlaybackID:      report.PlaybackID,
+		Paused:          report.Paused,
+		PlayedMS:        report.PlayedMS,
 	}, finished, h.resumePolicy(ctx, media)); err != nil {
 		return store.PlaybackProgress{}, err
 	}
@@ -4382,6 +4806,21 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		h.notifyWatched(ctx, scope.ProfileID, media)
 	}
 	return progress, nil
+}
+
+// heldPlayMethod is the play method the server decided for this session's
+// playback of the Media, recorded on each progress report for play history
+// (CORE-1703). With no held decision the method is left unknown rather than
+// guessed.
+func (h *Handler) heldPlayMethod(sessionID store.SessionID, mediaID store.MediaID) string {
+	if h.playbackObserver == nil {
+		return ""
+	}
+	seen, ok := h.playbackObserver.PlayObservation(sessionID, mediaID)
+	if !ok || seen.Method == store.PlayMethodUnknown || !store.ValidPlayMethod(seen.Method) {
+		return ""
+	}
+	return seen.Method
 }
 
 // notifyWatched resolves the watched Media's External IDs and hands the
@@ -4445,6 +4884,21 @@ func (h *Handler) withExpectedProfile(ctx context.Context, scope auth.Scope, req
 	return err
 }
 
+// whileScopeProfile runs write only while the session stays bound to the
+// Profile this request resolved to (CORE-2923). A write judged for that
+// Profile, such as a Reveal whose PIN it verified, never lands after another
+// tab switched the session to another Profile between the check and the write.
+func (h *Handler) whileScopeProfile(ctx context.Context, scope auth.Scope, write func() error) error {
+	if scope.SessionID == "" || scope.ProfileID == "" {
+		return write()
+	}
+	err := h.store.RunWhileSessionBound(ctx, scope.SessionID, scope.ProfileID, write)
+	if errors.Is(err, store.ErrSessionProfileMismatch) {
+		return errProfileMismatch
+	}
+	return err
+}
+
 // checkExpectedProfile reads the optional expectedProfileID and refuses it up
 // front when it is not the Profile this request resolved to. Omitted or null
 // means no precondition (""); a supplied value must name a Profile, so a blank
@@ -4467,59 +4921,78 @@ func checkExpectedProfile(scope auth.Scope, req request) (store.ProfileID, error
 	return expected, nil
 }
 
-// queueOps applies the requested Play Queue mutations, all under one
-// expectedProfileID check when the request carries one.
+type queueAddResult struct {
+	items   []SourceItem
+	receipt QueueAddReceipt
+}
+
+func (h *Handler) queueAdd(ctx context.Context, scope auth.Scope, req request) (queueAddResult, error) {
+	expected, err := checkExpectedProfile(scope, req)
+	if err != nil {
+		return queueAddResult{}, err
+	}
+	mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
+	if mediaID == "" {
+		return queueAddResult{}, clientError("mediaID is required")
+	}
+	var position *int
+	v := newVars(req)
+	if value, ok := v.Number("position"); ok {
+		p := int(value)
+		position = &p
+	}
+	if err := v.Err(); err != nil {
+		return queueAddResult{}, err
+	}
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return queueAddResult{}, err
+	}
+	committed, err := h.auth.AddToQueue(ctx, scope, expected, mediaID, position, filter)
+	if err != nil {
+		return queueAddResult{}, queueWriteError(err)
+	}
+
+	// Keep the committed projection intact if optional card reads fail.
+	result := queueAddResult{receipt: QueueAddReceipt{MediaID: committed.MediaID, Position: committed.Position}}
+	result.items, err = h.queueItems(ctx, committed.QueueItemsResult)
+	if err != nil {
+		slog.DebugContext(ctx, "queueAdd card details unavailable", "error", err)
+		result.items = h.queueResponse(committed.Items, committed.Filter.Revealed, false)
+	}
+	return result, nil
+}
+
 func (h *Handler) queueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
-	var data map[string]any
-	err := h.withExpectedProfile(ctx, scope, req, func() error {
-		var err error
-		data, err = h.applyQueueOps(ctx, scope, fields, req)
-		return err
-	})
+	expected, err := checkExpectedProfile(scope, req)
 	if err != nil {
 		return nil, err
 	}
-	return data, nil
-}
-
-func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
+	authorization, err := h.queueWriteAuthorization(ctx, scope, expected)
+	if err != nil {
+		return nil, err
+	}
 	data := map[string]any{}
-	if fields["queueadd"] {
-		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
-		if mediaID == "" {
-			return nil, clientError("mediaID is required")
-		}
-		var position *int
-		v := newVars(req)
-		if value, ok := v.Number("position"); ok {
-			p := int(value)
-			position = &p
-		}
-		if err := v.Err(); err != nil {
-			return nil, err
-		}
-		if err := h.store.QueueAdd(ctx, scope.ProfileID, mediaID, position, scope.LibraryFilter()); err != nil {
-			return nil, clientError("unknown media")
-		}
-		items, err := h.queueItems(ctx, scope)
+	write := func(field string, edit store.QueueEdit) error {
+		committed, err := h.store.EditQueueItems(ctx, authorization, edit)
 		if err != nil {
-			return nil, err
+			return queueWriteError(err)
 		}
-		data["queueadd"] = items
+		items, err := h.queueItems(ctx, committed)
+		if err != nil {
+			return err
+		}
+		data[field] = items
+		return nil
 	}
 	if fields["queueremove"] {
 		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
 		if mediaID == "" {
 			return nil, clientError("mediaID is required")
 		}
-		if err := h.store.QueueRemove(ctx, scope.ProfileID, mediaID, scope.LibraryFilter()); err != nil {
+		if err := write("queueremove", store.RemoveQueueMedia(mediaID)); err != nil {
 			return nil, err
 		}
-		items, err := h.queueItems(ctx, scope)
-		if err != nil {
-			return nil, err
-		}
-		data["queueremove"] = items
 	}
 	if fields["queuemove"] {
 		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
@@ -4534,44 +5007,37 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 		if !ok {
 			return nil, clientError("position is required")
 		}
-		if err := h.store.QueueMove(ctx, scope.ProfileID, mediaID, int(number), scope.LibraryFilter()); err != nil {
+		if err := write("queuemove", store.MoveQueueMedia(mediaID, int(number))); err != nil {
 			return nil, err
 		}
-		items, err := h.queueItems(ctx, scope)
-		if err != nil {
-			return nil, err
-		}
-		data["queuemove"] = items
 	}
 	if fields["queueclear"] {
-		if err := h.store.QueueClear(ctx, scope.ProfileID, scope.LibraryFilter()); err != nil {
+		if err := write("queueclear", store.ClearQueue()); err != nil {
 			return nil, err
 		}
-		items, err := h.queueItems(ctx, scope)
-		if err != nil {
-			return nil, err
-		}
-		data["queueclear"] = items
 	}
 	return data, nil
 }
 
-func (h *Handler) queueItems(ctx context.Context, scope auth.Scope) ([]SourceItem, error) {
-	items, err := h.store.SourceItems(ctx, scope.LibraryFilter(), store.SourceQuery{
-		Kind:      "queue",
-		ProfileID: scope.ProfileID,
-	})
-	if err != nil {
+func (h *Handler) queueItems(ctx context.Context, committed store.QueueItemsResult) ([]SourceItem, error) {
+	cards := slices.Clone(committed.Items)
+	if err := h.annotateCardsForProfile(ctx, committed.ProfileID, committed.Filter, cards); err != nil {
 		return nil, err
 	}
-	if err := h.annotateCards(ctx, scope, items); err != nil {
-		return nil, err
-	}
+	return h.queueResponse(cards, committed.Filter.Revealed, true), nil
+}
+
+// queueResponse attaches artwork only when the page's card reads succeeded.
+func (h *Handler) queueResponse(items []store.SourceItem, revealed, enriched bool) []SourceItem {
 	resp := make([]SourceItem, len(items))
 	for i, item := range items {
-		resp[i] = h.sourceItem(item, scope.Revealed)
+		if enriched {
+			resp[i] = h.sourceItem(item, revealed)
+		} else {
+			resp[i] = basicSourceItem(item, revealed)
+		}
 	}
-	return resp, nil
+	return resp
 }
 
 // IdentifyCandidate is the wire shape for one scraper search candidate
@@ -4986,7 +5452,11 @@ type RelatedEntityGroupInfo struct {
 // reached it (credit-style links, ADR-0003 §2).
 type RelatedEntityInfo struct {
 	EntityInfo
-	Attributes map[string]string `json:"attributes"`
+	Attributes     map[string]string `json:"attributes"`
+	Relation       string            `json:"relation"`
+	SortOrder      *int              `json:"sortOrder,omitempty"`
+	OperatorLocked bool              `json:"operatorLocked"`
+	Undeclared     bool              `json:"undeclared"`
 }
 
 // entityQuery resolves entity(id) — reveal-filtered like every read.
@@ -5029,25 +5499,32 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 
 // entitiesForMedia resolves the Media item's credit-style relations.
 func (h *Handler) entitiesForMedia(ctx context.Context, scope auth.Scope, req request) ([]RelatedEntityInfo, error) {
-	mediaID := trimmedVariable(req, "mediaID")
+	mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
 	relation := trimmedVariable(req, "relation")
-	if mediaID == "" || relation == "" {
-		return nil, clientError("mediaID and relation are required")
+	if mediaID == "" {
+		return nil, clientError("mediaID is required")
 	}
-	related, err := h.store.EntitiesForMedia(ctx, store.MediaID(mediaID), relation, scope.LibraryFilter())
+	related, err := h.store.EntitiesForMedia(ctx, mediaID, relation, scope.LibraryFilter())
 	if err != nil {
 		return nil, clientError("unknown media")
 	}
-	resp := make([]RelatedEntityInfo, len(related))
-	for i, item := range related {
+	var bundle plugin.Bundle
+	if libraryID, err := h.store.MediaLibrary(ctx, mediaID); err == nil {
+		bundle = h.relationBundle(ctx, libraryID)
+	}
+	resp := make([]RelatedEntityInfo, 0, len(related))
+	for _, item := range related {
+		_, declared := declaredMediaRelation(bundle, item.Entity.Kind, item.Relation)
 		attributes := item.Attributes
 		if attributes == nil {
 			attributes = map[string]string{}
 		}
-		resp[i] = RelatedEntityInfo{
+		resp = append(resp, RelatedEntityInfo{
 			EntityInfo: entityInfo(item.Entity, h.entityKindSpec(ctx, item.Entity.LibraryID, item.Entity.Kind)),
 			Attributes: attributes,
-		}
+			Relation:   item.Relation, SortOrder: item.SortOrder, OperatorLocked: item.OperatorLocked,
+			Undeclared: item.OperatorLocked && !declared,
+		})
 	}
 	return resp, nil
 }
@@ -5146,7 +5623,7 @@ func (h *Handler) pinArtworkCandidate(ctx context.Context, scope auth.Scope, req
 	if !artwork.ValidSlot(slot) {
 		return ArtworkCandidateInfo{}, clientError("unknown artwork candidate")
 	}
-	if h.candidateFetch == nil || h.candidateImport == nil {
+	if h.candidateImport == nil {
 		return ArtworkCandidateInfo{}, clientError("artwork candidate pin unavailable")
 	}
 	candidate, err := h.store.ArtworkCandidate(ctx, candidateID, scope.LibraryFilter())
@@ -5157,7 +5634,7 @@ func (h *Handler) pinArtworkCandidate(ctx context.Context, scope auth.Scope, req
 	if err != nil {
 		return ArtworkCandidateInfo{}, clientError("unknown artwork candidate")
 	}
-	data, err := h.candidateFetch.FetchResource(ctx, candidate.SourceURL)
+	data, err := h.artworkCandidateBytes(ctx, candidate)
 	if err != nil {
 		return ArtworkCandidateInfo{}, err
 	}
@@ -5824,6 +6301,7 @@ var queryFields = map[string]bool{
 	"playbackrenditioncache": true,
 	"entity":                 true,
 	"entitiesformedia":       true,
+	"entitysearch":           true,
 	"entityrelations":        true,
 	"mediaforentity":         true,
 	"mediafiles":             true,
@@ -5836,6 +6314,7 @@ var queryFields = map[string]bool{
 	"trashedmarkers":         true,
 	"itemstate":              true,
 	"metadatacredits":        true,
+	"playqueue":              true,
 	"sourceitems":            true,
 	"libraryentities":        true,
 	"libraryitems":           true,
@@ -5852,6 +6331,7 @@ var queryFields = map[string]bool{
 	"preplayclips":           true, // CORE-1701: the Owner's pre-play clip list
 	"media":                  true,
 	"trashlist":              true,
+	"duplicatecopies":        true,
 	"tags":                   true,
 	"tagassignments":         true,
 	"libraries":              true,
@@ -5862,13 +6342,18 @@ var queryFields = map[string]bool{
 	"identifysearch":         true,
 	"identifylookup":         true, // METAPARITY-4 (ADR-0068 §A): paste-an-id direct fetch, read-only
 	"fixmatchcandidates":     true, // METAPARITY-4 (ADR-0068 §A): scored candidate list, read-only
+	"fixmatchchildren":       true,
+	"fixmatchcurrent":        true,
+	"fixmatchlockedfields":   true,
 	"fixmatchpreview":        true, // METAPARITY-4 (ADR-0068 §A): preview-before-apply diff, writes nothing
+	"fixmatchsources":        true,
 	"unmatchedqueue":         true,
 	"unmatchedrecords":       true, // METAPARITY-6 (ADR-0068 §A): the Media-independent review inbox
 	"unmatchedsuppressions":  true, // METAPARITY-7 (ADR-0068 §A): active scoped suppressions + provenance
 	"navoverride":            true, // WEB-5J (ADR-0061 §Layout editor): current nav/layout override blob
 	"navoverridehistory":     true, // WEB-5J (ADR-0061 §Layout editor): audit log of prior overrides
 	"subscriptions":          true,
+	"subscriptionentries":    true, // CORE-2957: catalogued feed entries, no enclosure URL
 	"jobs":                   true,
 	"job":                    true,
 	"jobevents":              true,
@@ -5884,6 +6369,8 @@ var queryFields = map[string]bool{
 	"mydatasummary":          true,
 	"myengagementlog":        true,
 	"mysessions":             true,
+	"myplayhistory":          true,
+	"myplaystats":            true,
 	"scrobblelinks":          true, // MUSIC-7 (ADR-0098 area 7): own Profile's scrobble links (non-secret)
 	"scrobbleeligibility":    true, // MUSIC-7 (ADR-0098 area 7): per-visible-Library scrobble eligibility
 	"scrobblestatus":         true, // MUSIC-7 (ADR-0098 area 7): admin diagnostic (dead-letter/skip/adapters)
@@ -5975,7 +6462,15 @@ var mutationFields = map[string]bool{
 	"setwatched":                         true,
 	"setwatchlisted":                     true,
 	"setrating":                          true,
+	"setcontinuewatchinghidden":          true,
 	"setfavorite":                        true,
+	"queueaddmany":                       true,
+	"queuemoveentry":                     true,
+	"queueremoveentry":                   true,
+	"queueplaynext":                      true,
+	"queuesetcurrent":                    true,
+	"queuesetshuffle":                    true,
+	"queuesetrepeat":                     true,
 	"queueadd":                           true,
 	"queueremove":                        true,
 	"queuemove":                          true,
@@ -6032,6 +6527,9 @@ var mutationFields = map[string]bool{
 	"undobatch":                          true,
 	"identifyapply":                      true,
 	"fixmatch":                           true,
+	"setmediarelation":                   true,
+	"removemediarelation":                true,
+	"clearmediaordinal":                  true,
 	"dismissunmatched":                   true,
 	"createmediafromunmatched":           true, // METAPARITY-6 (ADR-0068 §A): hand-authored no-match Media
 	"suppressunmatched":                  true, // METAPARITY-7 (ADR-0068 §A): one scoped suppression
@@ -6074,6 +6572,10 @@ var mutationFields = map[string]bool{
 	"addsubscription":                    true,
 	"removesubscription":                 true,
 	"setsubscriptionretention":           true,
+	"setsubscriptiondownloadpolicy":      true, // CORE-2957: manager-gated download policy
+	"followfeed":                         true, // CORE-2953: adult or manager follows a public feed
+	"refreshsubscription":                true, // CORE-2955: follower manual feed refresh, rate-limited
+	"refreshallsubscriptions":            true, // CORE-2955: Manager refresh of every feed
 	"runjob":                             true,
 	"runeventscompaction":                true,
 	"jobcancel":                          true,
@@ -6280,7 +6782,7 @@ var adminFields = map[string]bool{
 	"updatestatus": true,
 	// Profiles & access — CRUD + policies (§4)
 	"createprofile":           true,
-	"updateprofile":           true,
+	"updateprofile":           true, // own track preferences only: ownTrackPreferenceWrite (CORE-1937)
 	"reorderprofiles":         true,
 	"setprofileavatar":        true,
 	"setprofilelibraries":     true,
@@ -6501,7 +7003,11 @@ type SchemaField struct {
 	// Tier is the required authorization tier: "public" (serverInfo only),
 	// "admin" (adminFields — the ADR-0007 §4 Console mutation class), or
 	// "session" (any other scoped field; finer manager-role gating is a
-	// dispatcher-runtime concern not declared in these registries).
+	// dispatcher-runtime concern not declared in these registries). A field
+	// keeps its declared tier when the dispatcher grants a narrower runtime
+	// exception: updateProfile stays "admin", although a session may write its
+	// own Profile's audioLanguages, subtitleLanguages, subtitleMode and
+	// preferSDH without an Admin Session (CORE-1937, ownTrackPreferenceWrite).
 	Tier string `json:"tier"`
 }
 
@@ -6540,10 +7046,30 @@ type request struct {
 }
 
 type response struct {
-	Data                 map[string]any                        `json:"data,omitempty"`
-	Errors               []graphError                          `json:"errors,omitempty"`
-	authorizationRefused bool                                  `json:"-"`
-	privilegedOutcomes   map[string]observability.AuditOutcome `json:"-"`
+	Data                 map[string]any             `json:"data,omitempty"`
+	Errors               []graphError               `json:"errors,omitempty"`
+	Extensions           *GraphQLResponseExtensions `json:"extensions,omitempty"`
+	authorizationRefused bool                       `json:"-"`
+	// refusalStatus, when set, is the HTTP status a scope refusal raised
+	// during dispatch answers with in place of 200.
+	refusalStatus      int                                   `json:"-"`
+	privilegedOutcomes map[string]observability.AuditOutcome `json:"-"`
+	// privilegedActors names, per privileged occurrence response key, the
+	// actor whose scope that occurrence was authorized or run under: a
+	// switchProfile earlier in the batch changes it (CORE-1937).
+	privilegedActors map[string]observability.AuditActor `json:"-"`
+}
+
+// GraphQLResponseExtensions is the optional top-level GraphQL extensions object.
+type GraphQLResponseExtensions struct {
+	QueueAdds []QueueAddReceipt `json:"queueAdds,omitempty"`
+}
+
+// QueueAddReceipt identifies one committed queueAdd by its response key.
+type QueueAddReceipt struct {
+	ResponseKey string        `json:"responseKey"`
+	MediaID     store.MediaID `json:"mediaID"`
+	Position    *int          `json:"position,omitempty"`
 }
 
 // MarshalJSON distinguishes an intentionally empty successful data object
@@ -6551,10 +7077,11 @@ type response struct {
 // data member must be absent.
 func (r response) MarshalJSON() ([]byte, error) {
 	type wireResponse struct {
-		Data   json.RawMessage `json:"data,omitempty"`
-		Errors []graphError    `json:"errors,omitempty"`
+		Data       json.RawMessage            `json:"data,omitempty"`
+		Errors     []graphError               `json:"errors,omitempty"`
+		Extensions *GraphQLResponseExtensions `json:"extensions,omitempty"`
 	}
-	wire := wireResponse{Errors: r.Errors}
+	wire := wireResponse{Errors: r.Errors, Extensions: r.Extensions}
 	if r.Data != nil {
 		data, err := json.Marshal(r.Data)
 		if err != nil {
@@ -6567,9 +7094,8 @@ func (r response) MarshalJSON() ([]byte, error) {
 
 type graphError struct {
 	Message string `json:"message"`
-	// Path names the top-level field this error belongs to (M2 partial-success
-	// reads). Omitted for whole-response errors (auth gate, unsupported query,
-	// aborted mutation batch) so their wire shape is unchanged.
+	// Path names the top-level field this error belongs to in a partial
+	// response. Whole-response errors and errors-only mutations omit it.
 	Path []string `json:"path,omitempty"`
 	// Extensions.Code is one of the closed ErrorCodes vocabulary (§7);
 	// error_codes.go owns the mapping.

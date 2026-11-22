@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import "@fontsource-variable/instrument-sans/wght.css";
 import "./styles/global.css";
+import { AssignInterruptionNotice } from "@/components/assign/AssignInterruptionNotice";
 import { ShellErrorBoundary } from "@/components/chrome/ErrorBoundary";
 import { handOffSplash } from "@/lib/brandSplash";
 import { I18nProvider } from "@/lib/i18n";
@@ -36,7 +37,9 @@ function render() {
             <RegisterProvider>
               <SessionProvider>
                 <ThemePrefsSync />
-                <App />
+                <AssignInterruptionNotice>
+                  <App />
+                </AssignInterruptionNotice>
               </SessionProvider>
             </RegisterProvider>
           </BrowserRouter>

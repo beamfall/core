@@ -228,6 +228,40 @@ describe("LibrariesPage folder tree", () => {
     expect(child).toHaveAttribute("aria-selected", "false");
   });
 
+  it("shows no item count for a folder the bounded tree did not read (CORE-1140)", async () => {
+    vi.mocked(fetchFolderTree).mockResolvedValue({
+      name: "roots",
+      path: "",
+      kind: "folder",
+      size: 0,
+      modifiedAt: "",
+      children: [
+        {
+          name: "Films",
+          path: "/media/films",
+          kind: "folder",
+          size: 0,
+          modifiedAt: "",
+          children: [
+            { name: "Deep", path: "/media/films/deep", kind: "folder", size: 0, modifiedAt: "" },
+          ],
+        },
+      ],
+    });
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrariesPage renameEnabled />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    const films = await screen.findByRole("treeitem", { name: /Films/ });
+    const deep = screen.getByRole("treeitem", { name: /Deep/ });
+    expect(films).toHaveTextContent("1 items");
+    expect(deep).not.toHaveTextContent(/items/);
+    expect(deep).not.toHaveAttribute("aria-expanded");
+  });
+
   it("provides roving focus and complete tree arrow-key navigation", async () => {
     const user = userEvent.setup();
     render(

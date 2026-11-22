@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ const (
 	playbackProjectionOperationImport       = "import"
 	playbackProjectionOperationMark         = "mark"
 	playbackProjectionOperationVersionMerge = "merge-version"
+	playbackProjectionOperationHideContinue = "hide-continue"
 )
 
 type playbackProjectionEvent struct {
@@ -36,6 +38,23 @@ type playbackProjectionEvent struct {
 	EventTimeMS       *int64 `json:"eventTimeMs"`
 	ChannelContext    bool   `json:"channelContext"`
 	MergedFromMediaID string `json:"mergedFromMediaId,omitempty"`
+	ContinueHidden    bool   `json:"continueHidden,omitempty"`
+	// DeviceID and PlayMethod say which Device reported and how the server
+	// delivered to it (CORE-1703); play history reads them. Older events
+	// carry neither.
+	DeviceID   string `json:"deviceId,omitempty"`
+	PlayMethod string `json:"playMethod,omitempty"`
+	// ReportedPositionSeconds is the position the client reported, kept even
+	// when the stored position is zeroed (watched, or not resumable), so play
+	// history can tell a paused heartbeat from playback (CORE-1703).
+	ReportedPositionSeconds *int `json:"reportedPositionSeconds,omitempty"`
+	// PlaybackID is the client's ID for the play the report belongs to, and
+	// Paused is whether the player was paused when it reported, and PlayedMS
+	// is the time the client has actually played under that ID (CORE-1703).
+	// All absent on older events, imports and clients that do not send them.
+	PlaybackID string `json:"playbackId,omitempty"`
+	Paused     *bool  `json:"paused,omitempty"`
+	PlayedMS   *int64 `json:"playedMs,omitempty"`
 }
 
 func appendPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
@@ -78,17 +97,22 @@ func applyPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbac
 		return applyMarkProjectionEvent(ctx, tx, event)
 	case playbackProjectionOperationVersionMerge:
 		return applyVersionMergeProjectionEvent(ctx, tx, event)
+	case playbackProjectionOperationHideContinue:
+		return applyHideContinueProjectionEvent(ctx, tx, event)
 	default:
 		return fmt.Errorf("unknown playback projection operation %q", event.Operation)
 	}
 }
 
+// applyVersionMergeProjectionEvent copies a merged Media's progress onto the
+// survivor. A new survivor row keeps the merged row's Continue Watching
+// removal; an existing one keeps its own.
 func applyVersionMergeProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, watched, updated_at_ms,
 		  play_count, last_played_at_ms, provenance, occurred_at_ms, import_run_id, import_importer_id,
-		  import_match_method, event_time_ms, channel_context)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		  import_match_method, event_time_ms, channel_context, continue_hidden)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(profile_id, media_id) DO UPDATE SET
 		  play_count = playback_progress.play_count + excluded.play_count,
 		  last_played_at_ms = CASE
@@ -97,10 +121,15 @@ func applyVersionMergeProjectionEvent(ctx context.Context, tx *sql.Tx, event pla
 	`, event.ProfileID, event.MediaID, event.PositionSeconds, event.DurationSeconds,
 		boolToInt(event.Watched), event.UpdatedAtMS, event.PlayCount, event.LastPlayedAtMS,
 		event.Provenance, event.OccurredAtMS, nullString(event.ImportRunID), nullString(event.ImportImporterID),
-		nullString(event.ImportMatch), event.EventTimeMS, boolToInt(event.ChannelContext))
+		nullString(event.ImportMatch), event.EventTimeMS, boolToInt(event.ChannelContext),
+		boolToInt(event.ContinueHidden))
 	return err
 }
 
+// applyProgressProjectionEvent applies one playback report. A report that
+// moves the resume position clears continue_hidden, so playing an item again
+// returns it to Continue Watching; a repeat of the same position (a paused
+// player's heartbeat) leaves a removal in place.
 func applyProgressProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, watched, updated_at_ms, play_count, last_played_at_ms, provenance, occurred_at_ms, import_run_id, import_importer_id, import_match_method, event_time_ms, channel_context)
@@ -114,6 +143,7 @@ func applyProgressProjectionEvent(ctx context.Context, tx *sql.Tx, event playbac
 		  updated_at_ms = CASE WHEN (`+positionAdvancedPredicate+`) THEN excluded.updated_at_ms ELSE playback_progress.updated_at_ms END,
 		  event_time_ms = CASE WHEN (`+positionAdvancedPredicate+`) THEN excluded.event_time_ms ELSE playback_progress.event_time_ms END,
 		  channel_context = CASE WHEN (`+positionAdvancedPredicate+`) THEN excluded.channel_context ELSE playback_progress.channel_context END,
+		  continue_hidden = CASE WHEN (`+positionAdvancedPredicate+`) AND excluded.position_seconds <> playback_progress.position_seconds THEN 0 ELSE playback_progress.continue_hidden END,
 		  provenance = excluded.provenance,
 		  occurred_at_ms = excluded.occurred_at_ms,
 		  import_run_id = excluded.import_run_id,
@@ -155,27 +185,85 @@ func applyImportedPlayProjectionEvent(ctx context.Context, tx *sql.Tx, event pla
 	return err
 }
 
-// rebuildEngagementProjections discards every materialized projection derived
-// from engagement_event and replays the frozen canonical log in insertion
-// order. It is deliberately internal until operator-facing reconciliation and
+// rebuildEngagementProjections replays the frozen canonical log in insertion
+// order into playback_progress and verifies the result before committing it.
+// It is deliberately internal until operator-facing reconciliation and
 // reporting are built.
+//
+// The replay runs through the live appliers against the real table inside
+// one transaction, so it sees the same constraints, defaults and conflict
+// rules as a live write. Every existing row must come back identical on every
+// column; a missing or different row means the log cannot reproduce it (a
+// legacy row, or a live write whose effect depended on state the log does not
+// hold), and the rebuild is refused. The refusal rolls the transaction back,
+// so no row changes. Pairs the log holds but the table lost are restored.
 func (s *Store) rebuildEngagementProjections(ctx context.Context) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	tx, err := s.eventsW.BeginTx(ctx, nil)
+	return withMemoryTempStore(ctx, s.eventsW, func(conn *sql.Conn) error {
+		return replayPlaybackProjection(ctx, conn)
+	})
+}
+
+// withMemoryTempStore runs fn on a dedicated connection with
+// temp_store=MEMORY, so the rebuild's snapshot table and its EXCEPT never
+// spill Profile IDs or playback history into the system temp directory,
+// outside the protected database directory. The previous setting is restored
+// before the connection goes back to the pool; a connection that cannot be
+// restored is discarded instead.
+func withMemoryTempStore(ctx context.Context, db *sql.DB, fn func(*sql.Conn) error) error {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	var prior int
+	if err := conn.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&prior); err != nil {
+		return fmt.Errorf("read temp_store: %w", err)
+	}
+	// Register the restore before the setter: a cancelled setter can still
+	// have applied MEMORY, and that connection must not reach the pool.
+	defer func() {
+		if _, err := conn.ExecContext(context.WithoutCancel(ctx), fmt.Sprintf("PRAGMA temp_store = %d", prior)); err != nil {
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
+	}()
+	if _, err := conn.ExecContext(ctx, `PRAGMA temp_store = MEMORY`); err != nil {
+		return fmt.Errorf("set temp_store: %w", err)
+	}
+	var mode int
+	if err := conn.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&mode); err != nil {
+		return fmt.Errorf("read temp_store: %w", err)
+	}
+	if mode != sqliteTempStoreMemory {
+		return fmt.Errorf("temp_store is %d on the rebuild connection, want %d (MEMORY)", mode, sqliteTempStoreMemory)
+	}
+	return fn(conn)
+}
+
+// sqliteTempStoreMemory is PRAGMA temp_store's value for MEMORY.
+const sqliteTempStoreMemory = 2
+
+func replayPlaybackProjection(ctx context.Context, conn *sql.Conn) error {
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if err := rejectUnloggedPlaybackProjections(ctx, tx); err != nil {
-		return err
-	}
 	events, err := loadPlaybackProjectionEvents(ctx, tx)
 	if err != nil {
 		return err
+	}
+	for _, stmt := range []string{
+		`DROP TABLE IF EXISTS temp.playback_progress_rebuild_base`,
+		`CREATE TEMP TABLE playback_progress_rebuild_base AS SELECT * FROM playback_progress`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("snapshot playback_progress projection: %w", err)
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_progress`); err != nil {
 		return fmt.Errorf("clear playback_progress projection: %w", err)
@@ -185,29 +273,25 @@ func (s *Store) rebuildEngagementProjections(ctx context.Context) error {
 			return fmt.Errorf("rebuild playback_progress event %d: %w", i, err)
 		}
 	}
-	return tx.Commit()
-}
-
-func rejectUnloggedPlaybackProjections(ctx context.Context, tx *sql.Tx) error {
-	var count int
-	err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM playback_progress AS projection
-		WHERE NOT EXISTS (
-			SELECT 1
-			FROM engagement_event AS event
-			WHERE event.kind = ?
-			  AND event.profile_id = projection.profile_id
-			  AND event.media_id = projection.media_id
+	// The snapshot has the table's own column list and one row per pair, so
+	// each row EXCEPT leaves is a pair the replay changed or lost.
+	var changed int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM (
+			SELECT * FROM temp.playback_progress_rebuild_base
+			EXCEPT
+			SELECT * FROM playback_progress
 		)
-	`, playbackProjectionEventKind).Scan(&count)
-	if err != nil {
-		return fmt.Errorf("check playback projection base: %w", err)
+	`).Scan(&changed); err != nil {
+		return fmt.Errorf("verify playback_progress rebuild: %w", err)
 	}
-	if count > 0 {
-		return fmt.Errorf("playback_progress rebuild refused: %d projection rows have no canonical event", count)
+	if changed > 0 {
+		return fmt.Errorf("playback_progress rebuild refused: replay would change %d existing rows", changed)
 	}
-	return nil
+	if _, err := tx.ExecContext(ctx, `DROP TABLE temp.playback_progress_rebuild_base`); err != nil {
+		return fmt.Errorf("drop playback_progress snapshot: %w", err)
+	}
+	return tx.Commit()
 }
 
 func loadPlaybackProjectionEvents(ctx context.Context, tx *sql.Tx) ([]playbackProjectionEvent, error) {

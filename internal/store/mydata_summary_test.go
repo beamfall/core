@@ -65,7 +65,7 @@ func TestMyDataSummaryAndEventLog(t *testing.T) {
 		timeToMillis(base.Add(12*time.Hour)), profile, "media-alpha"); err != nil {
 		t.Fatalf("pin favorite time: %v", err)
 	}
-	if err := st.QueueAdd(ctx, profile, "media-alpha", nil, LibraryFilter{Revealed: true, AllLibraries: true}); err != nil {
+	if err := queueAddFixture(ctx, st, profile, "media-alpha", nil, LibraryFilter{Revealed: true, AllLibraries: true}); err != nil {
 		t.Fatalf("seed queue add: %v", err)
 	}
 

@@ -6,7 +6,20 @@
 // Every query/mutation string is copied VERBATIM from internal/web/static/app.js
 // (contract-tested server-side).
 
-import { type GraphQLOptions, graphql } from "@/lib/api";
+import {
+  type GraphQLOptions,
+  getExpectedProfile,
+  graphql,
+  noteProfileRefusal,
+  profileHeaders,
+} from "@/lib/api";
+import {
+  normalizePlayStats,
+  PLAY_FIELDS,
+  PLAY_STATS_FIELDS,
+  playVariables,
+  utcOffsetMinutes,
+} from "./plays";
 import type {
   AccessScheduleInfo,
   AccessWindowInput,
@@ -33,6 +46,7 @@ import type {
   PlaybackCacheOpResult,
   PlayHistoryFilter,
   PlayInfo,
+  PlayStatsFilter,
   PlayStatsInfo,
   PrePlayClipsInfo,
   ProfileAdminInfo,
@@ -436,43 +450,35 @@ export async function fetchHostMetrics(signal?: AbortSignal): Promise<HostMetric
   return { intervalSeconds: info?.intervalSeconds ?? 0, samples: info?.samples ?? [] };
 }
 
-const PLAY_HISTORY_QUERY =
-  "query PlayHistory($profileID: String, $libraryID: String, $since: String, $until: String, $limit: Int) { playHistory(profileID: $profileID, libraryID: $libraryID, since: $since, until: $until, limit: $limit) { profileID profileName mediaID title libraryID libraryTitle startedAt watchedSeconds finished } }";
+const PLAY_HISTORY_QUERY = `query PlayHistory($profileID: String, $libraryID: String, $mediaID: String, $deviceID: String, $playMethod: String, $since: String, $until: String, $limit: Int) { playHistory(profileID: $profileID, libraryID: $libraryID, mediaID: $mediaID, deviceID: $deviceID, playMethod: $playMethod, since: $since, until: $until, limit: $limit) { ${PLAY_FIELDS} } }`;
 
 /** PlayHistory — past plays, newest first, optionally filtered. */
 export async function fetchPlayHistory(
   filter: PlayHistoryFilter = {},
   signal?: AbortSignal,
 ): Promise<PlayInfo[]> {
-  const variables: Record<string, unknown> = {};
-  if (filter.profileID) variables.profileID = filter.profileID;
-  if (filter.libraryID) variables.libraryID = filter.libraryID;
-  if (filter.since) variables.since = filter.since;
-  if (filter.until) variables.until = filter.until;
-  if (filter.limit) variables.limit = filter.limit;
   const data = await graphql<{ playHistory: PlayInfo[] | null }>(
     PLAY_HISTORY_QUERY,
-    variables,
+    playVariables(filter),
     signal,
   );
   return data.playHistory ?? [];
 }
 
-const PLAY_STATS_QUERY =
-  "query PlayStats($windowDays: Int!) { playStats(windowDays: $windowDays) { windowDays profiles { profileID profileName plays watchedSeconds } items { mediaID title libraryID plays watchedSeconds } } }";
+const PLAY_STATS_QUERY = `query PlayStats($profileID: String, $libraryID: String, $mediaID: String, $deviceID: String, $playMethod: String, $windowDays: Int, $since: String, $until: String, $utcOffsetMinutes: Int) { playStats(profileID: $profileID, libraryID: $libraryID, mediaID: $mediaID, deviceID: $deviceID, playMethod: $playMethod, windowDays: $windowDays, since: $since, until: $until, utcOffsetMinutes: $utcOffsetMinutes) { ${PLAY_STATS_FIELDS} } }`;
 
-/** PlayStats — top users and most-played items over 7, 30 or 90 days. */
+/** PlayStats — totals and breakdowns by user, item, device, play method and
+ * day over a 7, 30 or 90 day window or a date range, optionally filtered. */
 export async function fetchPlayStats(
-  windowDays: 7 | 30 | 90,
+  filter: PlayStatsFilter,
   signal?: AbortSignal,
 ): Promise<PlayStatsInfo> {
   const data = await graphql<{ playStats: PlayStatsInfo | null }>(
     PLAY_STATS_QUERY,
-    { windowDays },
+    { ...playVariables(filter), utcOffsetMinutes: utcOffsetMinutes() },
     signal,
   );
-  const stats = data.playStats;
-  return { windowDays, profiles: stats?.profiles ?? [], items: stats?.items ?? [] };
+  return normalizePlayStats(data.playStats);
 }
 
 const TERMINATE_SESSION_MUTATION =
@@ -923,19 +929,6 @@ export async function fetchProfileEntryPins(signal?: AbortSignal) {
   return data.profiles ?? [];
 }
 
-export async function setProfileEntryPin(
-  profileID: string,
-  entryPIN: string,
-  signal?: AbortSignal,
-) {
-  await graphql(
-    "mutation UpdateProfile($profileID: String!, $entryPIN: String!) { updateProfile(profileID: $profileID, entryPIN: $entryPIN) { id } }",
-    { profileID, entryPIN },
-    signal,
-    { adminUnlock: false },
-  );
-}
-
 export async function setProfileSubtitleLanguages(
   profileID: string,
   subtitleLanguages: string[],
@@ -1024,6 +1017,27 @@ export async function updateProfile(
   return data.updateProfile;
 }
 
+const SET_PROFILE_ENTRY_PIN_MUTATION =
+  "mutation UpdateProfile($profileID: String!, $entryPIN: String!) { updateProfile(profileID: $profileID, entryPIN: $entryPIN) { id } }";
+
+/**
+ * Set an adult Profile's entry PIN separately from other Profile settings. The Manage self-service
+ * page passes `{ adminUnlock: false }` so a challenge fails instead of prompting for admin unlock.
+ */
+export async function setProfileEntryPin(
+  profileID: string,
+  entryPIN: string,
+  signal?: AbortSignal,
+  options?: { adminUnlock?: boolean },
+): Promise<void> {
+  await graphql<{ updateProfile: { id: string } }>(
+    SET_PROFILE_ENTRY_PIN_MUTATION,
+    { profileID, entryPIN },
+    signal,
+    options,
+  );
+}
+
 const REORDER_PROFILES_MUTATION =
   "mutation ReorderProfiles($profileIDs: [String!]!) { reorderProfiles(profileIDs: $profileIDs) { id } }";
 
@@ -1065,16 +1079,18 @@ export async function setProfileAvatar(
 }
 
 async function profilePictureRequest(url: string, init: RequestInit): Promise<string> {
+  const sentProfile = getExpectedProfile();
   const response = await fetch(url, {
     ...init,
     credentials: "same-origin",
-    headers: { "X-Beamfall-Csrf": "1" },
+    headers: { "X-Beamfall-Csrf": "1", ...profileHeaders() },
   });
   const body = (await response.json().catch(() => null)) as {
     pictureURL?: string;
     error?: string;
   } | null;
   if (!response.ok) {
+    noteProfileRefusal(sentProfile, response.status, body);
     throw new Error(body?.error || `profile picture request failed (${response.status})`);
   }
   return body?.pictureURL ?? "";

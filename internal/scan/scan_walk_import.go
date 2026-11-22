@@ -131,18 +131,27 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		}
 		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, authoritative)
 	}
-	if s.isParsedPart(parsed, parsedOK) {
-		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), task.probe.value.Chapters, task.probe.succeeded); err != nil {
+	// A file with extracted local metadata imports on its own, like a still:
+	// a queued part or an attached version would drop it.
+	standalone := imported.Class == store.MediaClassImage || len(task.local) > 0
+	if !standalone && s.isParsedPart(parsed, parsedOK) {
+		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), task.probe.value.Chapters, task.probe.succeeded, false, nil); err != nil {
 			return err
 		}
 		return s.ctx.Err()
 	}
-	if err := s.flushPendingPartsUnlessImage(imported.Class == store.MediaClassImage); err != nil {
+	if err := s.flushPendingPartsUnlessInGroup(path, imported.Class == store.MediaClassImage); err != nil {
 		return err
 	}
-	versionKey := s.versionGroupKey(imported, parsed, parsedOK)
+	versionKey := ""
+	if !standalone {
+		versionKey = s.versionGroupKey(imported, parsed, parsedOK)
+	}
 	if mediaID, attached, err := s.attachVersion(versionKey, imported, parsed); err != nil || attached {
 		if err != nil {
+			return err
+		}
+		if err := s.refreshAttachedSidecars(mediaID, path, stored.ContentFingerprint); err != nil {
 			return err
 		}
 		if err := s.queueCompletion(path, mediaID, stored.ContentFingerprint, false); err != nil {
@@ -158,7 +167,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	if err := s.refreshParserFields(media.ID, refresh); err != nil {
 		return err
 	}
-	if imported.Class == store.MediaClassImage {
+	if len(task.local) > 0 {
 		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
 			return err
 		}
@@ -167,19 +176,8 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		return err
 	}
 	s.noteVersion(versionKey, path, media.ID)
-	if _, stale := s.backfillStale[media.ID]; stale && s.metadataHydrator != nil && s.prober != nil {
-		if media.Class == store.MediaClassImage {
-			if err := s.hydrateMetadata(media, path, stored.ContentFingerprint, nil); err != nil {
-				return err
-			}
-		} else if probe, probeErr := s.prober.Probe(s.ctx, path); probeErr != nil {
-			slog.Warn("scan: metadata backfill probe failed, skipping hydration", "path", path, "error", probeErr.Error())
-		} else {
-			media.Class = mediaClassFromProbe(probe)
-			if err := s.hydrateMetadata(media, path, stored.ContentFingerprint, probe.Tags); err != nil {
-				return err
-			}
-		}
+	if err := s.hydrateUnchanged(media, path, stored.ContentFingerprint); err != nil {
+		return err
 	}
 	if err := s.queueCompletion(path, media.ID, stored.ContentFingerprint, imported.Class == store.MediaClassImage); err != nil {
 		return err
@@ -308,18 +306,27 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			t.added = true
 		}
 	})
-	if s.isParsedPart(parsed, parsedOK) {
-		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded); err != nil {
+	// A file with extracted local metadata imports on its own, like a still:
+	// a queued part or an attached version would drop it.
+	standalone := isImage || len(task.local) > 0
+	if !standalone && s.isParsedPart(parsed, parsedOK) {
+		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded, probeSucceeded, probeTags); err != nil {
 			return err
 		}
 		return s.ctx.Err()
 	}
-	if err := s.flushPendingPartsUnlessImage(isImage); err != nil {
+	if err := s.flushPendingPartsUnlessInGroup(path, standalone); err != nil {
 		return err
 	}
-	versionKey := s.versionGroupKey(imported, parsed, parsedOK)
+	versionKey := ""
+	if !standalone {
+		versionKey = s.versionGroupKey(imported, parsed, parsedOK)
+	}
 	if mediaID, attached, err := s.attachVersion(versionKey, imported, parsed); err != nil || attached {
 		if err != nil {
+			return err
+		}
+		if err := s.refreshAttachedSidecars(mediaID, path, fingerprint); err != nil {
 			return err
 		}
 		if err := s.queueCompletion(path, mediaID, fingerprint, false); err != nil {
@@ -348,7 +355,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	}
 	s.committed = path
 	s.rememberVersionAnchor(versionKey, media.ID, fingerprint, parsed)
-	if isImage {
+	if len(task.local) > 0 {
 		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
 			return err
 		}
@@ -392,6 +399,63 @@ func applyProbeFacts(imported *store.ImportMediaFile, probe ffmpeg.Probe) {
 	imported.VideoHeightHint = probe.VideoHeight
 	imported.Streams = streamsFromProbe(probe.Streams)
 	imported.FontAttachments = fontsFromProbe(probe.FontAttachments)
+}
+
+// hydrateUnchanged hydrates an unchanged file again when a backfill scan owes
+// it hydration, and otherwise, or when its probe fails, refreshes its sidecar
+// alone, which needs no probe.
+func (s *scanWalkState) hydrateUnchanged(media store.Media, path, fingerprint string) error {
+	if _, stale := s.backfillStale[media.ID]; stale && s.metadataHydrator != nil && s.prober != nil {
+		if media.Class == store.MediaClassImage {
+			return s.hydrateMetadata(media, path, fingerprint, nil)
+		}
+		probe, probeErr := s.prober.Probe(s.ctx, path)
+		if probeErr == nil {
+			media.Class = mediaClassFromProbe(probe)
+			return s.hydrateMetadata(media, path, fingerprint, probe.Tags)
+		}
+		slog.Warn("scan: metadata backfill probe failed, skipping hydration", "path", path, "error", probeErr.Error())
+	}
+	return s.refreshSidecars(media.ID, media.Class, path, fingerprint)
+}
+
+// refreshAttachedSidecars refreshes the sidecar of the Media a version was
+// just attached to, which keeps the class it already has.
+func (s *scanWalkState) refreshAttachedSidecars(mediaID store.MediaID, path, fingerprint string) error {
+	if _, ok := s.metadataHydrator.(MetadataSidecarHydrator); !ok {
+		return nil
+	}
+	class, err := s.st.MediaClass(s.ctx, mediaID)
+	if err != nil {
+		return err
+	}
+	return s.refreshSidecars(mediaID, class, path, fingerprint)
+}
+
+// refreshSidecars applies a Media's sidecar when it changed since it was last
+// applied: an unchanged file, or a version attached to an existing Media,
+// still picks up an edited, added or removed sidecar. A failed check leaves
+// the sidecar for the next scan.
+func (s *scanWalkState) refreshSidecars(mediaID store.MediaID, class store.MediaClass, path, fingerprint string) error {
+	sidecars, ok := s.metadataHydrator.(MetadataSidecarHydrator)
+	if !ok || !s.metadataCapability.Supports(class) {
+		return nil
+	}
+	changed, err := sidecars.SidecarsChanged(s.ctx, mediaID, path)
+	if err != nil {
+		slog.Warn("scan: sidecar check failed, leaving it for the next scan", "path", path, "error", err.Error())
+		return nil
+	}
+	if !changed {
+		return nil
+	}
+	return sidecars.HydrateSidecars(s.ctx, MetadataHydrationInput{
+		MediaID:            mediaID,
+		LibraryID:          s.req.LibraryID,
+		Class:              class,
+		Path:               path,
+		ContentFingerprint: fingerprint,
+	})
 }
 
 func (s *scanWalkState) hydrateMetadata(media store.Media, path, fingerprint string, metadata map[string]string) error {

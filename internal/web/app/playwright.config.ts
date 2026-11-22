@@ -74,7 +74,7 @@ export default defineConfig({
     // VIEWER session: an enrolled browser bound to the adult Default profile.
     {
       name: "viewer",
-      testMatch: /(viewer|poster-size)\.spec\.ts/,
+      testMatch: /(viewer|poster-size|profile-precondition)\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         storageState: join(authDir, "viewer.json"),

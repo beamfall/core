@@ -560,6 +560,223 @@ vec3 tonemap(vec3 x) {
     return pow(clamp(x, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
 }
 
+// SPDX-License-Identifier: AGPL-3.0-only
+// Shared helpers for the Oscillux originals, joined after library.glsl: the
+// beat-locked flight speed, the eased roll, the detail level the host can
+// afford and a few common shapes. Every function is a pure function of its
+// arguments, so all targets agree.
+
+// Speed profile, in distance per beat, over a 32-beat cycle: cruise, build,
+// burst, a hard brake, a slow breakdown drift, then a build to a final burst.
+float osBeatSpeed(float n) {
+    float k = mod(n, 32.0);
+    if (k < 4.0) return 1.0;
+    if (k < 8.0) return 1.0 + 0.3 * (k - 3.0);
+    if (k < 12.0) return 3.5;
+    if (k < 13.0) return 1.6;
+    if (k < 14.0) return 0.45;
+    if (k < 20.0) return 0.9 + 0.1 * (k - 14.0);
+    if (k < 24.0) return 0.6;
+    if (k < 28.0) return 1.5 + 0.75 * (k - 24.0);
+    if (k < 31.0) return 4.5;
+    return 2.4;
+}
+
+// The flight state is a pure function of the uniforms, so every target and
+// frame rate computes the same camera. Within a beat the speed ramps linearly
+// from this beat's value to the next one's, so velocity never jumps and the
+// distance is its exact integral. x = distance, y = speed in beats' units.
+vec2 osFlight(VisualUniforms u, float cruise, float surge) {
+    float n = floor(u.beatCount);
+    float cycle = 0.0;
+    float before = 0.0;
+    float k0 = n - mod(n, 32.0);
+    for (int i = 0; i < 32; i++) {
+        float k = k0 + float(i);
+        float seg = 0.5 * (osBeatSpeed(k) + osBeatSpeed(k + 1.0));
+        cycle += seg;
+        before += k < n ? seg : 0.0;
+    }
+    float ph = saturate(u.beatPhase);
+    float v0 = osBeatSpeed(n);
+    float v1 = osBeatSpeed(n + 1.0);
+    float beats = floor(n / 32.0) * cycle + before + v0 * ph + 0.5 * (v1 - v0) * ph * ph;
+    float v = mix(v0, v1, ph);
+    // A fifth of the motion is steady; the rest follows the profile, so a burst
+    // runs about four times cruise and a brake drops to about half.
+    return vec2(u.time * cruise * 0.2 + beats * (cruise * 0.4 + surge), v);
+}
+
+// Detail the host can afford: 1, the default, down to 0. Hosts lower it with
+// presentation1.y, a reduction in [0, 1], to hold their frame rate.
+float osDetail(VisualUniforms u) { return 1.0 - saturate(u.presentation1.y); }
+
+// Bank angle: every eight beats the roll picks a new side (a golden-angle
+// walk) and eases toward it across the whole span, so it never stops and starts.
+float osBank(VisualUniforms u, float amount) {
+    float b = (u.beatCount + saturate(u.beatPhase)) / 8.0;
+    float k = floor(b);
+    return amount * mix(sin(k * 2.39996), sin((k + 1.0) * 2.39996), smoothstep(0.0, 1.0, b - k));
+}
+
+// Ray direction for a camera at ro looking at ta, rolled by roll, with
+// focal length fov (larger is narrower). p is the centred pixel position.
+vec3 osCamera(vec3 ro, vec3 ta, float roll, float fov, vec2 p) {
+    vec3 fw = normalize(ta - ro);
+    vec3 up = vec3(sin(roll), cos(roll), 0.0);
+    vec3 rt = normalize(cross(fw, up));
+    vec3 cu = cross(rt, fw);
+    return normalize(p.x * rt + p.y * cu + fov * fw);
+}
+
+float osBox(vec3 p, vec3 b) {
+    vec3 q = abs(p) - b;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+// Smooth union with blend radius k.
+float osSmin(float a, float b, float k) {
+    float h = saturate(0.5 + 0.5 * (b - a) / k);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// Round a march step count from a detail-scaled float, so every target
+// agrees on the count.
+int osSteps(float lo, float hi, float detail) { return int(mix(lo, hi, detail) + 0.5); }
+
+// ---- vivid palettes ----
+// In the hosts' free palette mode (palette.x < 0) the originals read this set
+// instead of the library's: sixteen loops of five saturated stops in linear
+// light, each a few hue families with a contrasting accent. palette.z tours
+// them, cross-fading from one to the next, and also walks t by a quarter loop
+// per palette (four whole loops per tour, so the wrap is seamless), so a visual
+// that reads only a narrow range of t still meets every stop. Manifest mode
+// (palette.x >= 0) keeps the library palettes, so reference renders do not
+// change.
+const vec3 OS_PAL[80] = vec3[80](
+    vec3(1.000, 0.033, 0.133), vec3(1.000, 0.262, 0.010), vec3(1.000, 0.807, 0.010), vec3(0.033, 1.000, 0.262), vec3(0.000, 0.578, 1.000), // 0 tropicPunch
+    vec3(0.000, 0.784, 1.000), vec3(0.027, 0.105, 1.000), vec3(0.479, 0.022, 1.000), vec3(1.000, 0.027, 0.309), vec3(1.000, 0.323, 0.014), // 1 synthSunset
+    vec3(0.000, 1.000, 0.578), vec3(0.000, 0.392, 1.000), vec3(1.000, 0.078, 0.366), vec3(1.000, 0.434, 0.000), vec3(1.000, 0.102, 0.037), // 2 lagoonPop
+    vec3(0.565, 1.000, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.000, 0.100), vec3(0.000, 1.000, 0.195), // 3 acidCitrus
+    vec3(0.000, 0.871, 1.000), vec3(0.000, 0.133, 1.000), vec3(1.000, 0.047, 0.000), vec3(1.000, 0.552, 0.000), vec3(1.000, 0.000, 0.156), // 4 iceFire
+    vec3(0.000, 1.000, 0.332), vec3(0.000, 0.658, 1.000), vec3(0.047, 0.102, 0.991), vec3(1.000, 0.823, 0.000), vec3(0.328, 1.000, 0.000), // 5 electricMint
+    vec3(1.000, 0.347, 0.000), vec3(1.000, 0.074, 0.000), vec3(0.791, 0.000, 0.195), vec3(0.144, 0.000, 0.905), vec3(0.000, 0.539, 1.000), // 6 mangoBerry
+    vec3(1.000, 0.050, 0.371), vec3(1.000, 0.347, 0.050), vec3(1.000, 0.784, 0.050), vec3(0.050, 1.000, 0.434), vec3(0.050, 0.479, 1.000), // 7 candyShop
+    vec3(0.000, 1.000, 0.235), vec3(0.000, 0.745, 0.565), vec3(0.000, 0.296, 1.000), vec3(0.254, 0.024, 1.000), vec3(1.000, 0.028, 0.631), // 8 aurora
+    vec3(1.000, 0.014, 0.014), vec3(1.000, 0.144, 0.000), vec3(1.000, 0.479, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.000, 0.212), // 9 lavaLamp
+    vec3(0.784, 1.000, 0.000), vec3(0.000, 1.000, 0.133), vec3(0.000, 0.694, 1.000), vec3(0.000, 0.080, 1.000), vec3(1.000, 0.434, 0.000), // 10 cyberLime
+    vec3(1.000, 0.102, 0.114), vec3(1.000, 0.026, 0.301), vec3(0.397, 0.045, 1.000), vec3(0.026, 0.198, 1.000), vec3(0.000, 0.807, 0.565), // 11 coralReef
+    vec3(1.000, 0.631, 0.000), vec3(1.000, 0.254, 0.000), vec3(1.000, 0.044, 0.044), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.871, 0.074), // 12 goldRush
+    vec3(0.000, 0.010, 1.000), vec3(0.000, 0.283, 1.000), vec3(0.000, 0.913, 0.658), vec3(0.328, 1.000, 0.000), vec3(1.000, 0.791, 0.000), // 13 deepNeon
+    vec3(1.000, 0.195, 0.565), vec3(0.571, 0.205, 1.000), vec3(0.195, 0.392, 1.000), vec3(0.195, 1.000, 0.745), vec3(1.000, 0.871, 0.195), // 14 bubbleTea
+    vec3(1.000, 0.000, 0.091), vec3(0.133, 0.000, 1.000), vec3(0.000, 0.451, 1.000), vec3(0.000, 1.000, 0.665), vec3(0.468, 1.000, 0.000) // 15 neonTokyo
+);
+const float OS_PAL_COUNT = 16.0;
+
+// Linear mix that keeps the endpoints' channel range, so a blend between two
+// saturated colours stays saturated instead of passing through grey.
+vec3 osVividMix(vec3 a, vec3 b, float w) {
+    vec3 m = mix(a, b, w);
+    float lo = min(m.r, min(m.g, m.b)), hi = max(m.r, max(m.g, m.b));
+    float tlo = mix(min(a.r, min(a.g, a.b)), min(b.r, min(b.g, b.b)), w);
+    float thi = mix(max(a.r, max(a.g, a.b)), max(b.r, max(b.g, b.b)), w);
+    return tlo + (m - lo) * ((thi - tlo) / max(hi - lo, 1e-3));
+}
+
+vec3 osPalLoop(float t, int idx) {
+    float f = fract(t) * 5.0;
+    int i = int(floor(f));
+    i = clamp(i, 0, 4);
+    int j = i == 4 ? 0 : i + 1;
+    return osVividMix(OS_PAL[idx * 5 + i], OS_PAL[idx * 5 + j], smoothstep(0.0, 1.0, f - float(i)));
+}
+
+vec3 osPalVisual(float t, VisualUniforms u) {
+    if (u.palette.x >= 0.0) return palVisual(t, u);
+    float phase = u.palette.z;
+    int a = int(mod(floor(phase), OS_PAL_COUNT));
+    int b = int(mod(float(a + 1), OS_PAL_COUNT));
+    float blend = smoothstep(0.18, 0.82, fract(phase));
+    float nudge = phase * 0.25 + u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    return osVividMix(osPalLoop(t + nudge, a), osPalLoop(t + nudge, b), blend);
+}
+
+// The calm visuals' audio response, 0..0.25: the music's level, which rises
+// and falls with the song, scaled by the sensitivity. Not the kick: a calm
+// visual's light never jumps on the beat.
+float osCalmBreath(VisualUniforms u) {
+    return 0.25 * saturate(u.level) * (0.5 + 0.5 * u.sensitivity);
+}
+
+// The calm visuals' palette read: the visual's own library palette `own`
+// (its manifest palette) at t, with no beat or spectral nudge. Under the vivid
+// palette tour (palette.x < 0) a calm visual keeps `own`: the tour moves
+// through sixteen neon palettes of very different brightness every few
+// seconds, which turns a moonlit sea orange and swells the light, so vivid
+// leaves a calm visual only its present-pass saturation. A host's manifest
+// palette (palette.x >= 0) still replaces it.
+vec3 osPalCalm(float t, int own, VisualUniforms u) {
+    return palByIndex(t, u.palette.x >= 0.0 ? int(floor(u.palette.x + 0.5)) : own);
+}
+
+// The library's palette roles, reading osPalVisual.
+vec3 osPalRoleTrace(float t, VisualUniforms u) { return osPalVisual(t + 0.03 * u.beatPhase, u); }
+vec3 osPalRoleBass(float t, VisualUniforms u) {
+    vec3 hot = osPalVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 body = osPalVisual(t + 0.10, u);
+    return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
+}
+vec3 osPalRoleTreble(float t, VisualUniforms u) {
+    vec3 spark = osPalVisual(0.62 + t * 0.28 + 0.10 * u.spectralCentroid, u);
+    return peakWhite(spark, u.treble * u.onset * 0.14);
+}
+vec3 osPalRolePeak(float t, VisualUniforms u) {
+    return peakWhite(osPalVisual(t + 0.08 * u.spectralCentroid, u), saturate(u.onset * 0.18 + u.bassImpact * 0.10));
+}
+vec3 osPalRoleFog(float t, VisualUniforms u) {
+    vec3 c = osPalVisual(t + 0.04 * u.spectralCentroid, u);
+    return mix(vec3(luma(c) * 0.62), c, 0.42);
+}
+vec3 osPalRoleRim(float t, VisualUniforms u) {
+    return mix(osPalVisual(t, u), osPalRolePeak(t + 0.18, u), 0.35 + 0.35 * u.flux);
+}
+
+// Every original finishes through osOffRed. The present pass grades with the vivid saturation
+// and vibrance (palette.rs), which pushes a nearly pure red past the 0.8 red share at which the
+// flash limiter counts saturated red and holds it. Where green plus blue is under 0.55 of red
+// (linear light), both rise by half the difference, so the graded red presents under a 0.77
+// share. Near black the present dither can still split a dim red into a saturated-red byte
+// triple such as (1, 0, 0), so a dim colour becomes exactly grey and a dim red loses its excess
+// over green and blue, which then ramps back in (limiter-red-expire-black, design.md section 3;
+// tools/shader/test-originals-red.mjs). A quality measure: the frame limiter carries the safety
+// claim. NaN becomes 0 by a boolean select, exact on targets honouring IEEE NaN.
+const float OS_GREY_BELOW = 0.006;  // below it the colour becomes exactly grey
+const float OS_RED_FROM = 0.012;    // below it red is at most the larger of green and blue
+const float OS_RED_FULL = 0.05;     // red's excess is whole from here, and red returned as it stands
+vec3 osOffRed(vec3 c) {
+    c = mix(c, vec3(0.0), notEqual(c, c));      // NaN -> 0
+    c = clamp(c, vec3(0.0), vec3(16.0));
+    float s = c.g + c.b, t = 0.55 * c.r;        // gated on the rounded sum and product, so a
+    if (s < t) c += vec3(0.0, 0.5 * (t - s), 0.5 * (t - s));  // colour that meets the share is kept
+    float m = max(c.r, max(c.g, c.b));
+    if (m < OS_GREY_BELOW) return vec3(luma(c));  // three identical channels
+    float p = max(c.g, c.b);
+    if (c.r > p && m < OS_RED_FULL) {           // no saturated red byte from the present dither
+        float w = clamp((m - OS_RED_FROM) / (OS_RED_FULL - OS_RED_FROM), 0.0, 1.0);
+        c.r = w <= 0.0 ? p : p + w * (c.r - p);  // red equal to a partner below OS_RED_FROM
+    }
+    return c;
+}
+
+// Everything joined after this file reads the vivid set through the usual names.
+#define palVisual osPalVisual
+#define palRoleTrace osPalRoleTrace
+#define palRoleBass osPalRoleBass
+#define palRoleTreble osPalRoleTreble
+#define palRolePeak osPalRolePeak
+#define palRoleFog osPalRoleFog
+#define palRoleRim osPalRoleRim
+
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
@@ -574,74 +791,374 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
-// Helix — frequency + beat.
-//
-// Continuous spectral double-helix ribbons. Screen-space analytic strand
-// fields; cheap and light on low-power GPUs.
-// param0 Twist, param1 Depth, param2 Sparkle
+// Helix.
+// A flight down an avenue of double helices drawn entirely in light. A helix
+// winds past on each side of the camera and recedes to the vanishing point,
+// strung with glowing beads; between the backbones the base-pair rungs are
+// lines of light particles, each rung tuned to a band of the spectrum so the
+// molecules play like a running equaliser. Pulses of light stream along the
+// backbones, two more helices stand in the dark, thin streaks of light fly
+// out of the vanishing point, and everything near or far is thrown softly out
+// of focus. Backbones are cyan and magenta over black, the warm accent is
+// orange. Calm under loud music: the rungs and beads brighten with the
+// smoothed level plus a modest band term, each beat sends only a faint warm
+// wave down the helices and warms a few scattered rungs, and the camera
+// glides at a slow steady pace with a gentle bank and no beat surges. Audio
+// drives the light, never the camera.
+// param0 = Twist ; param1 = Depth ; param2 = Sparkle
 
-vec3 visual(vec2 uv, VisualUniforms u) {
-    vec2 p = motionCentered(uv, u);
-    p = rot2(-0.08) * p;
+const float HX_TAU = 6.2831853;
+const float HX_SP = 1.25;      // rung spacing
+const float HX_GROOVE = 2.35;   // angle from one backbone to the other (major / minor groove)
 
-    float t = clamp((p.x + 1.55) / 3.10, 0.0, 1.0);
-    float twist   = mix(2.0, 5.2, u.param0);
-    float depth   = mix(0.28, 0.72, u.param1);
-    float sparkle = mix(0.35, 1.5, u.param2);
-    float bandv = bandAt(u, t);
-    // Steady drift plus a beat-locked surge that is zero at both ends of the beat, so the helix
-    // never jumps when beatPhase wraps. Beats move the strands; they do not flash them: the visual
-    // keeps within the source flash budget (Makefile visual-flash-check) under loud audio.
-    float phase = t * 6.2831853 * twist + u.time * 0.55
-                + 0.4 * (smoothstep(0.0, 1.0, u.beatPhase) - u.beatPhase);
+// The palette is read once per pixel at its five stops and blended locally:
+// each library palette read walks the whole stop table, and this visual needs
+// many colours per pixel. hxPal follows the library blend closely.
+struct HxPal { vec3 c0; vec3 c1; vec3 c2; vec3 c3; vec3 c4; };
 
-    float env = smoothstep(0.0, 0.12, t) * (1.0 - smoothstep(0.88, 1.0, t));
-    float amp = (0.17 + bandv * depth * 0.20) * env;
-    float y1 = sin(phase) * amp;
-    float y2 = -y1;
-    float z1 = 0.55 + 0.45 * cos(phase);
-    float z2 = 1.0 - z1;
+HxPal hxPalLoad(VisualUniforms u) {
+    HxPal P;
+    P.c0 = palVisual(0.0, u);
+    P.c1 = palVisual(0.26, u);
+    P.c2 = palVisual(0.52, u);
+    P.c3 = palVisual(0.78, u);
+    P.c4 = palVisual(0.999, u);
+    return P;
+}
 
-    // Each strand is a flat tape wound on the helix: its edges are the same curve shifted along
-    // the axis, so it is broad on the diagonals and pinches at the crests. The width is steady;
-    // the music moves it rather than flashing it.
-    float tape = (amp * abs(cos(phase)) * 0.42 + 0.010 * env) + 0.004;
-    float d1 = abs(p.y - y1);
-    float d2 = abs(p.y - y2);
-    float fill1 = aaLine(d1, tape);
-    float fill2 = aaLine(d2, tape);
-    float core1 = aaLine(p.y - y1, 0.005 + bandv * 0.003);
-    float core2 = aaLine(p.y - y2, 0.005 + bandv * 0.003);
-    float halo1 = exp(-max(d1 - tape, 0.0) * 34.0);
-    float halo2 = exp(-max(d2 - tape, 0.0) * 34.0);
+vec3 hxPal(HxPal P, float t) {
+    t = fract(t) * 4.0;
+    vec3 c = mix(P.c0, P.c1, smoothstep(0.0, 1.0, t));
+    c = mix(c, P.c2, smoothstep(1.0, 2.0, t));
+    c = mix(c, P.c3, smoothstep(2.0, 3.0, t));
+    return mix(c, P.c4, smoothstep(3.0, 4.0, t));
+}
 
-    // The centroid only nudges the palette: a fast-moving white/cyan seam flips large cells.
-    vec3 c1 = palRoleTrace(t + 0.04 * u.spectralCentroid, u);
-    vec3 c2 = palRoleTrace(t + 0.50 + 0.04 * u.spectralCentroid, u);
-    // Tape edges catch more light than its face, and the tapered tips fade out softly.
-    float rim1 = fill1 * smoothstep(0.45, 1.0, d1 / tape);
-    float rim2 = fill2 * smoothstep(0.45, 1.0, d2 / tape);
-    float tip = 1.0 - 0.45 * (1.0 - smoothstep(0.06, 0.18, t)) - 0.45 * smoothstep(0.82, 0.95, t);
-    float drive = 1.25 + bandv * 0.9 + (u.beat * 0.6 + u.bassImpact * 0.4) * 0.3;
-    vec3 glow = c1 * ((fill1 * (0.45 + 0.65 * z1) + rim1 * 0.35) * drive * tip + core1 * 0.8 * z1 + halo1 * 0.42 * (0.4 + 0.6 * z1))
-              + c2 * ((fill2 * (0.45 + 0.65 * z2) + rim2 * 0.35) * drive * tip + core2 * 0.8 * z2 + halo2 * 0.42 * (0.4 + 0.6 * z2));
+// Distance from p to segment ab, and where along it (0..1).
+vec2 hxSeg(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a, ba = b - a;
+    float h = saturate(dot(pa, ba) / max(dot(ba, ba), 1e-6));
+    return vec2(length(pa - ba * h), h);
+}
 
-    // Rungs: short segments between strands at discrete x cells.
-    float cell = t * 28.0;
-    float rungGate = aaLineCyclic(cell, 0.050);
-    float between = step(min(y1, y2), p.y) * step(p.y, max(y1, y2));
-    glow += palRoleFog(t + 0.2, u) * rungGate * between * (0.35 + bandv * 0.9 + u.beat * 0.2);
+// Soft glow of a line or dot of half-width w at screen distance d: a bright
+// core with a long, quickly fading halo that ends at x = sqrt(1 / fl - 1).
+float hxGlow(float d, float w, float fl) {
+    float x = d / w;
+    return max(1.0 / (1.0 + x * x) - fl, 0.0) * 1.05 + exp(-x * x * 2.0) * 1.5;
+}
 
-    // Spark nodes on beat/flux.
-    float sparkCell = floor(t * 28.0);
-    float sparkSeed = hash11(sparkCell + floor(u.beatCount));
-    float sparkY = mix(y1, y2, step(0.5, sparkSeed));
-    float spark = aaLineCyclic(cell, 0.040) * aaLine(p.y - sparkY, 0.025) * step(0.82, sparkSeed);
-    glow += palRoleTreble(t + 0.08 * u.spectralCentroid, u) * spark * (u.onset + u.beat * 0.7 + u.bassImpact * 0.5) * sparkle * 4.0;
+// The spectrum read once per pixel at eight points, and read back with linear
+// weights: a library band read per rung selects through the whole uniform array.
+struct HxBands { vec4 lo; vec4 hi; };
 
-    vec3 col = feedbackTrail(glow, uv, min(u.trailDecay, 0.84), 0.002, 0.0);
+HxBands hxBandsLoad(VisualUniforms u) {
+    HxBands b;
+    b.lo = vec4(bandAt(u, 0.0), bandAt(u, 1.0 / 7.0), bandAt(u, 2.0 / 7.0), bandAt(u, 3.0 / 7.0));
+    b.hi = vec4(bandAt(u, 4.0 / 7.0), bandAt(u, 5.0 / 7.0), bandAt(u, 6.0 / 7.0), bandAt(u, 1.0));
+    return b;
+}
+
+float hxBand(HxBands b, float f) {
+    float x = saturate(f) * 7.0;
+    return dot(b.lo, max(1.0 - abs(x - vec4(0.0, 1.0, 2.0, 3.0)), 0.0))
+         + dot(b.hi, max(1.0 - abs(x - vec4(4.0, 5.0, 6.0, 7.0)), 0.0));
+}
+
+// Rung index -> the band it plays: walks up and back down the spectrum.
+float hxRungF(float c) {
+    float f = fract(mod(c, 4096.0) / 28.0);
+    return 1.0 - abs(2.0 * f - 1.0);
+}
+
+// World point -> (screen x, screen y, depth) for the camera at ro with
+// basis rt, cu, fw and focal length fov.
+vec3 hxProject(vec3 X, vec3 ro, vec3 rt, vec3 cu, vec3 fw, float fov) {
+    vec3 d = X - ro;
+    float zs = dot(d, fw);
+    return vec3(fov * vec2(dot(d, rt), dot(d, cu)) / max(zs, 0.05), zs);
+}
+
+// Three rotated octaves of value noise for the gas: soft enough not to need five.
+float hxGas(vec2 q) {
+    float v = vnoise(q) * 0.55;
+    q = FBM_OCTAVE * q + 1.7;
+    v += vnoise(q) * 0.3;
+    q = FBM_OCTAVE * q + 3.1;
+    return v + vnoise(q) * 0.15;
+}
+
+// The flight path: the helices follow it, so far turns bend away out of view.
+vec2 hxPath(float z) {
+    return vec2(2.4 * sin(z * 0.041) + 1.1 * sin(z * 0.023 + 1.3), 1.4 * sin(z * 0.031 + 2.0));
+}
+
+// Unit vector at angle a, and rotation of a unit vector by one.
+vec2 hxCs(float a) {
+    return vec2(cos(a), sin(a));
+}
+
+vec2 hxRot(vec2 v, vec2 r) {
+    return vec2(v.x * r.x - v.y * r.y, v.x * r.y + v.y * r.x);
+}
+
+// One helix, drawn additively: n rungs from zFrom, sp apart, then its
+// backbones alone in coarser steps out to the vanishing point.
+// look = (fov, line width, haze fade, seed).
+vec3 hxDraw(vec2 p, vec3 ro, vec3 rt, vec3 cu, vec3 fw, vec4 look, vec2 o, float R, float L, float ph,
+            vec2 sp, float zFrom, int n, int nC, vec3 cs[5], HxBands bands, VisualUniforms u, float sparkle, float beatKey, float flare) {
+    float fov = look.x;
+    float seed = look.w;
+    vec3 col = vec3(0.0);
+    vec3 cA = cs[0], cB = cs[1], c0 = cs[2], c1 = cs[3], c2 = cs[4];
+    // each beat a wave of warm light runs down the helices, away from the camera
+    // it swells and fades within the beat, so no light jumps on the kick
+    float bp = saturate(u.beatPhase);
+    float front = 1.0 + 26.0 * bp;
+    float wAmp = smoothstep(0.0, 0.35, bp) * (1.0 - bp) * (0.1 + 0.06 * saturate(u.level));
+    float lev = saturate(u.level);
+    // The path's three sine terms and the strand angle are stepped by
+    // rotation, so the loop needs no trigonometry. Each backbone segment bends
+    // through the arc's midpoint, so the strands curve instead of kinking: the
+    // midpoint is the chord's centre pushed out to the radius, since the path
+    // itself barely turns within one step.
+    float lw = L * sp.x;
+    float cm = sp.y;
+    vec2 h = hxCs(HX_TAU * mod(zFrom, lw) / lw + ph);
+    vec2 p1 = hxCs(mod(zFrom * 0.041, HX_TAU));
+    vec2 p2 = hxCs(mod(zFrom * 0.023, HX_TAU) + 1.3);
+    vec2 p3 = hxCs(mod(zFrom * 0.031, HX_TAU) + 2.0);
+    vec2 groove = hxCs(HX_GROOVE);
+    vec2 rhF = hxCs(HX_TAU * sp.x / lw), rhC = hxCs(cm * HX_TAU * sp.x / lw);
+    vec2 r1F = hxCs(0.041 * sp.x), r1C = hxCs(0.041 * cm * sp.x);
+    vec2 r2F = hxCs(0.023 * sp.x), r2C = hxCs(0.023 * cm * sp.x);
+    vec2 r3F = hxCs(0.031 * sp.x), r3C = hxCs(0.031 * cm * sp.x);
+    // chord-to-arc: the half-angle secant, and how far the arc bulges past the chord
+    float cF = sqrt(max(0.5 + 0.5 * rhF.x, 1e-3)), cC = sqrt(max(0.5 + 0.5 * rhC.x, 1e-3));
+    float kF = 0.5 / cF, kC = 0.5 / cC;
+    float bF = R * (1.0 - cF) * fov, bC = R * (1.0 - cC) * fov;
+    // camera space: world x, y and z map onto these camera-space vectors, and
+    // the two strand offsets (h and h turned by the groove) onto ga and gb
+    vec3 ex = vec3(rt.x, cu.x, fw.x), ey = vec3(rt.y, cu.y, fw.y), ez = vec3(rt.z, cu.z, fw.z);
+    vec3 roC = vec3(dot(ro, rt), dot(ro, cu), dot(ro, fw));
+    vec3 gbx = R * (ex * groove.x + ey * groove.y), gby = R * (ey * groove.x - ex * groove.y);
+    vec3 exR = R * ex, eyR = R * ey;
+    vec2 cen = o + vec2(2.4 * p1.y + 1.1 * p2.y, 1.4 * p3.y);
+    vec3 cc = ex * cen.x + ey * cen.y + ez * zFrom - roC;
+    vec3 A = cc + exR * h.x + eyR * h.y;
+    vec3 B = cc + gbx * h.x + gby * h.y;
+    vec3 a0 = vec3(A.xy * (fov / max(A.z, 0.05)), A.z);
+    vec3 b0 = vec3(B.xy * (fov / max(B.z, 0.05)), B.z);
+    // end the fine steps on the coarse grid, so the coarse tail's corners stay put in z
+    int nA = n + int(mod(-(floor(zFrom / sp.x + 0.5) + float(n)), cm) + 0.5);
+    int total = nA + nC;
+    float invTotal = 1.0 / float(max(total, 1));
+    float zc = zFrom;
+    for (int j = 0; j < 72; j++) {
+        if (j >= total) break;
+        bool fine = j < nA;
+        zc += fine ? sp.x : cm * sp.x;
+        h = hxRot(h, fine ? rhF : rhC);
+        p1 = hxRot(p1, fine ? r1F : r1C);
+        p2 = hxRot(p2, fine ? r2F : r2C);
+        p3 = hxRot(p3, fine ? r3F : r3C);
+        vec3 cp = cc, ap = A, bpv = B;
+        cen = o + vec2(2.4 * p1.y + 1.1 * p2.y, 1.4 * p3.y);
+        cc = ex * cen.x + ey * cen.y + ez * zc - roC;
+        A = cc + exR * h.x + eyR * h.y;
+        B = cc + gbx * h.x + gby * h.y;
+        vec3 am = vec3(A.xy * (fov / max(A.z, 0.05)), A.z);
+        vec3 bm = vec3(B.xy * (fov / max(B.z, 0.05)), B.z);
+        float zs = 0.5 * (am.z + bm.z);
+        float izs = 1.0 / max(zs, 0.5);
+        // skip segments whose glow cannot reach this pixel (margin covers the widest blur)
+        float mg = min(look.y * 44.0 * izs, 0.2) + (fine ? bF : bC) * izs;
+        vec2 lo = min(min(a0.xy, am.xy), min(b0.xy, bm.xy)) - mg;
+        vec2 hi = max(max(a0.xy, am.xy), max(b0.xy, bm.xy)) + mg;
+        bool near = all(greaterThan(p, lo)) && all(lessThan(p, hi)) && zs > 0.6;
+        if (near) {
+        float ri = floor(zc / sp.x + 0.5);
+        // fade in from beside the camera, out into the haze
+        float vis = smoothstep(1.0, 3.5, min(min(am.z, bm.z), min(a0.z, b0.z))) * exp(-zs * look.z);
+        vis *= 1.0 - smoothstep(0.55, 1.0, float(j) * invTotal);
+        // depth of field: lines grow and dim away from the focus distance
+        float coc = min(zs < 7.0 ? (7.0 - zs) * izs : (zs - 7.0) / 7.0, 2.5);
+        float w = look.y * (1.0 + 2.5 * coc) * izs;
+        // the box is loose for slanted segments: test the chords (the arcs lie
+        // within the bulge of them) against the glow's reach before shading
+        vec2 sR = hxSeg(p, am.xy, bm.xy);
+        // out-of-focus lines are dim, so their halo is cut shorter
+        float fl = 0.05 + 0.13 * saturate(coc * 0.5);
+        float reach = sqrt(1.0 / fl - 1.0);
+        bool rungNear = fine && zs < 26.0 && zs > 1.8 && sR.x < w * 1.7 * reach;
+        float dC = min(hxSeg(p, a0.xy, am.xy).x, hxSeg(p, b0.xy, bm.xy).x) - (fine ? bF : bC) * izs;
+        if (vis > 0.002 && (dC < w * 1.4 * reach || rungNear)) {
+            float dimW = vis / (1.0 + 2.2 * coc);
+
+            vec3 cm2 = 0.5 * (cp + cc);
+            float k = fine ? kF : kC;
+            vec3 Am = cm2 + k * (ap + A - cp - cc);
+            vec3 Bm = cm2 + k * (bpv + B - cp - cc);
+            vec2 ah = Am.xy * (fov / max(Am.z, 0.05));
+            vec2 bh = Bm.xy * (fov / max(Bm.z, 0.05));
+            float sA = min(hxSeg(p, a0.xy, ah).x, hxSeg(p, ah, am.xy).x);
+            float sB = min(hxSeg(p, b0.xy, bh).x, hxSeg(p, bh, bm.xy).x);
+            // pulses streaming along the backbones, away from the camera
+            float flowA = exp(-fract(ri * 0.11 - u.time * 0.3 + seed) * 6.0);
+            float flowB = exp(-fract(ri * 0.11 - u.time * 0.3 + seed + 0.5) * 6.0);
+            float dz = zs - front;
+            float wave = wAmp * (exp(-dz * dz * 0.35) + 0.35 * exp(-max(-dz, 0.0) * 0.4) * step(dz, 0.0));
+            float gA = hxGlow(sA, w * 1.4, fl), gB = hxGlow(sB, w * 1.4, fl);
+            float keep = 1.0 - 0.25 * saturate(wave);
+            col += cA * gA * (0.5 + 0.6 * flowA * (0.7 + 0.3 * lev)) * dimW * keep;
+            col += cB * gB * (0.5 + 0.6 * flowB * (0.7 + 0.3 * lev)) * dimW * keep;
+            col += c2 * (gA + gB) * wave * 0.6 * dimW;
+
+            if (rungNear) {
+            // the base-pair rung: a dotted line of light, two-tone, tuned to its band
+            float idx = mod(ri + floor(37.0 * seed), 4096.0);
+            float f = hxRungF(idx);
+            float lv = hxBand(bands, f);
+            float ig = step(0.86, hash21(vec2(idx, beatKey))) * flare;
+            float dots = 0.35 + 0.65 * pow(0.5 + 0.5 * cos(sR.y * HX_TAU * 7.0), 3.0);
+            float gap = smoothstep(0.015, 0.05, abs(sR.y - 0.5));
+            float ft = saturate(f + (sR.y > 0.5 ? 0.12 : -0.06));
+            vec3 rc = ft < 0.5 ? mix(c0, c1, ft * 2.0) : mix(c1, c2, ft * 2.0 - 1.0);
+            float e = (0.35 + 0.5 * lev + 0.6 * lv * lv + 1.5 * ig + 1.0 * wave) * dots * gap;
+            // far turns keep only their backbones; rungs beside the camera fade out
+            float detailFade = smoothstep(26.0, 9.0, zs) * smoothstep(1.8, 4.0, zs);
+            col += rc * hxGlow(sR.x, w, fl) * e * dimW * detailFade;
+
+            // glowing beads where rungs meet the backbones
+            float wb = w * 1.7;
+            float bead = hxGlow(length(p - am.xy), wb, fl) + hxGlow(length(p - bm.xy), wb, fl);
+            float glint = 0.05 * u.onset * sparkle * step(0.7, hash21(vec2(idx, beatKey + 9.0)));
+            col += mix(mix(rc, c2, saturate(wave)), vec3(1.0), 0.25) * bead * (0.18 + 0.2 * lev + 0.15 * lv + 0.6 * ig + 0.6 * glint + 0.6 * wave) * dimW * detailFade;
+            }
+        }
+        }
+        a0 = am;
+        b0 = bm;
+    }
+    return col;
+}
+
+vec3 osBody(vec2 uv, VisualUniforms u) {
+    vec2 p = centered(uv, u.resolution);
+    p.y = -p.y;
+    float detail = osDetail(u);
+    HxPal P = hxPalLoad(u);
+    HxBands bands = hxBandsLoad(u);
+
+    float L = mix(13.0, 7.0, u.param0);              // rungs per turn
+    float depth = mix(0.6, 1.6, u.param1);
+    float sparkle = mix(0.3, 1.6, u.param2);
+
+    // a slow, steady glide with no beat surges
+    float z = 8.0 + 0.45 * u.time;
+    float spin = mod(u.time * 0.05 + z * 0.03, HX_TAU);
+    float cyc = fract((mod(u.beatCount, 256.0) + saturate(u.beatPhase)) / 32.0);
+    float hs = 0.035 * sin(cyc * HX_TAU);
+
+    vec3 ro = vec3(hxPath(z) + vec2(0.3 * sin(z * 0.019), 0.2 * sin(z * 0.027 + 1.0)), z);
+    vec3 ta = vec3(hxPath(z + 7.0) + vec2(0.15 * sin(z * 0.017), 0.1), z + 7.0);
+    float curve = hxPath(z + 9.0).x - 2.0 * hxPath(z + 4.5).x + hxPath(z).x;
+    float roll = -0.3 * curve + osBank(u, 0.02);
+    float fov = 1.05;
+    vec3 fw = normalize(ta - ro);
+    vec3 up = vec3(sin(roll), cos(roll), 0.0);
+    vec3 rt = normalize(cross(fw, up));
+    vec3 cu = cross(rt, fw);
+    vec3 rd = normalize(p.x * rt + p.y * cu + fov * fw);
+
+    float bp = saturate(u.beatPhase);
+    float we = sin(3.14159265 * bp);
+    float flare = we * we * (0.08 + 0.06 * saturate(u.level));
+    float beatKey = mod(floor(u.beatCount), 64.0);
+
+    // background: deep haze, gas walls along the avenue and the light at the
+    // vanishing point
+    float vp = saturate(rd.z);
+    vec2 sq = rd.xy / max(rd.z, 0.2);
+    float ang = atan2_(sq.y, sq.x) / HX_TAU + 0.5;
+    float rr = length(sq);
+    // the gas streams outward past the camera with the flight: two zoom
+    // layers an octave apart cross-fade as the distance flown wraps
+    float zt = fract(z * 0.035);
+    vec2 gq = sq * 1.5 + vec2(mod(u.time * 0.008, 50.0), 0.0);
+    float neb = mix(hxGas(gq * exp2(-zt) + 3.7), hxGas(gq * exp2(1.0 - zt) + 3.7), zt);
+    float wall = smoothstep(0.15, 1.1, rr);
+    float gasLit = smoothstep(0.4, 0.78, neb) * wall * (1.0 + 0.1 * saturate(u.level));
+    float gh = 0.5 + 0.5 * sin(HX_TAU * ang + 5.0 * neb + 0.4 * z * 0.035);
+    vec3 gas = mix(hxPal(P, 0.24 + hs), hxPal(P, 0.52 + hs), gh);
+    vec3 col = hxPal(P, 0.05) * 0.0015 + gas * gasLit * gasLit * 0.07;
+    col += hxPal(P, 0.99) * (0.006 * pow(vp, 8.0) + 0.05 * pow(vp, 90.0));
+    // light streaming down the avenue: thin streaks fly out of the vanishing
+    // point at a steady length
+    {
+        float lanes = 90.0;
+        float ln = floor(ang * lanes);
+        float lh = hash11(ln * 1.37 + 3.1);
+        float lx = abs(fract(ang * lanes) - 0.5);
+        float ph = fract(-0.35 / max(rr, 0.05) + z * 0.035 * (0.7 + 0.6 * lh) + lh * 7.0);
+        float len = 0.04;
+        float tail = 1.0 - saturate(ph / len);
+        float sk = tail * tail * step(0.55, lh);
+        // a constant thin width on screen, whatever the radius
+        float wx = lx * HX_TAU * rr / lanes;
+        float sw = 0.0016 + 0.0015 * rr;
+        sk *= exp(-wx * wx / (sw * sw)) * smoothstep(0.08, 0.5, rr);
+        vec3 skc = hxPal(P, lh < 0.75 ? 0.985 : 0.24 + hs);
+        col += skc * sk * (0.06 + 0.04 * saturate(u.level));
+    }
+
+    float zFrom = (floor(z / HX_SP) - 1.0) * HX_SP;
+    int nHero = osSteps(9.0, 17.0, detail);
+    int cHero = osSteps(6.0, 10.0, detail);
+    int nFar = osSteps(5.0, 9.0, detail);
+    int cFar = osSteps(4.0, 7.0, detail);
+    float fade = mix(0.05, 0.028, saturate(depth - 0.6));
+    vec3 cs[5] = vec3[5](hxPal(P, 0.24 + hs), hxPal(P, 0.52 + hs), hxPal(P, 0.04), hxPal(P, 0.62 + hs), hxPal(P, 0.985));
+    // helices in the haze, then the hero beside the camera
+    col += hxDraw(p, ro, rt, cu, fw, vec4(fov, 0.05, fade * 1.2, 0.37), vec2(-7.5, -4.6), 1.9, L * 1.3,
+                  2.1 - spin, vec2(HX_SP, 2.0), zFrom + 3.0 * HX_SP, nFar, cFar, cs, bands, u, sparkle, beatKey, flare) * 0.5;
+    col += hxDraw(p, ro, rt, cu, fw, vec4(fov, 0.05, fade * 1.2, 0.71), vec2(7.5, 4.8), 1.9, L * 1.3,
+                  4.0 + spin, vec2(HX_SP, 2.0), zFrom + 3.0 * HX_SP, nFar, cFar, cs, bands, u, sparkle, beatKey, flare) * 0.45;
+    // the avenue: a helix on each side of the flight path
+    col += hxDraw(p, ro, rt, cu, fw, vec4(fov, 0.035, fade, 0.53), vec2(-3.9, 1.3), 1.15, L * 1.1,
+                  3.3 - spin, vec2(HX_SP, 3.0), zFrom + HX_SP, nHero, cHero, cs, bands, u, sparkle, beatKey, flare) * depth * 0.8;
+    col += hxDraw(p, ro, rt, cu, fw, vec4(fov, 0.035, fade, 0.0), vec2(4.0, -0.8), 1.3, L,
+                  spin, vec2(HX_SP, 3.0), zFrom, nHero, cHero, cs, bands, u, sparkle, beatKey, flare) * depth;
+
+    // out-of-focus motes on planes ahead
+    int motes = osSteps(3.0, 7.0, detail);
+    float zsp = 3.0;
+    float z0 = ceil(z / zsp) * zsp;
+    for (int i = 0; i < 7; i++) {
+        if (i >= motes) break;
+        float zp = z0 + zsp * float(i);
+        float tp = (zp - ro.z) / max(rd.z, 1e-3);
+        if (tp <= 0.0) continue;
+        vec2 xy = ro.xy + rd.xy * tp;
+        vec2 g = xy * 0.8;
+        vec2 gi = floor(g);
+        vec2 key = gi + vec2(mod(zp, 512.0) * 7.0, 0.0);
+        if (hash21(key) > 0.2) continue;
+        vec2 c = gi + 0.2 + 0.6 * hash22(key + 1.7);
+        float dd = length(g - c);
+        float rad = 0.03 + 0.13 * saturate(1.0 - tp / 20.0);
+        float disk = 1.0 - smoothstep(rad * 0.55, rad, dd);
+        float ringE = smoothstep(rad * 0.6, rad * 0.95, dd) * disk;
+        float mh = hash21(key + 4.0);
+        vec3 mc = hxPal(P, mh < 0.3 ? 0.985 : 0.2 + 0.4 * mh);
+        float fadeM = smoothstep(0.0, 2.0, tp) * exp(-tp * 0.06);
+        col += mc * (disk * 0.6 + ringE * 0.6) * fadeM * (0.08 + 0.05 * saturate(u.level)) / (1.0 + 5.0 * rad);
+    }
     return col; // LINEAR HDR — post chain tonemaps
 }
+
+// Reds stay off saturated red through the vivid present (common.glsl).
+vec3 visual(vec2 uv, VisualUniforms u) { return osOffRed(osBody(uv, u)); }
 
 in vec2 vUV;
 layout(location=0) out vec4 fragColor;

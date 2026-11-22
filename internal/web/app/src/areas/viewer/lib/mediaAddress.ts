@@ -21,7 +21,7 @@ const TOKEN = /(?:^|-)(sample1\.)?([0-9a-f]{17})$/;
 /** The readable words before the token are capped at this many characters. */
 export const MAX_SLUG_LENGTH = 60;
 
-export type MediaRoute = "watch" | "media";
+export type MediaRoute = "watch" | "media" | "view";
 
 /**
  * slugify folds text to lowercase ASCII words joined by "-": accents are

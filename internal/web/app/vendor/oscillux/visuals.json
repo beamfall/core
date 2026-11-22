@@ -1,18 +1,20 @@
 {
   "source": {
     "repo": "oscillux",
-    "path": "shaders/manifest.json",
-    "rev": "383abd24f8b324e583f5955a4f14c87b71ec4383",
-    "release": "v0.2.10",
-    "sha256": "df873883811271f466df229936f24ad589e041ef5d4b96f9c63778cc793c4973",
+    "paths": {
+      "shaders/manifest.json": "df873883811271f466df229936f24ad589e041ef5d4b96f9c63778cc793c4973",
+      "shaders/originals/manifest.json": "56e6459e66aaea416f62338c63e03f52c3723f2a67909a4b7ce46c79dd2c067a"
+    },
+    "rev": "19421f5f21f37811520efdcf2ea5ccccf57a721e",
+    "release": "v0.2.12",
     "license": "AGPL-3.0-only",
-    "note": "The listed fields of every visual, in the manifest catalogOrder, copied unchanged from the manifest at the pinned rev. Data only: the shader bytes are in glsl300/."
+    "note": "The release set the v0.2.12 shader legs ship (tools/shader/manifest.mjs loadReleaseSet at the pinned rev), in catalogOrder. A visual a rebuilt original overrides takes the original's header, palette, trailDecay and params and its post as the release set resolves it, and keeps the catalog's name, tier and calm flag; the paths map gives each manifest's SHA-256. Data only: the shader bytes are in glsl300/."
   },
   "visuals": [
     {
       "id": "pulse",
       "name": "Pulse",
-      "header": "// Pulse: Black-room solar core: breathing disk, prismatic corona rings, treble sparks.",
+      "header": "// Pulse: A kinetic light installation: a field of glass orbs on winched wires re-forms into a new wave every eight beats while each beat rings a pulse through it, lifting and recolouring the orbs warm and cool in turn, over a mirror floor.",
       "tier": "lite",
       "calm": true,
       "imageInput": false,
@@ -22,7 +24,7 @@
         4,
         0
       ],
-      "trailDecay": 0.82,
+      "trailDecay": 0.55,
       "params": [
         {
           "id": "glow",
@@ -49,30 +51,30 @@
           "group": "reaction"
         },
         {
-          "id": "corona-count",
+          "id": "wave-count",
           "uniform": "param2",
-          "label": "Corona Count",
-          "labelKey": "visual.pulse.corona-count",
+          "label": "Wave Count",
+          "labelKey": "visual.pulse.wave-count",
           "min": 0,
           "max": 1,
-          "default": 0.45,
-          "step": 0.5,
+          "default": 0.6,
+          "step": 0.01,
           "curve": "linear",
-          "group": "color"
+          "group": "shape"
         }
       ],
       "post": {
-        "bloomStrength": 0.6,
-        "bloomThreshold": 0.95,
-        "chroma": 0.003,
-        "vignette": 0.45,
-        "grain": 0.02
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "starfield",
       "name": "Starfield",
-      "header": "// Starfield: Warp-speed hyperspace; streaks lock to tempo.",
+      "header": "// Starfield: A hyperspace jump; warp streaks stretch and shrink with the beat-locked speed through a streaming gas tunnel.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
@@ -82,13 +84,13 @@
         25,
         0
       ],
-      "trailDecay": 0.96,
+      "trailDecay": 0,
       "params": [
         {
-          "id": "warp",
+          "id": "warp-speed",
           "uniform": "param0",
-          "label": "Warp",
-          "labelKey": "visual.starfield.warp",
+          "label": "Warp Speed",
+          "labelKey": "visual.starfield.warp-speed",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -109,10 +111,10 @@
           "group": "shape"
         },
         {
-          "id": "streaks",
+          "id": "streak-length",
           "uniform": "param2",
-          "label": "Streaks",
-          "labelKey": "visual.starfield.streaks",
+          "label": "Streak Length",
+          "labelKey": "visual.starfield.streak-length",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -122,17 +124,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.84,
-        "bloomThreshold": 0.82,
-        "chroma": 0.006,
-        "vignette": 0.54,
-        "grain": 0.035
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "crystal",
       "name": "Crystal",
-      "header": "// Crystal: Faceted gem refracting; fractures on transients.",
+      "header": "// Crystal: a brilliant-cut gem in a lit studio, throwing rainbow caustics; fractures glow on transients.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
@@ -142,25 +144,25 @@
         13,
         0
       ],
-      "trailDecay": 0.72,
+      "trailDecay": 0.5,
       "params": [
         {
-          "id": "facets",
+          "id": "facet-count",
           "uniform": "param0",
-          "label": "Facets",
-          "labelKey": "visual.crystal.facets",
+          "label": "Facet Count",
+          "labelKey": "visual.crystal.facet-count",
           "min": 0,
           "max": 1,
           "default": 0.5,
-          "step": 0.01,
+          "step": 0.166667,
           "curve": "linear",
           "group": "shape"
         },
         {
-          "id": "refraction",
+          "id": "dispersion",
           "uniform": "param1",
-          "label": "Refraction",
-          "labelKey": "visual.crystal.refraction",
+          "label": "Dispersion",
+          "labelKey": "visual.crystal.dispersion",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -182,24 +184,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.7,
-        "bloomThreshold": 0.96,
-        "chroma": 0.007,
-        "vignette": 0.44,
-        "grain": 0.024
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "reactor",
       "name": "Reactor",
-      "header": "// Reactor: Fusion core with orbiting spectrum arcs and sparks.",
+      "header": "// Reactor: Slow orbit around a white-hot fusion core in a gimbal of containment rings, with spectrum arcs, heat shimmer, streaking sparks and a glowing chamber haze.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
       "palette": [
-        16,
+        1,
         0,
-        16,
+        1,
         0
       ],
       "trailDecay": 0.88,
@@ -217,10 +219,10 @@
           "group": "shape"
         },
         {
-          "id": "orbits",
+          "id": "orbit-count",
           "uniform": "param1",
-          "label": "Orbits",
-          "labelKey": "visual.reactor.orbits",
+          "label": "Orbit Count",
+          "labelKey": "visual.reactor.orbit-count",
           "min": 0,
           "max": 1,
           "default": 0.6,
@@ -242,37 +244,37 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.78,
-        "bloomThreshold": 0.84,
-        "chroma": 0.004,
-        "vignette": 0.54,
-        "grain": 0.03
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "chrome",
       "name": "Chrome",
-      "header": "// Chrome: Raymarched liquid-metal blob, accent reflections.",
+      "header": "// Chrome: Liquid-chrome bodies merging over a neon glass floor in a lit studio, mirroring the rig, the floor and each other.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
       "palette": [
-        28,
+        8,
         0,
-        28,
+        8,
         0
       ],
       "trailDecay": 0.42,
       "params": [
         {
-          "id": "blobs",
+          "id": "blob-count",
           "uniform": "param0",
-          "label": "Blobs",
-          "labelKey": "visual.chrome.blobs",
+          "label": "Blob Count",
+          "labelKey": "visual.chrome.blob-count",
           "min": 0,
           "max": 1,
           "default": 0.5,
-          "step": 0.25,
+          "step": 0.01,
           "curve": "linear",
           "group": "shape"
         },
@@ -289,10 +291,10 @@
           "group": "shape"
         },
         {
-          "id": "roughness",
+          "id": "surface-ripple",
           "uniform": "param2",
-          "label": "Roughness",
-          "labelKey": "visual.chrome.roughness",
+          "label": "Surface Ripple",
+          "labelKey": "visual.chrome.surface-ripple",
           "min": 0,
           "max": 1,
           "default": 0.3,
@@ -302,17 +304,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.28,
-        "bloomThreshold": 1.25,
-        "chroma": 0.0035,
-        "vignette": 0.62,
-        "grain": 0.022
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "tunnel",
       "name": "Tunnel",
-      "header": "// Tunnel: Opaque 3D flythrough; speed locks to BPM.",
+      "header": "// Tunnel: Flight down a curving tube of pleated, backlit paper, like the inside of a vast lantern: coloured light strips wind round outside and glow through the chevron folds, the dark lantern frame shows in silhouette, packets of light travel along the strips, pleat columns light with the spectrum and a hot packet races away behind the paper on each beat.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
@@ -325,10 +327,10 @@
       "trailDecay": 0.95,
       "params": [
         {
-          "id": "speed",
+          "id": "flight-speed",
           "uniform": "param0",
-          "label": "Speed",
-          "labelKey": "visual.tunnel.speed",
+          "label": "Flight Speed",
+          "labelKey": "visual.tunnel.flight-speed",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -349,46 +351,46 @@
           "group": "shape"
         },
         {
-          "id": "detail",
+          "id": "pleat-count",
           "uniform": "param2",
-          "label": "Detail",
-          "labelKey": "visual.tunnel.detail",
+          "label": "Pleat Count",
+          "labelKey": "visual.tunnel.pleat-count",
           "min": 0,
           "max": 1,
           "default": 0.5,
           "step": 0.01,
           "curve": "linear",
-          "group": "detail"
+          "group": "shape"
         }
       ],
       "post": {
-        "bloomStrength": 0.9,
-        "bloomThreshold": 0.78,
-        "chroma": 0.007,
-        "vignette": 0.56,
-        "grain": 0.04
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "terrain",
       "name": "Terrain",
-      "header": "// Terrain: Pulse-array city skyline with a floor grid and a hot waveform river.",
+      "header": "// Terrain: A low flight down a canyon of glowing pillars whose depth rows rise with the spectrum.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
       "palette": [
-        29,
+        1,
         0,
-        29,
+        1,
         0
       ],
       "trailDecay": 0.52,
       "params": [
         {
-          "id": "floor-speed",
+          "id": "flight-speed",
           "uniform": "param0",
-          "label": "Floor Speed",
-          "labelKey": "visual.terrain.floor-speed",
+          "label": "Flight Speed",
+          "labelKey": "visual.terrain.flight-speed",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -397,10 +399,10 @@
           "group": "motion"
         },
         {
-          "id": "skyline-height",
+          "id": "relief",
           "uniform": "param1",
-          "label": "Skyline Height",
-          "labelKey": "visual.terrain.skyline-height",
+          "label": "Relief",
+          "labelKey": "visual.terrain.relief",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -409,30 +411,30 @@
           "group": "shape"
         },
         {
-          "id": "floor-detail",
+          "id": "glow",
           "uniform": "param2",
-          "label": "Floor Detail",
-          "labelKey": "visual.terrain.floor-detail",
+          "label": "Glow",
+          "labelKey": "visual.terrain.glow",
           "min": 0,
           "max": 1,
           "default": 0.5,
           "step": 0.01,
           "curve": "linear",
-          "group": "detail"
+          "group": "color"
         }
       ],
       "post": {
-        "bloomStrength": 0.38,
-        "bloomThreshold": 1.1,
-        "chroma": 0.0025,
-        "vignette": 0.62,
-        "grain": 0.024
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "plasma",
       "name": "Plasma",
-      "header": "// Plasma: Domain-warped plasma: bass folds the field, treble frays it into glints.",
+      "header": "// Plasma: Smooth domain-warped plasma lit as a glossy relief over black: hot palette lobes outlined by clean complementary contour lines that creep outward and stream charge, a crisp discharge line sweeps the gas on each beat lighting the contours it crosses, and the gas runs hotter through bursts.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
@@ -482,17 +484,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.74,
-        "bloomThreshold": 0.86,
-        "chroma": 0.0025,
-        "vignette": 0.54,
-        "grain": 0.03
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "dunes",
       "name": "Dunes",
-      "header": "// Dunes: Topographic neon wire landscape with beat crests.",
+      "header": "// Dunes: Low sunset skim over sharp-crested dunes with heat haze and burning crests.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
@@ -529,10 +531,10 @@
           "group": "shape"
         },
         {
-          "id": "density",
+          "id": "dune-density",
           "uniform": "param2",
-          "label": "Density",
-          "labelKey": "visual.dunes.density",
+          "label": "Dune Density",
+          "labelKey": "visual.dunes.dune-density",
           "min": 0,
           "max": 1,
           "default": 0.58,
@@ -542,17 +544,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.62,
-        "bloomThreshold": 0.94,
-        "chroma": 0.0025,
-        "vignette": 0.58,
-        "grain": 0.026
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "cymatics-prism",
       "name": "Cymatics/Prism",
-      "header": "// Cymatics/Prism: A prismatic cymatics ring with audio-carved contours.",
+      "header": "// Cymatics/Prism: A Chladni plate under a prism: quartz sand on a black vibrating plate gathers into a new nodal figure every eight beats, hopping off the antinodes with the spectrum, while a low raking beam split into a spectrum burns each ridge a different hue.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
@@ -562,20 +564,57 @@
         31,
         0
       ],
-      "trailDecay": 0.86,
-      "params": null,
+      "trailDecay": 0,
+      "params": [
+        {
+          "id": "mode-order",
+          "uniform": "param0",
+          "label": "Mode Order",
+          "labelKey": "visual.cymatics-prism.mode-order",
+          "min": 0,
+          "max": 1,
+          "default": 0.4,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "sand",
+          "uniform": "param1",
+          "label": "Sand",
+          "labelKey": "visual.cymatics-prism.sand",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "prism",
+          "uniform": "param2",
+          "label": "Prism",
+          "labelKey": "visual.cymatics-prism.prism",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
       "post": {
-        "bloomStrength": 0.66,
-        "bloomThreshold": 0.9,
-        "chroma": 0.0035,
-        "vignette": 0.48,
-        "grain": 0.024
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "spectral-city",
       "name": "Spectral City",
-      "header": "// Spectral City: A pulse-array skyline over a glossy black floor.",
+      "header": "// Spectral City: A dawn flight above the clouds between glass spires whose light columns fill with the spectrum.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
@@ -586,19 +625,56 @@
         0
       ],
       "trailDecay": 0.8,
-      "params": null,
+      "params": [
+        {
+          "id": "density",
+          "uniform": "param0",
+          "label": "Density",
+          "labelKey": "visual.spectral-city.density",
+          "min": 0,
+          "max": 1,
+          "default": 0.62,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "speed",
+          "uniform": "param1",
+          "label": "Speed",
+          "labelKey": "visual.spectral-city.speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "reflection",
+          "uniform": "param2",
+          "label": "Reflection",
+          "labelKey": "visual.spectral-city.reflection",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
       "post": {
-        "bloomStrength": 0.7,
-        "bloomThreshold": 0.86,
-        "chroma": 0.003,
-        "vignette": 0.52,
-        "grain": 0.026
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "waveform",
       "name": "Waveform",
-      "header": "// Waveform: Prismatic oscilloscope threads: stacked spectral wave wires with transient pins on black.",
+      "header": "// Waveform: A night drone light show over a city lake: a thousand drones draw the live waveform in rows of LEDs, re-forming every eight beats from a receding sheet of traces to a rolling tube to a wall of spectrum bars, mirrored as streaks in the rippled water under a sodium-lit skyline.",
       "tier": "lite",
       "calm": true,
       "imageInput": false,
@@ -642,33 +718,33 @@
           "min": 0,
           "max": 1,
           "default": 0.2,
-          "step": 0.1,
+          "step": 0.01,
           "curve": "linear",
           "group": "shape"
         }
       ],
       "post": {
-        "bloomStrength": 0.52,
-        "bloomThreshold": 0.98,
-        "chroma": 0.002,
-        "vignette": 0.42,
-        "grain": 0.018
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "bloom",
       "name": "Bloom",
-      "header": "// Bloom: Aurora ink clouds with bass light-leak portals and electric treble veins over black.",
+      "header": "// Bloom: a storm of backlit petals streaming from a giant flower of light toward the camera.",
       "tier": "lite",
       "calm": true,
       "imageInput": false,
       "palette": [
-        10,
+        8,
         0,
-        10,
+        8,
         0
       ],
-      "trailDecay": 0.72,
+      "trailDecay": 0.5,
       "params": [
         {
           "id": "flow",
@@ -708,33 +784,33 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.48,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.0012,
-        "vignette": 0.48,
-        "grain": 0.016
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "drift",
       "name": "Drift",
-      "header": "// Drift: Liquid-glass caustic linework over dark glass; artwork becomes a low-frequency tint.",
+      "header": "// Drift: Liquid-glass droplets drift over a crisp caustic pool in the dark, magnifying and splitting its light nets; a ripple ring runs out every bar; artwork becomes a low-frequency tint.",
       "tier": "lite",
       "calm": true,
       "imageInput": true,
       "palette": [
-        7,
+        8,
         0,
-        7,
+        8,
         0
       ],
-      "trailDecay": 0.52,
+      "trailDecay": 0,
       "params": [
         {
-          "id": "defocus-flow",
+          "id": "flow",
           "uniform": "param0",
-          "label": "Defocus/Flow",
-          "labelKey": "visual.drift.defocus-flow",
+          "label": "Flow",
+          "labelKey": "visual.drift.flow",
           "min": 0,
           "max": 1,
           "default": 0.4,
@@ -768,17 +844,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.34,
-        "bloomThreshold": 0.98,
-        "chroma": 0.0025,
-        "vignette": 0.72,
-        "grain": 0.014
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "vinyl",
       "name": "Vinyl",
-      "header": "// Vinyl: Luminous record grooves with beat needle sparks.",
+      "header": "// Vinyl: Macro shot of a spinning record; spectrum-lit groove sheen, a beat light sweep and a sparking stylus over studio bokeh.",
       "tier": "lite",
       "calm": true,
       "imageInput": false,
@@ -828,17 +904,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.46,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.0015,
-        "vignette": 0.55,
-        "grain": 0.018
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "ribbons",
       "name": "Ribbons",
-      "header": "// Ribbons: Layered silk-light ribbons with spectral edge highlights.",
+      "header": "// Ribbons: A sheaf of foil ribbons in purple, hot pink, coral, gold and teal is cinched through a glowing gold ring and fans out to both edges; the ring is the key light, the foil shifts hue as each ribbon twists, the bass opens the ring and every beat the ring fires light packets outward along a new set of ribbons.",
       "tier": "lite",
       "calm": true,
       "imageInput": false,
@@ -888,17 +964,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.54,
-        "bloomThreshold": 0.98,
-        "chroma": 0.002,
-        "vignette": 0.48,
-        "grain": 0.016
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "ripple",
       "name": "Ripple",
-      "header": "// Ripple: Beat-thrown cymatics ripples; newborn rings blaze gold, older rings cool to cyan-violet.",
+      "header": "// Ripple: High-speed drop photography in motion: a drop strikes a black mirror of liquid on every beat, splashing a crown and throwing up a jet that pinches off a bead, while the rings bend two coloured gels, a softbox and a string of spectrum lamps into bands of warm and cool.",
       "tier": "lite",
       "calm": false,
       "imageInput": false,
@@ -908,7 +984,7 @@
         21,
         0
       ],
-      "trailDecay": 0.92,
+      "trailDecay": 0.55,
       "params": [
         {
           "id": "ring-width",
@@ -948,27 +1024,27 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.7,
-        "bloomThreshold": 0.84,
-        "chroma": 0.003,
-        "vignette": 0.32,
-        "grain": 0.018
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "petals",
       "name": "Petals",
-      "header": "// Petals: Spectral flower rosette with beat-blooming edges.",
+      "header": "// Petals: A huge flower held against a drifting lamp in a dark room, its petals each their own shape and lit from behind so the light glows through the tissue, picking out darker veins, a deep blotch at each base and lensing dew drops; the inner rings overlap like an iris, the rings slide against each other with parallax and lift as each beat's ring of light runs out, the shot reframes every eight beats and waves of loose petals tumble past out of focus.",
       "tier": "lite",
       "calm": true,
       "imageInput": false,
       "palette": [
-        24,
+        8,
         0,
-        24,
+        8,
         0
       ],
-      "trailDecay": 0.78,
+      "trailDecay": 0,
       "params": [
         {
           "id": "petal-count",
@@ -1008,24 +1084,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.56,
-        "bloomThreshold": 0.92,
-        "chroma": 0.002,
-        "vignette": 0.46,
-        "grain": 0.016
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "circuit",
       "name": "Circuit",
-      "header": "// Circuit: Beat pulses through a neon circuit board.",
+      "header": "// Circuit: a fly-over of a glowing circuit-board city whose traces light up on the beat.",
       "tier": "lite",
       "calm": true,
       "imageInput": false,
       "palette": [
-        16,
+        23,
         0,
-        16,
+        23,
         0
       ],
       "trailDecay": 0.72,
@@ -1068,17 +1144,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.5,
-        "bloomThreshold": 0.96,
-        "chroma": 0.0018,
-        "vignette": 0.58,
-        "grain": 0.02
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "spectrum",
       "name": "Spectrum",
-      "header": "// Spectrum: Neon glass skyline: spectrum columns, spark shafts, circuit floor, molten waveform ribbon.",
+      "header": "// Spectrum: A spectrum analyser as an endless row of glossy emissive glass columns on a mirror floor, backlit through haze, with floating peak caps, tracked by a slow camera.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
@@ -1128,24 +1204,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.6,
-        "bloomThreshold": 1.02,
-        "chroma": 0.0025,
-        "vignette": 0.52,
-        "grain": 0.022
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "lattice",
       "name": "Lattice",
-      "header": "// Lattice: Prismatic cymatics ring: rainbow contour wires in perspective with glossy floor reflection.",
+      "header": "// Lattice: a flight through an endless braced crystal lattice where nested cymatic shells of prismatic light ripple through the struts.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
       "palette": [
-        9,
+        31,
         0,
-        9,
+        31,
         0
       ],
       "trailDecay": 0.84,
@@ -1188,17 +1264,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.62,
-        "bloomThreshold": 0.94,
-        "chroma": 0.0025,
-        "vignette": 0.5,
-        "grain": 0.022
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "murmuration",
       "name": "Murmuration",
-      "header": "// Murmuration: Flock of light: three band-driven sub-flocks over a dark reflective floor; bass hits rupture the murmuration like a predator strike.",
+      "header": "// Murmuration: A vast starling flock folds and wheels across a blue-hour sky over a reed marsh, packing into dark fold bands where its sheet turns edge-on; a bass-driven banking wave rolls through it each bar, treble lights golden glints.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
@@ -1223,10 +1299,10 @@
           "group": "shape"
         },
         {
-          "id": "rupture",
+          "id": "wave-strength",
           "uniform": "param1",
-          "label": "Rupture",
-          "labelKey": "visual.murmuration.rupture",
+          "label": "Wave Strength",
+          "labelKey": "visual.murmuration.wave-strength",
           "min": 0,
           "max": 1,
           "default": 0.6,
@@ -1248,24 +1324,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.55,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.002,
-        "vignette": 0.2,
-        "grain": 0.03
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "ink",
       "name": "Ink",
-      "header": "// Ink: Luminous ink in dark water: onsets drop dye charges colored by timbre, kicks send buoyant plumes mushrooming upward; the feedback buffer is the fluid.",
+      "header": "// Ink: Luminous ink in dark water: kicks launch warm plumes that mushroom upward, onsets burst dye open, treble draws a second cool ink in fraying wisps; the feedback buffer is the fluid.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
       "palette": [
-        21,
+        2,
         0,
-        21,
+        2,
         0
       ],
       "trailDecay": 0,
@@ -1308,24 +1384,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.5,
-        "bloomThreshold": 0.9,
-        "chroma": 0.0015,
-        "vignette": 0.3,
-        "grain": 0.04
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "vault",
       "name": "Vault",
-      "header": "// Vault: The song as architecture: a slow glide through raymarched halls whose rooms follow the track's sections — ribs pulse on the beat, treble lights the clerestory.",
+      "header": "// Vault: A projection-mapping show inside a night cathedral: graphic light mapped onto ribs, webbing and piers changes every two beats with a wipe down the nave, warm and cool swap each beat, a neon outline blazes in bursts and only the stained glass glows in breakdowns, all mirrored in the polished floor.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
       "palette": [
-        17,
+        12,
         0,
-        17,
+        12,
         0
       ],
       "trailDecay": 0,
@@ -1368,17 +1444,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.45,
-        "bloomThreshold": 1.1,
-        "chroma": 0.001,
-        "vignette": 0.25,
-        "grain": 0.05
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "loom",
       "name": "Loom",
-      "header": "// Loom: The song, woven: the shuttle lays live spectrum as glowing weft while already-woven history recedes to the horizon; bass ripples travel back through the cloth.",
+      "header": "// Loom: A night glide down an endless loom: spectrum-lit warp threads rise through the shed to a fog-bright vanishing point, the shuttle lays hot weft that cools into twill, and heddle-wire bays along both sides glow as level meters.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
@@ -1403,10 +1479,10 @@
           "group": "shape"
         },
         {
-          "id": "scroll",
+          "id": "flight-speed",
           "uniform": "param1",
-          "label": "Scroll",
-          "labelKey": "visual.loom.scroll",
+          "label": "Flight Speed",
+          "labelKey": "visual.loom.flight-speed",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -1428,24 +1504,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.4,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.001,
-        "vignette": 0.3,
-        "grain": 0.05
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "lens",
       "name": "Lens",
-      "header": "// Lens: Sound as mass: band-driven bodies lens a nebula (or the artwork) with chromatic dispersion; sustained energy inspirals them into a black hole with a photon ring.",
+      "header": "// Lens: Sound as mass: three band-sized bodies bend a bright nebula, star field and spiral galaxies into arcs and Einstein rings as the field streams past; sustained energy inspirals them into one.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
       "palette": [
-        6,
+        1,
         0,
-        6,
+        1,
         0
       ],
       "trailDecay": 0,
@@ -1488,27 +1564,27 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.6,
-        "bloomThreshold": 1.05,
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
         "chroma": 0,
-        "vignette": 0.3,
-        "grain": 0.04
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "photo-prism",
       "name": "Photo Prism",
-      "header": "// Photo Prism: Album/photo texture refracted into a circular waveform lens.",
+      "header": "// Photo Prism: A glass iris of turning wedge prisms splits the photo into dispersed copies around a clear lens and a circular waveform ring.",
       "tier": "flagship",
       "calm": false,
       "imageInput": true,
       "palette": [
-        19,
+        31,
         0,
-        19,
+        31,
         0
       ],
-      "trailDecay": 0.82,
+      "trailDecay": 0,
       "params": [
         {
           "id": "shard-spin",
@@ -1548,27 +1624,27 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.76,
-        "bloomThreshold": 0.86,
-        "chroma": 0.004,
-        "vignette": 0.48,
-        "grain": 0.024
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "memory-tunnel",
       "name": "Memory Tunnel",
-      "header": "// Memory Tunnel: Photo tiles stretched into a beat-pulsing perspective corridor.",
+      "header": "// Memory Tunnel: A flight down a dark gallery hall of staggered backlit photo prints that develop from palette duotones into full colour as they approach, spilling light onto the walls, a polished mirror floor and drifting dust.",
       "tier": "flagship",
       "calm": false,
       "imageInput": true,
       "palette": [
-        22,
+        8,
         0,
-        22,
+        8,
         0
       ],
-      "trailDecay": 0.9,
+      "trailDecay": 0,
       "params": [
         {
           "id": "flight",
@@ -1608,17 +1684,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.82,
-        "bloomThreshold": 0.8,
-        "chroma": 0.006,
-        "vignette": 0.55,
-        "grain": 0.03
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "photo-particles",
       "name": "Photo Particles",
-      "header": "// Photo Particles: Image dissolves into chromatic spectrum particles.",
+      "header": "// Photo Particles: The photo as a wall of glossy beads that dissolves and streams toward the camera as chromatic particles.",
       "tier": "flagship",
       "calm": false,
       "imageInput": true,
@@ -1628,7 +1704,7 @@
         25,
         0
       ],
-      "trailDecay": 0.78,
+      "trailDecay": 0,
       "params": [
         {
           "id": "particle-size",
@@ -1668,27 +1744,27 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.72,
-        "bloomThreshold": 0.88,
-        "chroma": 0.004,
-        "vignette": 0.46,
-        "grain": 0.026
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "photo-glass",
       "name": "Photo Glass",
-      "header": "// Photo Glass: Photo-textured translucent towers on a reflective black floor.",
+      "header": "// Photo Glass: Glass towers rise with the spectrum on a black mirror floor, refracting the photo behind them with prismatic fringes.",
       "tier": "flagship",
       "calm": false,
       "imageInput": true,
       "palette": [
-        13,
+        31,
         0,
-        13,
+        31,
         0
       ],
-      "trailDecay": 0.62,
+      "trailDecay": 0,
       "params": [
         {
           "id": "towers",
@@ -1728,17 +1804,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.62,
-        "bloomThreshold": 0.92,
-        "chroma": 0.003,
-        "vignette": 0.54,
-        "grain": 0.02
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "photo-liquid",
       "name": "Photo Liquid",
-      "header": "// Photo Liquid: Photo melts into fluid ink and neon veins.",
+      "header": "// Photo Liquid: Glossy liquid-glass drops slide over the melting photo, magnifying it, with caustics and neon ink veins.",
       "tier": "flagship",
       "calm": true,
       "imageInput": true,
@@ -1748,7 +1824,7 @@
         21,
         0
       ],
-      "trailDecay": 0.68,
+      "trailDecay": 0,
       "params": [
         {
           "id": "flow",
@@ -1763,16 +1839,16 @@
           "group": "motion"
         },
         {
-          "id": "veins",
+          "id": "ink",
           "uniform": "param1",
-          "label": "Veins",
-          "labelKey": "visual.photo-liquid.veins",
+          "label": "Ink",
+          "labelKey": "visual.photo-liquid.ink",
           "min": 0,
           "max": 1,
           "default": 0.58,
           "step": 0.01,
           "curve": "linear",
-          "group": "shape"
+          "group": "color"
         },
         {
           "id": "bloom",
@@ -1788,27 +1864,27 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.58,
-        "bloomThreshold": 0.94,
-        "chroma": 0.003,
-        "vignette": 0.52,
-        "grain": 0.02
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "photo-topo",
       "name": "Photo Topography",
-      "header": "// Photo Topography: Photo-derived heightfield as glowing contour terrain.",
+      "header": "// Photo Topography: A dusk flight over relief raised from the photo, traced by glowing spectrum contour lines above a mirror lake.",
       "tier": "flagship",
       "calm": false,
       "imageInput": true,
       "palette": [
-        15,
+        8,
         0,
-        15,
+        8,
         0
       ],
-      "trailDecay": 0.74,
+      "trailDecay": 0,
       "params": [
         {
           "id": "speed",
@@ -1848,17 +1924,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.64,
-        "bloomThreshold": 0.92,
-        "chroma": 0.003,
-        "vignette": 0.58,
-        "grain": 0.024
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "photo-lens",
       "name": "Photo Lens",
-      "header": "// Photo Lens: Shattered mirrored photo shards inside a chromatic lens.",
+      "header": "// Photo Lens: The photo folded into kaleidoscope shards inside a faceted crystal lens, with spectral dispersion, bokeh and glints.",
       "tier": "flagship",
       "calm": false,
       "imageInput": true,
@@ -1868,7 +1944,7 @@
         11,
         0
       ],
-      "trailDecay": 0.86,
+      "trailDecay": 0,
       "params": [
         {
           "id": "segments",
@@ -1908,27 +1984,27 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.74,
-        "bloomThreshold": 0.86,
-        "chroma": 0.006,
-        "vignette": 0.48,
-        "grain": 0.026
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "photo-gallery",
       "name": "Photo gallery",
-      "header": "// Photo gallery: Floating hologram photo cards drifting in depth.",
+      "header": "// Photo gallery: A tracking shot past floating holographic photo cards in a dark hall of fog and mirrored floor.",
       "tier": "flagship",
       "calm": true,
       "imageInput": true,
       "palette": [
-        28,
+        25,
         0,
-        28,
+        25,
         0
       ],
-      "trailDecay": 0.54,
+      "trailDecay": 0,
       "params": [
         {
           "id": "cards",
@@ -1968,27 +2044,27 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.58,
-        "bloomThreshold": 0.94,
-        "chroma": 0.0025,
-        "vignette": 0.52,
-        "grain": 0.02
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "photo-curtain",
       "name": "Photo Curtain",
-      "header": "// Photo Curtain: Photo converted into vertical spectral light curtains.",
+      "header": "// Photo Curtain: The photo printed across a kinetic curtain of glossy vertical slats that twist in spectral waves, backlit through the gaps.",
       "tier": "flagship",
       "calm": false,
       "imageInput": true,
       "palette": [
-        14,
+        3,
         0,
-        14,
+        3,
         0
       ],
-      "trailDecay": 0.78,
+      "trailDecay": 0,
       "params": [
         {
           "id": "columns",
@@ -2028,27 +2104,27 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.68,
-        "bloomThreshold": 0.88,
-        "chroma": 0.004,
-        "vignette": 0.5,
-        "grain": 0.024
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "photo-veil",
       "name": "Photo Veil",
-      "header": "// Photo Veil: Photo texture embedded in translucent aurora ribbons.",
+      "header": "// Photo Veil: The photo printed on billowing sheer silk in 3D, with glowing aurora chiffon veils hanging in the dark behind it.",
       "tier": "flagship",
       "calm": true,
       "imageInput": true,
       "palette": [
-        10,
+        23,
         0,
-        10,
+        23,
         0
       ],
-      "trailDecay": 0.68,
+      "trailDecay": 0,
       "params": [
         {
           "id": "ribbons",
@@ -2088,33 +2164,33 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.56,
-        "bloomThreshold": 0.96,
-        "chroma": 0.0025,
-        "vignette": 0.56,
-        "grain": 0.02
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "particles",
       "name": "Particles",
-      "header": "// Particles: GPU swarm bursting on the beat.",
+      "header": "// Particles: A rising vortex of embers round a molten light column above a black mirror floor; embers cool from gold to pink and cyan as they climb, each beat sends a white-hot ignition front up the swarm, and depth of field turns near and far embers into bokeh.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
       "palette": [
-        25,
+        1,
         0,
-        25,
+        1,
         0
       ],
       "trailDecay": 0.94,
       "params": [
         {
-          "id": "count",
+          "id": "density",
           "uniform": "param0",
-          "label": "Count",
-          "labelKey": "visual.particles.count",
+          "label": "Density",
+          "labelKey": "visual.particles.density",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -2135,10 +2211,10 @@
           "group": "reaction"
         },
         {
-          "id": "trails",
+          "id": "trail-length",
           "uniform": "param2",
-          "label": "Trails",
-          "labelKey": "visual.particles.trails",
+          "label": "Trail Length",
+          "labelKey": "visual.particles.trail-length",
           "min": 0,
           "max": 1,
           "default": 0.4,
@@ -2148,17 +2224,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.74,
-        "bloomThreshold": 0.86,
-        "chroma": 0.004,
-        "vignette": 0.42,
-        "grain": 0.03
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "kaleidoscope",
       "name": "Kaleidoscope",
-      "header": "// Kaleidoscope: Spectrum folded into a morphing mandala.",
+      "header": "// Kaleidoscope: a mirror tube of tumbling 3D glass pieces, flowing toward you.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
@@ -2168,7 +2244,7 @@
         19,
         0
       ],
-      "trailDecay": 0.93,
+      "trailDecay": 0.5,
       "params": [
         {
           "id": "segments",
@@ -2177,7 +2253,7 @@
           "labelKey": "visual.kaleidoscope.segments",
           "min": 0,
           "max": 1,
-          "default": 0.5,
+          "default": 0.29,
           "step": 0.01,
           "curve": "linear",
           "group": "shape"
@@ -2195,10 +2271,10 @@
           "group": "motion"
         },
         {
-          "id": "zoom",
+          "id": "vortex",
           "uniform": "param2",
-          "label": "Zoom",
-          "labelKey": "visual.kaleidoscope.zoom",
+          "label": "Vortex",
+          "labelKey": "visual.kaleidoscope.vortex",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -2208,24 +2284,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.76,
-        "bloomThreshold": 0.86,
-        "chroma": 0.005,
-        "vignette": 0.46,
-        "grain": 0.028
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "helix",
       "name": "Helix",
-      "header": "// Helix: Double-helix spectral ribbons with beat sparks.",
+      "header": "// Helix: A flight down an avenue of double helices drawn in light over black, cyan and magenta backbones strung with beads and base-pair rungs that play the spectrum; each beat a wave of orange light runs down the helices, and streaks fly out of the vanishing point as the flight surges.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
       "palette": [
-        16,
+        3,
         0,
-        16,
+        3,
         0
       ],
       "trailDecay": 0.84,
@@ -2268,24 +2344,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.68,
-        "bloomThreshold": 0.88,
-        "chroma": 0.003,
-        "vignette": 0.48,
-        "grain": 0.024
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "rain",
       "name": "Rain",
-      "header": "// Rain: Neon spectrum rain over a glossy black floor.",
+      "header": "// Rain: A rain-soaked neon street at night: spectrum tubes, mirror puddles, splashing drops.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
       "palette": [
-        9,
+        3,
         0,
-        9,
+        3,
         0
       ],
       "trailDecay": 0.8,
@@ -2303,10 +2379,10 @@
           "group": "shape"
         },
         {
-          "id": "speed",
+          "id": "fall-speed",
           "uniform": "param1",
-          "label": "Speed",
-          "labelKey": "visual.rain.speed",
+          "label": "Fall Speed",
+          "labelKey": "visual.rain.fall-speed",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -2328,48 +2404,48 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.7,
-        "bloomThreshold": 0.86,
-        "chroma": 0.003,
-        "vignette": 0.52,
-        "grain": 0.026
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "constellation",
       "name": "Constellation",
-      "header": "// Constellation: Audio-reactive node network with travelling links.",
+      "header": "// Constellation: Drifting through a deep star cluster; every beat draws new constellation lines between the stars, sparks racing ahead of them.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
       "palette": [
-        7,
+        25,
         0,
-        7,
+        25,
         0
       ],
-      "trailDecay": 0.8,
+      "trailDecay": 0,
       "params": [
         {
-          "id": "nodes",
+          "id": "drift-speed",
           "uniform": "param0",
-          "label": "Nodes",
-          "labelKey": "visual.constellation.nodes",
+          "label": "Drift Speed",
+          "labelKey": "visual.constellation.drift-speed",
           "min": 0,
           "max": 1,
-          "default": 0.65,
+          "default": 0.5,
           "step": 0.01,
           "curve": "linear",
-          "group": "shape"
+          "group": "motion"
         },
         {
-          "id": "links",
+          "id": "link-density",
           "uniform": "param1",
-          "label": "Links",
-          "labelKey": "visual.constellation.links",
+          "label": "Link Density",
+          "labelKey": "visual.constellation.link-density",
           "min": 0,
           "max": 1,
-          "default": 0.55,
+          "default": 0.5,
           "step": 0.01,
           "curve": "linear",
           "group": "color"
@@ -2388,17 +2464,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.58,
-        "bloomThreshold": 0.92,
-        "chroma": 0.002,
-        "vignette": 0.56,
-        "grain": 0.024
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "comets",
       "name": "Comets",
-      "header": "// Comets: Orbital comet trails crossing a dark stage.",
+      "header": "// Comets: A meteor storm over a dark planet's glowing limb: long motion-blurred streaks cross the whole frame at the speed of the music.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
@@ -2408,7 +2484,7 @@
         1,
         0
       ],
-      "trailDecay": 0.88,
+      "trailDecay": 0,
       "params": [
         {
           "id": "count",
@@ -2435,10 +2511,10 @@
           "group": "shape"
         },
         {
-          "id": "tail",
+          "id": "tail-length",
           "uniform": "param2",
-          "label": "Tail",
-          "labelKey": "visual.comets.tail",
+          "label": "Tail Length",
+          "labelKey": "visual.comets.tail-length",
           "min": 0,
           "max": 1,
           "default": 0.6,
@@ -2448,24 +2524,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.7,
-        "bloomThreshold": 0.88,
-        "chroma": 0.004,
-        "vignette": 0.52,
-        "grain": 0.026
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "glyph",
       "name": "Glyph",
-      "header": "// Glyph: Rotating spectral sigil with broken rings and radial bars.",
+      "header": "// Glyph: Extruded spectral sigil of machined rings, backlit by its warm core in volumetric shafts against cool glowing inlays.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
       "palette": [
-        2,
+        1,
         0,
-        2,
+        1,
         0
       ],
       "trailDecay": 0.84,
@@ -2483,10 +2559,10 @@
           "group": "shape"
         },
         {
-          "id": "rotate",
+          "id": "rotation",
           "uniform": "param1",
-          "label": "Rotate",
-          "labelKey": "visual.glyph.rotate",
+          "label": "Rotation",
+          "labelKey": "visual.glyph.rotation",
           "min": 0,
           "max": 1,
           "default": 0.42,
@@ -2495,10 +2571,10 @@
           "group": "motion"
         },
         {
-          "id": "density",
+          "id": "glyph-density",
           "uniform": "param2",
-          "label": "Density",
-          "labelKey": "visual.glyph.density",
+          "label": "Glyph Density",
+          "labelKey": "visual.glyph.glyph-density",
           "min": 0,
           "max": 1,
           "default": 0.55,
@@ -2508,17 +2584,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.64,
-        "bloomThreshold": 0.9,
-        "chroma": 0.003,
-        "vignette": 0.5,
-        "grain": 0.024
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "nebula",
       "name": "Nebula",
-      "header": "// Nebula: Volumetric fluid/smoke stirred by bands.",
+      "header": "// Nebula: A slow push through layered emission gas toward a blazing star-cluster core; ionisation rims, spectrum light shafts and spiked stars.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
@@ -2555,10 +2631,10 @@
           "group": "motion"
         },
         {
-          "id": "brightness",
+          "id": "emission",
           "uniform": "param2",
-          "label": "Brightness",
-          "labelKey": "visual.nebula.brightness",
+          "label": "Emission",
+          "labelKey": "visual.nebula.emission",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -2568,17 +2644,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.86,
-        "bloomThreshold": 0.78,
-        "chroma": 0.004,
-        "vignette": 0.48,
-        "grain": 0.038
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "aurora",
       "name": "Aurora",
-      "header": "// Aurora: Undulating volumetric light curtains.",
+      "header": "// Aurora: Sky-filling aurora curtains mirrored in a mountain lake.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
@@ -2598,7 +2674,7 @@
           "min": 0,
           "max": 1,
           "default": 0.5,
-          "step": 0.5,
+          "step": 0.01,
           "curve": "linear",
           "group": "shape"
         },
@@ -2628,24 +2704,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.32,
-        "bloomThreshold": 1.12,
-        "chroma": 0.0015,
-        "vignette": 0.6,
-        "grain": 0.016
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "phosphor-scope",
       "name": "Phosphor Scope",
-      "header": "// Phosphor Scope: Vintage CRT oscilloscope in a dark room: a slowly morphing Lissajous figure held in phosphor memory, redrawn by a white-hot beam whose head lands on the kick while the beat breathes the glow.",
+      "header": "// Phosphor Scope: Macro shot of a vector CRT: a beat-speed beam writes a tumbling 3D Lissajous figure that flashes cyan-white, then settles into an amber or violet afterglow that alternates with each new figure, with kick ripples in an accent colour, softbox glass reflections, halation and shallow depth of field.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
       "palette": [
-        16,
+        3,
         0,
-        16,
+        3,
         0
       ],
       "trailDecay": 0.9,
@@ -2688,17 +2764,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.6,
-        "bloomThreshold": 0.95,
-        "chroma": 0.0025,
-        "vignette": 0.35,
-        "grain": 0.05
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "oscillo-ring",
       "name": "Oscillo Ring",
-      "header": "// Oscillo Ring: The waveform bent into a closed ring: a live radial trace breathes on bass, echo rings detach and decay outward on every beat, and treble sparks orbit the rim.",
+      "header": "// Oscillo Ring: A long-exposure light-painting session in a wet concrete hall: a swung LED ring paints a lattice of spectrum-wobbled oscilloscope rings stroke by stroke, while two pixel sticks sweep twisting warm ribbons round it every two beats, steel-wool sparks bounce in the puddles and the painting alone lights the haze, floor and columns.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
@@ -2708,13 +2784,13 @@
         2,
         0
       ],
-      "trailDecay": 0.72,
+      "trailDecay": 0,
       "params": [
         {
-          "id": "trace-amp",
+          "id": "orb-size",
           "uniform": "param0",
-          "label": "Trace Amp",
-          "labelKey": "visual.oscillo-ring.trace-amp",
+          "label": "Orb Size",
+          "labelKey": "visual.oscillo-ring.orb-size",
           "min": 0,
           "max": 1,
           "default": 0.55,
@@ -2723,10 +2799,10 @@
           "group": "shape"
         },
         {
-          "id": "echo-reach",
+          "id": "trace-swing",
           "uniform": "param1",
-          "label": "Echo Reach",
-          "labelKey": "visual.oscillo-ring.echo-reach",
+          "label": "Trace Swing",
+          "labelKey": "visual.oscillo-ring.trace-swing",
           "min": 0,
           "max": 1,
           "default": 0.55,
@@ -2735,37 +2811,37 @@
           "group": "shape"
         },
         {
-          "id": "spark-density",
+          "id": "sparks",
           "uniform": "param2",
-          "label": "Spark Density",
-          "labelKey": "visual.oscillo-ring.spark-density",
+          "label": "Sparks",
+          "labelKey": "visual.oscillo-ring.sparks",
           "min": 0,
           "max": 1,
           "default": 0.5,
-          "step": 0.05,
+          "step": 0.01,
           "curve": "linear",
           "group": "detail"
         }
       ],
       "post": {
-        "bloomStrength": 0.5,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.0015,
-        "vignette": 0.25,
-        "grain": 0.03
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "seismograph",
       "name": "Seismograph",
-      "header": "// Seismograph: Four recording pens (bass, mid, treble, flux) draw scrolling traces on ruled paper; onsets jolt the needles, beats leave tick-marks, and heavy flux bleeds the ink.",
+      "header": "// Seismograph: a low flight over a landscape drawn in glowing seismic traces, where every beat sends a quake rippling through the lines.",
       "tier": "lite",
       "calm": true,
       "imageInput": false,
       "palette": [
-        17,
+        4,
         0,
-        17,
+        4,
         0
       ],
       "trailDecay": 0,
@@ -2808,24 +2884,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.3,
-        "bloomThreshold": 1.1,
-        "chroma": 0.0005,
-        "vignette": 0.3,
-        "grain": 0.06
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "wave-cascade",
       "name": "Wave Cascade",
-      "header": "// Wave Cascade: A live trace rides the top of the frame; each beat shears off a sheet of it that falls, fades, and stacks into a luminous waterfall while onsets fling spray off the crest.",
+      "header": "// Wave Cascade: A live glass ribbon of the spectrum runs along the lip of a waterfall of falling light strands; each beat shears off a glossy sheet that tears into rivulets and settles on a mirror pool, and every bass hit sends a torrent plunging down the falls into a crown of spray, mist and a ring.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
       "palette": [
-        13,
+        23,
         0,
-        13,
+        23,
         0
       ],
       "trailDecay": 0.82,
@@ -2868,24 +2944,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.55,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.0015,
-        "vignette": 0.28,
-        "grain": 0.04
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "strata-ridge",
       "name": "Strata Ridge",
-      "header": "// Strata Ridge: Unknown Pleasures, elevated: a stack of waveform traces recedes upward in perspective, near ridges occluding the old; bass lifts the live peaks, onsets race a shimmer along the front ridge.",
+      "header": "// Strata Ridge: Blue-hour mountain ranges stacked under a rising moon, each crest a glowing spectrum trace above mist-filled valleys.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
       "palette": [
-        24,
+        8,
         0,
-        24,
+        8,
         0
       ],
       "trailDecay": 0.5,
@@ -2898,7 +2974,7 @@
           "min": 0,
           "max": 1,
           "default": 0.6,
-          "step": 0.083333,
+          "step": 0.166667,
           "curve": "linear",
           "group": "shape"
         },
@@ -2928,24 +3004,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.45,
-        "bloomThreshold": 1.05,
-        "chroma": 0.001,
-        "vignette": 0.3,
-        "grain": 0.05
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "wave-tunnel",
       "name": "Wave Tunnel",
-      "header": "// Wave Tunnel: Fly down a tunnel extruded from the trace history: every depth ring is a past waveform slice, beats lurch the camera forward, timbre tilts the flight path.",
+      "header": "// Wave Tunnel: Flight through open space along a corridor of waveform rings: every ring is a slice of the trace with an echo trace and lit ribbon inside it, beads stream along the peaks, stars streak with speed through a violet nebula, onsets flare the nearest ring.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
       "palette": [
-        25,
+        23,
         0,
-        25,
+        23,
         0
       ],
       "trailDecay": 0.82,
@@ -2988,27 +3064,27 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.6,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.0025,
-        "vignette": 0.25,
-        "grain": 0.03
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "interference",
       "name": "Interference",
-      "header": "// Interference: Bass, mid and treble each radiate circular wavefronts shaped by their own trace; where crests align the water burns HDR-hot with moiré shimmer, and every beat surges the ripples outward while the emitters wander slowly with the phrase.",
+      "header": "// Interference: Three orbs for bass, mid and treble hover over black liquid, each radiating its band's wavefronts; the rings interfere, catch the orbs' reflections and burn hot where crests align, while the camera circles the pool.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
       "palette": [
-        21,
+        1,
         0,
-        21,
+        1,
         0
       ],
-      "trailDecay": 0.4,
+      "trailDecay": 0,
       "params": [
         {
           "id": "ring-density",
@@ -3048,24 +3124,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.5,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.0015,
-        "vignette": 0.28,
-        "grain": 0.04
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "filament",
       "name": "Filament",
-      "header": "// Filament: A braided elastic string plucked by the music: band-weighted standing-wave harmonics decay between beats, node beads glow with their harmonic, and bass bows the whole span.",
+      "header": "// Filament: A macro product shot of a showcase bulb: one coiled tungsten filament strung in a clear glass tube, its axis plucked by the music while its temperature runs from smouldering red to white-hot, with softbox highlights sliding over the glass and cool hexagonal bokeh behind.",
       "tier": "standard",
       "calm": true,
       "imageInput": false,
       "palette": [
-        13,
+        2,
         0,
-        13,
+        2,
         0
       ],
       "trailDecay": 0.62,
@@ -3095,10 +3171,10 @@
           "group": "color"
         },
         {
-          "id": "bead-shine",
+          "id": "heat",
           "uniform": "param2",
-          "label": "Bead Shine",
-          "labelKey": "visual.filament.bead-shine",
+          "label": "Heat",
+          "labelKey": "visual.filament.heat",
           "min": 0,
           "max": 1,
           "default": 0.5,
@@ -3108,33 +3184,33 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.5,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.0012,
-        "vignette": 0.25,
-        "grain": 0.03
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "mirror-bloom",
       "name": "Mirror Bloom",
-      "header": "// Mirror Bloom: A living Rorschach: band traces folded around the mirror axis shape an ink-blot that breathes with amplitude, feathers its edges with treble, and throws symmetric splatter on flux.",
+      "header": "// Mirror Bloom: A kinetic facade of hinged chrome sequins over black felt whose mirrored tilt field draws petals, butterfly, twin spiral and iris figures that swell with the spectrum; each tilted disc flashes crisp slivers of coloured softboxes and point keys, beat waves catch a gold or teal ring light and treble scatters glitter.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
       "palette": [
-        14,
+        31,
         0,
-        14,
+        31,
         0
       ],
       "trailDecay": 0,
       "params": [
         {
-          "id": "blot-mass",
+          "id": "bloom-size",
           "uniform": "param0",
-          "label": "Blot Mass",
-          "labelKey": "visual.mirror-bloom.blot-mass",
+          "label": "Bloom Size",
+          "labelKey": "visual.mirror-bloom.bloom-size",
           "min": 0,
           "max": 1,
           "default": 0.55,
@@ -3143,10 +3219,10 @@
           "group": "shape"
         },
         {
-          "id": "feather",
+          "id": "tilt",
           "uniform": "param1",
-          "label": "Feather",
-          "labelKey": "visual.mirror-bloom.feather",
+          "label": "Tilt",
+          "labelKey": "visual.mirror-bloom.tilt",
           "min": 0,
           "max": 1,
           "default": 0.45,
@@ -3155,10 +3231,10 @@
           "group": "shape"
         },
         {
-          "id": "splatter",
+          "id": "flutter",
           "uniform": "param2",
-          "label": "Splatter",
-          "labelKey": "visual.mirror-bloom.splatter",
+          "label": "Flutter",
+          "labelKey": "visual.mirror-bloom.flutter",
           "min": 0,
           "max": 1,
           "default": 0.55,
@@ -3168,17 +3244,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.4,
-        "bloomThreshold": 1.05,
-        "chroma": 0.0015,
-        "vignette": 0.32,
-        "grain": 0.05
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "braid",
       "name": "Braid",
-      "header": "// Braid: Three luminous threads — bass, mid, treble — braid around a shared axis in pseudo-3D: each thread rides its own band trace, beatPhase drives the twist, and crossings spit sparks on the beat.",
+      "header": "// Braid: A flight down the inside of a woven sleeve of satin cords over black, a warm family and its cool cyan complement braiding over and under around the camera and trading the lead every four beats; light packets race along the fibres and each beat sends a cyan hoop down the tunnel.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
@@ -3197,7 +3273,7 @@
           "labelKey": "visual.braid.twist",
           "min": 0,
           "max": 1,
-          "default": 0.55,
+          "default": 0.5,
           "step": 0.01,
           "curve": "linear",
           "group": "shape"
@@ -3228,17 +3304,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.6,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.002,
-        "vignette": 0.22,
-        "grain": 0.03
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "liquid-optics",
       "name": "Liquid Optics",
-      "header": "// Liquid Optics: Artwork through rippling glass: fbm water refraction, chromatic split, HDR caustic web, bass ripple bursts.",
+      "header": "// Liquid Optics: A macro shot through flowing liquid glass: a spectrum-lit neon ring and streaming ribbons bend into spectral loops, caustics and studio highlights; beats drop ripples.",
       "tier": "lite",
       "calm": true,
       "imageInput": false,
@@ -3288,24 +3364,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.45,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.002,
-        "vignette": 0.4,
-        "grain": 0.02
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "volumetric-light",
       "name": "Volumetric Light",
-      "header": "// Volumetric Light: Projector haze: band-driven beam fan with HDR spines, drifting dust motes, light leaks along the frame.",
+      "header": "// Volumetric Light: a slow dolly down a hazy hall where warm shafts from tall windows cross cold shafts from high round windows, and dust drifts through the beams.",
       "tier": "lite",
       "calm": true,
       "imageInput": false,
       "palette": [
-        12,
+        1,
         0,
-        12,
+        1,
         0
       ],
       "trailDecay": 0.55,
@@ -3330,7 +3406,7 @@
           "min": 0,
           "max": 1,
           "default": 0.5,
-          "step": 0.25,
+          "step": 0.01,
           "curve": "linear",
           "group": "shape"
         },
@@ -3348,24 +3424,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.65,
-        "bloomThreshold": 0.9,
-        "chroma": 0.002,
-        "vignette": 0.4,
-        "grain": 0.03
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "event-horizon",
       "name": "Event Horizon",
-      "header": "// Event Horizon: Gravitational vortex: sheared spiral accretion arms, doppler beaming, HDR photon ring, infalling embers, absolute black core.",
+      "header": "// Event Horizon: A slow orbit around a black hole whose lensed accretion disc wraps over and under its shadow; azure-and-crimson Doppler disc, orbiting hot spots, twin jets, photon ring, bent star field.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
       "palette": [
-        27,
+        12,
         0,
-        27,
+        12,
         0
       ],
       "trailDecay": 0.86,
@@ -3408,17 +3484,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.8,
-        "bloomThreshold": 0.95,
-        "chroma": 0.004,
-        "vignette": 0.45,
-        "grain": 0.025
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "prism-room",
       "name": "Prism Room",
-      "header": "// Prism Room: Faceted caustic chamber: kaleidoscopic glass panes lit per band, caustic sweeps on the clock, HDR edge filaments and vertex glints that carry the kick.",
+      "header": "// Prism Room: a slow drift through a triangular mirror room that repeats as a receding kaleidoscope lattice, where a white beam strikes a glass prism and fans into a spectrum across walls of light bars.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
@@ -3468,17 +3544,17 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.7,
+        "bloomStrength": 0,
         "bloomThreshold": 1,
-        "chroma": 0.003,
-        "vignette": 0.42,
-        "grain": 0.02
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "lumen-field",
       "name": "Lumen Field",
-      "header": "// Lumen Field: Field of spectral light pillars on a mirror floor: HDR tip orbs, rising energy pulses, rippled reflections.",
+      "header": "// Lumen Field: a low glide down a lamp-lit aisle through rows of glowing light stems under an aurora, over a wet mirror floor, with a ring of light racing out across the field on every beat.",
       "tier": "standard",
       "calm": true,
       "imageInput": false,
@@ -3491,14 +3567,14 @@
       "trailDecay": 0.6,
       "params": [
         {
-          "id": "pillars",
+          "id": "stem-density",
           "uniform": "param0",
-          "label": "Pillars",
-          "labelKey": "visual.lumen-field.pillars",
+          "label": "Stem Density",
+          "labelKey": "visual.lumen-field.stem-density",
           "min": 0,
           "max": 1,
           "default": 0.55,
-          "step": 0.166667,
+          "step": 0.01,
           "curve": "linear",
           "group": "shape"
         },
@@ -3528,24 +3604,24 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.6,
-        "bloomThreshold": 0.95,
-        "chroma": 0.002,
-        "vignette": 0.38,
-        "grain": 0.02
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     },
     {
       "id": "laser-tunnel",
       "name": "Laser Tunnel",
-      "header": "// Laser Tunnel: Wireframe laser flythrough: polygonal frames and corner rails with HDR cores, rotating sweep beam, beat shock frames.",
+      "header": "// Laser Tunnel: Flight down a hazed black-glass shaft rigged like a laser show: wall fixtures throw leaning, sweeping laser planes (smoky liquid-sky sheets in a warm family, cool beam fans) that scribe lines on the mirrored glass, re-patch every eight beats and chase fixture to fixture on the beat, on the shared cruise/build/burst/brake/drift speed profile.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,
       "palette": [
-        23,
+        1,
         0,
-        23,
+        1,
         0
       ],
       "trailDecay": 0.84,
@@ -3588,11 +3664,11 @@
         }
       ],
       "post": {
-        "bloomStrength": 0.75,
-        "bloomThreshold": 0.9,
-        "chroma": 0.004,
-        "vignette": 0.45,
-        "grain": 0.025
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
       }
     }
   ]

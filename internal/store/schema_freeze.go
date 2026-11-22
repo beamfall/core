@@ -94,6 +94,9 @@ package store
 //     owning Library plane. The same 2026-11-18 benchmark recorded beside the
 //     catalog marker passed; source fingerprints never enter the shared DB.
 //
+//   - encrypted-library 0012 (CORE-3152) mirrors catalog 0131's nullable
+//     entity_relation.writer column, read only by the identify cleanup.
+//
 // Every entry above rode the `make bench` gate at the migration that introduced
 // it, and each sits off the entity-query hot path.
 //
@@ -103,7 +106,16 @@ package store
 //
 // Events 0024 (CORE-2762) stages Version merge playback for recovery and
 // Profile erasure without changing entity queries.
+//
+// Events 0025 (CORE-2039) adds playback_progress.continue_hidden so a Profile
+// can remove an item from Continue Watching and keep its resume position; it
+// is read only by the continue-watching Source, off the entity-query hot path.
+// Events 0026 (CORE-1630) gives Play Queue entries stable IDs and persists
+// Profile playback state without changing entity queries.
+// Encrypted-library 0012 (CORE-3152) adds the entity_relation writer column.
+// Encrypted-library 0013 (CORE-3131) keeps relation locks and recovery rows
+// in the owning Library plane.
 const (
-	schemaFreezeEventsMigrations           = 24
-	schemaFreezeEncryptedLibraryMigrations = 11
+	schemaFreezeEventsMigrations           = 26
+	schemaFreezeEncryptedLibraryMigrations = 13
 )

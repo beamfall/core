@@ -416,6 +416,26 @@ describe("Entity kind sort, filters and letter rail (CORE-2440)", () => {
     expect(vi.mocked(fetchLibraryEntities).mock.calls.length).toBeGreaterThan(before);
   });
 
+  it("reads the opening kind again when a change lands while its first read is in flight (CORE-2854)", async () => {
+    let release: (() => void) | undefined;
+    let changed = false;
+    vi.mocked(fetchLibraryEntities).mockImplementation(async (request) => {
+      if (!release) await new Promise<void>((resolve) => (release = resolve));
+      const page = entitiesPage(request);
+      return changed ? { ...page, total: 1, items: page.items.slice(1) } : page;
+    });
+    renderAt("/n/tunes/all?view=maker");
+    await waitFor(() => expect(release).toBeDefined());
+
+    changed = true;
+    act(() => notifyEngagementChanged());
+    act(() => release?.());
+
+    const list = await screen.findByRole("list", { name: "Makers" });
+    expect(await within(list).findByText("Maker B")).toBeInTheDocument();
+    expect(within(list).queryByText("Maker A")).toBeNull();
+  });
+
   it("carries the browse state across kinds and into the Media view", async () => {
     const user = userEvent.setup();
     renderAt("/n/tunes/all?view=maker&sort=added&dir=desc");

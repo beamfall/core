@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Segmented } from "@/areas/console/Segmented";
+import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
   ErrorLine,
@@ -89,37 +90,65 @@ export function MarkersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  // Only the newest load may land, so a slow earlier pick cannot replace it.
+  const loadSeq = useRef(0);
+  // The Media ID the page is for, set when a load starts; a finished create reloads only if it still matches.
+  const targetRef = useRef("");
 
   const load = useCallback(
     async (id: string) => {
       setError("");
       const target = id.trim();
       if (!target) return;
+      const seq = ++loadSeq.current;
+      if (target !== targetRef.current) {
+        // A new item: hide the old one's rows so New and row actions cannot write to it mid-load.
+        targetRef.current = target;
+        setMediaID("");
+        setMarkers([]);
+        setTrashed([]);
+        setSelected(new Set());
+        setLoaded(false);
+      }
       try {
         const [live, dead] = await Promise.all([fetchMarkers(target), fetchTrashedMarkers(target)]);
+        if (seq !== loadSeq.current) return;
         setMediaID(target);
         setMarkers([...live].sort(byStart));
         setTrashed(dead);
         setSelected(new Set());
         setLoaded(true);
       } catch {
-        setError(t("markersUnavailable"));
+        if (seq === loadSeq.current) setError(t("markersUnavailable"));
       }
     },
     [t],
   );
 
+  // Clearing the picker unloads the page so New cannot target the old item.
+  const unload = () => {
+    loadSeq.current++;
+    targetRef.current = "";
+    setMediaID("");
+    setMarkers([]);
+    setTrashed([]);
+    setSelected(new Set());
+    setLoaded(false);
+  };
+
   const onLoad = () => void load(mediaInput);
   const reload = useCallback(() => void load(mediaID), [load, mediaID]);
 
   const onCreate = async () => {
-    if (!mediaID) return;
+    const id = mediaID;
+    if (!id) return;
     setError("");
     try {
-      await createMarker(mediaID, blankDraft());
-      await load(mediaID);
+      await createMarker(id, blankDraft());
+      // Reload even if another reload ran meanwhile: it may have read before this create committed.
+      if (targetRef.current === id) await load(id);
     } catch {
-      setError(t("markersSaveFailed"));
+      if (targetRef.current === id) setError(t("markersSaveFailed"));
     }
   };
 
@@ -150,24 +179,23 @@ export function MarkersPage() {
           ) : undefined
         }
       >
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-start gap-3">
           <div className="grow space-y-1">
             <Label htmlFor="markers-media-id">{t("markersMediaID")}</Label>
-            <Input
+            <EntityPicker
               id="markers-media-id"
               value={mediaInput}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => setMediaInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onLoad();
+              onChange={(id) => {
+                setMediaInput(id);
+                if (id) void load(id);
+                else unload();
               }}
             />
           </div>
-          <Button type="button" variant="outline" onClick={onLoad}>
+          <Button type="button" variant="outline" className="mt-6" onClick={onLoad}>
             {t("markersLoad")}
           </Button>
-          <Button type="button" onClick={onCreate} disabled={!mediaID}>
+          <Button type="button" className="mt-6" onClick={onCreate} disabled={!mediaID}>
             {t("markersNew")}
           </Button>
         </div>

@@ -22,7 +22,6 @@ const made = vi.hoisted(() => ({
     dispose: ReturnType<typeof vi.fn>;
     contextLost: boolean;
   }[],
-  restores: [] as boolean[],
   fail: false,
   // Geometries compared, and what the comparisons returned that was not a boolean.
   compares: 0,
@@ -44,8 +43,7 @@ vi.mock("./renderer", async (importOriginal) => {
       return same;
     },
     Renderer: {
-      create: async (_canvas: HTMLCanvasElement, _osc: unknown, restored: boolean) => {
-        made.restores.push(restored);
+      create: async () => {
         const gate = made.gate;
         made.gate = null;
         if (gate) await gate;
@@ -76,7 +74,6 @@ let nextFrame: number;
 
 beforeEach(() => {
   made.renderers.length = 0;
-  made.restores.length = 0;
   made.fail = false;
   made.compares = 0;
   made.results.length = 0;
@@ -153,7 +150,6 @@ describe("Visualizer context loss (CORE-2482)", () => {
     act(() => void canvas.dispatchEvent(new Event("webglcontextrestored")));
     await waitFor(() => expect(pending.size).toBe(1));
     expect(made.renderers).toHaveLength(2);
-    expect(made.restores).toEqual([false, true]);
     expect(made.renderers[1].use).toHaveBeenCalled();
     expect(made.renderers[1].setImage).toHaveBeenCalled();
     expect(canvas.isConnected).toBe(true);

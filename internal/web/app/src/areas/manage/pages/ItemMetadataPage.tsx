@@ -1,13 +1,18 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { AssignDialog } from "@/components/assign/AssignDialog";
+import { formatOrdinal, ordinalLabels } from "@/components/assign/assignOrdinals";
+import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { getIdentityEpochSignal } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import {
   bulkEditApply,
+  clearMediaOrdinal,
   editMediaMetadata,
   fetchArtworkCandidates,
   fetchMediaFields,
@@ -24,6 +29,8 @@ import type {
   MediaMetadataInfo,
 } from "@/lib/graphql/types";
 import { useI18n } from "@/lib/i18n";
+import { useSession } from "@/lib/session";
+import { clearViewerCache } from "@/lib/viewerCache";
 import type { StringKey } from "@/strings";
 
 const SLOTS: { slot: string; lock: string; key: StringKey }[] = [
@@ -63,6 +70,8 @@ function isRelativePreviewURL(value: string | undefined): value is string {
 export function ItemMetadataPage() {
   const { t, displayLocale } = useI18n();
   const navigate = useNavigate();
+  const { session, isManager } = useSession();
+  const [assignmentRevision, setAssignmentRevision] = useState(0);
   const params = useParams<{ mediaID?: string }>();
   const mediaID = params.mediaID ?? "";
   const [idInput, setIdInput] = useState(mediaID);
@@ -75,6 +84,8 @@ export function ItemMetadataPage() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const activeMediaID = useRef("");
+  const canAssign = isManager && session?.profile === "adult" && info?.mediaID === mediaID;
 
   const applyInfo = useCallback((next: MediaMetadataInfo) => {
     setInfo(next);
@@ -109,6 +120,7 @@ export function ItemMetadataPage() {
   );
 
   useEffect(() => {
+    activeMediaID.current = mediaID;
     setIdInput(mediaID);
     setStatus("");
     setError("");
@@ -130,8 +142,9 @@ export function ItemMetadataPage() {
     void loadAll(mediaID);
     return () => {
       cancelled = true;
+      activeMediaID.current = "";
     };
-  }, [mediaID, applyInfo, loadAll]);
+  }, [mediaID, applyInfo, loadAll, assignmentRevision]);
 
   const locked = (field: string): boolean =>
     info?.locks.some((lock) => lock.field === field && lock.locked) ?? false;
@@ -140,8 +153,8 @@ export function ItemMetadataPage() {
     setInfo((prev) => (prev ? { ...prev, locks } : prev));
   };
 
-  const onOpen = () => {
-    const id = idInput.trim();
+  const onOpen = (picked?: string) => {
+    const id = (picked ?? idInput).trim();
     if (id) navigate(`/manage/items/${encodeURIComponent(id)}`);
   };
 
@@ -187,6 +200,30 @@ export function ItemMetadataPage() {
       setStatus(t("itemMetadataSaved"));
     } catch {
       setError(t("itemMetadataSaveFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onClearOrdinal = async () => {
+    if (!canAssign || busy) return;
+    const epoch = getIdentityEpochSignal();
+    const sameIdentity = () => !epoch?.aborted && epoch === getIdentityEpochSignal();
+    setStatus("");
+    setError("");
+    setBusy(true);
+    try {
+      await clearMediaOrdinal(mediaID);
+      if (!sameIdentity()) return;
+      clearViewerCache();
+      if (activeMediaID.current !== mediaID) return;
+      setInfo((current) =>
+        current?.mediaID === mediaID ? { ...current, operatorOrdinal: null } : current,
+      );
+      setStatus(t("assignOrdinalCleared"));
+    } catch {
+      if (sameIdentity() && activeMediaID.current === mediaID)
+        setError(t("assignClearOrdinalFailed"));
     } finally {
       setBusy(false);
     }
@@ -288,28 +325,29 @@ export function ItemMetadataPage() {
 
   return (
     <ManageSection>
-      <form
-        className="flex flex-wrap items-end gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onOpen();
-        }}
-      >
+      <div className="flex flex-wrap items-start gap-3">
         <div className="space-y-1">
           <Label htmlFor="item-metadata-media">{t("fieldLocksMediaLabel")}</Label>
-          <Input
+          <EntityPicker
             id="item-metadata-media"
             value={idInput}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setIdInput(e.target.value)}
-            className="w-72"
+            hideSummary
+            onChange={(id) => {
+              setIdInput(id);
+              if (id) onOpen(id);
+            }}
           />
         </div>
-        <Button type="submit" variant="outline" disabled={!idInput.trim()}>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-6"
+          disabled={!idInput.trim()}
+          onClick={() => onOpen()}
+        >
           {t("fieldLocksLoad")}
         </Button>
-      </form>
+      </div>
 
       <div className="mt-4 space-y-6">
         {!mediaID ? (
@@ -357,10 +395,43 @@ export function ItemMetadataPage() {
                   onChange={(e) => setDraftField("summary")(e.target.value)}
                 />
               ))}
-              <Button type="button" onClick={onSaveDetails} disabled={busy}>
-                {t("itemMetadataSave")}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" onClick={onSaveDetails} disabled={busy}>
+                  {t("itemMetadataSave")}
+                </Button>
+                {canAssign && (
+                  <AssignDialog
+                    key={mediaID}
+                    selection={[{ mediaID, title: info.title, year: info.year }]}
+                    disabled={busy}
+                    onChanged={() => setAssignmentRevision((revision) => revision + 1)}
+                  />
+                )}
+              </div>
             </section>
+
+            {canAssign && (
+              <section className="space-y-3" aria-labelledby="item-metadata-ordinal">
+                <h3 id="item-metadata-ordinal" className="font-medium">
+                  {t("assignOrdinal")}
+                </h3>
+                {info.operatorOrdinal ? (
+                  <>
+                    <p>{formatOrdinal(info.operatorOrdinal, ordinalLabels([], t))}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={onClearOrdinal}
+                    >
+                      {t("assignClearOrdinal")}
+                    </Button>
+                  </>
+                ) : (
+                  <EmptyLine message={t("assignNoOperatorOrdinal")} />
+                )}
+              </section>
+            )}
 
             <section className="space-y-3" aria-labelledby="item-metadata-fields">
               <h3 id="item-metadata-fields" className="font-medium">

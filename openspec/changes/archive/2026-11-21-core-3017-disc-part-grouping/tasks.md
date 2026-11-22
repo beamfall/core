@@ -1,0 +1,4 @@
+- [x] Reproduce both cases with focused scan tests using the real plugin parser
+- [x] Keep a pending part group open across files inside its folder
+- [x] Order a group's Parts folder by folder and pass the rank as the source ordinal
+- [x] Run `GOWORK=off go test ./internal/scan`

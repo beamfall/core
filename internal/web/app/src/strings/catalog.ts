@@ -23,7 +23,6 @@ import { consoleOverviewAttentionStrings } from "./console-overview-attention";
 import { customizationStrings } from "./customization";
 import { itemActionStrings } from "./item-actions";
 import { itemMetadataStrings } from "./item-metadata";
-import { karaokeStrings } from "./karaoke";
 import { libraryHealthStrings } from "./library-health";
 import { libraryMetadataRefreshStrings } from "./library-metadata-refresh";
 import { libraryOperationsStrings } from "./library-operations";
@@ -33,7 +32,7 @@ import { listeningStrings } from "./listening";
 import { managedFileStrings } from "./managed-files";
 import { managedFileLibrariesStrings } from "./managed-files-libraries";
 import { managedFileOptionsStrings } from "./managed-files-options";
-import { mediaDetailStrings } from "./media-detail";
+import { mediaPageStrings } from "./media-pages";
 import { metadataManagementStrings } from "./metadata-management";
 import { metadataManagementCurationStrings } from "./metadata-management-curation";
 import { migrationStrings } from "./migration";
@@ -42,7 +41,7 @@ import { migrationFixmatchStrings } from "./migration-fixmatch";
 import { migrationUnmatchedStrings } from "./migration-unmatched";
 import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
-import { pathPickerStrings } from "./path-picker";
+import { pickerStrings } from "./pickers";
 import { playbackStrings } from "./playback";
 import { playbackChapterStrings } from "./playback-chapters";
 import { playerRecoveryStrings } from "./player-recovery";
@@ -101,7 +100,7 @@ export const en = {
   ...appShellStrings.en,
   ...sidebarStrings.en,
   ...libraryOperationsStrings.en,
-  ...pathPickerStrings.en,
+  ...pickerStrings.en,
   ...consoleAccessStrings.en,
   ...consoleAccessLockStrings.en,
   ...libraryHealthStrings.en,
@@ -160,8 +159,7 @@ export const en = {
   ...playerRecoveryStrings.en,
   ...watchPartyStrings.en,
   ...libraryTrashStrings.en,
-  ...mediaDetailStrings.en,
-  ...karaokeStrings.en,
+  ...mediaPageStrings.en,
   ...restrictionsSetupStrings.en,
   ...remoteControlStrings.en,
   ...webhookStrings.en,
@@ -195,7 +193,7 @@ export const fr = {
   ...appShellStrings.fr,
   ...sidebarStrings.fr,
   ...libraryOperationsStrings.fr,
-  ...pathPickerStrings.fr,
+  ...pickerStrings.fr,
   ...consoleAccessStrings.fr,
   ...consoleAccessLockStrings.fr,
   ...libraryHealthStrings.fr,
@@ -254,8 +252,7 @@ export const fr = {
   ...playerRecoveryStrings.fr,
   ...watchPartyStrings.fr,
   ...libraryTrashStrings.fr,
-  ...mediaDetailStrings.fr,
-  ...karaokeStrings.fr,
+  ...mediaPageStrings.fr,
   ...restrictionsSetupStrings.fr,
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
@@ -289,7 +286,7 @@ export const de = {
   ...appShellStrings.de,
   ...sidebarStrings.de,
   ...libraryOperationsStrings.de,
-  ...pathPickerStrings.de,
+  ...pickerStrings.de,
   ...consoleAccessStrings.de,
   ...consoleAccessLockStrings.de,
   ...libraryHealthStrings.de,
@@ -348,8 +345,7 @@ export const de = {
   ...playerRecoveryStrings.de,
   ...watchPartyStrings.de,
   ...libraryTrashStrings.de,
-  ...mediaDetailStrings.de,
-  ...karaokeStrings.de,
+  ...mediaPageStrings.de,
   ...restrictionsSetupStrings.de,
   ...remoteControlStrings.de,
   ...webhookStrings.de,
@@ -383,7 +379,7 @@ export const es = {
   ...appShellStrings.es,
   ...sidebarStrings.es,
   ...libraryOperationsStrings.es,
-  ...pathPickerStrings.es,
+  ...pickerStrings.es,
   ...consoleAccessStrings.es,
   ...consoleAccessLockStrings.es,
   ...libraryHealthStrings.es,
@@ -442,8 +438,7 @@ export const es = {
   ...playerRecoveryStrings.es,
   ...watchPartyStrings.es,
   ...libraryTrashStrings.es,
-  ...mediaDetailStrings.es,
-  ...karaokeStrings.es,
+  ...mediaPageStrings.es,
   ...restrictionsSetupStrings.es,
   ...remoteControlStrings.es,
   ...webhookStrings.es,
@@ -477,7 +472,7 @@ export const pt = {
   ...appShellStrings.pt,
   ...sidebarStrings.pt,
   ...libraryOperationsStrings.pt,
-  ...pathPickerStrings.pt,
+  ...pickerStrings.pt,
   ...consoleAccessStrings.pt,
   ...consoleAccessLockStrings.pt,
   ...libraryHealthStrings.pt,
@@ -536,8 +531,7 @@ export const pt = {
   ...playerRecoveryStrings.pt,
   ...watchPartyStrings.pt,
   ...libraryTrashStrings.pt,
-  ...mediaDetailStrings.pt,
-  ...karaokeStrings.pt,
+  ...mediaPageStrings.pt,
   ...restrictionsSetupStrings.pt,
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,

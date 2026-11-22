@@ -152,7 +152,8 @@ func (s *Store) pendingItemStateImports(ctx context.Context) ([]pendingItemState
 func (s *Store) applyItemStateImport(ctx context.Context, row pendingItemStateImport) (bool, error) {
 	complete := true
 	if row.Starred {
-		if err := s.insertImportedFavorite(ctx, row.ProfileID, row.MediaID); err != nil {
+		current, err := s.applyPendingImportedStar(ctx, row)
+		if err != nil || !current {
 			return false, err
 		}
 	}
@@ -166,13 +167,51 @@ func (s *Store) applyItemStateImport(ctx context.Context, row pendingItemStateIm
 	return complete, nil
 }
 
+// Hold the catalog writer while confirming the current star and its binding
+// and writing the Favorite. Re-import and retention use the same writer.
+func (s *Store) applyPendingImportedStar(ctx context.Context, row pendingItemStateImport) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	catalog, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer catalog.Rollback()
+	var current bool
+	err = catalog.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1`+liveSubscriptionReceipts+`
+			AND m.id = ? AND EXISTS (
+				SELECT 1 FROM item_state_import isi
+				WHERE isi.subscription_id = se.subscription_id AND isi.item_guid = se.guid
+				  AND isi.subscription_id = ? AND isi.item_guid = ? AND isi.profile_id = ?
+				  AND isi.applied_at_ms = 0 AND isi.starred = 1
+			)
+		)
+	`, row.MediaID, row.SubscriptionID, row.ItemGUID, row.ProfileID).Scan(&current)
+	if err != nil || !current {
+		return false, err
+	}
+	if err := insertImportedFavoriteSQL(ctx, s.eventsW, row.ProfileID, row.MediaID); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Store) insertImportedFavorite(ctx context.Context, profileID ProfileID, mediaID MediaID) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	_, err := s.eventsW.ExecContext(ctx, `
+	return insertImportedFavoriteSQL(ctx, s.eventsW, profileID, mediaID)
+}
+
+func insertImportedFavoriteSQL(ctx context.Context, events sqlExecer, profileID ProfileID, mediaID MediaID) error {
+	_, err := events.ExecContext(ctx, `
 		INSERT OR IGNORE INTO media_favorite(profile_id, media_id, favorited_at_ms)
 		VALUES (?, ?, ?)
 	`, profileID, mediaID, timeToMillis(time.Now().UTC()))

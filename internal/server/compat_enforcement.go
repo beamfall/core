@@ -196,6 +196,10 @@ func (state *compatState) isRefused(subject string) bool {
 func (s *Server) requireCompatDecision(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		scope, err := s.auth.ScopeFromRequest(r.Context(), r)
+		if errors.Is(err, auth.ErrProfileMismatch) {
+			writeProfileMismatch(w, r)
+			return
+		}
 		if err != nil {
 			next(w, r)
 			return

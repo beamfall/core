@@ -85,6 +85,45 @@ const FIXTURE_TAGS = [
   ...tag,
 }));
 
+// The development seed follows no feeds; the Following pivot and one feed's catalogue read these.
+const FIXTURE_SUBSCRIPTION = {
+  id: "subscription-fixture",
+  libraryID: "library-fixture",
+  title: "Fixture Feed",
+  downloadPolicy: "latest",
+  downloadLatestN: 3,
+  healthStatus: "healthy",
+  lastErrorClass: null,
+  failingSince: null,
+  nextPollAt: "2026-11-21T12:00:00Z",
+  lastPolledAt: "2026-11-21T08:00:00Z",
+  entryCount: 1,
+  downloadedCount: 0,
+  catalogBytes: 0,
+};
+
+const FIXTURE_FEED_ENTRY = {
+  mediaID: "media-alpha",
+  title: "Fixture Episode",
+  publishedAt: "2026-11-20T08:00:00Z",
+  feedPosition: 1,
+  enclosureLength: 1048576,
+  downloadState: "notDownloaded",
+  availability: "available",
+};
+
+// The development seed has no image Media (media-alpha is a video, which /view hands to the
+// player); the image viewer reads this one.
+const FIXTURE_IMAGE = {
+  id: "image-fixture",
+  title: "Fixture Photo",
+  mediaClass: "image",
+  libraryID: "library-fixture",
+  favorited: false,
+  artworkSlots: {},
+  credits: [],
+};
+
 const FIXTURE_ENTITY = {
   id: "entity-fixture",
   kind: "category",
@@ -117,6 +156,41 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
       await expect(page).toHaveURL(new RegExp(`${pivot}$`));
       return;
     }
+    case "/n/:nodeId/feeds": {
+      await routeOperation(page, "FeedSubscriptions", {
+        data: { subscriptions: [FIXTURE_SUBSCRIPTION] },
+      });
+      await page.goto(`${await libraryNodeHref(page)}/feeds`);
+      // The page redirects away when the node has no library, so wait for its own list.
+      await expect(page.getByText(FIXTURE_SUBSCRIPTION.title).first()).toBeVisible();
+      await expect(page).toHaveURL(/\/feeds$/);
+      return;
+    }
+    case "/n/:nodeId/feeds/:subscriptionId": {
+      await routeOperation(page, "FeedSubscriptions", {
+        data: { subscriptions: [FIXTURE_SUBSCRIPTION] },
+      });
+      await routeOperation(page, "SubscriptionEntries", {
+        data: { subscriptionEntries: [FIXTURE_FEED_ENTRY] },
+      });
+      await page.goto(`${await libraryNodeHref(page)}/feeds/${FIXTURE_SUBSCRIPTION.id}`);
+      await expect(
+        page.getByRole("heading", { level: 1, name: FIXTURE_SUBSCRIPTION.title }),
+      ).toBeVisible();
+      return;
+    }
+    case "/view/*":
+      await routeOperation(page, "Media", { data: { media: FIXTURE_IMAGE } });
+      await routeOperation(page, "MediaFields", { data: { mediaFields: [] } });
+      await page.goto(`/web/view/${FIXTURE_IMAGE.id}`);
+      await expect(
+        page.getByRole("heading", { level: 1, name: FIXTURE_IMAGE.title }),
+      ).toBeVisible();
+      return;
+    case "/slideshow":
+      await page.goto("/web/slideshow?source=all-items");
+      await expect(page.getByRole("region")).toBeVisible();
+      return;
     case "/entity/:entityId":
       // The development seed has no Entities, so the detail page reads a stubbed one.
       await routeOperation(page, "Entity", { data: { entity: FIXTURE_ENTITY } });
@@ -227,7 +301,7 @@ test.describe("UI state inventory in-page states", () => {
 
     await routeOperation(page, "PlayHistory", { data: { playHistory: [] } });
     await routeOperation(page, "PlayStats", {
-      data: { playStats: { windowDays: 30, profiles: [], items: [] } },
+      data: { playStats: { windowDays: 30, totalPlays: 0, profiles: [], items: [] } },
     });
     await page.reload();
     await expect(page.getByText("No plays match these filters.")).toBeVisible();

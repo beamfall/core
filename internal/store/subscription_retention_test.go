@@ -220,6 +220,62 @@ func TestSubscriptionRetentionRecordsOneActorlessActivityPerMove(t *testing.T) {
 	}
 }
 
+func TestSubscriptionRetentionRecoversActivityAfterRestart(t *testing.T) {
+	ctx := t.Context()
+	dir := migratedDataDir(t)
+	opts := Options{SeedDevelopmentData: true}
+	st, err := Open(ctx, dir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	keep := 1
+	sub, media := subscriptionRetentionFixture(t, st, RetentionKeepLastN, &keep, 3)
+	// Stop both moves after their catalog commit. For one move, also stop
+	// after the activity append but before clearing the pending journal row.
+	for i, id := range media[:2] {
+		tx, err := st.catalogW.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		activity, moved, err := st.commitSubscriptionRetention(ctx, tx, id, sub.AddedAt.Add(time.Hour))
+		_ = tx.Rollback()
+		if err != nil || !moved {
+			t.Fatalf("catalog move = %v, %v", moved, err)
+		}
+		if i == 1 {
+			if err := st.AppendActivity(ctx, activity); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(ctx, dir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	assertRetentionTrash(t, reopened, sub, media[:2]...)
+	sweepSubscriptionRetention(t, reopened, 0)
+	entries, err := reopened.ActivityEntries(ctx, ActivityQuery{
+		Filter: LibraryFilter{AllowedIDs: []LibraryID{sub.LibraryID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[MediaID]int{}
+	for _, activity := range entries {
+		if activity.Action == ActivityMediaTrash {
+			counts[MediaID(activity.TargetID)]++
+		}
+	}
+	if len(counts) != 2 || counts[media[0]] != 1 || counts[media[1]] != 1 {
+		t.Fatalf("recovered activity counts = %v, want one per move", counts)
+	}
+}
+
 func TestSubscriptionRetentionProtectsPendingStars(t *testing.T) {
 	for _, kind := range []RetentionKind{RetentionKeepLastN, RetentionDeleteAfterPlayed} {
 		t.Run(string(kind), func(t *testing.T) {
@@ -299,9 +355,25 @@ func TestSubscriptionRetentionStaleReplayPreservesPendingStar(t *testing.T) {
 		t.Fatalf("stale replay marked = %t, %v", marked, err)
 	}
 	sweepSubscriptionRetention(t, st, 0)
+
+	pending, err = st.pendingItemStateImports(ctx)
+	if err != nil || len(pending) != 1 || !pending[0].Starred {
+		t.Fatalf("pending star = %v, %v", pending, err)
+	}
+	state.Starred = false
+	if err := st.RecordItemStateImport(ctx, state, sub.AddedAt); err != nil {
+		t.Fatal(err)
+	}
+	if complete, err := st.applyItemStateImport(ctx, pending[0]); err != nil || complete {
+		t.Fatalf("stale star replay = %t, %v", complete, err)
+	}
+	if favorite, err := st.MediaFavorited(ctx, state.ProfileID, media[0]); err != nil || favorite {
+		t.Fatalf("favorite from stale replay = %t, %v", favorite, err)
+	}
+	sweepSubscriptionRetention(t, st, 1)
 }
 
-func TestSubscriptionRetentionHoldsOnlyTheCatalogWriter(t *testing.T) {
+func TestSubscriptionRetentionTakesCatalogWriterBeforeEventsWriter(t *testing.T) {
 	st := openSeeded(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -350,12 +422,75 @@ func TestSubscriptionRetentionHoldsOnlyTheCatalogWriter(t *testing.T) {
 	}
 }
 
+func TestSubscriptionRetentionRechecksFollowersAfterTakingEventsWriter(t *testing.T) {
+	st := openSeeded(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	sub, media := subscriptionRetentionFixture(t, st, RetentionDeleteAfterPlayed, nil, 1)
+	profile := ProfileID("profile-default")
+	if err := st.SetFollow(ctx, profile, sub.ID, true, sub.AddedAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+		ProfileID: profile, MediaID: media[0], DurationSeconds: 120,
+	}, true, ResumePolicy{Class: MediaClassAudio}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := st.eventsW.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer events.Close()
+	done := make(chan error, 1)
+	waits := st.eventsW.Stats().WaitCount
+	go func() {
+		moved, skipped, err := st.ApplySubscriptionRetentionPolicies(ctx)
+		if err == nil && (skipped || moved != 0) {
+			err = fmt.Errorf("retention sweep = %d, %v, want 0, false", moved, skipped)
+		}
+		done <- err
+	}()
+	for st.eventsW.Stats().WaitCount == waits {
+		select {
+		case <-time.After(time.Millisecond):
+		case <-ctx.Done():
+			t.Fatal("sweep did not reach the events writer")
+		}
+	}
+	if _, err := events.ExecContext(ctx, `DELETE FROM follow WHERE profile_id = ? AND subscription_id = ?`, profile, sub.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := events.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	assertRetentionTrash(t, st, sub)
+}
+
 func TestSubscriptionRetentionBreaksSamePollTiesByFeedOrder(t *testing.T) {
 	st := openSeeded(t)
 	keep := 2
 	sub, media := subscriptionRetentionPollFixture(t, st, &keep, []*int{intPtr(3), intPtr(0), intPtr(2), intPtr(1)})
 	sweepSubscriptionRetention(t, st, 2)
 	assertRetentionTrash(t, st, sub, media[0], media[2])
+}
+
+func TestSubscriptionRetentionKeepsMixedLegacyTiesAtTheCutoff(t *testing.T) {
+	st := openSeeded(t)
+	keep := 1
+	sub, media := subscriptionRetentionPollFixture(t, st, &keep, []*int{intPtr(0), intPtr(1), nil})
+	sweepSubscriptionRetention(t, st, 0)
+	assertRetentionTrash(t, st, sub)
+
+	// A protected legacy entry is outside the cutoff calculation.
+	filter := LibraryFilter{AllowedIDs: []LibraryID{sub.LibraryID}}
+	if err := st.SetMediaFavorite(t.Context(), "profile-default", media[2], true, filter); err != nil {
+		t.Fatal(err)
+	}
+	sweepSubscriptionRetention(t, st, 1)
+	assertRetentionTrash(t, st, sub, media[1])
 }
 
 func TestSubscriptionRetentionKeepsLegacyTiesAtTheCutoff(t *testing.T) {

@@ -8,6 +8,7 @@ import {
   fetchProfilesAdmin,
   reorderProfiles,
   setProfileAvatar,
+  setProfileEntryPin,
   updateProfile,
 } from "@/lib/graphql";
 import type { ProfileAdminInfo } from "@/lib/graphql/types";
@@ -22,6 +23,7 @@ vi.mock("@/lib/graphql", () => ({
   disableProfile: vi.fn(),
   reorderProfiles: vi.fn(),
   setProfileAvatar: vi.fn(),
+  setProfileEntryPin: vi.fn(),
   uploadProfilePicture: vi.fn(),
   removeProfilePicture: vi.fn(),
 }));
@@ -60,6 +62,7 @@ beforeEach(() => {
   vi.mocked(reorderProfiles).mockResolvedValue(["p2", "p1"]);
   vi.mocked(setProfileAvatar).mockReset();
   vi.mocked(setProfileAvatar).mockResolvedValue(undefined as never);
+  vi.mocked(setProfileEntryPin).mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => setAdminEpochSignal());
@@ -120,6 +123,27 @@ describe("Console Profiles lane", () => {
     await user.click(await screen.findByRole("option", { name: "Adult" }));
     await user.click(within(row).getByRole("button", { name: "Save" }));
     expect(updateProfile).toHaveBeenCalledWith("p2", "Teen", "adult");
+  });
+
+  it("sets an adult Profile's entry PIN with the matching keypad digits", async () => {
+    const user = userEvent.setup();
+    renderSection();
+
+    const entryPin = await screen.findByRole("button", { name: "Entry PIN for Owner" });
+    expect(screen.queryByRole("button", { name: "Entry PIN for Kid" })).not.toBeInTheDocument();
+    await user.click(entryPin);
+    const dialog = await screen.findByRole("dialog", { name: "Entry PIN for Owner" });
+    const setup = within(dialog);
+    await user.click(setup.getByRole("button", { name: "Directions" }));
+    await user.keyboard("{ArrowDown}{ArrowRight}{ArrowLeft}{ArrowUp}{ArrowDown}{ArrowRight}");
+    const confirm = within(setup.getByRole("group", { name: "Confirm PIN" }));
+    for (const direction of ["Down", "Right", "Left", "Up", "Down", "Right"]) {
+      await user.click(confirm.getByRole("button", { name: direction }));
+    }
+    await user.click(setup.getByRole("button", { name: "Set PIN" }));
+
+    expect(setProfileEntryPin).toHaveBeenCalledWith("p1", "864286", undefined);
+    expect(await screen.findByRole("status")).toHaveTextContent("PIN saved.");
   });
 
   it("offboards a profile only after the confirm dialog explains the effect", async () => {

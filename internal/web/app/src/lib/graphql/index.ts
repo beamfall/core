@@ -21,6 +21,7 @@
 export * from "./activity";
 export * from "./auth";
 export * from "./console";
+export * from "./feeds";
 export * from "./manage";
 export type * from "./types";
 export * from "./viewer";

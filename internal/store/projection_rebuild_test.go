@@ -80,7 +80,7 @@ func snapshotPlaybackProgress(t *testing.T, db *sql.DB) []byte {
 		SELECT profile_id, media_id, position_seconds, duration_seconds, watched,
 		       updated_at_ms, play_count, last_played_at_ms, provenance,
 		       occurred_at_ms, import_run_id, import_importer_id,
-		       import_match_method, event_time_ms, channel_context
+		       import_match_method, event_time_ms, channel_context, continue_hidden
 		FROM playback_progress
 		ORDER BY profile_id, media_id
 	`)
@@ -93,19 +93,20 @@ func snapshotPlaybackProgress(t *testing.T, db *sql.DB) []byte {
 		var (
 			profileID, mediaID, provenance                         string
 			position, duration, watched, playCount, channelContext int
+			continueHidden                                         int
 			updatedAt                                              int64
 			lastPlayedAt, occurredAt, eventTime                    sql.NullInt64
 			runID, importerID, matchMethod                         sql.NullString
 		)
 		if err := rows.Scan(&profileID, &mediaID, &position, &duration, &watched,
 			&updatedAt, &playCount, &lastPlayedAt, &provenance, &occurredAt,
-			&runID, &importerID, &matchMethod, &eventTime, &channelContext); err != nil {
+			&runID, &importerID, &matchMethod, &eventTime, &channelContext, &continueHidden); err != nil {
 			t.Fatal(err)
 		}
-		fmt.Fprintf(&snapshot, "%q\t%q\t%d\t%d\t%d\t%d\t%d\t%v\t%q\t%v\t%v\t%v\t%v\t%v\t%d\n",
+		fmt.Fprintf(&snapshot, "%q\t%q\t%d\t%d\t%d\t%d\t%d\t%v\t%q\t%v\t%v\t%v\t%v\t%v\t%d\t%d\n",
 			profileID, mediaID, position, duration, watched, updatedAt, playCount,
 			lastPlayedAt, provenance, occurredAt, runID, importerID, matchMethod,
-			eventTime, channelContext)
+			eventTime, channelContext, continueHidden)
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
@@ -146,5 +147,123 @@ func TestProjectionRebuildRefusesUnloggedRows(t *testing.T) {
 	}
 	if err := st.rebuildEngagementProjections(ctx); err == nil {
 		t.Fatal("rebuild accepted a projection row without a canonical event")
+	}
+}
+
+// Rebuild replays the log and refuses when the replay would change any
+// existing row on any column, leaving the table untouched. Legacy rows the
+// log cannot reproduce exercise the refusal; a fully logged history must
+// rebuild unchanged.
+func TestProjectionRebuildVerifiesReplayAgainstExistingRows(t *testing.T) {
+	const profile, media = "profile-default", "media-alpha"
+	legacyRow := func(t *testing.T, st *Store) {
+		t.Helper()
+		// A pre-log row at 30 s with no engagement event behind it.
+		if _, err := st.eventsW.ExecContext(t.Context(), `
+			INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, play_count, updated_at_ms)
+			VALUES (?, ?, 30, 120, 2, 1)
+		`, profile, media); err != nil {
+			t.Fatal(err)
+		}
+	}
+	heartbeat := func(t *testing.T, st *Store) {
+		t.Helper()
+		if err := st.UpsertPlaybackProgress(t.Context(), PlaybackProgress{
+			ProfileID: profile, MediaID: media, PositionSeconds: 30, DurationSeconds: 120,
+		}, false, ResumePolicy{Class: MediaClassVideo}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hide := func(t *testing.T, st *Store) {
+		t.Helper()
+		if _, err := st.SetContinueWatchingHidden(t.Context(), profile, media, true, itemOpenFilter); err != nil {
+			t.Fatal(err)
+		}
+	}
+	markUnwatched := func(t *testing.T, st *Store) {
+		t.Helper()
+		if _, err := st.SetItemWatched(t.Context(), profile, ItemTarget{MediaID: media}, false, itemOpenFilter); err != nil {
+			t.Fatal(err)
+		}
+	}
+	importPlays := func(t *testing.T, st *Store) {
+		t.Helper()
+		at := time.Date(2021, 2, 3, 4, 5, 6, 0, time.UTC)
+		if err := st.ApplyImportedPlays(t.Context(), profile, media, 3, at, EngagementProvenance{
+			Source: "import", OccurredAt: at, RunID: "run-1", ImporterID: "importer-1", MatchMethod: "external-id",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name     string
+		steps    []func(*testing.T, *Store)
+		rebuilds bool
+	}{
+		{name: "only hide-continue", steps: []func(*testing.T, *Store){legacyRow, hide}},
+		// The heartbeat is logged but comes after the hide: replay would
+		// apply the hide to nothing, then recreate the row visible.
+		{name: "hide then heartbeat", steps: []func(*testing.T, *Store){legacyRow, hide, heartbeat}},
+		// An unwatched mark replays as an UPDATE only, recreating nothing.
+		{name: "mark watched=false, then hide", steps: []func(*testing.T, *Store){legacyRow, markUnwatched, hide}},
+		// The live import keeps the 30 s position on conflict; replay into
+		// an empty table inserts the row at 0.
+		{name: "import (legacy row at 30 s), then hide", steps: []func(*testing.T, *Store){legacyRow, importPlays, hide}},
+		{name: "fully logged history rebuilds unchanged", rebuilds: true,
+			steps: []func(*testing.T, *Store){heartbeat, importPlays, hide, heartbeat}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := openSeeded(t)
+			for _, step := range tc.steps {
+				step(t, st)
+			}
+			if !continueHidden(t, st, profile, media) {
+				t.Fatal("setup left the row visible")
+			}
+			before := snapshotPlaybackProgress(t, st.eventsR)
+			err := st.rebuildEngagementProjections(t.Context())
+			if tc.rebuilds && err != nil {
+				t.Fatalf("rebuild of a fully logged history refused: %v", err)
+			}
+			if !tc.rebuilds && err == nil {
+				t.Fatal("rebuild accepted a row the log cannot reproduce")
+			}
+			if after := snapshotPlaybackProgress(t, st.eventsR); !bytes.Equal(before, after) {
+				t.Fatalf("rebuild changed playback_progress:\nbefore %s\nafter  %s", before, after)
+			}
+		})
+	}
+}
+
+// The rebuild's snapshot table and EXCEPT run with temp_store=MEMORY on their
+// own connection, and the pooled writer keeps its own setting afterwards.
+func TestProjectionRebuildKeepsTempDataInMemory(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	var prior int
+	if err := st.eventsW.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&prior); err != nil {
+		t.Fatal(err)
+	}
+	if prior == sqliteTempStoreMemory {
+		t.Fatalf("writer already defaults to temp_store=MEMORY; the reset check proves nothing")
+	}
+	var during int
+	if err := withMemoryTempStore(ctx, st.eventsW, func(conn *sql.Conn) error {
+		return conn.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&during)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if during != sqliteTempStoreMemory {
+		t.Fatalf("rebuild connection temp_store = %d, want %d", during, sqliteTempStoreMemory)
+	}
+	if err := st.rebuildEngagementProjections(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var after int
+	if err := st.eventsW.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != prior {
+		t.Fatalf("pooled writer temp_store = %d after rebuild, want %d", after, prior)
 	}
 }

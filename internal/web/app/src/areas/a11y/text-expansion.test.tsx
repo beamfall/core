@@ -218,7 +218,10 @@ const CLIP_UTILITY =
 // 2026-11-21 (CORE-2917): +2 → 32. The Manage Tags table layout adds `truncate` on the
 // tag name in the table row and in the merge picker (the old row span moved). CSS
 // ellipsis only; the full name stays in the DOM and a `title`, and row actions name it.
-const CLIP_BASELINE = 32;
+// 2026-11-21 (CORE-2915): +6 → 38. The EntityPicker adds `truncate` on the option title and
+// detail, the raw-ID option, the selected card's title and detail, and the multi-pick chip.
+// CSS ellipsis inside `min-w-0` flex rows; the full text stays in the DOM for AT.
+const CLIP_BASELINE = 38;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

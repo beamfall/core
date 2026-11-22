@@ -22,6 +22,12 @@ var (
 	// synthesized playlist advertises segments no encoder can fill. It wraps
 	// ErrNotFound because retrying can never produce the segment.
 	ErrSourceEnded = fmt.Errorf("%w: source ended before this segment", ErrNotFound)
+	// ErrUnknownStreamFile reports an HLS request for a file the session will
+	// never have: a malformed name, a rung id the session does not carry (for
+	// example from a renegotiated session) or a segment past the declared
+	// count. It wraps ErrNotFound so players get a 404, not a retryable 503
+	// (CORE-1369).
+	ErrUnknownStreamFile = fmt.Errorf("%w: unknown stream file", ErrNotFound)
 )
 
 // invalidRequestError is an ErrInvalidRequest whose text names the invalid

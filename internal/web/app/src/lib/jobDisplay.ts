@@ -86,9 +86,18 @@ function lookup(labels: LabelSource, key: StringKey): string {
   return typeof labels === "function" ? labels(key) : (labels[key] ?? key);
 }
 
+// An enum-like wire token: single-case words joined by ".", "_" or "-".
+const WIRE_TOKEN = /^(?:[a-z0-9]+(?:[._-]+[a-z0-9]+)*|[A-Z0-9]+(?:[._-]+[A-Z0-9]+)*)$/;
+
+/**
+ * "waiting_for_media" reads "Waiting for media". Anything that is not an
+ * enum-like token (a path, a title, a sentence) is free text and is shown as
+ * sent, never lowercased (CORE-2342).
+ */
 function humanizeWireValue(value: string): string {
-  const words = String(value || "")
-    .trim()
+  const trimmed = String(value || "").trim();
+  if (!WIRE_TOKEN.test(trimmed)) return trimmed;
+  const words = trimmed
     .replace(/[._-]+/g, " ")
     .replace(/\s+/g, " ")
     .toLowerCase();
@@ -140,8 +149,9 @@ export function jobStatusLabel(status: string, labels: LabelSource): string {
   return mappedLabel(status, JOB_STATUS_LABELS, labels);
 }
 
+// A unit this client has no label for is the server's own word, shown as sent.
 function jobProgressUnitLabel(unit: string, labels: LabelSource): string {
-  return mappedLabel(unit, JOB_PROGRESS_UNIT_LABELS, labels);
+  return mappedDiagnostic(unit, JOB_PROGRESS_UNIT_LABELS, labels);
 }
 
 export function jobProgressMessageLabel(message: string, labels: LabelSource): string {

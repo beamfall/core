@@ -99,6 +99,55 @@ test.describe("first-run setup folder picker", () => {
   });
 });
 
+// CORE-0256: the wizard stays usable at phone width. The Library step carries the type choice the
+// design audit measured at 20x102px; at phone width it must not overflow and each type row must be a
+// 44x44 target, and the desktop layout keeps its two columns.
+test.describe("first-run setup at phone width", () => {
+  const plugins = [
+    { id: "filmtv", displayName: { en: "Film & TV" } },
+    { id: "music", displayName: { en: "Music" } },
+    { id: "audiobooks", displayName: { en: "Audiobooks" } },
+  ];
+  for (const { width, height, minTarget } of [
+    { width: 320, height: 700, minTarget: 44 },
+    { width: 390, height: 844, minTarget: 44 },
+    { width: 1440, height: 900, minTarget: 24 },
+  ]) {
+    test(`Library step fits ${width}px with full-size type targets`, async ({ page }) => {
+      const errors = collectFatalErrors(page);
+      await page.setViewportSize({ width, height });
+      await mockSetupAtLibraryStep(page, { "/": { name: "/", path: "/", children: [] } }, plugins);
+      await page.goto("/web/setup");
+      await expect(page.getByRole("heading", { name: "Create your first Library" })).toBeVisible();
+      // The plugin list loads after the heading: measure only once every type row is laid out.
+      const rows = page.locator('label:has(input[name="setup-library-type"])');
+      await expect(rows).toHaveCount(4);
+
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(overflow, "horizontal document overflow").toBeLessThanOrEqual(0);
+
+      const count = await rows.count();
+      const boxes = [];
+      for (let i = 0; i < count; i++) {
+        const box = await rows.nth(i).boundingBox();
+        expect(box, `type row ${i} is laid out`).not.toBeNull();
+        if (!box) continue;
+        expect(box.width, `type row ${i} width`).toBeGreaterThanOrEqual(minTarget);
+        expect(box.height, `type row ${i} height`).toBeGreaterThanOrEqual(minTarget);
+        expect(box.x, `type row ${i} inside the viewport`).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width, `type row ${i} inside the viewport`).toBeLessThanOrEqual(width);
+        boxes.push(box);
+      }
+      // One column at phone width (rows share a left edge); two side by side on desktop.
+      const columns = new Set(boxes.map((box) => Math.round(box.x))).size;
+      expect(columns).toBe(width < 640 ? 1 : 2);
+      expect(errors, errors.join("\n")).toEqual([]);
+    });
+  }
+});
+
 type MockFolder = {
   name: string;
   path: string;
@@ -108,6 +157,9 @@ type MockFolder = {
 async function mockSetupAtLibraryStep(
   page: Page,
   folders: Record<string, MockFolder>,
+  plugins: { id: string; displayName: Record<string, string> }[] = [
+    { id: "filmtv", displayName: { en: "Film & TV" } },
+  ],
 ): Promise<void> {
   // A reload resumes at the Library step only when the wizard remembers that
   // the plugin step finished in this tab (CORE-1604).
@@ -149,7 +201,7 @@ async function mockSetupAtLibraryStep(
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
-          data: { plugins: [{ id: "filmtv", displayName: { en: "Film & TV" } }] },
+          data: { plugins },
         }),
       });
       return;

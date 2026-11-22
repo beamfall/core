@@ -256,3 +256,57 @@ func TestEncryptedLibraryUnsealCleanupFailureQuarantines(t *testing.T) {
 		t.Fatal("cleanup quarantine remained after repair")
 	}
 }
+
+// TestEncryptedApplyLocalMetadataStaysInProtectedPlane (CORE-0361): a
+// sidecar apply and release on an encrypted library's Media write through
+// that library's own database. The encrypted plane keeps no sort title, so
+// one is skipped rather than failing the apply.
+func TestEncryptedApplyLocalMetadataStaysInProtectedPlane(t *testing.T) {
+	ctx := context.Background()
+	st, media := seededEncryptedMedia(t, "encrypted-local")
+	defer st.Close()
+	if err := st.UpsertEntity(ctx, Entity{ID: "entity-enc", LibraryID: media.LibraryID, Kind: "widget", Title: "Widget"}); err != nil {
+		t.Fatal(err)
+	}
+	title, sortTitle := "Sidecar Title", "Sidecar Sort"
+	if err := st.ApplyLocalMetadata(ctx, media.ID, LocalMetadata{
+		Metadata:       MediaMetadata{Title: &title, SortTitle: &sortTitle},
+		Fields:         []MediaField{{Name: "tagline", Type: EntityFieldText, Text: "From the sidecar"}},
+		Relations:      []EntityRelation{{FromEntityID: "entity-enc", Name: "member-of", ToMediaID: media.ID}},
+		OwnedRelations: []WrittenRelation{{Kind: "widget", Name: "member-of"}},
+		SignatureField: "sidecar-signature", Signature: "sig-1",
+	}); err != nil {
+		t.Fatalf("ApplyLocalMetadata: %v", err)
+	}
+	stored, err := st.Media(ctx, media.ID, LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Title != title {
+		t.Fatalf("title = %q, want %q", stored.Title, title)
+	}
+	fields, err := st.MediaFields(ctx, media.ID, LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := fieldText(fields, "tagline"); got != "From the sidecar" {
+		t.Fatalf("tagline = %q", got)
+	}
+	var catalogRows int
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_field_provenance WHERE media_id = ?`, media.ID).Scan(&catalogRows); err != nil {
+		t.Fatal(err)
+	}
+	if catalogRows != 0 {
+		t.Fatalf("catalog provenance rows = %d, want none outside the protected plane", catalogRows)
+	}
+	related, err := st.EntitiesForMedia(ctx, media.ID, "member-of", LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(related) != 1 || related[0].Entity.ID != "entity-enc" {
+		t.Fatalf("relations = %+v, want entity-enc", related)
+	}
+	if err := st.ReleaseLocalMetadata(ctx, media.ID, "sidecar-signature"); err != nil {
+		t.Fatalf("ReleaseLocalMetadata: %v", err)
+	}
+}

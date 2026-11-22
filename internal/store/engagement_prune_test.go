@@ -18,10 +18,10 @@ func TestPurgeTrashedBeforePrunesExternalIDsAndEngagementOrphans(t *testing.T) {
 	if err := st.AddMediaExternalID(ctx, "media-archive", "fixture", "survivor"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueAdd(ctx, "profile-default", "media-alpha", nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-alpha", nil, revealed); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueAdd(ctx, "profile-default", "media-archive", nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-archive", nil, revealed); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetMediaFavorite(ctx, "profile-default", "media-alpha", true, revealed); err != nil {
@@ -115,10 +115,10 @@ func TestPruneOrphanedEngagementRowsUsesExistenceNotVisibility(t *testing.T) {
 	ctx := context.Background()
 	revealed := LibraryFilter{AllowedIDs: []LibraryID{"library-local", "library-archive"}, Revealed: true}
 
-	if err := st.QueueAdd(ctx, "profile-default", "media-alpha", nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-alpha", nil, revealed); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueAdd(ctx, "profile-default", "media-archive", nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-archive", nil, revealed); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetMediaFavorite(ctx, "profile-default", "media-alpha", true, revealed); err != nil {

@@ -7,7 +7,18 @@ import { bulkEditApply, bulkEditPreview, fetchLibraries } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { BulkOpsPage } from "./BulkOpsPage";
 
+const access = vi.hoisted(() => ({ manager: false }));
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({ isManager: access.manager, session: { profile: "adult" } }),
+}));
+
 vi.mock("@/lib/graphql", () => ({
+  searchResult: vi.fn(async () => ({
+    mode: "keyword",
+    items: [],
+    hasMore: false,
+    restrictedResultsPresent: false,
+  })),
   bulkEditApply: vi.fn(),
   fetchMutes: vi.fn(async () => []),
   setMute: vi.fn(async () => undefined),
@@ -20,6 +31,7 @@ vi.mock("@/lib/graphql", () => ({
 }));
 
 beforeEach(() => {
+  access.manager = false;
   vi.clearAllMocks();
   vi.mocked(fetchLibraries).mockResolvedValue([]);
   vi.mocked(bulkEditPreview).mockResolvedValue([
@@ -50,6 +62,15 @@ function renderPage() {
 }
 
 describe("BulkOpsPage", () => {
+  it.each([true, false])("shows Assign only for managers (%s)", async (manager) => {
+    access.manager = manager;
+    renderPage();
+    await userEvent.type(screen.getByLabelText("Media IDs (comma-separated)"), "media-1{Enter}");
+    const action = screen.queryByRole("button", { name: "Assign…" });
+    if (manager) expect(action).toBeEnabled();
+    else expect(action).not.toBeInTheDocument();
+  });
+
   it.each([
     ["Copy Link suffix", (url: URL) => url.pathname.split("/").at(-1)],
     ["Copy Link URL", (url: URL) => url.href],
@@ -72,7 +93,7 @@ describe("BulkOpsPage", () => {
 
     await user.type(
       screen.getByLabelText("Media IDs (comma-separated)"),
-      `${input(link)}, media-2`,
+      `${input(link)}, media-2{Enter}`,
     );
     await user.type(screen.getByLabelText("Field name"), "year");
     await user.type(screen.getByLabelText("Value"), "1982");
@@ -90,7 +111,10 @@ describe("BulkOpsPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText("Media IDs (comma-separated)"), "media-1, media-2");
+    await user.type(
+      screen.getByLabelText("Media IDs (comma-separated)"),
+      "media-1, media-2{Enter}",
+    );
     await user.type(screen.getByLabelText("Field name"), "year");
     await user.type(screen.getByLabelText("Value"), "1982");
 
@@ -103,7 +127,7 @@ describe("BulkOpsPage", () => {
 
     // An input edit after the preview stales it: Apply is withdrawn until a
     // fresh preview matches the form again.
-    await user.type(screen.getByLabelText("Media IDs (comma-separated)"), ", media-3");
+    await user.type(screen.getByLabelText("Media IDs (comma-separated)"), ", media-3{Enter}");
     expect(apply).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Preview" }));
     await waitFor(() => expect(apply).toBeEnabled());

@@ -61,3 +61,60 @@ The server SHALL NOT let a Profile rebind of the session commit between the chec
 - **WHEN** `switchProfile` from Profile A to Profile B runs concurrently with a queue mutation
   carrying `expectedProfileID` Profile A
 - **THEN** the item is never found in Profile B's Play Queue
+
+### Requirement: Queue adds enforce current eligibility
+
+The server SHALL check current Reveal and certification eligibility atomically
+with `queueAdd` and leave the Play Queue unchanged on refusal. With omitted or
+null `expectedProfileID`, the server SHALL use the session's current Profile
+and its eligibility.
+
+#### Scenario: Eligibility changes after the client checks it
+
+- **WHEN** the client checks an eligible target and a relock or certification change blocks it before `queueAdd` applies
+- **THEN** the server returns `NOT_FOUND` for a hidden target or `FORBIDDEN` for a visible target blocked by certification
+- **AND** the Play Queue is unchanged
+
+#### Scenario: The session switches Profiles after the request is authorized
+
+- **WHEN** a Profile switch applies before the queue add obtains the write lock
+- **THEN** an omitted or null precondition uses the current Profile and its eligibility
+- **AND** an explicit precondition for the previous Profile returns `CONFLICT` with reason `PROFILE_MISMATCH`
+
+#### Scenario: Managed access expires during a queue add
+
+- **WHEN** a managed Profile's access window and any session extension no longer admit the current server time at the write
+- **THEN** `queueAdd` returns `UNAUTHENTICATED` and the Play Queue is unchanged
+
+#### Scenario: An inaccessible encrypted Library cannot be read
+
+- **WHEN** the target is in the catalog and an unsealed encrypted Library outside the current Profile's visible Libraries has a read failure
+- **THEN** the server resolves the target without reading that Library
+
+### Requirement: Queue adds report their committed placement
+
+The server SHALL return the committed queue's first page of up to 50 items and a
+receipt in `extensions.queueAdds` with the response key, target Media ID, and
+visible position. The response SHALL retain both after a later batch failure.
+
+#### Scenario: Card details fail after the queue transaction commits
+
+- **WHEN** `queueAdd` commits and the response's optional card reads fail
+- **THEN** the response succeeds with the committed visible queue page in `data`
+
+#### Scenario: The target lands outside the first page
+
+- **WHEN** `queueAdd` commits a visible target outside the first page
+- **THEN** the response stays bounded to the first page of the committed queue
+- **AND** the receipt identifies the target and its zero-based position in the full visible queue
+
+#### Scenario: The committed target is muted
+
+- **WHEN** `queueAdd` commits a muted target
+- **THEN** the receipt omits `position`
+
+#### Scenario: A later queue add alias is refused
+
+- **WHEN** the first `queueAdd` alias commits and a later alias is refused
+- **THEN** `data` includes the committed alias's queue page and `extensions.queueAdds` includes its receipt
+- **AND** the response includes a typed error with the refused alias as its path

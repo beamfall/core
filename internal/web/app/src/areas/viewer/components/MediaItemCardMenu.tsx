@@ -11,6 +11,7 @@ import {
   Play,
   SquareArrowOutUpRight,
   UserRound,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -19,7 +20,7 @@ import { fetchMedia } from "@/lib/graphql";
 import type { ItemTarget, MediaCredit } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
-import { useItemActions, useItemHide } from "../actions";
+import { removeFromContinueWatching, useItemActions, useItemHide } from "../actions";
 import { entityPath } from "../lib/entityAddress";
 import { moreWithLead } from "../lib/related";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
@@ -34,6 +35,8 @@ const COPIED_RESET_MS = 2000;
 // opening the menu again retries a failed load. Hide takes the item out of
 // this Profile's browsing (CORE-2836). Audio Media read "played"
 // rather than "watched"; a Media item can be added to a playlist (CORE-1635).
+// On the Continue Watching row a Media card can leave the row and keep its
+// progress (CORE-2017); the Undo notice reports a failed write.
 export function MediaItemCardMenu({
   title,
   primaryLabel,
@@ -45,6 +48,7 @@ export function MediaItemCardMenu({
   target,
   onPrimary,
   onDetails,
+  continueWatching = false,
 }: {
   title: string;
   primaryLabel: string;
@@ -61,6 +65,8 @@ export function MediaItemCardMenu({
   onPrimary: () => void;
   /** Opens Media detail without starting playback (CORE-1144, CORE-2034). */
   onDetails?: () => void;
+  /** The card is on the Continue Watching row, so it offers to leave it. */
+  continueWatching?: boolean;
 }) {
   const t = useT();
   const identity = useViewerIdentity();
@@ -202,6 +208,15 @@ export function MediaItemCardMenu({
                 <Menu.Item className="bf-card-menu-item" onClick={() => setAddOpen(true)}>
                   <ListPlus aria-hidden="true" size={15} />
                   {t("addToPlaylist")}
+                </Menu.Item>
+              )}
+              {continueWatching && isMedia && "mediaID" in target && (
+                <Menu.Item
+                  className="bf-card-menu-item"
+                  onClick={() => void removeFromContinueWatching(target.mediaID, title)}
+                >
+                  <X aria-hidden="true" size={15} />
+                  {t("itemContinueRemove")}
                 </Menu.Item>
               )}
               <Menu.Item

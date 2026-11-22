@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -63,6 +64,15 @@ func (s *Store) SubscriptionFollowed(ctx context.Context, profileID ProfileID, s
 	return err == nil, err
 }
 
+const liveSubscriptionReceipts = `
+	FROM subscription_seen_entry se
+	JOIN subscription sub ON sub.id = se.subscription_id
+	JOIN media_file mf ON mf.path = se.path AND mf.missing_at_ms IS NULL
+	JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id AND m.trashed_at_ms IS NULL
+	WHERE se.path <> ''`
+
+const receiptGUIDMayBeURL = `(lower(se.guid) LIKE 'http:%' OR lower(se.guid) LIKE 'https:%')`
+
 func (s *Store) ReconcileSubscriptionSeenEntries(ctx context.Context) (int, int, error) {
 	affected, skippedBlank, err := s.reconcileSubscriptionSeenPaths(ctx)
 	if err != nil {
@@ -83,27 +93,109 @@ func (s *Store) reconcileSubscriptionSeenPaths(ctx context.Context) (int, int, e
 	var skippedBlank int
 	if err := s.catalogR.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM subscription_seen_entry
-		WHERE path = ''
+		WHERE path = '' AND seen_at_ms <> 0
 	`).Scan(&skippedBlank); err != nil {
 		return 0, 0, err
 	}
-	result, err := s.catalogW.ExecContext(ctx, `
-		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
-		SELECT mf.media_id, ?, se.guid
-		FROM subscription_seen_entry se
-		JOIN subscription sub ON sub.id = se.subscription_id
-		JOIN media_file mf ON mf.path = se.path AND mf.missing_at_ms IS NULL
-		JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id AND m.trashed_at_ms IS NULL
-		WHERE se.path <> ''
-	`, subscriptionFeedGUIDScheme)
+	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
+		SELECT mf.media_id, ?, se.guid`+liveSubscriptionReceipts+` AND NOT `+receiptGUIDMayBeURL, subscriptionFeedGUIDScheme)
+	if err != nil {
+		return 0, 0, err
+	}
+	urlIDs, err := reconcileURLGUIDs(ctx, tx)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := repairLegacyFeedCatalogue(ctx, tx); err != nil {
+		return 0, 0, err
+	}
+	if err := tx.Commit(); err != nil {
 		return 0, 0, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
 		return 0, 0, err
 	}
-	return int(affected), skippedBlank, nil
+	return int(affected + urlIDs), skippedBlank, nil
+}
+
+func reconcileURLGUIDs(ctx context.Context, tx *sql.Tx) (int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT mf.media_id, se.subscription_id, se.guid`+liveSubscriptionReceipts+` AND `+receiptGUIDMayBeURL)
+	if err != nil {
+		return 0, err
+	}
+	identities, err := scanSubscriptionGUIDs(rows)
+	if err != nil {
+		return 0, err
+	}
+	var affected int64
+	for _, entry := range identities {
+		result, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)
+		`, entry.mediaID, subscriptionFeedGUIDScheme, feedGUIDExternalID(entry.guid))
+		if err != nil {
+			return 0, err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		affected += n
+		if err := repairLegacyFeedIdentity(ctx, tx, entry.subscriptionID, entry.guid, entry.mediaID); err != nil {
+			return 0, err
+		}
+	}
+	return affected, nil
+}
+
+func repairLegacyFeedCatalogue(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT se.media_id, se.subscription_id, se.guid
+		FROM subscription_entry se JOIN media m ON m.id = se.media_id
+		WHERE (`+receiptGUIDMayBeURL+` OR instr(se.guid, '://') > 0 OR se.guid LIKE '//%')
+		  AND (m.title = se.guid OR EXISTS (
+		    SELECT 1 FROM media_external_id e WHERE e.media_id = se.media_id
+		      AND ((e.scheme = ? AND e.value = se.guid) OR (e.scheme = ? AND e.value = se.subscription_id || char(0) || se.guid))
+		  ))
+	`, subscriptionFeedGUIDScheme, ProvisionalExternalIDScheme)
+	if err != nil {
+		return err
+	}
+	identities, err := scanSubscriptionGUIDs(rows)
+	if err != nil {
+		return err
+	}
+	for _, entry := range identities {
+		if err := repairLegacyFeedIdentity(ctx, tx, entry.subscriptionID, entry.guid, entry.mediaID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type subscriptionGUID struct {
+	mediaID        MediaID
+	subscriptionID SubscriptionID
+	guid           string
+}
+
+func scanSubscriptionGUIDs(rows *sql.Rows) ([]subscriptionGUID, error) {
+	defer rows.Close()
+	var entries []subscriptionGUID
+	for rows.Next() {
+		var entry subscriptionGUID
+		if err := rows.Scan(&entry.mediaID, &entry.subscriptionID, &entry.guid); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
 }
 
 // ApplySubscriptionRetentionPolicies moves eligible Media to recoverable Trash.
@@ -111,10 +203,10 @@ func (s *Store) reconcileSubscriptionSeenPaths(ctx context.Context) (int, int, e
 //
 // Candidates are listed once. Each one is then decided again and moved in its
 // own catalog write transaction, so the decision and the Trash write see the
-// same receipts, policies and pending stars. Favorite and Keep writes take the
-// catalog writer too (SetMediaFavorite), so neither can land between them.
-// Like scan retirement, each move records its outbox event and one actorless
-// media.trash activity entry after the catalog commit.
+// same receipts, policies and pending stars. The events writer holds Favorites,
+// follows and play counts stable through that decision and write.
+// Each move journals its actorless media.trash activity with the catalog write.
+// The activity and live outbox event are published after the commit.
 func (s *Store) ApplySubscriptionRetentionPolicies(ctx context.Context) (trashed int, skipped bool, err error) {
 	if s.trashDisabled {
 		s.trashDisabledSweepSkips.Add(1)
@@ -126,21 +218,11 @@ func (s *Store) ApplySubscriptionRetentionPolicies(ctx context.Context) (trashed
 	}
 	for _, id := range candidates {
 		now := time.Now().UTC()
-		libraryID, moved, err := s.trashSubscriptionRetentionCandidate(ctx, id, now)
+		moved, err := s.trashSubscriptionRetentionCandidate(ctx, id, now)
+		if moved {
+			trashed++
+		}
 		if err != nil {
-			return trashed, false, err
-		}
-		if !moved {
-			continue
-		}
-		trashed++
-		if err := s.AppendActivity(ctx, ActivityEntry{
-			OccurredAt: now,
-			Action:     ActivityMediaTrash,
-			TargetType: "media",
-			TargetID:   string(id),
-			LibraryID:  libraryID,
-		}); err != nil {
 			return trashed, false, err
 		}
 	}
@@ -153,17 +235,8 @@ func (s *Store) TrashDisabledSweepSkips() int64 {
 	return s.trashDisabledSweepSkips.Load()
 }
 
-// Paths bind a receipt (and any pending star for that receipt) to any live
-// Part of a Media in the Subscription's Library. GUIDs alone are feed-scoped.
-const retentionEntriesFrom = `
-	FROM subscription_seen_entry se
-	JOIN subscription sub ON sub.id = se.subscription_id
-	JOIN media_file mf ON mf.path = se.path AND mf.missing_at_ms IS NULL
-	JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id AND m.trashed_at_ms IS NULL
-	WHERE se.path <> ''`
-
 // retentionPendingStarIDs lists Media an imported star still waits to reach.
-const retentionPendingStarIDs = `SELECT m.id` + retentionEntriesFrom + `
+const retentionPendingStarIDs = `SELECT m.id` + liveSubscriptionReceipts + `
 	AND EXISTS (SELECT 1 FROM item_state_import isi
 	            WHERE isi.subscription_id = se.subscription_id AND isi.item_guid = se.guid
 	              AND isi.applied_at_ms = 0 AND isi.starred = 1)`
@@ -181,13 +254,16 @@ func (s *Store) subscriptionRetentionCandidates(ctx context.Context) ([]MediaID,
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
+	if err := s.flushSubscriptionRetentionActivityLocked(ctx); err != nil {
+		return nil, err
+	}
 	rows, err := s.catalogR.QueryContext(ctx, `
 		WITH entries AS (
 			SELECT sub.id AS subscription_id, sub.retention_kind, sub.retention_n, m.id AS media_id,
 			       se.seen_at_ms, se.feed_position,
 			       ROW_NUMBER() OVER (PARTITION BY sub.id, m.id
 			           ORDER BY se.seen_at_ms DESC, se.feed_position NULLS LAST) AS occurrence
-			`+retentionEntriesFrom+`
+			`+liveSubscriptionReceipts+`
 			  AND sub.retention_kind IN (?, ?) AND `+retentionLibraryEligible+`
 		), heads AS (
 			SELECT media_id, retention_kind, retention_n,
@@ -222,35 +298,104 @@ func scanRetentionIDs(rows *sql.Rows) ([]MediaID, error) {
 // catalog write transaction. A read-only pass first keeps the catalog writer
 // free for the Media that stay. The outbox event follows the commit, as in
 // TrashMedia.
-func (s *Store) trashSubscriptionRetentionCandidate(ctx context.Context, id MediaID, now time.Time) (LibraryID, bool, error) {
+func (s *Store) trashSubscriptionRetentionCandidate(ctx context.Context, id MediaID, now time.Time) (bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return "", false, err
+		return false, err
 	}
 	if _, ok, err := subscriptionRetentionPermits(ctx, s.catalogR, s.eventsR, id); err != nil || !ok {
-		return "", false, err
+		return false, err
 	}
 	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
-		return "", false, err
+		return false, err
 	}
 	defer tx.Rollback()
-	libraryID, ok, err := subscriptionRetentionPermits(ctx, tx, s.eventsR, id)
-	if err != nil || !ok {
-		return "", false, err
-	}
-	moved, err := setMediaTrashedAt(ctx, tx, id, now)
+	activity, moved, err := s.commitSubscriptionRetention(ctx, tx, id, now)
 	if err != nil || !moved {
-		return "", false, err
+		return false, err
 	}
-	if err := tx.Commit(); err != nil {
-		return "", false, err
-	}
-	if eventErr := s.appendMediaEventLocked(ctx, MediaEventDeleted, id, mediaDeletedPayload(libraryID), now); eventErr != nil {
+	if eventErr := s.appendMediaEventLocked(ctx, MediaEventDeleted, id, mediaDeletedPayload(activity.LibraryID), now); eventErr != nil {
 		slog.Warn("media outbox event append failed", "kind", MediaEventDeleted, "media", id, "error", eventErr)
 	}
-	return libraryID, true, nil
+	return true, s.publishSubscriptionRetentionActivityLocked(ctx, activity)
+}
+
+func (s *Store) commitSubscriptionRetention(ctx context.Context, catalog *sql.Tx, id MediaID, now time.Time) (ActivityEntry, bool, error) {
+	// Take writers in catalog-then-events order. Hold follows and play counts
+	// stable through the catalog commit, then release the events writer before
+	// the outbox append. This transaction only reads from events.
+	events, err := s.eventsW.BeginTx(ctx, nil)
+	if err != nil {
+		return ActivityEntry{}, false, err
+	}
+	defer events.Rollback()
+	libraryID, ok, err := subscriptionRetentionPermits(ctx, catalog, events, id)
+	if err != nil || !ok {
+		return ActivityEntry{}, false, err
+	}
+	activity := subscriptionRetentionActivity("subscription-retention:"+rand.Text(), id, libraryID, now)
+	if _, err := catalog.ExecContext(ctx, `
+		INSERT INTO subscription_retention_activity(operation_id, media_id, library_id, occurred_at_ms)
+		VALUES (?, ?, ?, ?)
+	`, activity.OperationID, id, libraryID, timeToMillis(now)); err != nil {
+		return ActivityEntry{}, false, err
+	}
+	moved, err := setMediaTrashedAt(ctx, catalog, id, now)
+	if err != nil || !moved {
+		return ActivityEntry{}, false, err
+	}
+	if err := catalog.Commit(); err != nil {
+		return ActivityEntry{}, false, err
+	}
+	return activity, true, nil
+}
+
+func subscriptionRetentionActivity(operationID string, id MediaID, libraryID LibraryID, now time.Time) ActivityEntry {
+	return ActivityEntry{
+		OperationID: operationID, OccurredAt: now, Action: ActivityMediaTrash,
+		TargetType: "media", TargetID: string(id), LibraryID: libraryID,
+	}
+}
+
+func (s *Store) publishSubscriptionRetentionActivityLocked(ctx context.Context, activity ActivityEntry) error {
+	if err := appendActivitySQL(ctx, s.eventsW, activity); err != nil {
+		return err
+	}
+	_, err := s.catalogW.ExecContext(ctx, `DELETE FROM subscription_retention_activity WHERE operation_id = ?`, activity.OperationID)
+	return err
+}
+
+func (s *Store) flushSubscriptionRetentionActivityLocked(ctx context.Context) error {
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT operation_id, media_id, library_id, occurred_at_ms
+		FROM subscription_retention_activity ORDER BY occurred_at_ms, operation_id
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var pending []ActivityEntry
+	for rows.Next() {
+		var operationID string
+		var id MediaID
+		var libraryID LibraryID
+		var occurredAt int64
+		if err := rows.Scan(&operationID, &id, &libraryID, &occurredAt); err != nil {
+			return err
+		}
+		pending = append(pending, subscriptionRetentionActivity(operationID, id, libraryID, time.UnixMilli(occurredAt).UTC()))
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, activity := range pending {
+		if err := s.publishSubscriptionRetentionActivityLocked(ctx, activity); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type retentionQueryer interface {
@@ -270,8 +415,7 @@ type retentionReference struct {
 // references the Media permits moving it to Trash: keep-last-N only past its
 // cutoff, delete-after-played only once every follower has played it, and
 // keep-all never. A Favorite, Keep flag or pending imported star protects it
-// from every policy. Inside a catalog write transaction the catalog reads are
-// stable, and Favorites are too because their writes take the catalog writer.
+// from every policy. Both writers are held for the final decision.
 func subscriptionRetentionPermits(ctx context.Context, catalog retentionQueryer, events queryRower, id MediaID) (LibraryID, bool, error) {
 	references, err := retentionReferences(ctx, catalog, id)
 	if err != nil || len(references) == 0 {
@@ -303,7 +447,7 @@ func subscriptionRetentionPermits(ctx context.Context, catalog retentionQueryer,
 func retentionReferences(ctx context.Context, catalog retentionQueryer, id MediaID) ([]retentionReference, error) {
 	rows, err := catalog.QueryContext(ctx, `
 		SELECT DISTINCT sub.id, sub.retention_kind, sub.retention_n, m.library_id, `+retentionLibraryEligible+`
-		`+retentionEntriesFrom+` AND m.id = ?
+		`+liveSubscriptionReceipts+` AND m.id = ?
 		ORDER BY sub.id
 	`, id)
 	if err != nil {
@@ -324,36 +468,57 @@ func retentionReferences(ctx context.Context, catalog retentionQueryer, id Media
 // retentionPastKeepCutoff reports whether at least keep unprotected Media rank
 // strictly ahead of the Media in the Subscription. Each Media ranks by its
 // newest receipt; within one receipt time an earlier feed position ranks
-// first. A NULL position (a legacy receipt) never ranks ahead of or behind its
-// receipt-time group, so a tie at the cutoff is kept whole.
+// first. An unprotected Media with a legacy receipt ties its receipt-time
+// group, so only newer groups can push that group past the cutoff.
 func retentionPastKeepCutoff(ctx context.Context, catalog retentionQueryer, events queryRower, subscriptionID SubscriptionID, id MediaID, keep int64) (bool, error) {
 	rows, err := catalog.QueryContext(ctx, `
 		WITH target AS (
 			SELECT se.seen_at_ms AS seen, se.feed_position AS position
-			`+retentionEntriesFrom+` AND sub.id = ? AND m.id = ?
+			`+liveSubscriptionReceipts+` AND sub.id = ? AND m.id = ?
 			ORDER BY se.seen_at_ms DESC, se.feed_position NULLS LAST LIMIT 1
+		), heads AS (
+			SELECT m.id, MAX(se.seen_at_ms) AS seen,
+			       MIN(se.feed_position) FILTER (WHERE se.seen_at_ms = (SELECT seen FROM target)) AS position
+			`+liveSubscriptionReceipts+` AND sub.id = ? AND m.id <> ?
+			  AND se.seen_at_ms >= (SELECT seen FROM target)
+			  AND m.id NOT IN (`+retentionPendingStarIDs+`)
+			GROUP BY m.id
 		)
-		SELECT DISTINCT m.id
-		`+retentionEntriesFrom+` AND sub.id = ? AND m.id <> ?
-		  AND (se.seen_at_ms > (SELECT seen FROM target)
-		       OR (se.seen_at_ms = (SELECT seen FROM target) AND se.feed_position < (SELECT position FROM target)))
-		  AND m.id NOT IN (`+retentionPendingStarIDs+`)
+		SELECT id, heads.seen > target.seen, heads.seen = target.seen AND heads.position IS NULL
+		FROM heads CROSS JOIN target
+		WHERE heads.seen > target.seen OR heads.position IS NULL OR heads.position < target.position
 	`, subscriptionID, id, subscriptionID, id)
 	if err != nil {
 		return false, err
 	}
-	ahead, err := scanRetentionIDs(rows)
-	if err != nil || int64(len(ahead)) < keep {
+	defer rows.Close()
+	type rankedMedia struct {
+		ID     MediaID `json:"id"`
+		Newer  bool    `json:"newer"`
+		Legacy bool    `json:"legacy"`
+	}
+	var ranked []rankedMedia
+	for rows.Next() {
+		var media rankedMedia
+		if err := rows.Scan(&media.ID, &media.Newer, &media.Legacy); err != nil {
+			return false, err
+		}
+		ranked = append(ranked, media)
+	}
+	if err := rows.Err(); err != nil || int64(len(ranked)) < keep {
 		return false, err
 	}
-	encoded, err := json.Marshal(ahead)
+	encoded, err := json.Marshal(ranked)
 	if err != nil {
 		return false, err
 	}
 	var unprotected int64
 	err = events.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM json_each(?)
-		WHERE value NOT IN (SELECT media_id FROM media_favorite)
+		SELECT CASE WHEN COUNT(*) FILTER (WHERE value ->> 'legacy') > 0
+		            THEN COUNT(*) FILTER (WHERE value ->> 'newer')
+		            ELSE COUNT(*) END
+		FROM json_each(?)
+		WHERE (value ->> 'id') NOT IN (SELECT media_id FROM media_favorite)
 	`, string(encoded)).Scan(&unprotected)
 	return unprotected >= keep, err
 }

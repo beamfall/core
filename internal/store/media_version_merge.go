@@ -573,7 +573,8 @@ func versionMergeProgressEventsTx(ctx context.Context, tx *sql.Tx, from, to Medi
 	rows, err := tx.QueryContext(ctx, `
 		SELECT profile_id, position_seconds, duration_seconds, watched, updated_at_ms, play_count,
 		  last_played_at_ms, provenance, occurred_at_ms, COALESCE(import_run_id, ''),
-		  COALESCE(import_importer_id, ''), COALESCE(import_match_method, ''), event_time_ms, channel_context
+		  COALESCE(import_importer_id, ''), COALESCE(import_match_method, ''), event_time_ms, channel_context,
+		  continue_hidden
 		FROM playback_progress AS p
 		WHERE media_id = ? AND (? OR NOT EXISTS (
 		  SELECT 1 FROM playback_progress WHERE profile_id = p.profile_id AND media_id = ?))
@@ -585,15 +586,16 @@ func versionMergeProgressEventsTx(ctx context.Context, tx *sql.Tx, from, to Medi
 	var events []playbackProjectionEvent
 	for rows.Next() {
 		event := playbackProjectionEvent{Operation: playbackProjectionOperationVersionMerge, MediaID: string(to)}
-		var watched, channel int
+		var watched, channel, hidden int
 		var lastPlayed, occurred, eventTime sql.NullInt64
 		if err := rows.Scan(&event.ProfileID, &event.PositionSeconds, &event.DurationSeconds, &watched,
 			&event.UpdatedAtMS, &event.PlayCount, &lastPlayed, &event.Provenance, &occurred,
-			&event.ImportRunID, &event.ImportImporterID, &event.ImportMatch, &eventTime, &channel); err != nil {
+			&event.ImportRunID, &event.ImportImporterID, &event.ImportMatch, &eventTime, &channel, &hidden); err != nil {
 			return nil, errors.Join(err, rows.Close())
 		}
 		event.Watched = watched != 0
 		event.ChannelContext = channel != 0
+		event.ContinueHidden = hidden != 0
 		event.ExplicitCount = event.PlayCount
 		event.LastPlayedAtMS = nullInt64Ptr(lastPlayed)
 		event.OccurredAtMS = nullInt64Ptr(occurred)
@@ -659,7 +661,9 @@ func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filte
 	}
 	defer tx.Rollback()
 
-	var done []versionMergeRestored
+	// Check every item before replaying any, so a hidden item reads as not
+	// found rather than surfacing another item's file error first.
+	var pending []versionMergeRestored
 	for i := len(items) - 1; i >= 0; i-- {
 		item := items[i]
 		var state versionMergeItemState
@@ -682,10 +686,22 @@ func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filte
 		} else if err != nil {
 			return BulkOpBatch{}, err
 		}
-		if err := undoVersionMergeItemTx(ctx, tx, item.MediaID, state); err != nil {
+		// The caller must also pass the certification ceiling for the folded
+		// item and the survivor: Trash names neither when one is hidden, and
+		// an undo would rewrite the survivor's Versions and metadata.
+		if ok, err := certifiedMediaTx(ctx, tx, filter, item.MediaID, state.Survivor); err != nil {
+			return BulkOpBatch{}, err
+		} else if !ok {
+			return BulkOpBatch{}, ValidationError("batch not found")
+		}
+		pending = append(pending, versionMergeRestored{item.MediaID, state})
+	}
+	var done []versionMergeRestored
+	for _, r := range pending {
+		if err := undoVersionMergeItemTx(ctx, tx, r.loser, r.state); err != nil {
 			return BulkOpBatch{}, err
 		}
-		done = append(done, versionMergeRestored{item.MediaID, state})
+		done = append(done, r)
 	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE op_batch SET undone_at_ms = ? WHERE id = ?`, timeToMillis(now), batchID); err != nil {
@@ -835,7 +851,8 @@ func undoVersionMergeFileTx(ctx context.Context, tx *sql.Tx, loser, survivor Med
 // restoreVersionMergeFactsTx brings the survivor's probe facts back in line
 // with its first Version once a merged file has left; firstBefore was first
 // just before it left. When the first Version is again the one first before
-// the merge, its snapshot facts return. Otherwise, if the departed file was
+// the merge, its snapshot facts return, preserving the current runtime if the
+// primary fingerprint stayed the same. Otherwise, if the departed file was
 // first (so the row's facts were its), the row stops claiming its frame size,
 // as refreshFirstVersionFactsTx does for a first file the store holds no facts
 // for. Merges undone out of order thus never restore stale facts.
@@ -856,10 +873,34 @@ func restoreVersionMergeFactsTx(ctx context.Context, tx *sql.Tx, state versionMe
 	case first == state.PriorFirst:
 		facts := state.SurvivorFacts
 		_, err = tx.ExecContext(ctx, `
-			UPDATE media SET container = ?, codec = ?, duration_seconds = ?, video_width = ?, video_height = ? WHERE id = ?
-		`, facts.Container, facts.Codec, facts.DurationSeconds, facts.VideoWidth, facts.VideoHeight, state.Survivor)
+			UPDATE media SET container = ?, codec = ?,
+				duration_seconds = CASE WHEN ? THEN duration_seconds ELSE ? END,
+				video_width = ?, video_height = ? WHERE id = ?
+		`, facts.Container, facts.Codec, first == firstBefore, facts.DurationSeconds, facts.VideoWidth, facts.VideoHeight, state.Survivor)
 	case firstBefore == state.Fingerprint:
 		_, err = tx.ExecContext(ctx, `UPDATE media SET video_width = 0, video_height = 0 WHERE id = ?`, state.Survivor)
 	}
 	return err
+}
+
+// certifiedMediaTx reports whether every id passes the caller's
+// certification ceiling and access grants. A merge runs only on the shared
+// catalog, so the shared-catalog clause applies.
+func certifiedMediaTx(ctx context.Context, tx *sql.Tx, filter LibraryFilter, ids ...MediaID) (bool, error) {
+	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	if certClause == "" {
+		return true, nil
+	}
+	for _, id := range ids {
+		var found bool
+		args := append([]any{id}, certArgs...)
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM media m WHERE m.id = ?`+certClause+`)`, args...).Scan(&found); err != nil {
+			return false, err
+		}
+		if !found {
+			return false, nil
+		}
+	}
+	return true, nil
 }

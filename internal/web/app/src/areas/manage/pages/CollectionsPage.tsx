@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
+import { EntityMultiPicker } from "@/components/beamfall/EntityPicker";
 import { EmptyLine, ErrorLine, ManageSection, ManageTable } from "@/components/beamfall/workbench";
 import {
   AlertDialog,
@@ -501,7 +502,7 @@ function MembersEditor({
   // Work against a local copy so reordering feels immediate; the order is
   // written whole through reorderCollectionMedia (matches the GraphQL shape).
   const [members, setMembers] = useState<CollectionMemberInfo[]>([]);
-  const [addIDs, setAddIDs] = useState("");
+  const [addIDs, setAddIDs] = useState<string[]>([]);
 
   useEffect(() => {
     setMembers([...collection.members].sort((a, b) => a.sortOrder - b.sortOrder));
@@ -543,14 +544,10 @@ function MembersEditor({
   };
 
   const onAdd = async () => {
-    const ids = addIDs
-      .split(/[\s,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (ids.length === 0) return;
+    if (addIDs.length === 0) return;
     try {
-      await addCollectionMedia(collection.id, ids);
-      setAddIDs("");
+      await addCollectionMedia(collection.id, addIDs);
+      setAddIDs([]);
       await onChanged();
     } catch {
       onError();
@@ -634,19 +631,17 @@ function MembersEditor({
         </ManageTable>
       )}
 
-      <div className="manage-add-row mt-3 flex flex-wrap items-end gap-3 border-t pt-3">
+      <div className="manage-add-row mt-3 flex flex-wrap items-start gap-3 border-t pt-3">
         <div className="grow space-y-1">
           <Label htmlFor="member-ids">{t("addMediaIDsLabel")}</Label>
-          <Input
+          <EntityMultiPicker
             id="member-ids"
             value={addIDs}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setAddIDs(e.target.value)}
+            onChange={setAddIDs}
             className="w-full"
           />
         </div>
-        <Button type="button" onClick={onAdd}>
+        <Button type="button" className="mt-6" onClick={onAdd} disabled={addIDs.length === 0}>
           {t("addMembers")}
         </Button>
       </div>

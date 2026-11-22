@@ -165,7 +165,7 @@ func (b *LiveBinding) HoldSource(ctx context.Context) (func(), error) {
 
 // ProbedDurationSeconds registers the live spawn permit before source stat or
 // FFprobe preparation and retains the generation's result until shape commit.
-func (b *LiveBinding) ProbedDurationSeconds(ctx context.Context, fingerprint, path string) int {
+func (b *LiveBinding) ProbedDurationSeconds(ctx context.Context, fingerprint, path string, persist bool) int {
 	if !b.attached {
 		return 0
 	}
@@ -177,7 +177,11 @@ func (b *LiveBinding) ProbedDurationSeconds(ctx context.Context, fingerprint, pa
 	ctx, cancel := b.Context(op.ctx)
 	defer cancel()
 	ctx = b.probeContext(ctx, false)
-	return b.manager.probedSourceDuration(ctx, b, op, fingerprint, path)
+	var mediaID store.MediaID
+	if persist {
+		mediaID = b.session.key.MediaID
+	}
+	return b.manager.probedSourceDuration(ctx, b, op, mediaID, fingerprint, path)
 }
 
 type probeOwner struct {

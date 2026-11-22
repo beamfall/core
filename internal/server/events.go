@@ -186,7 +186,7 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 	// changes still take effect before the next delivery.
 	scope, err := s.eventScope(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 	// Per-route scope enforcement: a scoped developer key must

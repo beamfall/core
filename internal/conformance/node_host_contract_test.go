@@ -35,7 +35,8 @@ const maxProxyBufferBytes = 8 * 1024 * 1024
 // nodeHostOperation is a member of the closed, Core-owned operation vocabulary.
 type nodeHostOperation string
 
-// The exact closed v1 vocabulary of ADR-0129 §1.
+// The exact closed v1 vocabulary of ADR-0129 §1, eleven operations since the
+// 2026-07-01 amendment added cancel-work (CORE-0224).
 // Nodes never add operations; token-issuance is deliberately absent.
 const (
 	opIndexPush           nodeHostOperation = "index-push"            // up
@@ -48,6 +49,7 @@ const (
 	opNodeStatus          nodeHostOperation = "node-status"           // up
 	opNodeRevoke          nodeHostOperation = "node-revoke"           // down
 	opHealthReport        nodeHostOperation = "health-report"         // up
+	opCancelWork          nodeHostOperation = "cancel-work"           // down
 )
 
 // closedVocabulary is the entire contract surface. It is a closed set: anything
@@ -63,6 +65,7 @@ var closedVocabulary = map[nodeHostOperation]bool{
 	opNodeStatus:          true,
 	opNodeRevoke:          true,
 	opHealthReport:        true,
+	opCancelWork:          true,
 }
 
 type downOperationTransport string
@@ -144,12 +147,13 @@ func TestNodeHostRevisionNegotiationFailsClosed(t *testing.T) {
 }
 
 // TestNodeHostVocabularyIsClosedAndExcludesTokenIssuance asserts the operation
-// set is exactly the ADR-0129 §1 closed set and that token issuance is absent.
+// set is exactly the ADR-0129 §1 closed set, as amended on 2026-07-01, and that
+// token issuance is absent.
 func TestNodeHostVocabularyIsClosedAndExcludesTokenIssuance(t *testing.T) {
 	want := []nodeHostOperation{
 		opIndexPush, opRequestFileMutation, opProxyByteRange, opPlaybackDecision,
 		opTranscodeRequest, opPurgeTranscodeCache, opNodeEnroll, opNodeStatus,
-		opNodeRevoke, opHealthReport,
+		opNodeRevoke, opHealthReport, opCancelWork,
 	}
 	if len(closedVocabulary) != len(want) {
 		t.Fatalf("vocabulary size %d, want exactly %d (closed set)", len(closedVocabulary), len(want))

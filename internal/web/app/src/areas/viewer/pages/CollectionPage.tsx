@@ -15,6 +15,7 @@ import {
 import type { SearchResultItem, SourceItem } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { SlideshowButton } from "../../slideshow/SlideshowButton";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
@@ -171,6 +172,12 @@ export function CollectionPage() {
               <Play aria-hidden />
               {t("viewerCollectionPlayAll")}
             </Button>
+            {collectionId && (
+              <SlideshowButton
+                source={{ kind: "collection", collectionID: collectionId }}
+                items={items}
+              />
+            )}
             {isManager && (
               <Button
                 variant="outline"

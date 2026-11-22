@@ -174,6 +174,9 @@ Accepts an enrolled device Session only. Records the position for the Session's 
 | `durationSeconds` | integer | no | Omit or send 0 to use the Media's duration. |
 | `finished` | boolean | no | True when playback reached the end. |
 | `eventTimeMS` | integer | no | The client clock, in Unix milliseconds, when it observed the position. The server keeps the latest report by this time. |
+| `playbackID` | string | no | The client's random ID for this play, new each time the player starts the Media and kept across pauses, seeks and reloads. Play history groups a play's reports by it. At most 64 characters, checked as sent: an ID with leading or trailing whitespace is refused. |
+| `paused` | boolean | no | Whether the player was paused when it observed the position. Omitted reads as playing. |
+| `playedMS` | integer | no | How long, in milliseconds, the client has actually played under this playbackID so far, counting only while media plays: not paused, seeking or buffering. Play history credits its growth, so a delayed or repeated report credits exactly the time it covers. |
 
 **Responses**
 
@@ -536,6 +539,9 @@ One playable stream. The `url` carries its own stream token, so the client fetch
 | `durationSeconds` | integer | no | Omit or send 0 to use the Media's duration. |
 | `finished` | boolean | no | True when playback reached the end. |
 | `eventTimeMS` | integer | no | The client clock, in Unix milliseconds, when it observed the position. The server keeps the latest report by this time. |
+| `playbackID` | string | no | The client's random ID for this play, new each time the player starts the Media and kept across pauses, seeks and reloads. Play history groups a play's reports by it. At most 64 characters, checked as sent: an ID with leading or trailing whitespace is refused. |
+| `paused` | boolean | no | Whether the player was paused when it observed the position. Omitted reads as playing. |
+| `playedMS` | integer | no | How long, in milliseconds, the client has actually played under this playbackID so far, counting only while media plays: not paused, seeking or buffering. Play history credits its growth, so a delayed or repeated report credits exactly the time it covers. |
 
 ### Progress
 

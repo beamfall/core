@@ -474,6 +474,42 @@ describe("Library browse", { timeout: 20_000 }, () => {
     vi.mocked(fetchMutes).mockImplementation(async () => []);
   });
 
+  it("starts the read over for a hide made before the first hidden list loads (CORE-2854)", async () => {
+    let hidden = false;
+    let calls = 0;
+    vi.mocked(fetchMutes).mockImplementation((signal?: AbortSignal) => {
+      calls += 1;
+      // The first list read stays in flight until the hide aborts it.
+      if (calls === 1) {
+        return new Promise((_, reject) => {
+          signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        });
+      }
+      return Promise.resolve(hidden ? ([{ kind: "media", targetID: "media-0" }] as never) : []);
+    });
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) =>
+      hidden ? { ...pageFor(request), total: TOTAL - 1 } : pageFor(request),
+    );
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    expect(calls).toBe(1);
+
+    hidden = true;
+    act(() => notifyEngagementChanged());
+    expect(await screen.findByText("1,199 items")).toBeInTheDocument();
+    vi.mocked(fetchMutes).mockImplementation(async () => []);
+  });
+
   it("reloads when engagement changes under a query that depends on it, and refreshes cards in place otherwise", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
     const mount = (url: string) =>
