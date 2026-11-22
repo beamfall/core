@@ -1389,6 +1389,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		server.WithUnmatchedArtworkCreator(graphServer),
 		server.WithCompatRefusalJournalDir(filepath.Join(cfg.DataDir, "compat-refusals")),
 		server.WithSubscriptionLibrarySealed(sealedPredicate),
+		server.WithMediaUploadPlanner(newMediaUploadPlanner(st, parsers, executablePlugins, jobWake)),
 	)
 	// Guideline 1.2 UGC moderation substrate (NATIVEMGR-4, apple ADR-0004 §4):
 	// file-backed per-Profile content report/block store + published moderation
@@ -2793,6 +2794,9 @@ func runRetentionPurge(ctx context.Context, st *store.Store, art *artwork.Servic
 		if err != nil {
 			logger.Warn("deleted library purge failed", "libraries", len(purged), "error", err)
 		}
+	}
+	if err := st.SweepMediaUploads(time.Now().UTC()); err != nil {
+		logger.Warn("media upload sweep failed", "error", err)
 	}
 	if purged, skipped, err := st.SweepManagedFileTrash(ctx, time.Now().UTC()); trashDisabledConfirmationRequired(skipped, err) {
 		logger.Info("managed file trash purge skipped: confirmation required", "reason", "trash disabled", "skips", st.TrashDisabledSweepSkips())

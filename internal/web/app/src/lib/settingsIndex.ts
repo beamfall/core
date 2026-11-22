@@ -603,6 +603,7 @@ export const MENU_PAGES: SearchablePage[] = [
       ["libraries", "libraries", "manageLibrariesLead"],
       ["operations", "jobs", "manageJobsLead"],
       ["convert", "convert", "convertLead"],
+      ["upload", "mediaUpload", "mediaUploadLead"],
       ["rename", "rename", "renameLead"],
       ["trash", "navTrash", "manageTrashLead"],
       ["subscriptions", "subscriptions", "manageSubscriptionsLead"],
