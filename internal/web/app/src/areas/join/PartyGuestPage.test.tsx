@@ -9,7 +9,7 @@ import { expectNoAxeViolations } from "@/test/axe";
 import { PartyGuestPage } from "./PartyGuestPage";
 
 // Fictional party content only.
-const TOKEN = "bfg_test-token-not-real";
+const GUEST_CODE = "bfg_test-token-not-real";
 const STORAGE_KEY = "beamfall.partyGuest.LARK42";
 
 function guestState(overrides: Partial<PartyGuestState> = {}): PartyGuestState {
@@ -123,14 +123,14 @@ function renderPage(path = "/join/LARK42") {
 }
 
 function storeToken() {
-  window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ token: TOKEN, name: "Wren" }));
+  window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ token: GUEST_CODE, name: "Wren" }));
 }
 
 describe("PartyGuestPage join", () => {
   it("prefills the code, joins with a name, stores the token and shows the party", async () => {
     routes["POST /api/party/join"] = () =>
       json(200, {
-        token: TOKEN,
+        token: GUEST_CODE,
         sessionID: "s1",
         participantID: "p1",
         name: "Wren",
@@ -147,11 +147,11 @@ describe("PartyGuestPage join", () => {
     const [, init] = calls("POST /api/party/join")[0];
     expect(JSON.parse(String(init?.body))).toEqual({ code: "LARK42", name: "Wren" });
     expect(init?.credentials).toBe("omit");
-    expect(JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? "{}").token).toBe(TOKEN);
+    expect(JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? "{}").token).toBe(GUEST_CODE);
 
     expect(await screen.findByText("Moonlit Harbour")).toBeInTheDocument();
     const stateCall = calls("GET /api/party/guest")[0];
-    expect((stateCall[1]?.headers as Record<string, string>)[PARTY_GUEST_HEADER]).toBe(TOKEN);
+    expect((stateCall[1]?.headers as Record<string, string>)[PARTY_GUEST_HEADER]).toBe(GUEST_CODE);
   });
 
   it.each([
