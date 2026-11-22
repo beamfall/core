@@ -57,6 +57,7 @@ import {
   SUBTITLE_APPEARANCE_KEYS,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
+import { playbackDurationSeconds } from "../lib/transport";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
@@ -71,7 +72,7 @@ import { AudioStage } from "../player/AudioStage";
 import { KaraokeControls } from "../player/KaraokeControls";
 import { ListeningControls, type SleepChoice } from "../player/ListeningControls";
 import {
-  chapterEndAt,
+  chapterSleep,
   clampSpeed,
   hasChapters,
   resolveSpeed,
@@ -642,10 +643,12 @@ function FeaturePlayer({
     infoIsCurrent ? state.info?.timeline?.durationSeconds : undefined,
   );
   const { setTimer: setSleepTimer } = sleep;
-  // A party or karaoke song takes the controls away, and the timer with them.
+  // A party, a karaoke song or a video takes the controls away, and the timer
+  // with them, so a minutes timer cannot fire on a later track. The audio stage
+  // stays up across an advance, so the queue going on keeps it.
   useEffect(() => {
-    if (listeningHeld) setSleepTimer(null);
-  }, [listeningHeld, setSleepTimer]);
+    if (!listening) setSleepTimer(null);
+  }, [listening, setSleepTimer]);
   // End of item stops here: the queue neither advances nor joins the next track.
   const sleepEndsItem = sleep.timer?.kind === "item";
   const sleepEndsItemRef = useRef(sleepEndsItem);
@@ -1116,13 +1119,16 @@ function FeaturePlayer({
       if (choice === "off" || !video) return setSleepTimer(null);
       if (choice === "item") return setSleepTimer({ kind: "item" });
       if (choice === "chapter") {
-        const end = chapterEndAt(state.markers, video.currentTime);
-        return setSleepTimer(end === null ? { kind: "item" } : { kind: "chapter", end });
+        const duration = playbackDurationSeconds(
+          infoIsCurrent ? state.info?.timeline?.durationSeconds : undefined,
+          video.duration,
+        );
+        return setSleepTimer(chapterSleep(state.markers, video.currentTime, duration));
       }
       const minutes = Number(choice);
       setSleepTimer({ kind: "minutes", minutes, until: Date.now() + minutes * 60_000 });
     },
-    [setSleepTimer, state.markers],
+    [setSleepTimer, state.markers, infoIsCurrent, state.info?.timeline?.durationSeconds],
   );
 
   const shareAt = useCallback(

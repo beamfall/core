@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { containerSpeedKey, PREF_KEYS, resolvePreferences } from "../lib/preferences";
 import {
   chapterEndAt,
+  chapterSleep,
   clampSpeed,
   hasChapters,
   minutesAndSeconds,
@@ -100,6 +101,9 @@ describe("sleep timer", () => {
     expect(chapterEndAt(markers, 70)).toBe(90);
     expect(chapterEndAt(markers, 95)).toBe(120);
     expect(chapterEndAt(markers, 130)).toBeNull();
+    expect(chapterSleep(markers, 70, 150)).toEqual({ kind: "chapter", end: 90 });
+    expect(chapterSleep(markers, 95, 120.5)).toEqual({ kind: "item" });
+    expect(chapterSleep(markers, 130, 150)).toEqual({ kind: "item" });
   });
 
   const media = { currentTime: 100, duration: 160, playbackRate: 2 };

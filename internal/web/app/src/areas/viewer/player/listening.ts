@@ -131,6 +131,25 @@ export function chapterEndAt(
   return list.find((m) => m.startSeconds > time)?.startSeconds ?? null;
 }
 
+// A chapter ending this close to the item's end ends with the item.
+const CHAPTER_AT_ITEM_END_SECONDS = 1;
+
+/**
+ * The timer for "When this chapter ends" at `time`: the chapter's end, or end
+ * of item when the chapter runs to (or within a second of) the item's end, so
+ * the queue does not go on to the next item.
+ */
+export function chapterSleep(
+  markers: readonly PlaybackMarker[] | undefined,
+  time: number,
+  duration: number,
+): SleepTimer {
+  const end = chapterEndAt(markers, time);
+  if (end === null) return { kind: "item" };
+  if (duration > 0 && end >= duration - CHAPTER_AT_ITEM_END_SECONDS) return { kind: "item" };
+  return { kind: "chapter", end };
+}
+
 export const SLEEP_MINUTES = [15, 30, 45, 60] as const;
 /** The volume fades out over the timer's last seconds, then playback pauses. */
 export const SLEEP_FADE_SECONDS = 10;
