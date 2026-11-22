@@ -97,6 +97,19 @@ type EntityRelation struct {
 	// upsert: only a new row takes Attributes. For writers that re-order or
 	// re-link a row without carrying its attributes (CORE-2913).
 	KeepAttributes bool
+	// Writer is the automated writer that owns a Media-target row, for
+	// example a scraper's key; empty means an operator or an unattributed
+	// writer. Every upsert records its own Writer, so an operator re-linking a
+	// scraper's row takes it over. Automated cleanup
+	// (RemoveWrittenMediaRelations) removes only rows its own Writer owns.
+	Writer string
+}
+
+// WrittenRelation names the Media-target rows one automated cleanup may
+// remove: rows under relation Name from a source Entity of Kind.
+type WrittenRelation struct {
+	Kind string
+	Name string
 }
 
 // RelatedEntity pairs an Entity with the attributes of the relation row that
@@ -532,10 +545,12 @@ func (s *Store) ReplaceMediaRelations(ctx context.Context, mediaID MediaID, rela
 	return tx.Commit()
 }
 
-// RemoveMediaRelations deletes one Media's Media-target rows under each of
-// names, whatever their source Entity, in one transaction. Other relation
-// names and other Media are left as they are; no names removes nothing.
-func (s *Store) RemoveMediaRelations(ctx context.Context, mediaID MediaID, names []string) error {
+// RemoveWrittenMediaRelations deletes one Media's Media-target rows that
+// writer owns, under each relation from a source Entity of that relation's
+// Kind, in one transaction. Rows an operator or another writer owns, other
+// relation names, other source kinds and other Media are left as they are; no
+// relations removes nothing.
+func (s *Store) RemoveWrittenMediaRelations(ctx context.Context, mediaID MediaID, writer string, relations []WrittenRelation) error {
 	// Authority face: Entity-relation catalog rows are main-only.
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
 		return err
@@ -543,7 +558,10 @@ func (s *Store) RemoveMediaRelations(ctx context.Context, mediaID MediaID, names
 	if mediaID == "" {
 		return errors.New("relation target media is required")
 	}
-	if len(names) == 0 {
+	if writer == "" {
+		return errors.New("relation writer is required")
+	}
+	if len(relations) == 0 {
 		return nil
 	}
 	s.mu.RLock()
@@ -560,10 +578,12 @@ func (s *Store) RemoveMediaRelations(ctx context.Context, mediaID MediaID, names
 		return err
 	}
 	defer tx.Rollback()
-	for _, name := range names {
-		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM entity_relation WHERE relation = ? AND to_media_id = ?`, name, mediaID,
-		); err != nil {
+	for _, relation := range relations {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM entity_relation
+			WHERE to_media_id = ? AND relation = ? AND writer = ?
+			  AND from_entity_id IN (SELECT id FROM entity WHERE kind = ?)
+		`, mediaID, relation.Name, writer, relation.Kind); err != nil {
 			return err
 		}
 	}
@@ -682,12 +702,12 @@ func entityRelationRowValues(relation EntityRelation) (attributes, sortOrder any
 
 func insertMediaRelationTx(ctx context.Context, tx *sql.Tx, relation EntityRelation, attributes, sortOrder any) error {
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO entity_relation(from_entity_id, relation, to_media_id, attributes, sort_order)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO entity_relation(from_entity_id, relation, to_media_id, attributes, sort_order, writer)
+		VALUES (?, ?, ?, ?, ?, NULLIF(?, ''))
 		ON CONFLICT(from_entity_id, relation, to_media_id) WHERE to_media_id IS NOT NULL
 		DO UPDATE SET attributes = CASE WHEN ? THEN entity_relation.attributes ELSE excluded.attributes END,
-			sort_order = excluded.sort_order
-	`, relation.FromEntityID, relation.Name, relation.ToMediaID, attributes, sortOrder, relation.KeepAttributes)
+			sort_order = excluded.sort_order, writer = excluded.writer
+	`, relation.FromEntityID, relation.Name, relation.ToMediaID, attributes, sortOrder, relation.Writer, relation.KeepAttributes)
 	return err
 }
 

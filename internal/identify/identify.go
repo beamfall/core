@@ -722,13 +722,16 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 // posters ride along best-effort (applyEntityPoster) and never fail hydration.
 //
 // A map onto a container kind's single-holder relation places the Media in
-// that container (CORE-3152). The identification owns that link: a link with
-// no ordinal from its map takes the identified year as its sort order, so the
-// container lists its members in release order, and a lookup that hydrates
-// nothing for the map removes the Media's earlier link (clearStaleHolderLinks).
+// that container (CORE-3152). Every link records the scraper as its writer
+// (relationWriter). A holder link with no ordinal from its map takes the
+// Media's stored year, after field precedence, as its sort order, so the
+// container lists its members in release order. A lookup whose holder map ran
+// and hydrated nothing removes the Media's earlier link, but only one this
+// scraper wrote (clearStaleHolderLinks).
 func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
 	holders := ContainerRelations(bundle)
-	if err := s.clearStaleHolderLinks(ctx, mediaID, spec, holders, result.Entities); err != nil {
+	writer := relationWriter(bundle, spec)
+	if err := s.clearStaleHolderLinks(ctx, mediaID, spec, writer, holders, result); err != nil {
 		return err
 	}
 	if len(result.Entities) == 0 {
@@ -742,7 +745,10 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 		return err
 	}
 	cardinality := relationCardinalities(bundle)
-	year := metadataFromResult(result).Year
+	year, err := s.holderYear(ctx, mediaID, holders, result)
+	if err != nil {
+		return err
+	}
 	var containers, linked []scrape.EntityResult
 	for _, hydrated := range result.Entities {
 		if hydrated.Container {
@@ -774,6 +780,7 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 			Attributes:   hydrated.RelationAttributes,
 			Cardinality:  cardinality[hydrated.Kind+"\x00"+hydrated.Relation],
 			SortOrder:    sortOrder,
+			Writer:       writer,
 		}); err != nil {
 			return err
 		}
@@ -785,42 +792,88 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 	return s.applyContainerEntities(ctx, mediaID, library, bundle, containers)
 }
 
-// mediaRelationRemover is the optional EntityStore extension that deletes a
-// Media's rows under named relations; *store.Store satisfies it.
-type mediaRelationRemover interface {
-	RemoveMediaRelations(ctx context.Context, mediaID store.MediaID, names []string) error
+// relationWriter is the writer key a scraper's Entity→Media links carry, so
+// cleanup can tell them from an operator's or another scraper's links.
+func relationWriter(bundle plugin.Bundle, spec plugin.ScraperSpec) string {
+	return "scraper:" + string(bundle.ID) + "/" + spec.ID
+}
+
+// mediaYearReader is the optional MetadataStore extension that reads the
+// Media row; *store.Store satisfies it.
+type mediaYearReader interface {
+	Media(ctx context.Context, id store.MediaID, filter store.LibraryFilter) (store.Media, error)
+}
+
+// holderYear is the sort order a holder link without a map ordinal takes: the
+// Media's stored year, which field precedence may have kept from a manual
+// edit over the scraper's value. Nil when the lookup hydrated no holder link
+// or the Media has no year. A store that cannot read the Media falls back to
+// the scraper's year.
+func (s *Service) holderYear(ctx context.Context, mediaID store.MediaID, holders ContainerRelationIndex, result scrape.Result) (*int, error) {
+	needed := false
+	for _, hydrated := range result.Entities {
+		if !hydrated.Container && hydrated.SortOrder == nil && holders.Holds(hydrated.Kind, hydrated.Relation) {
+			needed = true
+			break
+		}
+	}
+	if !needed {
+		return nil, nil
+	}
+	reader, ok := s.store.(mediaYearReader)
+	if !ok {
+		return metadataFromResult(result).Year, nil
+	}
+	media, err := reader.Media(ctx, mediaID, store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		return nil, err
+	}
+	if media.Year == 0 {
+		return nil, nil
+	}
+	year := media.Year
+	return &year, nil
+}
+
+// writtenRelationRemover is the optional EntityStore extension that deletes a
+// Media's links one writer owns; *store.Store satisfies it.
+type writtenRelationRemover interface {
+	RemoveWrittenMediaRelations(ctx context.Context, mediaID store.MediaID, writer string, relations []store.WrittenRelation) error
 }
 
 // clearStaleHolderLinks removes the Media's link under each single-holder
-// relation the scraper declares a non-container map onto when the lookup
-// hydrated no Entity for that map, so a Media whose new match belongs to no
-// container leaves the old one. A move to another container needs nothing
+// relation the scraper declares a non-container map onto when that map ran
+// and hydrated no Entity, so a Media whose new match belongs to no container
+// leaves the old one. Only a link this scraper wrote, from an Entity of the
+// map's kind, is removed: an operator's link or another scraper's stays. A map
+// the engine skipped (an unknown ordinal in its Path) says nothing about the
+// document and removes nothing. A move to another container needs nothing
 // here: the relation's single cardinality replaces the old row on write. A
 // scraper without such a map, or a store without the remover, changes nothing.
-func (s *Service) clearStaleHolderLinks(ctx context.Context, mediaID store.MediaID, spec plugin.ScraperSpec, holders ContainerRelationIndex, hydrated []scrape.EntityResult) error {
-	remover, ok := s.entities.(mediaRelationRemover)
+func (s *Service) clearStaleHolderLinks(ctx context.Context, mediaID store.MediaID, spec plugin.ScraperSpec, writer string, holders ContainerRelationIndex, result scrape.Result) error {
+	remover, ok := s.entities.(writtenRelationRemover)
 	if !ok {
 		return nil
 	}
-	resolved := map[string]bool{}
-	for _, entity := range hydrated {
+	resolved := map[store.WrittenRelation]bool{}
+	for _, entity := range result.Entities {
 		if !entity.Container {
-			resolved[entity.Kind+"\x00"+entity.Relation] = true
+			resolved[store.WrittenRelation{Kind: entity.Kind, Name: entity.Relation}] = true
 		}
 	}
-	var stale []string
-	for _, entityMap := range spec.EntityMaps {
-		key := entityMap.Kind + "\x00" + entityMap.Relation
+	var stale []store.WrittenRelation
+	for i, entityMap := range spec.EntityMaps {
+		key := store.WrittenRelation{Kind: entityMap.Kind, Name: entityMap.Relation}
 		if entityMap.Container || resolved[key] || !holders.Holds(entityMap.Kind, entityMap.Relation) ||
-			slices.Contains(stale, entityMap.Relation) {
+			slices.Contains(result.SkippedEntityMaps, i) || slices.Contains(stale, key) {
 			continue
 		}
-		stale = append(stale, entityMap.Relation)
+		stale = append(stale, key)
 	}
 	if len(stale) == 0 {
 		return nil
 	}
-	return remover.RemoveMediaRelations(ctx, mediaID, stale)
+	return remover.RemoveWrittenMediaRelations(ctx, mediaID, writer, stale)
 }
 
 // entityFields parses one hydrated Entity's raw FieldMap values against its

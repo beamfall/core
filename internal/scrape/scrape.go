@@ -50,6 +50,12 @@ type Result struct {
 	// Search candidates never carry entities. Nil when the spec declares no
 	// EntityMaps or none of their paths resolved.
 	Entities []EntityResult
+	// SkippedEntityMaps lists, by index into the spec's EntityMaps, the maps
+	// the engine did not evaluate because their Path names an ordinal the
+	// lookup does not know. A skipped map says nothing about the document, so
+	// a consumer must not read its missing Entities as "none". Nil when every
+	// map ran.
+	SkippedEntityMaps []int
 }
 
 // EntityResult is one hydrated Entity from a spec's EntityMaps: the declared
@@ -518,7 +524,7 @@ func (e *Engine) lookupDocument(ctx context.Context, spec plugin.ScraperSpec, te
 	}
 	fieldMap, artworkMap := e.referenceMaps(ctx, spec, config, spec.FieldMap), e.referenceMaps(ctx, spec, config, spec.ArtworkMap)
 	result := mapJSON(spec, fieldMap, artworkMap, root, config)
-	result.Entities, err = e.resolveEntityMaps(ctx, spec, root, v, config)
+	result.Entities, result.SkippedEntityMaps, err = e.resolveEntityMaps(ctx, spec, root, v, config)
 	if err != nil {
 		return Result{}, err
 	}
@@ -858,11 +864,14 @@ func logSkippedField(spec plugin.ScraperSpec, field, fieldType, value string) {
 // ArtworkMap values; FieldMap values stay raw for the consumer to type-parse).
 // Unresolved paths and blank values are omitted, never errors — the FieldMap
 // posture. Validation already keeps EntityMaps off rss specs, whose documents
-// are not JSON.
-func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec, root any, vars Variables, config map[string]string) ([]EntityResult, error) {
+// are not JSON. It also returns the indices of the maps it skipped because
+// their Path names an unknown ordinal.
+func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec, root any, vars Variables, config map[string]string) ([]EntityResult, []int, error) {
 	var entities []EntityResult
-	for _, entityMap := range spec.EntityMaps {
+	var skipped []int
+	for mapIndex, entityMap := range spec.EntityMaps {
 		if vars.namesUnknownOrdinal(entityMap.Path) {
+			skipped = append(skipped, mapIndex)
 			continue
 		}
 		node, ok := resolveJSONNode(root, vars.substituteOrdinals(substituteConfig(entityMap.Path, config, identity)))
@@ -897,7 +906,7 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 				var err error
 				source, err = e.fetchJSONDocument(ctx, spec, entityMap.LookupTemplate, "{id}", id, vars, config, 0)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 			var name string
@@ -948,7 +957,7 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 			entities = append(entities, entity)
 		}
 	}
-	return entities, nil
+	return entities, skipped, nil
 }
 
 // elementMatchesFilter reports whether one EntityMap element passes the map's
