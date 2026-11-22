@@ -140,6 +140,18 @@ func ContainerRelations(bundle plugin.Bundle) ContainerRelationIndex {
 	return index
 }
 
+// HolderRelations names the relations any container kind holds Media through,
+// sorted, so a reader can fetch only the relation rows Holds can accept.
+func (i ContainerRelationIndex) HolderRelations() []string {
+	var names []string
+	for key := range i.holders {
+		_, relation, _ := strings.Cut(key, "\x00")
+		names = append(names, relation)
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
 // Holds reports whether relation is a single-holder Media relation of the
 // container kind.
 func (i ContainerRelationIndex) Holds(kind, relation string) bool {

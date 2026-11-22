@@ -405,7 +405,7 @@ var fieldArguments = map[string][]NestedArgument{
 	"mediafiles":        {{Name: "mediaID", Kind: "string"}},
 	"mediatracks":       {{Name: "mediaID", Kind: "string"}},
 	"relatedmedia":      {{Name: "limit", Kind: "int", Optional: true}, {Name: "mediaID", Kind: "string"}},
-	"mediaforentity":    {{Name: "entityID", Kind: "string"}},
+	"mediaforentity":    {{Name: "entityID", Kind: "string"}, {Name: "rollUp", Kind: "boolean", Optional: true}},
 	"mediarelations":    {{Name: "mediaID", Kind: "string"}, {Name: "relation", Kind: "string"}},
 	"search":            {{Name: "query", Kind: "string", Optional: true}},
 	"serverlogs":        serverLogsArguments(),

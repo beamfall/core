@@ -5622,6 +5622,8 @@ func entityInfo(entity store.Entity, kind plugin.EntityKind) EntityInfo {
 // mediaForEntity resolves the Media items related to one Entity — the
 // detail-page item list. Reveal-filtered twice over: the Entity must be
 // visible to the session, and each related item's Library is filtered again.
+// With rollUp, held Media are listed as their outermost containers
+// (rollUpContainers, CORE-3058).
 func (h *Handler) mediaForEntity(ctx context.Context, scope auth.Scope, req request) ([]SourceItem, error) {
 	entityID := trimmedVariable(req, "entityID")
 	if entityID == "" {
@@ -5630,6 +5632,11 @@ func (h *Handler) mediaForEntity(ctx context.Context, scope auth.Scope, req requ
 	items, err := h.store.MediaForEntity(ctx, store.EntityID(entityID), scope.LibraryFilter())
 	if err != nil {
 		return nil, clientError("unknown entity")
+	}
+	if boolVar(req, "rollUp") {
+		if items, err = h.rollUpContainers(ctx, store.EntityID(entityID), items); err != nil {
+			return nil, err
+		}
 	}
 	// Direct navigation reaches muted Media on purpose (§2.2) and badges them (§2.7).
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {

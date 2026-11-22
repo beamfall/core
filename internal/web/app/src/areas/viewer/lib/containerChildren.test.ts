@@ -5,6 +5,8 @@ import {
   groupChildrenByKind,
   nextUpChild,
   nextUpChildContainer,
+  nextUpRolledContainer,
+  rolledContainerLeft,
 } from "./containerChildren";
 
 const item = (id: string, extra: Partial<SourceItem> = {}): SourceItem => ({
@@ -104,5 +106,26 @@ describe("nextUpChildContainer", () => {
     ).toBe("s2");
     expect(nextUpChildContainer([{ archetype: "person", items: [box("p")] }])).toBeNull();
     expect(nextUpChildContainer(undefined)).toBeNull();
+  });
+});
+
+describe("nextUpRolledContainer (CORE-3058)", () => {
+  const card = (id: string, remainingCount?: number, locked?: boolean): SourceItem => ({
+    id,
+    kind: "entity",
+    title: id,
+    locked,
+    engagement: { totalCount: 3, ...(remainingCount ? { remainingCount } : {}) },
+  });
+
+  it("picks the first unlocked container card with children left, else the first", () => {
+    const film = item("f1");
+    expect(nextUpRolledContainer([film, card("a"), card("b", 2, true), card("c", 1)])?.id).toBe(
+      "c",
+    );
+    expect(nextUpRolledContainer([film, card("a"), card("b")])?.id).toBe("a");
+    expect(nextUpRolledContainer([film])).toBeNull();
+    expect(rolledContainerLeft([film, card("a"), card("b", 2, true)])).toBe(false);
+    expect(rolledContainerLeft([film, card("c", 1)])).toBe(true);
   });
 });

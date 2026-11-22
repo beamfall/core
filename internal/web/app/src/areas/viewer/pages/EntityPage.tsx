@@ -30,7 +30,12 @@ import type { SeeAllTarget } from "../components/SectionView";
 import { useListingRows } from "../components/useListingRows";
 import { ViewerActions } from "../components/ViewerActions";
 import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
-import { nextUpChild, nextUpChildContainer } from "../lib/containerChildren";
+import {
+  nextUpChild,
+  nextUpChildContainer,
+  nextUpRolledContainer,
+  rolledContainerLeft,
+} from "../lib/containerChildren";
 import {
   ancestorOf,
   groupHeading,
@@ -45,6 +50,7 @@ import {
 import { entityIdFromAddress, entityPath, useCanonicalEntityAddress } from "../lib/entityAddress";
 import {
   entityFacts,
+  entityOffersWatchActions,
   entitySummary,
   groupCredits,
   heroFields,
@@ -172,15 +178,20 @@ export function EntityPage() {
   // start the wrong track.
   const orderPending = listing.wanted && listing.rows === null && entity?.archetype === "container";
   const ordered = trackOrder ?? fallback;
-  const directNext = useMemo(
-    () => (ordered && !orderPending ? nextUpChild(ordered) : null),
-    [ordered, orderPending],
-  );
-  // No playable Media of its own: play on through the next-up child container.
+  // A Media item of its own plays first unless all are finished and a rolled-up
+  // container card still has children left (CORE-3058).
+  const directNext = useMemo(() => {
+    if (!ordered || orderPending) return null;
+    const next = nextUpChild(ordered);
+    const finished = next && !next.resume && next.item.engagement?.completed === true;
+    return finished && rolledContainerLeft(ordered) ? null : next;
+  }, [ordered, orderPending]);
+  // Otherwise play on through the next-up rolled-up container card, else the
+  // next-up child container.
   const childContainer = useMemo(
     () =>
       fallback && !orderPending && !directNext
-        ? nextUpChildContainer(entity?.relatedEntities)
+        ? (nextUpRolledContainer(fallback) ?? nextUpChildContainer(entity?.relatedEntities))
         : null,
     [fallback, orderPending, directNext, entity],
   );
@@ -335,7 +346,7 @@ export function EntityPage() {
     const key = entityMediaCacheKey(entityId);
     const cached = readViewerCache<SourceItem[]>(identity, key);
     setFallback(cached ?? null);
-    fetchMediaForEntity(entityId, controller.signal)
+    fetchMediaForEntity(entityId, controller.signal, { rollUp: true })
       .then((items) => {
         if (!alive) return;
         writeViewerCache(identity, key, items);
@@ -358,7 +369,7 @@ export function EntityPage() {
     if (!childContainerID) return;
     let alive = true;
     const controller = new AbortController();
-    fetchMediaForEntity(childContainerID, controller.signal)
+    childContainerMedia(childContainerID, controller.signal)
       .then((items) => {
         if (alive) setChildMedia({ id: childContainerID, items });
       })
@@ -641,6 +652,7 @@ export function EntityPage() {
                     target={{ entityID: entityId }}
                     isAudio={isAudio}
                     hideTitle={entity.title}
+                    watchActions={entityOffersWatchActions(entity.archetype)}
                   />
                 )}
                 {summary && <DetailOverview text={summary} id="bf-entity-overview" />}
@@ -742,6 +754,18 @@ export function EntityPage() {
 }
 
 /** One related group as a poster grid under its heading. */
+/**
+ * The Media a child container plays from: its own, or, when it has nothing to
+ * play (a container of containers, as a rolled-up card can be), those of its
+ * own next-up child container (CORE-3058).
+ */
+async function childContainerMedia(id: string, signal: AbortSignal): Promise<SourceItem[]> {
+  const items = await fetchMediaForEntity(id, signal);
+  if (nextUpChild(items)) return items;
+  const child = nextUpChildContainer((await fetchEntity(id, signal))?.relatedEntities);
+  return child && child.id !== id ? fetchMediaForEntity(child.id, signal) : items;
+}
+
 function RelatedGroup({ title, items }: { title: string; items: readonly SourceItem[] }) {
   return (
     <section className="bf-section flex flex-col gap-3">

@@ -8,7 +8,7 @@ The web page for a person or category Entity (a cast member, a genre, a studio) 
 lists every Media item a container holds next to the container itself: a genre tagged on 2,600
 items shows each one instead of the few containers they belong to. On a fixture of 40
 containers × 5 inner containers × 12 Media plus 100 standalone Media, the Entity read took about
-106 ms and `mediaForEntity` about 55 ms with a 440 KB response. The Entity read spent most of
+106 ms and `mediaForEntity` about 55 ms with a 470 KB response. The Entity read spent most of
 its time giving each related card a media class by re-reading every linked Entity's Media once
 per card, so a person credited on thousands of items paid that for every container card.
 
@@ -28,13 +28,19 @@ category. Those act on a thing a viewer watches through, not on a person or a ge
   card annotations, including its child watch counts.
 - An Entity card with no Media of its own still takes the class its linked Entities' Media share,
   but each linked Entity's class span is now read once per request instead of once per card.
-- The web Entity page asks for the rolled-up list. Its unwatched count adds the remaining counts
+- The card container walk reads only the relations the items' Libraries hold Media through, so a
+  heavily credited Media costs one holder row per container rather than one per credit.
+- The web Entity page asks for the rolled-up list and shows a list with container cards as a
+  poster grid, each card opening its container's page. Its unwatched count adds the remaining counts
   of rolled-up container cards. Play and On Deck keep working: the next unfinished standalone
   Media item, otherwise the next-up child of the first rolled-up container with children left.
 - The web Entity page shows Mark watched, the watchlist toggle and the rating only on
   container-archetype Entities. Person and category pages keep Hide, which already mutes the
   Entity and everything under it (profile-hide).
 - Wire contract: the added argument is regenerated into the goldens.
+
+On the same fixture the Entity read now takes about 22 ms, and the rolled-up `mediaForEntity`
+about 54 ms with an 18 KB response (about 140 cards instead of about 2,500).
 
 ## Non-goals
 

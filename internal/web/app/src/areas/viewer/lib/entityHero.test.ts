@@ -4,6 +4,7 @@ import type { EntityInfo, SourceItem } from "@/lib/graphql/types";
 import { fetchMediaForEntity } from "@/lib/graphql/viewer";
 import {
   entityFacts,
+  entityOffersWatchActions,
   entitySummary,
   groupCredits,
   heroFields,
@@ -67,6 +68,27 @@ describe("entityHero", () => {
         artworkSlots: { poster: "/a/p" },
       }),
     ]);
+  });
+
+  it("counts the children left in rolled-up container cards once each (CORE-3058)", () => {
+    const card = (id: string, remainingCount?: number, locked?: boolean): SourceItem => ({
+      id,
+      kind: "entity",
+      title: id,
+      locked,
+      engagement: { totalCount: 5, ...(remainingCount ? { remainingCount } : {}) },
+    });
+    const film: SourceItem = { id: "f", kind: "media", title: "f", engagement: {} };
+    expect(unwatchedCount([film, card("a", 3), card("a", 3), card("b"), card("c", 2, true)])).toBe(
+      4,
+    );
+  });
+
+  it("offers watch actions only on a container", () => {
+    expect(entityOffersWatchActions("container")).toBe(true);
+    expect(entityOffersWatchActions("person")).toBe(false);
+    expect(entityOffersWatchActions("category")).toBe(false);
+    expect(entityOffersWatchActions(undefined)).toBe(false);
   });
 
   it("counts only the Entity's own unfinished Media", () => {

@@ -248,16 +248,21 @@ export async function fetchMetadataCredits(signal?: AbortSignal): Promise<Metada
 }
 
 const MEDIA_FOR_ENTITY_QUERY =
-  "query MediaForEntity($entityID: String!) { mediaForEntity(entityID: $entityID) { id kind title summary locked artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query MediaForEntity($entityID: String!, $rollUp: Boolean) { mediaForEntity(entityID: $entityID, rollUp: $rollUp) { id kind title summary locked artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
-/** MediaForEntity — the hand-rolled related-Media fallback list for a detail view. */
+/**
+ * MediaForEntity — the hand-rolled related-Media fallback list for a detail
+ * view. With `rollUp`, Media a container holds come back as one card for
+ * their outermost container (CORE-3058).
+ */
 export async function fetchMediaForEntity(
   entityID: string,
   signal?: AbortSignal,
+  options?: { rollUp?: boolean },
 ): Promise<SourceItem[]> {
   const data = await graphql<{ mediaForEntity: SourceItem[] | null }>(
     MEDIA_FOR_ENTITY_QUERY,
-    { entityID },
+    options?.rollUp ? { entityID, rollUp: true } : { entityID },
     signal,
   );
   // Two relations to the same Media return it twice; every view lists, counts

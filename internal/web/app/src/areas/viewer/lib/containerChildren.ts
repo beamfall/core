@@ -69,6 +69,21 @@ export function nextUpChildContainer(
 }
 
 /**
+ * The container card a rolled-up Media list plays next (CORE-3058): its first
+ * unlocked container card with children left, else its first. Null when the
+ * list has no container card.
+ */
+export function nextUpRolledContainer(items: readonly SourceItem[]): SourceItem | null {
+  const cards = items.filter((item) => item.kind === "entity" && !item.locked);
+  return cards.find(hasChildrenLeft) ?? cards[0] ?? null;
+}
+
+/** Whether a rolled-up Media list has a container card with children left. */
+export function rolledContainerLeft(items: readonly SourceItem[]): boolean {
+  return items.some((item) => item.kind === "entity" && !item.locked && hasChildrenLeft(item));
+}
+
+/**
  * Whether a container still has children to finish. The server omits zero
  * counts, so a container with a total but no remaining count is finished; one
  * with no counts at all is unknown and counts as unfinished.

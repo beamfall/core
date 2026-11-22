@@ -2,6 +2,8 @@ package graph
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sort"
 
 	"github.com/beamfall/core/internal/artwork"
@@ -17,18 +19,24 @@ import (
 // The Entities walked share the visible Media's Library, so naming them
 // reveals nothing the caller cannot already reach.
 func (h *Handler) annotateContainers(ctx context.Context, items []store.SourceItem) error {
-	var ids []store.MediaID
-	for _, item := range items {
-		if item.Kind != "entity" {
-			ids = append(ids, item.ID)
-		}
-	}
-	if len(ids) == 0 || h.store == nil {
-		return nil
-	}
-	holders, err := h.store.MediaHolderLinksBatch(ctx, ids)
+	outer, _, err := h.outermostContainers(ctx, items)
 	if err != nil {
 		return err
+	}
+	for i, link := range outer {
+		items[i].ContainerID = link.EntityID
+		items[i].ContainerTitle = link.Title
+		items[i].ContainerKind = link.Kind
+	}
+	return nil
+}
+
+// outermostContainers maps each media-kind item, by position, to the
+// outermost container Entity holding it, and to every container Entity on the
+// way there. Items no declared container holds are absent from both maps.
+func (h *Handler) outermostContainers(ctx context.Context, items []store.SourceItem) (map[int]store.TitledEntityLink, map[int]map[store.EntityID]bool, error) {
+	if h.store == nil {
+		return nil, nil, nil
 	}
 	relations := map[store.LibraryID]identify.ContainerRelationIndex{}
 	relationsFor := func(libraryID store.LibraryID) identify.ContainerRelationIndex {
@@ -39,6 +47,39 @@ func (h *Handler) annotateContainers(ctx context.Context, items []store.SourceIt
 			relations[libraryID] = index
 		}
 		return index
+	}
+	// Read only the relations the items' Libraries hold Media through, so a
+	// Media credited to many Entities costs one row per container, not one
+	// per credit. An item with no owning Library leaves the read unfiltered.
+	var ids []store.MediaID
+	holding := map[string]bool{}
+	filtered := true
+	for _, item := range items {
+		if item.Kind == "entity" {
+			continue
+		}
+		ids = append(ids, item.ID)
+		if item.LibraryID == "" {
+			filtered = false
+			continue
+		}
+		if _, known := relations[item.LibraryID]; known {
+			continue
+		}
+		for _, relation := range relationsFor(item.LibraryID).HolderRelations() {
+			holding[relation] = true
+		}
+	}
+	if len(ids) == 0 || (filtered && len(holding) == 0) {
+		return nil, nil, nil
+	}
+	var only []string
+	if filtered {
+		only = slices.Sorted(maps.Keys(holding))
+	}
+	holders, err := h.store.MediaHolderLinksBatch(ctx, ids, only...)
+	if err != nil {
+		return nil, nil, err
 	}
 	// current is each item's innermost-so-far container, by item position.
 	current := map[int]store.TitledEntityLink{}
@@ -71,7 +112,7 @@ func (h *Handler) annotateContainers(ctx context.Context, items []store.SourceIt
 		}
 		targets, err := h.store.EntityTargetLinksBatch(ctx, next)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		for i := range frontier {
 			from := current[i]
@@ -89,12 +130,52 @@ func (h *Handler) annotateContainers(ctx context.Context, items []store.SourceIt
 			}
 		}
 	}
-	for i, link := range current {
-		items[i].ContainerID = link.EntityID
-		items[i].ContainerTitle = link.Title
-		items[i].ContainerKind = link.Kind
+	return current, seen, nil
+}
+
+// rollUpContainers replaces each non-audio Media item a declared container
+// holds with one Entity card for its outermost container, placed where the
+// container's first item stood (CORE-3058). The card takes the earliest
+// nonzero year of the items it stands for. Items no container holds, audio
+// items (a person's audio page lists tracks, CORE-2362) and items whose
+// container chain passes through contextID (a container's own page lists its
+// children) are kept as they are.
+func (h *Handler) rollUpContainers(ctx context.Context, contextID store.EntityID, items []store.SourceItem) ([]store.SourceItem, error) {
+	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
+		return nil, err
 	}
-	return nil
+	outer, seen, err := h.outermostContainers(ctx, items)
+	if err != nil {
+		return nil, err
+	}
+	if len(outer) == 0 {
+		return items, nil
+	}
+	rolled := make([]store.SourceItem, 0, len(items))
+	at := map[store.EntityID]int{}
+	for i, item := range items {
+		link, held := outer[i]
+		if !held || item.MediaClass == store.MediaClassAudio || seen[i][contextID] {
+			rolled = append(rolled, item)
+			continue
+		}
+		if j, ok := at[link.EntityID]; ok {
+			if item.Year > 0 && (rolled[j].Year == 0 || item.Year < rolled[j].Year) {
+				rolled[j].Year = item.Year
+			}
+			continue
+		}
+		at[link.EntityID] = len(rolled)
+		rolled = append(rolled, store.SourceItem{
+			ID:         store.MediaID(link.EntityID),
+			Kind:       "entity",
+			Title:      link.Title,
+			LibraryID:  link.LibraryID,
+			Restricted: item.Restricted,
+			Year:       item.Year,
+		})
+	}
+	return rolled, nil
 }
 
 // sourceItemContainer renders an item's container for the wire, with the
