@@ -28,6 +28,7 @@ export function AudioStage({
   stream = null,
   trackKey = "",
   next = null,
+  lyrics = null,
 }: {
   title: string;
   artworkURL: string;
@@ -41,6 +42,8 @@ export function AudioStage({
   trackKey?: string;
   /** The item played next, which the visualizer prepares ahead. */
   next?: NextTrack | null;
+  /** The lyrics view (CORE-1638): when set, the artwork moves left and the lyrics fill the right. */
+  lyrics?: ReactNode;
 }) {
   const [failedURL, setFailedURL] = useState("");
   const showArtwork = !!artworkURL && failedURL !== artworkURL;
@@ -87,7 +90,7 @@ export function AudioStage({
           />
         )}
       </div>
-      <div className="bf-audio-card">
+      <div className={`bf-audio-card${lyrics ? " has-lyrics" : ""}`}>
         <div className="bf-audio-artwork" data-art={motion.art}>
           <ArtworkLayers url={art} leaveMs={ART_LEAVE_MS} onError={setFailedURL} placeholder />
         </div>
@@ -131,6 +134,7 @@ export function AudioStage({
             </div>
           ))}
         </div>
+        {lyrics && <div className="bf-audio-lyrics">{lyrics}</div>}
       </div>
     </div>
   );
