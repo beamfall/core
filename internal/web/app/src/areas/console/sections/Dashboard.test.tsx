@@ -396,6 +396,19 @@ describe("PlayHistory", () => {
     );
     expect(vi.mocked(fetchPlayHistory).mock.calls.at(-1)?.[0]).toEqual({ since });
     expect(screen.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "false");
+    // A To day alone ends the window: both panels read the same seven days
+    // up to the end of the 10th.
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-10" } });
+    const toOnly = {
+      since: new Date(2026, 10, 4).toISOString(),
+      until: new Date(2026, 10, 11).toISOString(),
+    };
+    await vi.waitFor(() =>
+      expect(vi.mocked(fetchPlayStats).mock.calls.at(-1)?.[0]).toEqual(toOnly),
+    );
+    expect(vi.mocked(fetchPlayHistory).mock.calls.at(-1)?.[0]).toEqual(toOnly);
+    expect(screen.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 

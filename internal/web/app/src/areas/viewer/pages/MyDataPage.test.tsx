@@ -236,4 +236,34 @@ describe("MyDataPage watch history", () => {
     ).toBeInTheDocument();
     expect(fetchMyPlayStats).toHaveBeenLastCalledWith(7, expect.anything());
   });
+  it("clears the watch card after deleting all engagement", async () => {
+    vi.mocked(fetchMyPlayStats).mockResolvedValue({
+      ...NO_PLAYS,
+      totalPlays: 1,
+      totalWatchedSeconds: 600,
+      items: [
+        {
+          mediaID: "m-1",
+          title: "Night Train",
+          libraryID: "library-films",
+          plays: 1,
+          watchedSeconds: 600,
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText("Night Train")).toBeInTheDocument();
+    const statsCalls = vi.mocked(fetchMyPlayStats).mock.calls.length;
+    const historyCalls = vi.mocked(fetchMyPlayHistory).mock.calls.length;
+
+    vi.mocked(fetchMyPlayStats).mockResolvedValue(NO_PLAYS);
+    await userEvent.click(screen.getByRole("button", { name: "Delete all my engagement" }));
+
+    expect(
+      await screen.findByText("You have not played anything in this period."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Night Train")).not.toBeInTheDocument();
+    expect(fetchMyPlayStats).toHaveBeenCalledTimes(statsCalls + 1);
+    expect(fetchMyPlayHistory).toHaveBeenCalledTimes(historyCalls + 1);
+  });
 });

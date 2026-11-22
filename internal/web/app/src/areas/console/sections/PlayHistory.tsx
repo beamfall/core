@@ -60,15 +60,20 @@ const NO_FILTERS: PlayFilters = {
   to: "",
 };
 
-/** The filters as read variables: ALL and empty mean no filter. */
-function filterVariables(f: PlayFilters) {
+/**
+ * The filters as read variables: ALL and empty mean no filter. Both panels
+ * read the same range: From up to the end of To, or, with To alone, the
+ * quick window of `days` ending with To. With neither the history is
+ * unbounded and the rankings use the quick window.
+ */
+function filterVariables(f: PlayFilters, days: WindowDays) {
   const set = (v: string) => (v === ALL || v === "" ? undefined : v);
   return {
     profileID: set(f.profileID),
     libraryID: set(f.libraryID),
     deviceID: set(f.deviceID),
     playMethod: set(f.playMethod) as PlayMethod | undefined,
-    since: dayStart(f.from),
+    since: f.from ? dayStart(f.from) : dayStart(f.to, 1 - days),
     until: dayStart(f.to, 1),
   };
 }
@@ -186,11 +191,11 @@ function FilterBar({
   );
 }
 
-function HistoryTable({ filters }: { filters: PlayFilters }) {
+function HistoryTable({ filters, days }: { filters: PlayFilters; days: WindowDays }) {
   const t = useT();
   const { data, loading, failed } = useAsync(
-    (signal) => fetchPlayHistory(filterVariables(filters), signal),
-    [filters],
+    (signal) => fetchPlayHistory(filterVariables(filters, days), signal),
+    [filters, days],
   );
   const plays = data ?? [];
 
@@ -290,14 +295,24 @@ function RankList({
   );
 }
 
-function Rankings({ filters, onClearRange }: { filters: PlayFilters; onClearRange: () => void }) {
+function Rankings({
+  filters,
+  days,
+  onDays,
+  onClearRange,
+}: {
+  filters: PlayFilters;
+  days: WindowDays;
+  onDays: (days: WindowDays) => void;
+  onClearRange: () => void;
+}) {
   const t = useT();
-  const [days, setDays] = useState<WindowDays>(30);
-  // A chosen From day overrides the quick window.
-  const ranged = filters.from !== "";
+  // A chosen From day overrides the quick window; a To day alone ends it.
+  const ranged = filters.from !== "" || filters.to !== "";
+  const fromSet = filters.from !== "";
   const { data, loading, failed } = useAsync(
     (signal) => {
-      const { since, until, ...rest } = filterVariables(filters);
+      const { since, until, ...rest } = filterVariables(filters, days);
       return fetchPlayStats(
         ranged ? { ...rest, since, until } : { ...rest, windowDays: days },
         signal,
@@ -346,11 +361,11 @@ function Rankings({ filters, onClearRange }: { filters: PlayFilters; onClearRang
             <Button
               key={w}
               size="sm"
-              variant={!ranged && w === days ? "default" : "outline"}
-              aria-pressed={!ranged && w === days}
+              variant={!fromSet && w === days ? "default" : "outline"}
+              aria-pressed={!fromSet && w === days}
               onClick={() => {
-                setDays(w);
-                if (ranged) onClearRange();
+                onDays(w);
+                if (fromSet) onClearRange();
               }}
             >
               {t("playStatsWindow", { days: w })}
@@ -386,14 +401,17 @@ function Rankings({ filters, onClearRange }: { filters: PlayFilters; onClearRang
 
 export function PlayHistory() {
   const [filters, setFilters] = useState<PlayFilters>(NO_FILTERS);
+  const [days, setDays] = useState<WindowDays>(30);
   return (
     <div className="space-y-8">
       <FilterBar value={filters} onChange={setFilters} />
       <Rankings
         filters={filters}
+        days={days}
+        onDays={setDays}
         onClearRange={() => setFilters({ ...filters, from: "", to: "" })}
       />
-      <HistoryTable filters={filters} />
+      <HistoryTable filters={filters} days={days} />
     </div>
   );
 }

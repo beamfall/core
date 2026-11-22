@@ -41,6 +41,10 @@ type playbackProjectionEvent struct {
 	// carry neither.
 	DeviceID   string `json:"deviceId,omitempty"`
 	PlayMethod string `json:"playMethod,omitempty"`
+	// ReportedPositionSeconds is the position the client reported, kept even
+	// when the stored position is zeroed (watched, or not resumable), so play
+	// history can tell a paused heartbeat from playback (CORE-1703).
+	ReportedPositionSeconds *int `json:"reportedPositionSeconds,omitempty"`
 }
 
 func appendPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {

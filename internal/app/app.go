@@ -3692,7 +3692,7 @@ type playbackObserverAdapter struct {
 
 func (a playbackObserverAdapter) PlayObservation(sessionID store.SessionID, mediaID store.MediaID) (graph.PlayObservation, bool) {
 	seen, ok := a.service.PlayObservation(sessionID, mediaID)
-	return graph.PlayObservation{Method: seen.Method, Reason: seen.Reason, Bitrate: seen.Bitrate}, ok
+	return graph.PlayObservation{Method: seen.Method, Reason: seen.Reason, Bitrate: seen.Bitrate, DecidedAt: seen.DecidedAt}, ok
 }
 
 type watcherStatusAdapter struct {

@@ -28,10 +28,10 @@ const (
 	// must reach to be Finished: this fraction of the item, or within the tail.
 	playFinishedFraction = 0.8
 	playFinishedTail     = 30
-	// playReportGapCap is the most one gap between consecutive progress
-	// reports adds to watched time when the reports do not say how far
-	// playback moved (CORE-1307): a watched report carries position zero.
-	// Clients report every 10 to 15 seconds while playing.
+	// playReportGapCap is the longest gap between consecutive progress
+	// reports that can add to watched time (CORE-1307). Clients report every
+	// 10 to 15 seconds while playing, so a longer silence is a pause, and a
+	// seek made during it is not playing time either.
 	playReportGapCap = time.Minute
 )
 
@@ -248,14 +248,21 @@ const playedAtMS = `CASE
 // (CORE-1307): the wall-clock gap since the previous report, but no more than
 // the position advanced over it, so a pause counts nothing whether the client
 // stays silent or keeps reporting the same position, and a forward seek counts
-// only the time it took. When either report gives no position (a watched
-// report stores zero, and so does a client that sends none), the gap counts up
-// to playReportGapCap. The first report of a run adds nothing.
+// only the time it took. A gap longer than playReportGapCap counts nothing: the
+// player was paused, and a seek made while paused is not playing time.
+//
+// The client's own position (reported) is recorded on every report since
+// CORE-1703, including the watched and not-resumable (audio) reports whose
+// stored position is zero. Older reports have only the stored position; when
+// either side of a step gives none, the gap counts whole. The first report of
+// a run adds nothing.
 const playedStepMS = `CASE
-		WHEN prev_ms IS NULL OR at_ms - prev_ms > ? THEN 0
+		WHEN starts = 1 OR at_ms - prev_ms > ? THEN 0
+		WHEN reported IS NOT NULL AND prev_reported IS NOT NULL
+		THEN MIN(at_ms - prev_ms, MAX(reported - prev_reported, 0) * 1000)
 		WHEN watched = 0 AND prev_watched = 0 AND (position > 0 OR prev_position > 0)
 		THEN MIN(at_ms - prev_ms, MAX(position - prev_position, 0) * 1000)
-		ELSE MIN(at_ms - prev_ms, ?) END`
+		ELSE at_ms - prev_ms END`
 
 // derivedPlaysLocked lists the plays that started in [since, until), newest
 // first, each measured whole even when it runs past either bound. A zero bound
@@ -266,6 +273,10 @@ const playedStepMS = `CASE
 // since is left out, not cut into a shorter play starting at since. Reports
 // from one gap before since are enough to tell, because a run starting at or
 // after since has no report within one gap before its first.
+//
+// A run is one Device's: a report from a different Device than the one
+// before it starts a new run, so TV, then phone, then TV again is three plays
+// and no run spans another Device's time.
 func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, until time.Time, visit func(derivedPlay) bool) error {
 	query := `
 		WITH raw AS (
@@ -274,7 +285,8 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 			       ` + playedAtMS + ` AS at_ms,
 			       COALESCE(json_extract(payload, '$.durationSeconds'), 0) AS duration,
 			       COALESCE(json_extract(payload, '$.watched'), 0) AS watched,
-			       COALESCE(json_extract(payload, '$.positionSeconds'), 0) AS position
+			       COALESCE(json_extract(payload, '$.positionSeconds'), 0) AS position,
+			       json_extract(payload, '$.reportedPositionSeconds') AS reported
 			FROM engagement_event
 			WHERE kind = ? AND media_id IS NOT NULL
 			  AND json_extract(payload, '$.operation') = ?`
@@ -287,12 +299,6 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 		query += ` AND media_id = ?`
 		args = append(args, f.MediaID)
 	}
-	if f.DeviceID != "" {
-		// Runs never span Devices, so dropping other Devices' reports
-		// leaves this Device's runs whole.
-		query += ` AND ` + playDeviceSQL + ` = ?`
-		args = append(args, f.DeviceID)
-	}
 	if !since.IsZero() {
 		// A report is never dated after it arrived, so the arrival index can
 		// still bound the scan, one gap early.
@@ -302,14 +308,19 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 	query += `
 		), ev AS (
 			SELECT *, LAG(at_ms) OVER w AS prev_ms, LAG(position) OVER w AS prev_position,
-			       LAG(watched) OVER w AS prev_watched
+			       LAG(watched) OVER w AS prev_watched, LAG(reported) OVER w AS prev_reported,
+			       LAG(device_id) OVER w AS prev_device
 			FROM raw
-			WINDOW w AS (PARTITION BY profile_id, media_id, device_id ORDER BY at_ms)
-		), run AS (
-			SELECT *, SUM(CASE WHEN prev_ms IS NULL OR at_ms - prev_ms > ? THEN 1 ELSE 0 END)
-			            OVER (PARTITION BY profile_id, media_id, device_id ORDER BY at_ms) AS run_no,
-			       ` + playedStepMS + ` AS step_ms
+			WINDOW w AS (PARTITION BY profile_id, media_id ORDER BY at_ms, device_id)
+		), mark AS (
+			SELECT *, CASE WHEN prev_ms IS NULL OR at_ms - prev_ms > ? OR device_id <> prev_device
+			               THEN 1 ELSE 0 END AS starts
 			FROM ev
+		), run AS (
+			SELECT *, SUM(starts) OVER (PARTITION BY profile_id, media_id ORDER BY at_ms, device_id
+			                            ROWS UNBOUNDED PRECEDING) AS run_no,
+			       ` + playedStepMS + ` AS step_ms
+			FROM mark
 		)
 		SELECT profile_id, media_id, device_id, MAX(method), MIN(at_ms), MAX(at_ms), MAX(duration), MAX(watched),
 		       COALESCE(MIN(CASE WHEN watched = 0 THEN position END), 0),
@@ -318,7 +329,13 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 		FROM run
 		GROUP BY profile_id, media_id, device_id, run_no
 		HAVING 1 = 1`
-	args = append(args, playGap.Milliseconds(), playGap.Milliseconds(), playReportGapCap.Milliseconds())
+	args = append(args, playGap.Milliseconds(), playReportGapCap.Milliseconds())
+	if f.DeviceID != "" {
+		// After grouping: dropping other Devices' reports first would join
+		// this Device's runs across a switch away and back.
+		query += ` AND device_id = ?`
+		args = append(args, f.DeviceID)
+	}
 	if f.Method != "" {
 		query += ` AND MAX(method) = ?`
 		args = append(args, max(playMethodRank(f.Method), 0))
@@ -647,10 +664,10 @@ func (s *Store) PlayStats(ctx context.Context, filter LibraryFilter, q PlayStats
 	stats.Items = rankPlays(items, func(i PlayStatsItem) (int, int, string) {
 		return i.Plays, i.WatchedSeconds, string(i.MediaID)
 	})
-	stats.Devices = rankPlays(byDevice, func(d PlayStatsDevice) (int, int, string) {
+	stats.Devices = sortPlays(byDevice, func(d PlayStatsDevice) (int, int, string) {
 		return d.Plays, d.WatchedSeconds, string(d.DeviceID)
 	})
-	stats.Methods = rankPlays(methods, func(m PlayStatsMethod) (int, int, string) {
+	stats.Methods = sortPlays(methods, func(m PlayStatsMethod) (int, int, string) {
 		return m.Plays, m.WatchedSeconds, m.Method
 	})
 	stats.Days = make([]PlayStatsDay, 0, len(days))
@@ -664,6 +681,13 @@ func (s *Store) PlayStats(ctx context.Context, filter LibraryFilter, q PlayStats
 // rankPlays orders entries by plays, then watched seconds, then id, and keeps
 // the top playStatsRanks.
 func rankPlays[K comparable, V any](entries map[K]*V, key func(V) (plays, watched int, id string)) []V {
+	ranked := sortPlays(entries, key)
+	return ranked[:min(len(ranked), playStatsRanks)]
+}
+
+// sortPlays orders every entry the way rankPlays does, keeping them all: the
+// Device and method breakdowns add up to the totals.
+func sortPlays[K comparable, V any](entries map[K]*V, key func(V) (plays, watched int, id string)) []V {
 	ranked := make([]V, 0, len(entries))
 	for _, entry := range entries {
 		ranked = append(ranked, *entry)
@@ -679,5 +703,5 @@ func rankPlays[K comparable, V any](entries map[K]*V, key func(V) (plays, watche
 		}
 		return aid < bid
 	})
-	return ranked[:min(len(ranked), playStatsRanks)]
+	return ranked
 }

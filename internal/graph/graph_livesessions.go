@@ -53,6 +53,8 @@ type PlayObservation struct {
 	Method  string
 	Reason  string
 	Bitrate int
+	// DecidedAt is when the decision was made; zero when unknown.
+	DecidedAt time.Time
 }
 
 // PlaybackObserver reports the playback decision held for a live session.

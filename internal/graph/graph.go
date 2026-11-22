@@ -4472,7 +4472,7 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		DurationSeconds: report.DurationSeconds,
 		EventTimeMS:     report.EventTimeMS,
 		DeviceID:        scope.DeviceID,
-		PlayMethod:      h.heldPlayMethod(scope.SessionID, media.ID),
+		PlayMethod:      h.heldPlayMethod(scope.SessionID, media.ID, report.EventTimeMS),
 	}, finished, h.resumePolicy(ctx, media)); err != nil {
 		return store.PlaybackProgress{}, err
 	}
@@ -4494,13 +4494,18 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 // heldPlayMethod is the play method the server decided for this session's
 // playback of the Media, recorded on each progress report for play history
 // (CORE-1703). With no held decision the method is left unknown rather than
-// guessed.
-func (h *Handler) heldPlayMethod(sessionID store.SessionID, mediaID store.MediaID) string {
+// guessed, and so it is for a report the client observed before the held
+// decision was made (eventTimeMS, zero when the client sent none): a report
+// delayed past a reload belongs to the earlier decision, which is gone.
+func (h *Handler) heldPlayMethod(sessionID store.SessionID, mediaID store.MediaID, eventTimeMS int64) string {
 	if h.playbackObserver == nil {
 		return ""
 	}
 	seen, ok := h.playbackObserver.PlayObservation(sessionID, mediaID)
 	if !ok || seen.Method == store.PlayMethodUnknown || !store.ValidPlayMethod(seen.Method) {
+		return ""
+	}
+	if eventTimeMS > 0 && !seen.DecidedAt.IsZero() && eventTimeMS < seen.DecidedAt.UnixMilli() {
 		return ""
 	}
 	return seen.Method

@@ -130,3 +130,27 @@ func TestPlayReportingRecordsDeviceAndScopesViewers(t *testing.T) {
 		}
 	}
 }
+
+// feature:play-history
+func TestPlayReportingLeavesDelayedReportMethodUnknown(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	// The held decision was made now: reports the client observed an hour
+	// ago belong to an earlier decision, whose method is gone.
+	handler.playbackObserver = fixedObserver{"session-default": {Method: "transcode", DecidedAt: time.Now()}}
+	viewer := auth.Scope{SessionID: "session-default", DeviceID: "device-tv", ProfileID: "profile-default", AllLibraries: true, Revealed: true}
+	early := time.Now().Add(-time.Hour)
+	for i, at := range []time.Time{early, early.Add(time.Minute)} {
+		if _, err := handler.RecordPlaybackProgress(t.Context(), viewer, store.PlaybackProgress{
+			MediaID: "media-alpha", PositionSeconds: 30 + 60*i, DurationSeconds: 3600, EventTimeMS: at.UnixMilli(),
+		}, false); err != nil {
+			t.Fatalf("RecordPlaybackProgress: %v", err)
+		}
+	}
+	data, errs := post(t, handler, `{"query":"{ myPlayHistory { playMethod watchedSeconds } }"}`, authorizeViewer)
+	var plays []PlayInfo
+	if err := json.Unmarshal(data["myPlayHistory"], &plays); len(errs) != 0 || err != nil || len(plays) != 1 ||
+		plays[0].PlayMethod != "unknown" || plays[0].WatchedSeconds != 60 {
+		t.Fatalf("delayed myPlayHistory = %#v (errs %#v, err %v), want one play, method unknown", plays, errs, err)
+	}
+}

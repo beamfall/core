@@ -101,6 +101,8 @@ export function MyDataPage() {
   const [draftTo, setDraftTo] = useState<string>("");
   const [applied, setApplied] = useState<MyEngagementLogVars>({});
   const [offset, setOffset] = useState(0);
+  // Bumped after a deletion so the watch card refetches its plays.
+  const [playsVersion, setPlaysVersion] = useState(0);
 
   const refresh = useCallback(async () => {
     setSessionsError(null);
@@ -187,6 +189,7 @@ export function MyDataPage() {
     try {
       await deleteMyEngagement("all");
       setDeleteMsg(t("myDataDeleteDone"));
+      setPlaysVersion((v) => v + 1);
       await Promise.all([refresh(), refreshSummary(), refreshLog()]);
     } catch (err) {
       const needsPin =
@@ -201,6 +204,7 @@ export function MyDataPage() {
       try {
         await deleteMyEngagement("all", pin);
         setDeleteMsg(t("myDataDeleteDone"));
+        setPlaysVersion((v) => v + 1);
         await Promise.all([refresh(), refreshSummary(), refreshLog()]);
       } catch {
         setDeleteError(t("myDataDeleteError"));
@@ -219,7 +223,7 @@ export function MyDataPage() {
 
         <SummarySection summary={summary} error={summaryError} libraryName={libraryName} />
 
-        <PlaysSection />
+        <PlaysSection version={playsVersion} />
 
         <LogSection
           page={logPage}
@@ -390,7 +394,8 @@ const RECENT_PLAYS = 10;
 // PlaysSection is the viewer's own watch history (CORE-1703): totals, the
 // most-played items, devices and playback types over 7, 30 or 90 days, and the
 // most recent plays. The server pins every read to the caller's own profile.
-function PlaysSection() {
+// A new version (bumped after a deletion) refetches.
+function PlaysSection({ version }: { version: number }) {
   const t = useT();
   const [days, setDays] = useState<(typeof PLAY_WINDOWS)[number]>(30);
   const [stats, setStats] = useState<PlayStatsInfo | null>(null);
@@ -408,7 +413,7 @@ function PlaysSection() {
         if (!ctl.signal.aborted) setFailed(true);
       });
     return () => ctl.abort();
-  }, [days]);
+  }, [days, version]);
   const tally = (plays: number, seconds: number) =>
     `${t("playStatsPlays", { count: plays })} · ${watched(seconds)}`;
   const breakdowns: {

@@ -440,13 +440,13 @@ func TestPlayHistoryDoesNotCountPauses(t *testing.T) {
 	progressAt(t, st, "profile-default", "media-alpha", resume.Add(5*time.Minute+15*time.Second), true)
 
 	// Reporting client: the same position every 10 seconds through a
-	// 20-minute pause, then a report that arrived five minutes after the one
-	// before it (a slow request) but advanced the position five minutes.
+	// 20-minute pause, then five minutes of playing.
 	other := day.Add(2 * time.Hour)
 	progressAtPosition(t, st, "profile-managed", "media-alpha", other, 100, false)
 	for step := 10 * time.Second; step <= 20*time.Minute; step += 10 * time.Second {
 		progressAtPosition(t, st, "profile-managed", "media-alpha", other.Add(step), 100, false)
 	}
+	playing(t, st, "profile-managed", "media-alpha", other.Add(20*time.Minute), other.Add(25*time.Minute), time.Time{}, 100, 3600)
 	progressAtPosition(t, st, "profile-managed", "media-alpha", other.Add(25*time.Minute), 400, false)
 
 	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})

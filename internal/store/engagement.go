@@ -255,6 +255,9 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 		ChannelContext:   progress.ChannelContext,
 		DeviceID:         string(progress.DeviceID),
 		PlayMethod:       progress.PlayMethod,
+		// Every native report records the client's own position; an
+		// import has no playback to measure.
+		ReportedPositionSeconds: optionalInt(prov.Source == "", progress.PositionSeconds),
 	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
@@ -280,6 +283,13 @@ const positionAdvancedPredicate = `
 	playback_progress.event_time_ms IS NULL
 	OR excluded.event_time_ms IS NULL
 	OR excluded.event_time_ms >= playback_progress.event_time_ms`
+
+func optionalInt(set bool, value int) *int {
+	if !set {
+		return nil
+	}
+	return &value
+}
 
 func optionalMillis(set bool, millis int64) *int64 {
 	if !set {

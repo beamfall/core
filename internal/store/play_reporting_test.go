@@ -241,3 +241,121 @@ func TestPlaybackProgressRecordsDeviceAndMethod(t *testing.T) {
 		t.Fatalf("event device=%q method=%q", device, method)
 	}
 }
+
+// feature:play-history
+func TestPlayHistorySplitsEveryDeviceSwitch(t *testing.T) {
+	// Codex CORE-1703 r0: TV, then phone, then TV again within the play gap
+	// is three plays, and the second TV play does not bridge the phone's time.
+	st := openSeeded(t)
+	ctx := context.Background()
+	all := LibraryFilter{AllLibraries: true}
+	addPlayDevice(t, st, "dev-tv", "Living room", DeviceSurfaceTVOSViewer)
+	addPlayDevice(t, st, "dev-phone", "Phone", DeviceSurfaceCoreWebUI)
+	day := time.Date(2026, 11, 12, 20, 0, 0, 0, time.UTC)
+	devicePlaying(t, st, "profile-default", "media-alpha", "dev-tv", PlayMethodDirect, day, day.Add(10*time.Minute), 0)
+	devicePlaying(t, st, "profile-default", "media-alpha", "dev-phone", PlayMethodTranscode, day.Add(11*time.Minute), day.Add(16*time.Minute), 600)
+	devicePlaying(t, st, "profile-default", "media-alpha", "dev-tv", PlayMethodDirect, day.Add(17*time.Minute), day.Add(27*time.Minute), 900)
+
+	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct {
+		device  DeviceID
+		watched int
+	}{{"dev-tv", 600}, {"dev-phone", 300}, {"dev-tv", 600}}
+	if len(plays) != len(want) {
+		t.Fatalf("plays = %#v, want three: TV, phone, TV", plays)
+	}
+	for i, w := range want {
+		// Newest first.
+		got := plays[len(plays)-1-i]
+		if got.DeviceID != w.device || got.WatchedSeconds != w.watched {
+			t.Fatalf("play %d = %s %ds, want %s %ds", i, got.DeviceID, got.WatchedSeconds, w.device, w.watched)
+		}
+	}
+	tv, err := st.PlayHistory(ctx, all, PlayHistoryQuery{PlayFilter: PlayFilter{DeviceID: "dev-tv"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tv) != 2 || tv[0].WatchedSeconds != 600 || tv[1].WatchedSeconds != 600 {
+		t.Fatalf("TV-filtered plays = %#v, want the two TV plays, 600s each", tv)
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryCountsOnlyPlayingTime(t *testing.T) {
+	// Codex CORE-1703 r0: a seek made while paused, and the heartbeats of a
+	// paused audio player whose stored position is zero, add nothing.
+	st := openSeeded(t)
+	ctx := context.Background()
+	all := LibraryFilter{AllLibraries: true}
+	base := time.Now().Add(-3 * time.Hour).Truncate(time.Second)
+	report := func(media MediaID, at time.Time, position int, policy ResumePolicy) {
+		t.Helper()
+		if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+			ProfileID: "profile-default", MediaID: media, PositionSeconds: position, DurationSeconds: 3600,
+			EventTimeMS: at.UnixMilli(),
+		}, false, policy); err != nil {
+			t.Fatal(err)
+		}
+	}
+	playFor := func(media MediaID, from time.Time, fromPos int, d time.Duration, policy ResumePolicy) {
+		for at := time.Duration(0); at <= d; at += 15 * time.Second {
+			report(media, from.Add(at), fromPos+int(at/time.Second), policy)
+		}
+	}
+	video := ResumePolicy{Class: MediaClassVideo}
+	// Five minutes played, paused silently for 20 minutes, a seek from 300 to
+	// 1500 while paused, then five more minutes.
+	playFor("media-alpha", base, 0, 5*time.Minute, video)
+	playFor("media-alpha", base.Add(25*time.Minute), 1500, 5*time.Minute, video)
+	// Audio stores no position, but its paused heartbeats repeat the
+	// position the client reported: five minutes played, ten paused with a
+	// heartbeat every 15 seconds, five more played.
+	audio := ResumePolicy{Class: MediaClassAudio}
+	later := base.Add(90 * time.Minute)
+	playFor("media-archive", later, 0, 5*time.Minute, audio)
+	for at := 5 * time.Minute; at < 15*time.Minute; at += 15 * time.Second {
+		report("media-archive", later.Add(at), 300, audio)
+	}
+	playFor("media-archive", later.Add(15*time.Minute), 300, 5*time.Minute, audio)
+
+	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plays) != 2 || plays[0].MediaID != "media-archive" || plays[0].WatchedSeconds != 600 ||
+		plays[1].MediaID != "media-alpha" || plays[1].WatchedSeconds != 600 {
+		t.Fatalf("plays = %#v, want 600s each: neither the paused seek nor the paused heartbeats count", plays)
+	}
+}
+
+// feature:play-history
+func TestPlayStatsDeviceAndMethodBreakdownsAddUp(t *testing.T) {
+	// Codex CORE-1703 r0: rankings keep the top ten, but the Device and
+	// method breakdowns list every entry so they sum to the totals.
+	st := openSeeded(t)
+	ctx := context.Background()
+	day := time.Date(2026, 11, 13, 8, 0, 0, 0, time.UTC)
+	for i := range 11 {
+		device := DeviceID(fmt.Sprintf("dev-%02d", i))
+		at := day.Add(time.Duration(i) * time.Hour)
+		devicePlaying(t, st, "profile-default", "media-alpha", device, PlayMethodDirect, at, at.Add(time.Minute), 0)
+	}
+	stats, err := st.PlayStats(ctx, LibraryFilter{AllLibraries: true}, PlayStatsQuery{Since: day, Until: day.Add(24 * time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	devicePlays, methodPlays := 0, 0
+	for _, d := range stats.Devices {
+		devicePlays += d.Plays
+	}
+	for _, m := range stats.Methods {
+		methodPlays += m.Plays
+	}
+	if stats.Plays != 11 || len(stats.Devices) != 11 || devicePlays != 11 || methodPlays != 11 {
+		t.Fatalf("plays = %d, devices = %d summing to %d, methods sum to %d; want 11 throughout",
+			stats.Plays, len(stats.Devices), devicePlays, methodPlays)
+	}
+}
