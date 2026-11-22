@@ -409,6 +409,7 @@ type Options struct {
 	Identify                     *identify.Service
 	Artwork                      ArtworkLocator
 	EntityBrowseSources          map[plugin.ID]map[string][]store.EntityBrowseSource
+	EntityGroupRules             map[plugin.ID]map[string]EntityGroupRule
 	StreamTokens                 *streamtoken.Service
 	ArtworkCandidateFetcher      ArtworkCandidateFetcher
 	ArtworkCandidateImporter     ArtworkCandidateImporter
@@ -477,6 +478,7 @@ type Handler struct {
 
 	// Immutable after construction, keyed by plugin ID and Entity kind.
 	entityBrowseSources map[plugin.ID]map[string][]store.EntityBrowseSource
+	entityGroupRules    map[plugin.ID]map[string]EntityGroupRule
 
 	// Immutable after construction, keyed by plugin ID and container kind.
 	engagementContainers map[store.EngagementContainerKey]store.EngagementContainerRelations
@@ -846,6 +848,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.identify = o.Identify
 	h.artwork = o.Artwork
 	h.entityBrowseSources = o.EntityBrowseSources
+	h.entityGroupRules = o.EntityGroupRules
 	h.tokens = o.StreamTokens
 	h.candidateFetch = o.ArtworkCandidateFetcher
 	h.candidateImport = o.ArtworkCandidateImporter
@@ -5138,6 +5141,21 @@ type RelatedEntityGroupInfo struct {
 	// Archetype is the plugin-declared shape of Kind; omitted when undeclared.
 	Archetype string       `json:"archetype,omitempty"`
 	Items     []SourceItem `json:"items"`
+	// Sections partitions Items, in order, when a group rule splits Kind by
+	// a plugin field (CORE-2769): each section names a run of Items by its
+	// count. Omitted for an unsplit kind; clients that ignore it still get
+	// every Item, ordered section by section.
+	Sections []RelatedEntitySectionInfo `json:"sections,omitempty"`
+}
+
+// RelatedEntitySectionInfo is one run of a split related group: the grouping
+// field's value (empty for Entities without one), its plugin-declared heading
+// (omitted when the rule lists none; clients then head it with Value, or
+// with the kind's heading when Value is empty) and how many Items it covers.
+type RelatedEntitySectionInfo struct {
+	Value       string              `json:"value"`
+	DisplayName plugin.LocaleString `json:"displayName,omitempty"`
+	Count       int                 `json:"count"`
 }
 
 // RelatedEntityInfo pairs an Entity with the relation attributes that
@@ -5161,10 +5179,16 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 		EntityInfo:   entityInfo(entity, h.entityKindSpec(ctx, entity.LibraryID, entity.Kind)),
 		ArtworkSlots: h.entityArtworkSlots(entity.ID),
 	}
-	groups, err := h.store.RelatedEntityGroups(ctx, entity.ID, scope.LibraryFilter())
+	rules := h.entityGroupRulesFor(ctx, entity.LibraryID)
+	groupFields := make(map[string]string, len(rules))
+	for kind, rule := range rules {
+		groupFields[kind] = rule.Field
+	}
+	groups, err := h.store.RelatedEntityGroupsBy(ctx, entity.ID, scope.LibraryFilter(), groupFields)
 	if err != nil {
 		return EntityDetailInfo{}, err
 	}
+	var parts []relatedEntityPart
 	for _, group := range groups {
 		if err := h.annotateCards(ctx, scope, group.Items); err != nil {
 			return EntityDetailInfo{}, err
@@ -5174,14 +5198,19 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 			items[i] = h.sourceItem(item, scope.Revealed)
 		}
 		spec := h.entityKindSpec(ctx, group.LibraryID, group.Kind)
-		info.RelatedEntities = append(info.RelatedEntities, RelatedEntityGroupInfo{
+		part := relatedEntityPart{value: group.Group, info: RelatedEntityGroupInfo{
 			Kind:                  group.Kind,
 			KindDisplayName:       spec.DisplayName,
 			KindPluralDisplayName: spec.PluralDisplayName,
 			Archetype:             spec.Archetype,
 			Items:                 items,
-		})
+		}}
+		if _, ruled := rules[group.Kind]; ruled {
+			sortNewestFirst(part.info.Items)
+		}
+		parts = append(parts, part)
 	}
+	info.RelatedEntities = mergeRuledParts(parts, rules)
 	return info, nil
 }
 

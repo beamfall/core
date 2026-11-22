@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-route
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchEntity,
+  fetchEntityStation,
   fetchItemState,
   fetchMedia,
   fetchMediaForEntity,
@@ -30,6 +31,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/graphql", () => ({
   fetchEntity: vi.fn(),
+  fetchEntityStation: vi.fn(),
   fetchMutes: vi.fn(async () => []),
   setMute: vi.fn(async () => undefined),
   clearMute: vi.fn(async () => undefined),
@@ -1155,6 +1157,61 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
     expect(state.queue.every((item: { mediaClass?: string }) => item.mediaClass === "audio")).toBe(
       true,
     );
+  });
+
+  it("plays a Station seeded by the Entity from Radio (CORE-2769)", async () => {
+    vi.mocked(fetchEntityStation).mockResolvedValue([
+      { mediaID: "s2", title: "Station Two" },
+      { mediaID: "s1", title: "Station One" },
+    ]);
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Start a radio station from Server title" }),
+    );
+    await act(async () => {});
+    expect(fetchEntityStation).toHaveBeenCalledWith("e1");
+    const player = screen.getByRole("status", { name: "player" }).textContent ?? "";
+    const [mediaId] = player.split(" ", 1);
+    const state = JSON.parse(player.slice(mediaId.length + 1));
+    expect(mediaId).toBe("s2");
+    expect(state.queue).toEqual([
+      { id: "s2", title: "Station Two", mediaClass: "audio" },
+      { id: "s1", title: "Station One", mediaClass: "audio" },
+    ]);
+  });
+
+  it("heads each section of a split container kind with its count (CORE-2769)", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...record,
+      archetype: "person",
+      relatedEntities: [
+        {
+          kind: "release",
+          archetype: "container",
+          kindPluralDisplayName: { en: "Releases" },
+          items: [
+            { id: "r1", kind: "entity", title: "Long One", year: 2010 },
+            { id: "r2", kind: "entity", title: "Long Two", year: 1999 },
+            { id: "r3", kind: "entity", title: "Short One", year: 2005 },
+          ],
+          sections: [
+            { value: "long", displayName: { en: "Long Players" }, count: 2 },
+            { value: "short", displayName: { en: "Short Players" }, count: 1 },
+          ],
+        },
+      ],
+    } as EntityInfo);
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    const long = screen.getByRole("heading", { name: "Long Players 2" });
+    expect(within(long.closest("section") as HTMLElement).getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: "Short Players 1" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Releases/ })).toBeNull();
   });
 
   it("lists a video container's own Media as detail rows over its Media-only Layout (CORE-2510)", async () => {

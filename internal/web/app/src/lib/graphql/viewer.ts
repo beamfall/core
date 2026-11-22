@@ -215,12 +215,30 @@ export async function fetchSourceItems(
 // --- Entity detail --------------------------------------------------------
 
 const ENTITY_QUERY =
-  "query Entity($id: String!) { entity(id: $id) { id kind kindDisplayName title archetype artworkSlots fields { name type value label } relatedEntities { kind kindDisplayName kindPluralDisplayName archetype items { id kind title summary artwork { poster } artworkSlots mediaClass year byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } } }";
+  "query Entity($id: String!) { entity(id: $id) { id kind kindDisplayName title archetype artworkSlots fields { name type value label } relatedEntities { kind kindDisplayName kindPluralDisplayName archetype sections { value displayName count } items { id kind title summary artwork { poster } artworkSlots mediaClass year byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } } }";
 
 /** Entity — the detail header (declared fields, server-stringified) and its related Entities. */
 export async function fetchEntity(id: string, signal?: AbortSignal): Promise<EntityInfo | null> {
   const data = await graphql<{ entity: EntityInfo | null }>(ENTITY_QUERY, { id }, signal);
   return data.entity ?? null;
+}
+
+const STATION_WINDOW_QUERY =
+  "query StationWindow($seedKind: String!, $seedID: String!) { stationGenerate(seedKind: $seedKind, seedID: $seedID) { candidates { mediaID title } } }";
+
+/**
+ * stationGenerate seeded by one Entity — the read-only Station window a
+ * radio button plays as the client queue (CORE-2769). The generic "entity"
+ * seed kind names no plugin kind.
+ */
+export async function fetchEntityStation(
+  entityID: string,
+  signal?: AbortSignal,
+): Promise<{ mediaID: string; title: string }[]> {
+  const data = await graphql<{
+    stationGenerate: { candidates: { mediaID: string; title: string }[] | null } | null;
+  }>(STATION_WINDOW_QUERY, { seedKind: "entity", seedID: entityID }, signal);
+  return data.stationGenerate?.candidates ?? [];
 }
 
 const MEDIA_QUERY =

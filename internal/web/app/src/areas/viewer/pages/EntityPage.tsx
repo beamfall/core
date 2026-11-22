@@ -1,4 +1,4 @@
-import { ArrowLeft, Play, Shuffle } from "lucide-react";
+import { ArrowLeft, Play, Radio, Shuffle } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -6,7 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
-import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
+import { fetchEntity, fetchEntityStation, fetchMediaForEntity } from "@/lib/graphql";
 import type { EntityInfo, Layout, Section, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
@@ -34,6 +34,7 @@ import { nextUpChild, nextUpChildContainer } from "../lib/containerChildren";
 import {
   ancestorOf,
   groupHeading,
+  groupSections,
   nextUpName,
   nextUpOrdinal,
   siblingContainers,
@@ -275,6 +276,7 @@ export function EntityPage() {
     entity,
   );
   const [similar, setSimilar] = useState<{ id: string; items: SourceItem[] } | null>(null);
+  const [radioStarting, setRadioStarting] = useState(false);
   const similarItems = similar?.id === entityId ? similar.items : [];
   // A detail Layout that only lists a container's own video Media renders as
   // rows that open each item's detail page (CORE-2510).
@@ -446,6 +448,28 @@ export function EntityPage() {
     navigate(mediaPath("watch", order[0].id), {
       state: playState(identity, audioQueue(order), order[0]),
     });
+  }
+
+  // Plays a Station seeded by this Entity as the client queue (CORE-2769):
+  // the server's read-only window, so a listener's own queue is replaced only
+  // by the player, the way Play and Shuffle replace it.
+  function startRadio() {
+    if (!entityId || radioStarting) return;
+    setRadioStarting(true);
+    fetchEntityStation(entityId)
+      .then((candidates) => {
+        const queue = candidates.map((c) => ({
+          id: c.mediaID,
+          title: c.title,
+          mediaClass: "audio",
+        }));
+        if (queue.length === 0) return;
+        navigate(mediaPath("watch", queue[0].id), { state: playState(identity, queue, queue[0]) });
+      })
+      .catch(() => {
+        // A failed read leaves the page as it was; the button stays usable.
+      })
+      .finally(() => setRadioStarting(false));
   }
 
   // The same way back the media detail page offers (CORE-2322).
@@ -622,6 +646,21 @@ export function EntityPage() {
                         {t("libraryBrowseShuffle")}
                       </button>
                     )}
+                    {isAudio && entity && (
+                      <button
+                        type="button"
+                        className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
+                        aria-label={t("entityDetailRadioLabel", { title: entity.title })}
+                        aria-busy={radioStarting || undefined}
+                        disabled={radioStarting}
+                        onClick={startRadio}
+                        onPointerEnter={preloadPlayer}
+                        onFocus={preloadPlayer}
+                      >
+                        <Radio aria-hidden />
+                        {t("entityDetailRadio")}
+                      </button>
+                    )}
                     <p className="bf-entity-next">
                       <span className="bf-entity-ondeck">
                         {t(isAudio ? "entityDetailUpNext" : "entityDetailOnDeck")}
@@ -658,14 +697,19 @@ export function EntityPage() {
             </div>
           </header>
 
-          {/* Child containers first, each card counting its items. */}
-          {groups.containers.map((group) => (
-            <RelatedGroup
-              key={group.kind}
-              title={groupHeading(group, displayLocale)}
-              items={group.items.map((item) => withItemCount(item, itemCount, displayLocale))}
-            />
-          ))}
+          {/* Child containers first, each card counting its items; a kind the
+              plugin splits by a field (a release type) heads each run (CORE-2769). */}
+          {groups.containers.flatMap((group) => {
+            const sections = groupSections(group, displayLocale);
+            return sections.map((section) => (
+              <RelatedGroup
+                key={section.key}
+                title={section.title}
+                count={sections.length > 1 ? section.count : undefined}
+                items={section.items.map((item) => withItemCount(item, itemCount, displayLocale))}
+              />
+            ));
+          })}
 
           {mediaRows ? (
             fallback &&
@@ -742,11 +786,21 @@ export function EntityPage() {
 }
 
 /** One related group as a poster grid under its heading. */
-function RelatedGroup({ title, items }: { title: string; items: readonly SourceItem[] }) {
+function RelatedGroup({
+  title,
+  count,
+  items,
+}: {
+  title: string;
+  /** The run's size, shown beside a heading that splits a kind. */
+  count?: number;
+  items: readonly SourceItem[];
+}) {
   return (
     <section className="bf-section flex flex-col gap-3">
       <h2 className="bf-section-title">
         <span>{title}</span>
+        {count !== undefined && <span className="bf-section-count">{count}</span>}
       </h2>
       <ul className="bf-grid">
         {items.map((item, index) => (

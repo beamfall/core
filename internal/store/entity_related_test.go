@@ -229,3 +229,63 @@ func TestRelatedEntityGroupsReadsTheEncryptedLibraryPlane(t *testing.T) {
 		t.Fatal("sealed encrypted RelatedEntityGroups succeeded")
 	}
 }
+
+// TestRelatedEntityGroupsBySplitsAKindByField pins CORE-2769: a kind named in
+// groupFields splits by its text field's value — valueless Entities first as
+// the kind's own group, then one group per value in item order — while other
+// kinds stay whole.
+func TestRelatedEntityGroupsBySplitsAKindByField(t *testing.T) {
+	st, lib, _ := relatedFixture(t)
+	ctx := context.Background()
+	server := LibraryFilter{Revealed: true, AllLibraries: true}
+	upsertRelatedEntity(t, st, "entity-maker", lib.ID, "maker", "Maker")
+	upsertRelatedEntity(t, st, "entity-place", lib.ID, "place", "Place")
+	for _, box := range []struct {
+		id    EntityID
+		title string
+		shape string
+	}{{"entity-box-a", "Alpha", "round"}, {"entity-box-b", "Beta", ""}, {"entity-box-c", "Gamma", "square"}, {"entity-box-d", "Delta", "round"}} {
+		entity := Entity{ID: box.id, LibraryID: lib.ID, Kind: "box", Title: box.title}
+		if box.shape != "" {
+			entity.Fields = []EntityField{{Name: "shape", Type: EntityFieldText, Text: box.shape}}
+		}
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+		relateEntities(t, st, EntityRelation{FromEntityID: box.id, Name: "made-by", ToEntityID: "entity-maker"})
+	}
+	relateEntities(t, st, EntityRelation{FromEntityID: "entity-maker", Name: "based-in", ToEntityID: "entity-place"})
+
+	groups, err := st.RelatedEntityGroupsBy(ctx, "entity-maker", server, map[string]string{"box": "shape"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type part struct {
+		kind, group string
+		ids         []MediaID
+	}
+	var got []part
+	for _, g := range groups {
+		p := part{kind: g.Kind, group: g.Group}
+		for _, item := range g.Items {
+			p.ids = append(p.ids, item.ID)
+		}
+		got = append(got, p)
+	}
+	want := []part{
+		{"box", "", []MediaID{"entity-box-b"}},
+		{"box", "round", []MediaID{"entity-box-a", "entity-box-d"}},
+		{"box", "square", []MediaID{"entity-box-c"}},
+		{"place", "", []MediaID{"entity-place"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("RelatedEntityGroupsBy = %+v, want %+v", got, want)
+	}
+	plain, err := st.RelatedEntityGroups(ctx, "entity-maker", server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plain) != 2 || len(plain[0].Items) != 4 || plain[0].Group != "" {
+		t.Fatalf("RelatedEntityGroups = %+v, want box whole then place", plain)
+	}
+}

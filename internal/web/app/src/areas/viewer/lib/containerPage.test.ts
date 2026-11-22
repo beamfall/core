@@ -3,6 +3,7 @@ import type { EntityInfo, SourceItem } from "@/lib/graphql/types";
 import {
   ancestorOf,
   groupHeading,
+  groupSections,
   isRankedShelf,
   itemRuntimeSeconds,
   nextUpName,
@@ -246,5 +247,41 @@ describe("catalog shelf ranking (CORE-2512)", () => {
       entityItem("echo", "Echo", { engagement: { positionSeconds: 300, durationSeconds: 3000 } }),
     ]);
     expect(ranked.map((item) => item.id)).toEqual(["delta", "echo", "charlie", "bravo", "alpha"]);
+  });
+});
+
+describe("groupSections (CORE-2769)", () => {
+  const items = ["a", "b", "c", "d"].map((id) => entityItem(id, id.toUpperCase()));
+  const base = { kind: "record", kindPluralDisplayName: { en: "Records" }, items };
+
+  it("lists a group without sections as one run under its heading", () => {
+    expect(groupSections(base, "en")).toEqual([
+      { key: "record", title: "Records", count: 4, items },
+    ]);
+  });
+
+  it("splits a group into its sections in order, titled by display name, then value", () => {
+    const sections = groupSections(
+      {
+        ...base,
+        sections: [
+          { value: "", count: 1 },
+          { value: "long", displayName: { en: "Long Players", fr: "Longs" }, count: 2 },
+          { value: "odd", count: 1 },
+        ],
+      },
+      "fr",
+    );
+    expect(sections.map((s) => [s.key, s.title, s.count, s.items.map((i) => i.id)])).toEqual([
+      ["record:", "Records", 1, ["a"]],
+      ["record:long", "Longs", 2, ["b", "c"]],
+      ["record:odd", "odd", 1, ["d"]],
+    ]);
+  });
+
+  it("falls back to one run when sections do not cover the items", () => {
+    expect(groupSections({ ...base, sections: [{ value: "long", count: 3 }] }, "en")).toHaveLength(
+      1,
+    );
   });
 });

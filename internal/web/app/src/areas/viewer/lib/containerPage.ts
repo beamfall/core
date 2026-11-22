@@ -66,6 +66,44 @@ export function groupHeading(group: RelatedEntityGroup, locale: string): string 
   );
 }
 
+/** One heading's share of a related group: its key, heading, size and cards. */
+export interface RelatedSection {
+  key: string;
+  title: string;
+  count: number;
+  items: SourceItem[];
+}
+
+/**
+ * A related group as the headed runs it lists (CORE-2769): one per server
+ * section (a plugin-declared field value such as a release type), titled by
+ * the value's display name, then the value; items without a value head with
+ * the group's own heading. A group without sections, or with sections that do
+ * not cover its items exactly, is one run under the group heading.
+ */
+export function groupSections(group: RelatedEntityGroup, locale: string): RelatedSection[] {
+  const heading = groupHeading(group, locale);
+  const whole = [
+    { key: group.kind, title: heading, count: group.items.length, items: group.items },
+  ];
+  const sections = group.sections ?? [];
+  const covered = sections.reduce((sum, section) => sum + Math.max(0, section.count), 0);
+  if (sections.length === 0 || covered !== group.items.length) return whole;
+  const out: RelatedSection[] = [];
+  let start = 0;
+  for (const section of sections) {
+    if (section.count <= 0) continue;
+    out.push({
+      key: `${group.kind}:${section.value}`,
+      title: section.value ? displayString(section.displayName, locale) || section.value : heading,
+      count: section.count,
+      items: group.items.slice(start, start + section.count),
+    });
+    start += section.count;
+  }
+  return out;
+}
+
 /** The ancestor's related Entities of the page's kind, in the server's order, each once. */
 export function siblingContainers(
   ancestor: EntityInfo | null | undefined,

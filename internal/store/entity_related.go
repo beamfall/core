@@ -12,7 +12,11 @@ import (
 // context Entity, as Source items (Kind "entity"). LibraryID is the Library of
 // the group's first Entity, which names the bundle declaring the kind.
 type RelatedEntityGroup struct {
-	Kind      string
+	Kind string
+	// Group is the value of the kind's grouping field shared by Items, when
+	// RelatedEntityGroupsBy split the kind by one; "" for the kind's own
+	// group (unsplit, or the Entities with no value).
+	Group     string
 	LibraryID LibraryID
 	Items     []SourceItem
 }
@@ -26,8 +30,18 @@ type RelatedEntityGroup struct {
 // Entities in Libraries the filter hides are omitted. The context Entity must
 // itself be visible; a hidden one errors like a missing one, as
 // mediaForEntitySQL does. The read runs on the Entity's catalog plane, so an
-// encrypted Library's relations come from its own database.
+// encrypted Library's relations come from its own database. Each card carries
+// its year: the earliest of its directly linked visible Media.
 func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filter LibraryFilter) ([]RelatedEntityGroup, error) {
+	return s.RelatedEntityGroupsBy(ctx, entityID, filter, nil)
+}
+
+// RelatedEntityGroupsBy is RelatedEntityGroups with some kinds split by a
+// text field: groupFields maps a kind to the field whose value partitions it
+// (CORE-2769). A split kind yields its Entities without a value first, as the
+// kind's own group (Group ""), then one group per value in first-seen order;
+// every group keeps the kind's item order.
+func (s *Store) RelatedEntityGroupsBy(ctx context.Context, entityID EntityID, filter LibraryFilter, groupFields map[string]string) ([]RelatedEntityGroup, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
@@ -122,7 +136,80 @@ func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filt
 			return cmp.Or(naturalCompare(a.Title, b.Title), cmp.Compare(a.Title, b.Title), cmp.Compare(a.ID, b.ID))
 		})
 	}
-	return groups, nil
+	// Cards carry their year, as Source cards do (CORE-2532), so a client
+	// can date an artist's releases (CORE-2769).
+	for i := range groups {
+		if err := s.annotateEntityYearsLocked(ctx, filter, groups[i].Items); err != nil {
+			return nil, err
+		}
+	}
+	if len(groupFields) == 0 {
+		return groups, nil
+	}
+	split := make([]RelatedEntityGroup, 0, len(groups))
+	for _, group := range groups {
+		field := groupFields[group.Kind]
+		if field == "" {
+			split = append(split, group)
+			continue
+		}
+		parts, err := splitRelatedEntityGroup(ctx, plane.reader, group, field)
+		if err != nil {
+			return nil, err
+		}
+		split = append(split, parts...)
+	}
+	return split, nil
+}
+
+// splitRelatedEntityGroup partitions one kind's group by a text field's
+// value, keeping item order within each part.
+func splitRelatedEntityGroup(ctx context.Context, db *sql.DB, group RelatedEntityGroup, field string) ([]RelatedEntityGroup, error) {
+	ids := make([]EntityID, len(group.Items))
+	for i, item := range group.Items {
+		ids[i] = EntityID(item.ID)
+	}
+	values := make(map[EntityID]string, len(ids))
+	for _, batch := range entityIDBatches(ids, entityIDBatchSize) {
+		placeholders, args := entityIDPlaceholders(batch)
+		// #nosec G202 -- the interpolated fragment is internally generated placeholders.
+		rows, err := db.QueryContext(ctx, `SELECT entity_id, value FROM entity_field_text
+			WHERE field = ? AND entity_id IN (`+placeholders+`)`, append([]any{field}, args...)...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id EntityID
+			var value string
+			if err := rows.Scan(&id, &value); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			values[id] = strings.TrimSpace(value)
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	parts := []RelatedEntityGroup{{Kind: group.Kind, LibraryID: group.LibraryID}}
+	index := map[string]int{"": 0}
+	for _, item := range group.Items {
+		value := values[EntityID(item.ID)]
+		i, ok := index[value]
+		if !ok {
+			i = len(parts)
+			index[value] = i
+			parts = append(parts, RelatedEntityGroup{Kind: group.Kind, Group: value, LibraryID: group.LibraryID})
+		}
+		parts[i].Items = append(parts[i].Items, item)
+	}
+	if len(parts[0].Items) == 0 {
+		parts = parts[1:]
+	}
+	return parts, nil
 }
 
 func asciiDigit(r rune) bool { return r >= '0' && r <= '9' }

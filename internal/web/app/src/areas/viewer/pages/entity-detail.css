@@ -274,6 +274,14 @@
   margin-bottom: -12px;
 }
 
+/* A split kind's run size beside its heading (CORE-2769). */
+[data-register="viewer"] .bf-section-title .bf-section-count {
+  margin-right: auto;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 640px) {
   [data-register="viewer"] .bf-entity-lockup.bf-entity-has-photo {
     grid-template-columns: minmax(0, 1fr);

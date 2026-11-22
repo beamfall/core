@@ -283,6 +283,20 @@ export interface RelatedEntityGroup {
   /** The group kind's fixed archetype ("container", "person", …). */
   archetype?: string;
   items: SourceItem[];
+  /**
+   * The group split by a plugin-declared field (CORE-2769): consecutive runs
+   * of `items`, in order, each with the field value, its heading and size.
+   * Absent when the kind is not split.
+   */
+  sections?: RelatedEntitySection[];
+}
+
+/** One run of a related group's items sharing a field value (graph.RelatedEntitySectionInfo). */
+export interface RelatedEntitySection {
+  /** The field value; "" for the items carrying none. */
+  value: string;
+  displayName?: DisplayString;
+  count: number;
 }
 
 /** A generic Media detail row (graph.MediaInfo), intentionally domain-neutral. */

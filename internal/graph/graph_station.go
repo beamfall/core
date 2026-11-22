@@ -37,9 +37,10 @@ const stationWindowSize = 50
 // stationSeedKinds is the closed set of seed kinds (ADR-0098 §Stations: Track,
 // Artist, Album, Genre, or Collection). Track is a Media id; Artist/Album/Genre
 // are Music Plugin Entity ids; Collection is a Collection id. The names are
-// generic shape labels, not domain types.
+// generic shape labels, not domain types. "entity" seeds from any Entity id
+// without naming its kind, so a client needs no plugin vocabulary (CORE-2769).
 var stationSeedKinds = map[string]bool{
-	"track": true, "artist": true, "album": true, "genre": true, "collection": true,
+	"track": true, "artist": true, "album": true, "genre": true, "entity": true, "collection": true,
 }
 
 // stationSeed is the parsed seed for a generation request.
@@ -185,7 +186,7 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 			return nil, clientError("unknown station seed")
 		}
 		ids = append(ids, media.ID)
-	case "artist", "album", "genre":
+	case "artist", "album", "genre", "entity":
 		items, err := h.store.MediaForEntity(ctx, store.EntityID(seed.id), filter)
 		if err != nil {
 			return nil, clientError("unknown station seed")
@@ -208,7 +209,7 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 			ids = append(ids, m.MediaID)
 		}
 	default:
-		return nil, clientError("seedKind must be one of track, artist, album, genre, collection")
+		return nil, clientError("seedKind must be one of track, artist, album, genre, entity, collection")
 	}
 	// One batch read resolves every candidate id to a full Media row through the
 	// sealed-free MUSIC filter. A CollectionMembers list may mix non-music Media
@@ -388,7 +389,7 @@ func parseStationSeed(req request) (stationSeed, error) {
 		return stationSeed{}, clientError("seedKind and seedID are required")
 	}
 	if !stationSeedKinds[kind] {
-		return stationSeed{}, clientError("seedKind must be one of track, artist, album, genre, collection")
+		return stationSeed{}, clientError("seedKind must be one of track, artist, album, genre, entity, collection")
 	}
 	return stationSeed{kind: kind, id: id}, nil
 }

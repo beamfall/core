@@ -1283,6 +1283,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		Identify:                     identifyService,
 		Artwork:                      artworkService,
 		EntityBrowseSources:          activeEntityBrowseRules(executablePlugins, hooks.EntityBrowseRules, logger),
+		EntityGroupRules:             activeEntityGroupRules(executablePlugins, hooks.EntityGroupRules, logger),
 		StreamTokens:                 tokenService,
 		ArtworkCandidateFetcher:      scrapeEngine,
 		ArtworkCandidateImporter:     artworkService,

@@ -26,6 +26,7 @@ type Hooks struct {
 	HydrationMappers               map[string]HydrationMapper
 	EntityPosterRules              []EntityPosterRule
 	EntityBrowseRules              []EntityBrowseRule
+	EntityGroupRules               []EntityGroupRule
 	EntityEnrichments              []EntityEnrichment
 	OfflinePackResolvers           []OfflinePackResolverHook
 	OfflinePackAttestationVerifier offlinepack.DeviceKeyAttestationVerifier
