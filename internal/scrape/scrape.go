@@ -109,6 +109,11 @@ type EntityResult struct {
 	// its map Path or the lookup template names {sequence}, so it describes
 	// that sequence's container, not necessarily the one holding the Media.
 	SequenceScoped bool
+	// SequenceScopedLinks lists, sorted, the LinkRelations whose sibling map
+	// Path names {sequence}: those links describe the item's sequence even
+	// when the container itself is not sequence-scoped, so they replace a
+	// container's links only when it is that sequence's container.
+	SequenceScopedLinks []string
 	// containerRelations is the container map's ContainerRelations, which
 	// linkContainerResults resolves into Links once every map has resolved.
 	containerRelations map[string]string
@@ -883,6 +888,7 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 		if entityMap.Container {
 			if entity, ok := containerEntityResult(spec, entityMap, node, config); ok {
 				entity.SequenceScoped = strings.Contains(entityMap.Path, "{sequence}")
+				entity.SequenceScopedLinks = sequenceScopedLinks(spec, entityMap)
 				entities = append(entities, entity)
 			}
 			continue
@@ -1042,6 +1048,24 @@ func containerEntityResult(spec plugin.ScraperSpec, entityMap plugin.EntityMap, 
 		entity.Fields[field] = value
 	}
 	return entity, entity.ArtworkURL != "" || len(entity.Fields) > 0 || len(entity.Artwork) > 0 || entity.Title != "" || len(entityMap.ContainerRelations) > 0
+}
+
+// sequenceScopedLinks returns, sorted, the container relations of a container
+// map whose sibling map (any non-container map hydrating that relation) names
+// {sequence} in its Path, so its Entities, or their absence, belong to the
+// item's sequence.
+func sequenceScopedLinks(spec plugin.ScraperSpec, container plugin.EntityMap) []string {
+	var scoped []string
+	for _, relation := range slices.Sorted(maps.Keys(container.ContainerRelations)) {
+		sibling := container.ContainerRelations[relation]
+		for _, entityMap := range spec.EntityMaps {
+			if !entityMap.Container && entityMap.Relation == sibling && strings.Contains(entityMap.Path, "{sequence}") {
+				scoped = append(scoped, relation)
+				break
+			}
+		}
+	}
+	return scoped
 }
 
 // linkContainerResults fills each container result's Links from its map's

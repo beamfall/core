@@ -123,6 +123,39 @@ func TestLookupTemplateNamingSequenceScopesEveryContainerResult(t *testing.T) {
 	}
 }
 
+// TestSequenceScopedLinksNameRelationsFedByASequenceSelectedSiblingMap
+// (CORE-3128): an unscoped container's link relation is sequence-scoped when
+// the sibling map hydrating it names {sequence}, even if it resolves no
+// Entities, and only that relation is.
+func TestSequenceScopedLinksNameRelationsFedByASequenceSelectedSiblingMap(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"name":"Harbor","genres":[{"name":"Drama"}],"seasons":[{"season_number":2,"cast":[]}]}`)
+	}))
+	t.Cleanup(server.Close)
+	spec := plugin.ScraperSpec{
+		ID: "tv", Kind: "http-json", Endpoint: server.URL, LookupTemplate: "/tv/{id}",
+		FieldMap: map[string]string{"title": "name"},
+		EntityMaps: []plugin.EntityMap{
+			{Kind: "genre", Relation: "genre-of", Path: "genres", NamePath: "name"},
+			{Kind: "person", Relation: "credited-in", Path: "seasons[season_number={sequence}].cast", NamePath: "name"},
+			{Kind: "show", Container: true, ContainerRelations: map[string]string{"in-genre": "genre-of", "credit": "credited-in"}},
+		},
+	}
+	result, err := New(WithInsecureLoopback()).Lookup(context.Background(), spec, "42", Variables{Sequence: "2", Index: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entity := range result.Entities {
+		if entity.Container {
+			if entity.SequenceScoped || len(entity.SequenceScopedLinks) != 1 || entity.SequenceScopedLinks[0] != "credit" {
+				t.Fatalf("show result scoped %t, links %v; want only the credit relation scoped", entity.SequenceScoped, entity.SequenceScopedLinks)
+			}
+			return
+		}
+	}
+	t.Fatalf("entities = %#v, want a show container result", result.Entities)
+}
+
 func TestLookupSkipsItemDocumentAndOrdinalPathsWhenOrdinalUnknown(t *testing.T) {
 	server, paths := itemLookupServer(t)
 	engine := New(WithInsecureLoopback())

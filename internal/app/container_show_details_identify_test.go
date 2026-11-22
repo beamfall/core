@@ -154,3 +154,104 @@ func TestIdentifyHydratesShowDetails(t *testing.T) {
 		})
 	}
 }
+
+// TestOperatorOrdinalKeepsLinksFromSequenceSelectedSiblingMaps (CORE-3128): a
+// show map links the cast a sibling map selects by {sequence}. Correcting an
+// item to another season under an operator ordinal still writes the show's
+// own fields, but neither replaces nor clears the show's cast, since that
+// cast describes the operator's season, not the Entity being written.
+func TestOperatorOrdinalKeepsLinksFromSequenceSelectedSiblingMaps(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/tv/42" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprint(w, `{"name":"Harbor","overview":"Series overview.","seasons":[
+			{"season_number":1,"cast":[{"name":"Season One Actor"}]},
+			{"season_number":2,"cast":[]}]}`)
+	}))
+	defer server.Close()
+	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	library, err := st.CreateLibrary(ctx, "Shows", false, "demo", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: "/synthetic/Harbor/Season 01/S01E03.mkv",
+		Title: "S01E03", Container: "mkv", Codec: "h264", Class: store.MediaClassVideo,
+		ContentFingerprint: "fp-operator-ordinal-links-0001",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := (showSeasonHydrator{st: st}).HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{MediaID: media.ID, LibraryID: library.ID}); err != nil {
+		t.Fatal(err)
+	}
+	one := 1
+	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: "entity-season-1", Name: "season-of", ToEntityID: "entity-show", SortOrder: &one}); err != nil {
+		t.Fatal(err)
+	}
+	bundle := containerLookupBundle(server.URL)
+	bundle.EntityKinds[0].Relations = []plugin.RelationSpec{{Name: "credit", ToKind: "person"}}
+	bundle.EntityKinds = append(bundle.EntityKinds,
+		plugin.EntityKind{Name: "person", Archetype: "person", Relations: []plugin.RelationSpec{{Name: "credited-in", ToKind: plugin.MediaKindName}}})
+	spec := &bundle.Scrapers[0]
+	spec.ItemLookupTemplate, spec.ItemFieldMap = "", nil
+	spec.EntityMaps = []plugin.EntityMap{
+		{Kind: "person", Relation: "credited-in", Path: "seasons[season_number={sequence}].cast", NamePath: "name"},
+		{Kind: "show", Container: true, FieldMap: map[string]string{"overview": "overview"}, ContainerRelations: map[string]string{"credit": "credited-in"}},
+	}
+	service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), bundle, st)
+	service.SetEntities(st)
+	service.SetMediaTitles(parserMediaTitles{store: st, parsers: map[string]scanpkg.FilenameParser{"demo": ordinalParser{}}})
+
+	assertShow := func(step string) {
+		t.Helper()
+		show, err := st.Entity(ctx, "entity-show", metadataLibraryFilter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		overview := ""
+		for _, field := range show.Fields {
+			if field.Name == "overview" {
+				overview = field.Text
+			}
+		}
+		if overview != "Series overview." {
+			t.Fatalf("%s: show overview = %q, want the sequence-independent overview", step, overview)
+		}
+		groups, err := st.RelatedEntityGroups(ctx, "entity-show", metadataLibraryFilter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cast []string
+		for _, group := range groups {
+			if group.Kind == "person" {
+				for _, item := range group.Items {
+					cast = append(cast, item.Title)
+				}
+			}
+		}
+		if strings.Join(cast, ",") != "Season One Actor" {
+			t.Fatalf("%s: show cast = %v, want [Season One Actor] kept", step, cast)
+		}
+	}
+	if err := service.Apply(ctx, media.ID, "demo", "tv", "42"); err != nil {
+		t.Fatal(err)
+	}
+	assertShow("parsed ordinal")
+	manual := store.MediaOrdinal{Sequence: "2", Index: 5}
+	if err := service.ApplyFixMatch(ctx, media.ID, "demo", "tv", "42", nil, &manual, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	assertShow("fix match")
+	if err := service.Refresh(ctx, media.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertShow("refresh")
+}

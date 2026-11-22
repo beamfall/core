@@ -217,10 +217,13 @@ func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.Medi
 			continue
 		}
 		target := container.ID
-		if manual != nil && result.SequenceScoped && !containerMatchesSequence(container, manual.Sequence) {
-			slog.Debug("identify: container hydration skipped, holder does not match the operator sequence",
-				"media", mediaID, "kind", result.Kind, "sequence", manual.Sequence)
-			continue
+		if manual != nil && !containerMatchesSequence(container, manual.Sequence) {
+			if result.SequenceScoped {
+				slog.Debug("identify: container hydration skipped, holder does not match the operator sequence",
+					"media", mediaID, "kind", result.Kind, "sequence", manual.Sequence)
+				continue
+			}
+			result = withoutLinkRelations(result, result.SequenceScopedLinks)
 		}
 		if fields := entityFields(bundle, result); len(fields) > 0 || result.Title != "" || len(result.Links) > 0 {
 			existing, err := containers.Entity(ctx, target, unrestrictedEntityFilter)
@@ -247,6 +250,18 @@ func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.Medi
 		}
 	}
 	return nil
+}
+
+// withoutLinkRelations drops the named container relations from a result's
+// LinkRelations and Links, so applyContainerLinks neither replaces nor clears
+// them on a container they do not describe.
+func withoutLinkRelations(result scrape.EntityResult, drop []string) scrape.EntityResult {
+	if len(drop) == 0 {
+		return result
+	}
+	result.LinkRelations = slices.DeleteFunc(slices.Clone(result.LinkRelations), func(name string) bool { return slices.Contains(drop, name) })
+	result.Links = slices.DeleteFunc(slices.Clone(result.Links), func(link scrape.EntityLink) bool { return slices.Contains(drop, link.Relation) })
+	return result
 }
 
 // entityArtworkImporter is the optional ArtworkStore extension that writes
