@@ -14,6 +14,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { SignOutButton } from "@/areas/enroll";
 import { ProfileAvatar } from "@/components/beamfall/profile";
+import { ServerActivity } from "@/components/beamfall/ServerActivity";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 
@@ -22,7 +23,7 @@ import { useSession } from "@/lib/session";
 // Favorites, Playlists and History are the Profile's own lists (CORE-1635).
 // A disclosure, not an ARIA menu: plain links in tab order, closed by Escape,
 // an outside click or navigation.
-export function AccountMenu() {
+export function AccountMenu({ showActivity = false }: { showActivity?: boolean } = {}) {
   const t = useT();
   const location = useLocation();
   const { profiles, session, isManager } = useSession();
@@ -128,6 +129,7 @@ export function AccountMenu() {
               {t("settingsTitle")}
             </Link>
             {(canOpenConsole || isManager) && <hr className="bf-account-rule" />}
+            {showActivity && isManager && <ServerActivity menuItem />}
             {canOpenConsole && (
               <Link to="/console" className="bf-account-item">
                 <LayoutDashboard aria-hidden />

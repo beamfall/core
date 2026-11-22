@@ -179,4 +179,28 @@ describe("HeaderSearch", () => {
     );
     expect(screen.queryByRole("grid")).toBeNull();
   });
+
+  it("drops horizontal padding while collapsed to an icon on narrow phones (CORE-1228)", () => {
+    renderSearch();
+    const field = screen.getByRole("combobox", { name: "Search" });
+    expect(field).toHaveClass("w-10", "px-0", "max-sm:focus:pr-2", "max-sm:focus:pl-9");
+  });
+
+  it("hides query text while collapsed to an icon on narrow phones (CORE-1228)", async () => {
+    const user = userEvent.setup();
+    renderSearch();
+    const field = screen.getByRole("combobox", { name: "Search" });
+    await user.type(field, "sintel");
+    await user.tab();
+    expect(field).not.toHaveFocus();
+    expect(field).toHaveValue("sintel");
+    expect(field).toHaveClass(
+      "w-10",
+      "px-0",
+      "text-transparent",
+      "focus:text-[var(--text-primary)]",
+      "sm:text-[var(--text-primary)]",
+      "max-sm:[&:not(:focus)]:[&::-webkit-search-cancel-button]:hidden",
+    );
+  });
 });

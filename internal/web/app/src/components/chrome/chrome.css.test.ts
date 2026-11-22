@@ -50,3 +50,25 @@ describe("phone tab bar safe-area insets", () => {
     expect(rules(selector).join("\n")).toMatch(pattern);
   });
 });
+
+// CORE-1228: on landscape phones the fixed account menu is taller than the
+// viewport, so it must cap its height and scroll to keep Activity and Console
+// reachable.
+describe("account menu viewport scroll", () => {
+  it("caps .bf-account-panel height within the viewport and scrolls", () => {
+    const base = rules(".bf-account-panel").join("\n");
+    expect(base).toMatch(/overflow-y:\s*auto;/);
+    expect(base).toMatch(/max-height:\s*calc\(100dvh - \d+px\);/);
+
+    const phoneRules: string[] = [];
+    for (
+      let at = css.indexOf("\n  .bf-account-panel {");
+      at >= 0;
+      at = css.indexOf("\n  .bf-account-panel {", at + 1)
+    ) {
+      phoneRules.push(css.slice(at, css.indexOf("}", at)));
+    }
+    const phoneRule = phoneRules.find((rule) => rule.includes("position: fixed;")) ?? "";
+    expect(phoneRule).toMatch(/max-height:\s*calc\(100dvh - 68px/);
+  });
+});

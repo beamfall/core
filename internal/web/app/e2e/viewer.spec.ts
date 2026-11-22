@@ -276,6 +276,75 @@ test.describe("viewer", () => {
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
+  test("phone header fits 375px viewport with no horizontal overflow (CORE-1228)", async ({
+    page,
+  }) => {
+    const errors = collectFatalErrors(page);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.route("**/api/graphql", async (route) => {
+      const { query } = route.request().postDataJSON() as { query?: string };
+      if (query?.includes("currentSession")) {
+        const response = await route.fetch();
+        const json = await response.json();
+        if (json?.data?.currentSession) {
+          json.data.currentSession.deviceRole = "manager";
+          json.data.currentSession.revealed = true;
+          json.data.currentSession.revealPinSet = true;
+        }
+        return route.fulfill({ response, json });
+      }
+      if (query?.includes("profiles")) {
+        const response = await route.fetch();
+        const json = await response.json();
+        if (Array.isArray(json?.data?.profiles) && json.data.profiles.length === 1) {
+          json.data.profiles.push({
+            id: "extra-profile",
+            name: "Guest",
+            kind: "managed",
+            avatar: null,
+            pictureURL: null,
+            entryPinSet: false,
+          });
+        }
+        return route.fulfill({ response, json });
+      }
+      return route.fallback();
+    });
+
+    await page.goto("/web/");
+    await expect(page.getByRole("banner")).toBeVisible();
+    await expect(page.getByText("Revealed", { exact: true })).toBeVisible();
+    await expectNoHorizontalDocumentOverflow(page);
+
+    for (const locator of [
+      page.getByRole("button", { name: "Navigation" }),
+      page.getByRole("combobox", { name: "Search" }),
+      page.getByRole("button", { name: "Relock" }),
+      page.getByRole("link", { name: /Notifications,/ }),
+      page.getByRole("button", { name: /Account menu/ }),
+    ]) {
+      const box = await locator.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(375);
+    }
+
+    await page.getByRole("button", { name: /Account menu/ }).click();
+    for (const name of ["Switch profile", "Server console", "Manage libraries"]) {
+      const link = page.getByRole("link", { name });
+      await expect(link).toBeVisible();
+      const box = await link.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(375);
+    }
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("combobox", { name: "Search" }).click();
+    await expectNoHorizontalDocumentOverflow(page);
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
+
   test("auth boundary: viewer device is redirected away from Manage", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await page.goto("/web/manage/libraries");

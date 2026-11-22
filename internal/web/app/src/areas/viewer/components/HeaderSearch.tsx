@@ -166,7 +166,7 @@ export function HeaderSearch() {
           spellCheck={false}
           placeholder={t("searchPlaceholder")}
           onKeyDown={onKeyDown}
-          className="h-10 w-10 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-raised)] pr-2 pl-9 text-sm text-[var(--text-primary)] transition-[width,border-color] placeholder:text-transparent max-sm:focus:w-full focus:placeholder:text-[var(--text-muted)] sm:w-56 sm:placeholder:text-[var(--text-muted)] 2xl:w-64 2xl:pr-7 2xl:focus:w-80"
+          className="h-10 w-10 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-raised)] px-0 text-sm text-transparent transition-[width,border-color] placeholder:text-transparent max-sm:focus:w-full max-sm:focus:pr-2 max-sm:focus:pl-9 focus:text-[var(--text-primary)] focus:placeholder:text-[var(--text-muted)] sm:w-56 sm:pr-2 sm:pl-9 sm:text-[var(--text-primary)] sm:placeholder:text-[var(--text-muted)] 2xl:w-64 2xl:pr-7 2xl:focus:w-80 max-sm:[&:not(:focus)]:[&::-webkit-search-cancel-button]:hidden"
         />
         {!query && (
           <kbd

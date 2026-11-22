@@ -230,8 +230,8 @@ export function AppShell({
               {t("revealed")}
             </Badge>
           )}
-          {isManager && <ServerActivity />}
-          {canOpenConsole && (
+          {!phone && isManager && <ServerActivity />}
+          {!phone && canOpenConsole && (
             <Link
               to="/console"
               className={
@@ -259,7 +259,7 @@ export function AppShell({
               )}
             </Link>
           )}
-          {session && <AccountMenu />}
+          {session && <AccountMenu showActivity={phone} />}
         </div>
       </header>
 

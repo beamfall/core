@@ -1,6 +1,6 @@
 import { Activity, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { useAnyRescanActive } from "@/components/beamfall/LibraryRescan";
 import { fetchAdminSession, fetchJobs } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
@@ -22,8 +22,9 @@ import { useT } from "@/lib/i18n";
 const ACTIVE_POLL_MS = 5000;
 const IDLE_POLL_MS = 30000;
 
-export function ServerActivity() {
+export function ServerActivity({ menuItem = false }: { menuItem?: boolean } = {}) {
   const t = useT();
+  const location = useLocation();
   const rescanning = useAnyRescanActive();
   const [running, setRunning] = useState<number | null>(null);
 
@@ -85,6 +86,22 @@ export function ServerActivity() {
   const count = running ?? 0;
   const busy = rescanning || count > 0;
   const label = count > 0 ? t("serverActivityRunning", { count }) : t("serverActivity");
+  if (menuItem) {
+    return (
+      <Link
+        to="/console/operations"
+        className="bf-account-item bf-activity-link"
+        aria-current={location.pathname === "/console/operations" ? "page" : undefined}
+      >
+        {busy ? (
+          <RefreshCw aria-hidden className="size-[18px] animate-spin" />
+        ) : (
+          <Activity aria-hidden className="size-[18px]" />
+        )}
+        {label}
+      </Link>
+    );
+  }
   return (
     <Link
       to="/console/operations"

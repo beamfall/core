@@ -681,6 +681,11 @@
   right: 0;
   z-index: 50;
   width: 260px;
+  max-height: calc(100vh - 72px);
+  max-height: calc(100dvh - 72px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
   padding: 8px;
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
@@ -839,6 +844,8 @@
     right: 12px;
     left: 12px;
     width: auto;
+    max-height: calc(100vh - 68px - env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - 68px - env(safe-area-inset-bottom, 0px));
   }
 }
 

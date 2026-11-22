@@ -172,4 +172,20 @@ describe("ServerActivity", () => {
     expect(fetchAdminSession).toHaveBeenCalledTimes(2);
     expect(fetchJobs).toHaveBeenCalledTimes(3);
   });
+
+  it("renders a full-label account menu item when menuItem is set", async () => {
+    vi.mocked(fetchJobs).mockResolvedValue([job("running"), job("running")]);
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/console/operations"]}>
+          <ServerActivity menuItem />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    await advance(0);
+    const link = screen.getByRole("link", { name: "2 jobs running" });
+    expect(link).toHaveClass("bf-account-item");
+    expect(link).toHaveAttribute("href", "/console/operations");
+    expect(link).toHaveAttribute("aria-current", "page");
+  });
 });
