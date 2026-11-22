@@ -39,6 +39,12 @@ type PlaybackProgress struct {
 	// last-applied event-time is a no-op, so a stale offline-flush from one device
 	// cannot rewind a newer position already recorded by another.
 	EventTimeMS int64
+	// DeviceID and PlayMethod are write-only: the reporting Device and the
+	// play method (PlayMethodDirect, PlayMethodRemux or PlayMethodTranscode)
+	// the server chose for its session, recorded on the progress event for
+	// play history (CORE-1703). Empty when unknown.
+	DeviceID   DeviceID
+	PlayMethod string
 	// Provenance is the ADR-0009 §7 import discriminator: "" native,
 	// a shape-named source value for imported engagement. Write-only on input
 	// is via UpsertPlaybackProgressWithProvenance; this field is the read-back.
@@ -247,6 +253,8 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 		ImportMatch:      prov.MatchMethod,
 		EventTimeMS:      eventTimeMS,
 		ChannelContext:   progress.ChannelContext,
+		DeviceID:         string(progress.DeviceID),
+		PlayMethod:       progress.PlayMethod,
 	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {

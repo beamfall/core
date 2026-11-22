@@ -36,6 +36,11 @@ type playbackProjectionEvent struct {
 	EventTimeMS       *int64 `json:"eventTimeMs"`
 	ChannelContext    bool   `json:"channelContext"`
 	MergedFromMediaID string `json:"mergedFromMediaId,omitempty"`
+	// DeviceID and PlayMethod say which Device reported and how the server
+	// delivered to it (CORE-1703); play history reads them. Older events
+	// carry neither.
+	DeviceID   string `json:"deviceId,omitempty"`
+	PlayMethod string `json:"playMethod,omitempty"`
 }
 
 func appendPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {

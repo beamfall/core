@@ -1,9 +1,10 @@
 import "@testing-library/jest-dom/vitest";
-import { act, render, renderHook, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
 import {
+  fetchDevices,
   fetchHostMetrics,
   fetchLibraries,
   fetchLiveSessions,
@@ -14,12 +15,14 @@ import {
   terminateSession,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import { watched } from "@/lib/playReporting";
 import { formatBitrate, HostGraphs, LiveSessions, useEventRefresh } from "./Dashboard";
-import { dayStart, PlayHistory, watched } from "./PlayHistory";
+import { dayStart, PlayHistory } from "./PlayHistory";
 
 // feature:live-sessions feature:host-metrics feature:play-history
 
 vi.mock("@/lib/graphql", () => ({
+  fetchDevices: vi.fn(),
   fetchHostMetrics: vi.fn(),
   fetchLibraries: vi.fn(),
   fetchLiveSessions: vi.fn(),
@@ -335,9 +338,10 @@ describe("HostGraphs", () => {
 });
 
 describe("PlayHistory", () => {
-  it("lists plays and re-ranks when the window changes", async () => {
+  it("lists plays by device and method, breaks them down, and re-ranks over a window or range", async () => {
     vi.mocked(fetchProfilesAdmin).mockResolvedValue([] as never);
     vi.mocked(fetchLibraries).mockResolvedValue([] as never);
+    vi.mocked(fetchDevices).mockResolvedValue([] as never);
     vi.mocked(fetchPlayHistory).mockResolvedValue([
       {
         profileID: "p-1",
@@ -346,26 +350,52 @@ describe("PlayHistory", () => {
         title: "Night Train",
         libraryID: "l-1",
         libraryTitle: "Films",
+        deviceID: "d-1",
+        deviceName: "Living room TV",
+        playMethod: "transcode",
         startedAt: "2026-11-10T20:00:00Z",
         watchedSeconds: 7500,
         finished: true,
       },
     ] as never);
+    const tally = { plays: 3, watchedSeconds: 7500 };
     vi.mocked(fetchPlayStats).mockResolvedValue({
       windowDays: 30,
-      profiles: [{ profileID: "p-1", profileName: "Ada", plays: 3, watchedSeconds: 7500 }],
-      items: [{ mediaID: "m-1", title: "Night Train", plays: 3, watchedSeconds: 7500 }],
-    } as never);
+      since: "",
+      until: "",
+      totalPlays: 3,
+      totalWatchedSeconds: 7500,
+      profiles: [{ profileID: "p-1", profileName: "Ada", ...tally }],
+      items: [{ mediaID: "m-1", title: "Night Train", libraryID: "l-1", ...tally }],
+      devices: [{ deviceID: "", deviceName: "", deviceClient: "", ...tally }],
+      methods: [{ playMethod: "remux", ...tally }],
+      days: [{ day: "2026-11-10", ...tally }],
+    });
     show(<PlayHistory />);
 
     expect(await screen.findByText("Films")).toBeInTheDocument();
     expect(screen.getByText("Finished")).toBeInTheDocument();
-    expect(await screen.findAllByText("3 plays · 2 h 05 min")).toHaveLength(2);
-    expect(vi.mocked(fetchPlayStats).mock.calls[0][0]).toBe(30);
+    expect(screen.getByText("Living room TV")).toBeInTheDocument();
+    expect(screen.getByText("Server transcode")).toBeInTheDocument();
+    expect(await screen.findByText("Total: 3 plays · 2 h 05 min")).toBeInTheDocument();
+    // Users, items, devices, methods and days each rank the one row.
+    expect(screen.getAllByText("3 plays · 2 h 05 min")).toHaveLength(5);
+    expect(screen.getByText("Unknown device")).toBeInTheDocument();
+    expect(screen.getByText("Direct stream")).toBeInTheDocument();
+    expect(vi.mocked(fetchPlayStats).mock.calls[0][0]).toEqual({ windowDays: 30 });
 
     await userEvent.click(screen.getByRole("button", { name: "7 days" }));
-    expect(vi.mocked(fetchPlayStats).mock.calls.at(-1)?.[0]).toBe(7);
+    expect(vi.mocked(fetchPlayStats).mock.calls.at(-1)?.[0]).toEqual({ windowDays: 7 });
     expect(screen.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true");
+
+    // A From day replaces the window, for the rankings and the table alike.
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-11-01" } });
+    const since = new Date(2026, 10, 1).toISOString();
+    await vi.waitFor(() =>
+      expect(vi.mocked(fetchPlayStats).mock.calls.at(-1)?.[0]).toEqual({ since }),
+    );
+    expect(vi.mocked(fetchPlayHistory).mock.calls.at(-1)?.[0]).toEqual({ since });
+    expect(screen.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "false");
   });
 });
 

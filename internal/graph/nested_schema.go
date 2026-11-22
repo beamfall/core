@@ -105,6 +105,8 @@ var resultTypes = map[string]any{
 	"myengagement":           MyEngagementExportInfo{},
 	"mydatasummary":          MyDataSummaryInfo{},
 	"myengagementlog":        MyEngagementLogInfo{},
+	"myplayhistory":          PlayInfo{},
+	"myplaystats":            PlayStatsInfo{},
 	"mysessions":             MySessionsInfo{},
 	"mutes":                  MyMuteInfo{},
 	"engagementcounter":      EngagementCounterResult{},

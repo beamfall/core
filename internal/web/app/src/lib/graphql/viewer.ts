@@ -8,6 +8,7 @@
 
 import { ApiError, getManifest, graphql } from "@/lib/api";
 import { rebindCompatibility } from "@/lib/compat";
+import { normalizePlayStats, PLAY_FIELDS, PLAY_STATS_FIELDS, utcOffsetMinutes } from "./plays";
 import type {
   ClientPref,
   ControlSessionResult,
@@ -32,6 +33,8 @@ import type {
   NotificationReadResult,
   PlaybackAdjustmentRanges,
   PlaybackMarker,
+  PlayInfo,
+  PlayStatsInfo,
   PrePlayItem,
   ProfileSessionInfo,
   ProfileSummary,
@@ -482,6 +485,33 @@ const MY_DATA_SUMMARY_QUERY =
 export async function fetchMyDataSummary(): Promise<MyDataSummary> {
   const data = await graphql<{ myDataSummary: MyDataSummary }>(MY_DATA_SUMMARY_QUERY, {});
   return data.myDataSummary;
+}
+
+const MY_PLAY_HISTORY_QUERY = `query MyPlayHistory($limit: Int) { myPlayHistory(limit: $limit) { ${PLAY_FIELDS} } }`;
+
+/** MyPlayHistory — the caller's own plays, newest first (CORE-1703). */
+export async function fetchMyPlayHistory(limit: number, signal?: AbortSignal): Promise<PlayInfo[]> {
+  const data = await graphql<{ myPlayHistory: PlayInfo[] | null }>(
+    MY_PLAY_HISTORY_QUERY,
+    { limit },
+    signal,
+  );
+  return data.myPlayHistory ?? [];
+}
+
+const MY_PLAY_STATS_QUERY = `query MyPlayStats($windowDays: Int, $utcOffsetMinutes: Int) { myPlayStats(windowDays: $windowDays, utcOffsetMinutes: $utcOffsetMinutes) { ${PLAY_STATS_FIELDS} } }`;
+
+/** MyPlayStats — the caller's own totals and breakdowns over 7, 30 or 90 days. */
+export async function fetchMyPlayStats(
+  windowDays: 7 | 30 | 90,
+  signal?: AbortSignal,
+): Promise<PlayStatsInfo> {
+  const data = await graphql<{ myPlayStats: PlayStatsInfo | null }>(
+    MY_PLAY_STATS_QUERY,
+    { windowDays, utcOffsetMinutes: utcOffsetMinutes() },
+    signal,
+  );
+  return normalizePlayStats(data.myPlayStats);
 }
 
 const MY_ENGAGEMENT_LOG_QUERY =

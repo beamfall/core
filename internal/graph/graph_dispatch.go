@@ -534,6 +534,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"myengagement":                       newFieldHandler("myEngagement", "myEngagement", fieldRead, roleSession, 112),
 	"myengagementlog":                    newFieldHandler("myEngagementLog", "myEngagementLog", fieldRead, roleSession, 114),
 	"mysessions":                         newFieldHandler("mySessions", "mySessions", fieldRead, roleSession, 116),
+	"myplayhistory":                      newFieldHandler("myPlayHistory", "myPlayHistory", fieldRead, roleSession, 116),
+	"myplaystats":                        newFieldHandler("myPlayStats", "myPlayStats", fieldRead, roleSession, 116),
 	"navigationmanifest":                 newFieldHandler("navigationManifest", "manifest", fieldRead, roleSession, 4),
 	"navoverride":                        newFieldHandler("navOverride", "navOverride", fieldRead, roleSession|roleManager, 62),
 	"navoverridehistory":                 newFieldHandler("navOverrideHistory", "navOverrideHistory", fieldRead, roleSession|roleManager, 62),
@@ -3598,10 +3600,23 @@ func dispatchFieldBlock116(dispatch *fieldDispatchContext) response {
 	h := dispatch.handler
 	ctx := dispatch.ctx
 	scope := dispatch.scope
+	req := dispatch.req
 	fields := dispatch.fields
 	if fields["mysessions"] {
 		sessions, err := h.mySessions(ctx, scope)
 		if resp := resolveField(dispatch, "mysessions", sessions, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["myplayhistory"] {
+		plays, err := h.playHistory(ctx, scope, req, ownPlayFilter(scope, req))
+		if resp := resolveField(dispatch, "myplayhistory", plays, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["myplaystats"] {
+		stats, err := h.playStats(ctx, scope, req, ownPlayFilter(scope, req))
+		if resp := resolveField(dispatch, "myplaystats", stats, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
@@ -4087,13 +4102,13 @@ func dispatchFieldBlock145(dispatch *fieldDispatchContext) response {
 		}
 	}
 	if fields["playhistory"] {
-		plays, err := h.playHistory(ctx, scope, req)
+		plays, err := h.playHistory(ctx, scope, req, consolePlayFilter(req))
 		if resp := resolveField(dispatch, "playhistory", plays, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
 	if fields["playstats"] {
-		stats, err := h.playStats(ctx, scope, req)
+		stats, err := h.playStats(ctx, scope, req, consolePlayFilter(req))
 		if resp := resolveField(dispatch, "playstats", stats, err); len(resp.Errors) > 0 {
 			return resp
 		}

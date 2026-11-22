@@ -1992,6 +1992,43 @@
       ]
     },
     {
+      "field": "myplayhistory",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "deviceClient",
+        "deviceID",
+        "deviceName",
+        "finished",
+        "libraryID",
+        "libraryTitle",
+        "mediaID",
+        "playMethod",
+        "profileID",
+        "profileName",
+        "startedAt",
+        "title",
+        "watchedSeconds"
+      ]
+    },
+    {
+      "field": "myplaystats",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "days",
+        "devices",
+        "items",
+        "methods",
+        "profiles",
+        "since",
+        "totalPlays",
+        "totalWatchedSeconds",
+        "until",
+        "windowDays"
+      ]
+    },
+    {
       "field": "mysessions",
       "effect": "read",
       "tier": "session",
@@ -2194,10 +2231,14 @@
       "effect": "read",
       "tier": "admin",
       "children": [
+        "deviceClient",
+        "deviceID",
+        "deviceName",
         "finished",
         "libraryID",
         "libraryTitle",
         "mediaID",
+        "playMethod",
         "profileID",
         "profileName",
         "startedAt",
@@ -2210,8 +2251,15 @@
       "effect": "read",
       "tier": "admin",
       "children": [
+        "days",
+        "devices",
         "items",
+        "methods",
         "profiles",
+        "since",
+        "totalPlays",
+        "totalWatchedSeconds",
+        "until",
         "windowDays"
       ]
     },

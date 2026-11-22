@@ -122,7 +122,7 @@ func TestPlayHistoryDerivesPlaysAndFilters(t *testing.T) {
 		t.Errorf("first default play = %#v, want 600s unfinished", plays[3])
 	}
 
-	byProfile, err := st.PlayHistory(ctx, all, PlayHistoryQuery{ProfileID: "profile-default"})
+	byProfile, err := st.PlayHistory(ctx, all, PlayHistoryQuery{PlayFilter: PlayFilter{ProfileID: "profile-default"}})
 	if err != nil || len(byProfile) != 2 {
 		t.Fatalf("profile filter = %d plays (err %v), want 2", len(byProfile), err)
 	}
@@ -130,15 +130,15 @@ func TestPlayHistoryDerivesPlaysAndFilters(t *testing.T) {
 	if err != nil || len(byDate) != 1 || byDate[0].ProfileID != "profile-managed" {
 		t.Fatalf("date filter = %#v (err %v), want the one managed play", byDate, err)
 	}
-	byLibrary, err := st.PlayHistory(ctx, all, PlayHistoryQuery{LibraryID: "library-local"})
+	byLibrary, err := st.PlayHistory(ctx, all, PlayHistoryQuery{PlayFilter: PlayFilter{LibraryID: "library-local"}})
 	if err != nil || len(byLibrary) != 3 {
 		t.Fatalf("library filter = %d plays (err %v), want 3", len(byLibrary), err)
 	}
-	hidden, err := st.PlayHistory(ctx, all, PlayHistoryQuery{LibraryID: "library-archive"})
+	hidden, err := st.PlayHistory(ctx, all, PlayHistoryQuery{PlayFilter: PlayFilter{LibraryID: "library-archive"}})
 	if err != nil || len(hidden) != 0 {
 		t.Fatalf("unrevealed library filter = %d plays (err %v), want none", len(hidden), err)
 	}
-	shown, err := st.PlayHistory(ctx, revealed, PlayHistoryQuery{LibraryID: "library-archive"})
+	shown, err := st.PlayHistory(ctx, revealed, PlayHistoryQuery{PlayFilter: PlayFilter{LibraryID: "library-archive"}})
 	if err != nil || len(shown) != 1 || shown[0].Title == "" {
 		t.Fatalf("revealed library filter = %#v (err %v), want the archive play with its title", shown, err)
 	}
@@ -147,7 +147,7 @@ func TestPlayHistoryDerivesPlaysAndFilters(t *testing.T) {
 		t.Fatalf("limit = %d plays (err %v), want 2", len(limited), err)
 	}
 
-	stats, err := st.PlayStats(ctx, all, day.Add(-time.Hour))
+	stats, err := st.PlayStats(ctx, all, PlayStatsQuery{Since: day.Add(-time.Hour)})
 	if err != nil {
 		t.Fatalf("PlayStats: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestPlayHistoryDerivesPlaysAndFilters(t *testing.T) {
 	if len(stats.Items) != 1 || stats.Items[0].MediaID != "media-alpha" || stats.Items[0].Plays != 3 || stats.Items[0].Title == "" {
 		t.Errorf("item ranking = %#v, want only the visible media-alpha with 3 plays", stats.Items)
 	}
-	recent, err := st.PlayStats(ctx, all, day.Add(12*time.Hour))
+	recent, err := st.PlayStats(ctx, all, PlayStatsQuery{Since: day.Add(12 * time.Hour)})
 	if err != nil || len(recent.Profiles) != 1 || recent.Profiles[0].ProfileID != "profile-managed" {
 		t.Errorf("windowed ranking = %#v (err %v), want only managed", recent.Profiles, err)
 	}
@@ -199,7 +199,7 @@ func TestPlayHistoryDatesDelayedReportsByWhenTheyWerePlayed(t *testing.T) {
 	}
 
 	// The date filter and the rankings follow the play, not the upload.
-	thatDay, err := st.PlayHistory(ctx, all, PlayHistoryQuery{ProfileID: "profile-default", Until: played.Add(4 * time.Hour)})
+	thatDay, err := st.PlayHistory(ctx, all, PlayHistoryQuery{PlayFilter: PlayFilter{ProfileID: "profile-default"}, Until: played.Add(4 * time.Hour)})
 	if err != nil || len(thatDay) != 1 {
 		t.Fatalf("day-of filter = %#v (err %v), want the delayed play", thatDay, err)
 	}
@@ -207,7 +207,7 @@ func TestPlayHistoryDatesDelayedReportsByWhenTheyWerePlayed(t *testing.T) {
 	if err != nil || len(nextDay) != 0 {
 		t.Fatalf("next-day filter = %#v (err %v), want nothing", nextDay, err)
 	}
-	stats, err := st.PlayStats(ctx, all, played.Add(4*time.Hour))
+	stats, err := st.PlayStats(ctx, all, PlayStatsQuery{Since: played.Add(4 * time.Hour)})
 	if err != nil || len(stats.Profiles) != 0 || len(stats.Items) != 0 {
 		t.Fatalf("next-day ranking = %#v (err %v), want empty", stats, err)
 	}
@@ -298,7 +298,7 @@ func TestPlayHistoryWindowKeepsPlaysWhole(t *testing.T) {
 		t.Fatalf("window before since = %#v, want the straddling play whole: 1800s from since-10m", earlier)
 	}
 
-	stats, err := st.PlayStats(ctx, all, since)
+	stats, err := st.PlayStats(ctx, all, PlayStatsQuery{Since: since})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,14 +350,14 @@ func TestPlayHistoryLibraryFilterIsNotCrowdedOut(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := st.PlayHistory(ctx, revealed, PlayHistoryQuery{LibraryID: "library-archive", Since: start.Add(-time.Hour)})
+	got, err := st.PlayHistory(ctx, revealed, PlayHistoryQuery{PlayFilter: PlayFilter{LibraryID: "library-archive"}, Since: start.Add(-time.Hour)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got[0].MediaID != "media-archive" {
 		t.Fatalf("archive history = %#v, want its one play behind %d busy local plays", got, busy)
 	}
-	local, err := st.PlayHistory(ctx, revealed, PlayHistoryQuery{LibraryID: "library-local", Since: start.Add(-time.Hour), Limit: 3})
+	local, err := st.PlayHistory(ctx, revealed, PlayHistoryQuery{PlayFilter: PlayFilter{LibraryID: "library-local"}, Since: start.Add(-time.Hour), Limit: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ func TestPlayHistoryCountsOnlyRealPlaysAndFinishesNearTheEnd(t *testing.T) {
 	if !plays[2].StartedAt.Equal(day.Add(2*time.Hour)) || plays[2].WatchedSeconds != 600 || plays[2].Finished {
 		t.Errorf("early-watched play = %#v, want 600s not finished", plays[2])
 	}
-	stats, err := st.PlayStats(ctx, all, day.Add(-time.Hour))
+	stats, err := st.PlayStats(ctx, all, PlayStatsQuery{Since: day.Add(-time.Hour)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +456,7 @@ func TestPlayHistoryDoesNotCountPauses(t *testing.T) {
 	if len(plays) != 2 || plays[0].WatchedSeconds != 300 || plays[1].WatchedSeconds != 615 {
 		t.Fatalf("plays = %#v, want 300s (reporting client) and 615s (silent client)", plays)
 	}
-	stats, err := st.PlayStats(ctx, all, day.Add(-time.Hour))
+	stats, err := st.PlayStats(ctx, all, PlayStatsQuery{Since: day.Add(-time.Hour)})
 	if err != nil {
 		t.Fatal(err)
 	}

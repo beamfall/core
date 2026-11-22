@@ -4471,6 +4471,8 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		PositionSeconds: report.PositionSeconds,
 		DurationSeconds: report.DurationSeconds,
 		EventTimeMS:     report.EventTimeMS,
+		DeviceID:        scope.DeviceID,
+		PlayMethod:      h.heldPlayMethod(scope.SessionID, media.ID),
 	}, finished, h.resumePolicy(ctx, media)); err != nil {
 		return store.PlaybackProgress{}, err
 	}
@@ -4487,6 +4489,21 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		h.notifyWatched(ctx, scope.ProfileID, media)
 	}
 	return progress, nil
+}
+
+// heldPlayMethod is the play method the server decided for this session's
+// playback of the Media, recorded on each progress report for play history
+// (CORE-1703). With no held decision the method is left unknown rather than
+// guessed.
+func (h *Handler) heldPlayMethod(sessionID store.SessionID, mediaID store.MediaID) string {
+	if h.playbackObserver == nil {
+		return ""
+	}
+	seen, ok := h.playbackObserver.PlayObservation(sessionID, mediaID)
+	if !ok || seen.Method == store.PlayMethodUnknown || !store.ValidPlayMethod(seen.Method) {
+		return ""
+	}
+	return seen.Method
 }
 
 // notifyWatched resolves the watched Media's External IDs and hands the
@@ -6043,6 +6060,8 @@ var queryFields = map[string]bool{
 	"mydatasummary":          true,
 	"myengagementlog":        true,
 	"mysessions":             true,
+	"myplayhistory":          true,
+	"myplaystats":            true,
 	"scrobblelinks":          true, // MUSIC-7 (ADR-0098 area 7): own Profile's scrobble links (non-secret)
 	"scrobbleeligibility":    true, // MUSIC-7 (ADR-0098 area 7): per-visible-Library scrobble eligibility
 	"scrobblestatus":         true, // MUSIC-7 (ADR-0098 area 7): admin diagnostic (dead-letter/skip/adapters)

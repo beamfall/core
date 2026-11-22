@@ -27,6 +27,12 @@ export const viewerAccountMyDataStrings = {
     myDataSummaryLead:
       "A snapshot of your activity on this profile, computed live from your own data.",
     myDataSummaryError: "Could not load your summary.",
+    myDataPlaysHeading: "Watch history",
+    myDataPlaysLead:
+      "What you played, for how long and on which devices. Read from this server only.",
+    myDataPlaysRecent: "Recent plays",
+    myDataPlaysEmpty: "You have not played anything in this period.",
+    myDataPlaysError: "Could not load your watch history.",
     myDataSummaryPlays: "Plays",
     myDataSummaryWatched: "Watched",
     myDataSummaryFavorites: "Favorites",
@@ -81,6 +87,12 @@ export const viewerAccountMyDataStrings = {
     myDataSummaryLead:
       "Un aperçu de votre activité sur ce profil, calculé en direct à partir de vos propres données.",
     myDataSummaryError: "Impossible de charger votre résumé.",
+    myDataPlaysHeading: "Historique de visionnage",
+    myDataPlaysLead:
+      "Ce que vous avez lu, combien de temps et sur quels appareils. Lu depuis ce serveur uniquement.",
+    myDataPlaysRecent: "Lectures récentes",
+    myDataPlaysEmpty: "Vous n’avez rien lu durant cette période.",
+    myDataPlaysError: "Impossible de charger votre historique de visionnage.",
     myDataSummaryPlays: "Lectures",
     myDataSummaryWatched: "Vus",
     myDataSummaryFavorites: "Favoris",
@@ -136,6 +148,12 @@ export const viewerAccountMyDataStrings = {
     myDataSummaryLead:
       "Eine Momentaufnahme deiner Aktivität in diesem Profil, live aus deinen eigenen Daten berechnet.",
     myDataSummaryError: "Deine Zusammenfassung konnte nicht geladen werden.",
+    myDataPlaysHeading: "Wiedergabeverlauf",
+    myDataPlaysLead:
+      "Was du wiedergegeben hast, wie lange und auf welchen Geräten. Nur von diesem Server gelesen.",
+    myDataPlaysRecent: "Letzte Wiedergaben",
+    myDataPlaysEmpty: "Du hast in diesem Zeitraum nichts wiedergegeben.",
+    myDataPlaysError: "Dein Wiedergabeverlauf konnte nicht geladen werden.",
     myDataSummaryPlays: "Wiedergaben",
     myDataSummaryWatched: "Angesehen",
     myDataSummaryFavorites: "Favoriten",
@@ -191,6 +209,12 @@ export const viewerAccountMyDataStrings = {
     myDataSummaryLead:
       "Una instantánea de tu actividad en este perfil, calculada en directo a partir de tus propios datos.",
     myDataSummaryError: "No se pudo cargar tu resumen.",
+    myDataPlaysHeading: "Historial de reproducción",
+    myDataPlaysLead:
+      "Lo que reprodujiste, durante cuánto tiempo y en qué dispositivos. Se lee solo de este servidor.",
+    myDataPlaysRecent: "Reproducciones recientes",
+    myDataPlaysEmpty: "No has reproducido nada en este período.",
+    myDataPlaysError: "No se pudo cargar tu historial de reproducción.",
     myDataSummaryPlays: "Reproducciones",
     myDataSummaryWatched: "Vistos",
     myDataSummaryFavorites: "Favoritos",
@@ -246,6 +270,12 @@ export const viewerAccountMyDataStrings = {
     myDataSummaryLead:
       "Um retrato da sua atividade neste perfil, calculado em tempo real a partir dos seus próprios dados.",
     myDataSummaryError: "Não foi possível carregar seu resumo.",
+    myDataPlaysHeading: "Histórico de reprodução",
+    myDataPlaysLead:
+      "O que você reproduziu, por quanto tempo e em quais dispositivos. Lido apenas deste servidor.",
+    myDataPlaysRecent: "Reproduções recentes",
+    myDataPlaysEmpty: "Você não reproduziu nada neste período.",
+    myDataPlaysError: "Não foi possível carregar seu histórico de reprodução.",
     myDataSummaryPlays: "Reproduções",
     myDataSummaryWatched: "Assistidos",
     myDataSummaryFavorites: "Favoritos",
