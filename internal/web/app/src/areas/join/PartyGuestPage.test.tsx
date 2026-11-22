@@ -27,6 +27,7 @@ function guestState(overrides: Partial<PartyGuestState> = {}): PartyGuestState {
       state: "current",
       position: 0,
       etaSeconds: 0,
+      pitchSemitones: 0,
     },
     entries: [
       {
@@ -37,6 +38,7 @@ function guestState(overrides: Partial<PartyGuestState> = {}): PartyGuestState {
         state: "waiting",
         position: 1,
         etaSeconds: 30,
+        pitchSemitones: 0,
       },
       {
         id: "e2",
@@ -46,6 +48,7 @@ function guestState(overrides: Partial<PartyGuestState> = {}): PartyGuestState {
         state: "waiting",
         position: 2,
         etaSeconds: 280,
+        pitchSemitones: 0,
       },
     ],
     mine: [
@@ -58,6 +61,7 @@ function guestState(overrides: Partial<PartyGuestState> = {}): PartyGuestState {
         state: "waiting",
         position: 2,
         etaSeconds: 280,
+        pitchSemitones: 0,
       },
       {
         id: "e9",
@@ -68,6 +72,7 @@ function guestState(overrides: Partial<PartyGuestState> = {}): PartyGuestState {
         state: "pending",
         position: 0,
         etaSeconds: 0,
+        pitchSemitones: 0,
       },
     ],
     ...overrides,

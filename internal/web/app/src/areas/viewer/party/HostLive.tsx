@@ -577,7 +577,7 @@ export function PartyRotation({ session, run }: PanelProps) {
                   <span className="bf-party-muted text-sm">
                     {[
                       t("partyHostRequestedBy", { name: entry.participantName }),
-                      entry.pitchSemitones
+                      entry.pitchSemitones !== 0
                         ? t("partyHostEntryKey", { key: signedSemitones(entry.pitchSemitones) })
                         : "",
                     ]
@@ -661,7 +661,7 @@ export function PartyRotation({ session, run }: PanelProps) {
                       entry.etaSeconds > 0
                         ? t("partyHostEta", { minutes: minutes(entry.etaSeconds) })
                         : t("partyHostEtaNext"),
-                      entry.pitchSemitones
+                      entry.pitchSemitones !== 0
                         ? t("partyHostEntryKey", { key: signedSemitones(entry.pitchSemitones) })
                         : "",
                       entry.lastPlayedAt !== "" ? t("partyHostSungEarlier") : "",

@@ -48,6 +48,7 @@ function entry(id: string, title: string, position: number): PartyEntry {
     etaSeconds: position * 200,
     addedAt: "2026-11-21T20:00:00Z",
     lastPlayedAt: "",
+    pitchSemitones: 0,
   };
 }
 

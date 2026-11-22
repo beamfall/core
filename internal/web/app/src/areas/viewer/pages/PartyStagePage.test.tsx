@@ -51,6 +51,7 @@ const song: PartyEntry = {
   etaSeconds: 0,
   addedAt: "2026-11-21T20:00:00Z",
   lastPlayedAt: "",
+  pitchSemitones: 0,
 };
 
 function stage(over: Partial<PartyStage> = {}): PartyStage {
