@@ -242,13 +242,14 @@ func replaceLocalRelationsTx(ctx context.Context, tx *sql.Tx, id MediaID, ownedR
 			return ValidationError("sidecar relation is not one the sidecar owns")
 		}
 		if relation.Cardinality == "one" {
-			// The sidecar's own released row gives way to its restored
+			// The sidecar's own released rows give way to its restored
 			// statement; another writer's holder still wins (CORE-3175).
+			// Single cardinality is per relation name, whatever the source
+			// kind, as in UpsertEntityRelation.
 			if _, err := tx.ExecContext(ctx, `
 				DELETE FROM entity_relation
 				WHERE to_media_id = ? AND relation = ? AND from_entity_id <> ? AND writer = ?
-				  AND from_entity_id IN (SELECT id FROM entity WHERE kind = ?)
-			`, id, relation.Name, relation.FromEntityID, releasedRelationWriter, kind); err != nil {
+			`, id, relation.Name, relation.FromEntityID, releasedRelationWriter); err != nil {
 				return err
 			}
 			var held int

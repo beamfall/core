@@ -273,6 +273,33 @@ func TestRestoredSidecarReplacesReleasedSingleRow(t *testing.T) {
 	if got := relationWriters(t, st, other.ID, "member-of"); got != "entity-c=scraper:demo/item" {
 		t.Fatalf("held media = %q, want the scraper holder kept", got)
 	}
+
+	// Single cardinality is per relation name: a released row from another
+	// source kind gives way too (Codex r3).
+	gadget := widgetEntity("entity-g", "library-local")
+	gadget.Kind = "gadget"
+	if err := st.UpsertEntity(ctx, gadget); err != nil {
+		t.Fatal(err)
+	}
+	both := []WrittenRelation{{Kind: "gadget", Name: "member-of"}, {Kind: "widget", Name: "member-of"}}
+	if err := st.ApplyLocalMetadata(ctx, "media-alpha", LocalMetadata{
+		Relations:      []EntityRelation{{FromEntityID: "entity-g", Name: "member-of", ToMediaID: "media-alpha", Cardinality: "one"}},
+		OwnedRelations: both, SignatureField: "sidecar-signature", Signature: "sig-g",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReleaseLocalMetadata(ctx, "media-alpha", "sidecar-signature"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ApplyLocalMetadata(ctx, "media-alpha", LocalMetadata{
+		Relations:      []EntityRelation{{FromEntityID: "entity-a", Name: "member-of", ToMediaID: "media-alpha", Cardinality: "one"}},
+		OwnedRelations: both, SignatureField: "sidecar-signature", Signature: "sig-a2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := relationWriters(t, st, "media-alpha", "member-of"); got != "entity-a=local" {
+		t.Fatalf("after cross-kind restore = %q, want the released gadget row replaced by entity-a", got)
+	}
 }
 
 // TestReleaseClearsIdentifiedMarks (CORE-0361 r1): a released built-in field
