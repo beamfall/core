@@ -14,13 +14,11 @@ import {
   isAudioListing,
   listedTrackRows,
   TOP_TRACKS_LIMIT,
-  type TrackRow,
   topTracks,
-  trackGroups,
 } from "../lib/trackList";
 import { ContainerChildren } from "./ContainerChildren";
 import { MediaItemCard } from "./MediaItemCard";
-import { TrackList } from "./TrackList";
+import { ContainerTracks, TrackList } from "./TrackList";
 import type { ListingRows } from "./useListingRows";
 
 // The Media an Entity page lists when its Kind has no detail Layout. The
@@ -88,30 +86,6 @@ function PersonFilmography({ items }: { items: SourceItem[] }) {
           />
         ))}
       </ul>
-    </section>
-  );
-}
-
-function ContainerTracks({ tracks }: { tracks: TrackRow[] }) {
-  const t = useT();
-  // One queue in display order, so playback runs on across groups.
-  const queue = audioQueue(tracks.map((track) => track.item));
-  return (
-    <section className="bf-section flex flex-col gap-3">
-      <h2 className="bf-section-title">
-        <span>{t("trackListLabel")}</span>
-      </h2>
-      {trackGroups(tracks).map(({ group, rows: groupRows }) => {
-        if (group === undefined)
-          return <TrackList key="all" rows={groupRows} queue={queue} label={t("trackListLabel")} />;
-        const heading = t("trackGroupLabel", { number: group });
-        return (
-          <div key={group} className="bf-track-group">
-            <h3 className="bf-track-group-title">{heading}</h3>
-            <TrackList rows={groupRows} queue={queue} label={heading} />
-          </div>
-        );
-      })}
     </section>
   );
 }

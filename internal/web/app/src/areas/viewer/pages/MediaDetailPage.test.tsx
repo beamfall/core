@@ -1372,6 +1372,78 @@ describe("MediaDetailPage", () => {
       expect(within(moreWith).getAllByRole("listitem")).toHaveLength(1);
       expect(within(moreWith).getByRole("link", { name: /^Lead Again/ })).toBeInTheDocument();
     });
+
+    it("keeps the More in rail for a container of video items", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue(ordered);
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(
+        inner.map((sibling) => ({ ...sibling, mediaClass: "video" })),
+      );
+      vi.mocked(fetchEntity).mockResolvedValue({ ...innerEntity, archetype: "container" } as never);
+      renderAt(["/media/m1"]);
+
+      expect(await screen.findByRole("list", { name: "More in Part Two" })).toBeInTheDocument();
+      expect(document.querySelector(".bf-track-list")).toBeNull();
+    });
+  });
+
+  describe("an item in a numbered list (CORE-3065)", () => {
+    const audio = (id: string, title: string, sequence: number, index: number): SourceItem => ({
+      id,
+      kind: "media",
+      title,
+      mediaClass: "audio",
+      byline: ["Ada Lead"],
+      sequence,
+      index,
+      durationSeconds: 200 + index,
+    });
+    const listed: GenericMediaInfo = {
+      ...media,
+      mediaClass: "audio",
+      credits: [
+        { entityID: "c1", title: "The Set", kind: "set", archetype: "container", relation: "in" },
+        person("p1", "Ada Lead"),
+      ],
+    };
+    const siblings = [
+      audio("m0", "Opening", 1, 1),
+      audio("m1", "Server title", 1, 2),
+      audio("m2", "Second Side", 2, 1),
+    ];
+    const setEntity = {
+      id: "c1",
+      kind: "set",
+      title: "The Set",
+      archetype: "container",
+      fields: [],
+      relatedEntities: [
+        {
+          kind: "artist",
+          archetype: "person",
+          items: [{ id: "p1", kind: "a", title: "Ada Lead" }],
+        },
+      ],
+    };
+
+    it("lists its container as the Entity page does, with its own row marked", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue(listed);
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(siblings);
+      vi.mocked(fetchEntity).mockResolvedValue(setEntity as never);
+      renderAt(["/media/m1"]);
+
+      const first = await screen.findByRole("list", { name: "Disc 1" });
+      const second = screen.getByRole("list", { name: "Disc 2" });
+      expect(within(first).getAllByRole("listitem")).toHaveLength(2);
+      expect(within(second).getAllByRole("listitem")).toHaveLength(1);
+      const current = within(first).getByRole("link", { name: /Server title/ });
+      expect(current).toHaveAttribute("aria-current", "page");
+      expect(current.closest("li")).toHaveAttribute("data-current");
+      expect(within(first).getByRole("link", { name: /Opening/ })).not.toHaveAttribute(
+        "aria-current",
+      );
+      expect(screen.getByRole("heading", { level: 2, name: "The Set" })).toBeInTheDocument();
+      expect(screen.queryByRole("list", { name: "More in The Set" })).toBeNull();
+    });
   });
 
   describe("track pickers before playback (CORE-2442)", () => {
