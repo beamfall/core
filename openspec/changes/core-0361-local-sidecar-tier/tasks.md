@@ -17,3 +17,12 @@
 - [x] 3.1 The scan refreshes sidecars for unchanged files and attached versions without a probe
 - [x] 3.2 The Film & TV mapper passes its sidecar hydration, signature and owned relations through the seam; migrate passes the selected categories
 - [x] 3.3 Tests per finding: manual credit kept, emptied relation, encrypted library, failed apply keeps locks, plan signature, unreadable, secondary version, probe-free removal, scraper takeover, category scope
+
+## 4. Review round 1
+
+- [ ] 4.1 A failed signature lookup reads as unreadable in the selection and stops it; only a clean not-found is absent
+- [ ] 4.2 The recorded identity is the selected file's path plus the mapper's signature
+- [ ] 4.3 Release clears the identified marks of released built-in fields
+- [ ] 4.4 Released relation rows carry a dedicated writer that a sidecar listing them again reclaims
+- [ ] 4.5 A signed sidecar with no values applies as an empty owned plan
+- [ ] 4.6 Grouped parts refresh their sidecars
