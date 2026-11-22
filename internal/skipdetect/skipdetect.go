@@ -891,7 +891,7 @@ func spectralSharedRun(self, sibling []uint32, limits runLimits) sharedRun {
 	var runs []sharedRun
 	// matched holds, for each offset that never diverges, its fresh matching
 	// windows: held frames one step off a slow theme's alignment still match,
-	// but show no shared change, so they are no evidence of a duplicate.
+	// but carry no shared change, so they are no evidence of a duplicate.
 	type offsetMatches struct {
 		shift   int
 		windows []int
