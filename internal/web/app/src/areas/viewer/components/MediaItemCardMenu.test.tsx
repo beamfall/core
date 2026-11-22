@@ -175,6 +175,15 @@ describe("MediaItemCardMenu wording", () => {
     expect(fetchMedia).not.toHaveBeenCalled();
   });
 
+  it("offers Start radio from audio Media only (CORE-2772)", async () => {
+    renderMenu(true, undefined, "en", [artist, album]);
+    expect(await screen.findByRole("menuitem", { name: "Start radio" })).toBeInTheDocument();
+    cleanup();
+    renderMenu(false);
+    await screen.findByRole("menuitem", { name: "Mark watched" });
+    expect(screen.queryByRole("menuitem", { name: "Start radio" })).toBeNull();
+  });
+
   it("adds the Media to a playlist from the menu", async () => {
     renderMenu(true);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Add to playlist" }));

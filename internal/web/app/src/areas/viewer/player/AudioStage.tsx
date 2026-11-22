@@ -28,6 +28,7 @@ export function AudioStage({
   stream = null,
   trackKey = "",
   next = null,
+  reason = "",
 }: {
   title: string;
   artworkURL: string;
@@ -41,6 +42,8 @@ export function AudioStage({
   trackKey?: string;
   /** The item played next, which the visualizer prepares ahead. */
   next?: NextTrack | null;
+  /** Why radio picked this item (CORE-2772), shown under its credits. */
+  reason?: string;
 }) {
   const [failedURL, setFailedURL] = useState("");
   const showArtwork = !!artworkURL && failedURL !== artworkURL;
@@ -54,7 +57,7 @@ export function AudioStage({
 
   const changeKey = trackKey || title;
   const motion = motionForChange(changeKey, useTrackChangeMotion(), usePrefersReducedMotion());
-  const meta = { position: queuePosition ?? "", title, people, collections, others };
+  const meta = { position: queuePosition ?? "", title, people, collections, others, reason };
   // A further change cancels an unfinished one: only the latest outgoing words stay.
   const metaLayers = useLayers(changeKey, meta, META_LEAVE_MS, undefined, 1);
   const art = showArtwork ? artworkURL : "";
@@ -126,6 +129,11 @@ export function AudioStage({
               {m.others && (
                 <Line beat={3} className="bf-audio-others">
                   {m.others}
+                </Line>
+              )}
+              {m.reason && (
+                <Line beat={3} className="bf-audio-reason">
+                  {m.reason}
                 </Line>
               )}
             </div>

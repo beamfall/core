@@ -11,6 +11,15 @@
   "queue.media_locked": "Este item está bloqueado.",
   "setup.lan_hint.finish_setup": "Abra o Beamfall pelo endereço IP para concluir a configuração sem o token de configuração.",
   "setup.lan_hint.sign_in": "Abra o Beamfall pelo endereço IP para entrar com a senha de administrador.",
+  "station.empty": "Nenhuma faixa está disponível para iniciar esta rádio agora.",
+  "station.reason.category": "Também em {title}",
+  "station.reason.era": "Da mesma época: os anos {decade}",
+  "station.reason.from": "De {title}",
+  "station.reason.picked": "Escolhida para esta rádio",
+  "station.reason.played": "Uma que você já ouviu",
+  "station.reason.seed": "Onde esta rádio começou",
+  "station.reason.shared": "Relacionada por {title}",
+  "station.short": "Poucas faixas correspondem, então esta rádio é curta.",
   "watch_party.participant_fallback": "Participante",
   "workflow.capability_disabled": "Esta ferramenta está desativada em Console → Recursos opcionais."
 }

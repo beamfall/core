@@ -9,6 +9,7 @@ import {
   ListPlus,
   MoreVertical,
   Play,
+  Radio,
   SquareArrowOutUpRight,
   UserRound,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import { useItemActions, useItemHide } from "../actions";
 import { entityPath } from "../lib/entityAddress";
 import { moreWithLead } from "../lib/related";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
+import { useStartRadio } from "./StartRadio";
 
 const COPIED_RESET_MS = 2000;
 
@@ -78,8 +80,15 @@ export function MediaItemCardMenu({
   });
   const watched = state?.watched ?? false;
   const hide = useItemHide(target, title, { enabled: opened });
+  const radio = useStartRadio();
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioID = isAudio && isMedia && "mediaID" in target ? target.mediaID : undefined;
+  // Radio starts from an audio Media item, or from an Entity whose card lists audio (CORE-2772).
+  const radioSeed = audioID
+    ? ({ seedKind: "media", seedID: audioID } as const)
+    : isAudio && "entityID" in target
+      ? ({ seedKind: "entity", seedID: target.entityID } as const)
+      : null;
   const loadedCredits =
     creditRead && creditRead.identity === identity && creditRead.mediaID === audioID
       ? creditRead.credits
@@ -168,6 +177,16 @@ export function MediaItemCardMenu({
                   {t("mediaDetailDetails")}
                 </Menu.Item>
               )}
+              {radioSeed && radio.available && (
+                <Menu.Item
+                  className="bf-card-menu-item"
+                  disabled={radio.pending}
+                  onClick={() => void radio.start(radioSeed)}
+                >
+                  <Radio aria-hidden="true" size={15} />
+                  {t("radioStart")}
+                </Menu.Item>
+              )}
               {artistID && (
                 <Menu.LinkItem
                   className="bf-card-menu-item"
@@ -228,6 +247,7 @@ export function MediaItemCardMenu({
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
+      {radio.element}
       {addOpen && "mediaID" in target && (
         <AddToPlaylistDialog
           mediaID={target.mediaID}
