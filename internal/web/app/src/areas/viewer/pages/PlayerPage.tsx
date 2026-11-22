@@ -77,6 +77,7 @@ import { decodableStream, handBack, useGaplessAudio } from "../player/useGapless
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
+import { useShareLink } from "../player/useShareLink";
 import { useStillWatching } from "../player/useStillWatching";
 import { useUpNext } from "../player/useUpNext";
 import { useWatchParty } from "../player/useWatchParty";
@@ -933,18 +934,12 @@ function FeaturePlayer({
     [storePrefs],
   );
 
+  const { share: shareLink, node: shareLinkNode } = useShareLink(navTitle || t("brand"));
   const shareAt = useCallback(
     (seconds: number) => {
-      if (!mediaId) return;
-      const href = buildTimestampedLink(mediaId, seconds);
-      const title = navTitle || t("brand");
-      if (navigator.share) {
-        void navigator.share({ title, url: href }).catch(() => {});
-        return;
-      }
-      void navigator.clipboard?.writeText(href).catch(() => {});
+      if (mediaId) shareLink(buildTimestampedLink(mediaId, seconds));
     },
-    [mediaId, navTitle, t],
+    [mediaId, shareLink],
   );
 
   function back() {
@@ -1204,6 +1199,7 @@ function FeaturePlayer({
         )}
       </main>
       {docked && queueFailureNotice}
+      {shareLinkNode}
       {docked && queueAllowed && (
         <MiniPlayer
           videoRef={videoRef}
