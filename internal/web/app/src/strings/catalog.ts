@@ -33,6 +33,7 @@ import { managedFileStrings } from "./managed-files";
 import { managedFileLibrariesStrings } from "./managed-files-libraries";
 import { managedFileOptionsStrings } from "./managed-files-options";
 import { mediaPageStrings } from "./media-pages";
+import { mediaUploadStrings } from "./media-upload";
 import { metadataManagementStrings } from "./metadata-management";
 import { metadataManagementCurationStrings } from "./metadata-management-curation";
 import { migrationStrings } from "./migration";
@@ -155,6 +156,7 @@ export const en = {
   ...profileSearchStrings.en,
   ...profileSearchLibraryStrings.en,
   ...powerToolStrings.en,
+  ...mediaUploadStrings.en,
   ...itemActionStrings.en,
   ...playerRecoveryStrings.en,
   ...watchPartyStrings.en,
@@ -248,6 +250,7 @@ export const fr = {
   ...profileSearchStrings.fr,
   ...profileSearchLibraryStrings.fr,
   ...powerToolStrings.fr,
+  ...mediaUploadStrings.fr,
   ...itemActionStrings.fr,
   ...playerRecoveryStrings.fr,
   ...watchPartyStrings.fr,
@@ -341,6 +344,7 @@ export const de = {
   ...profileSearchStrings.de,
   ...profileSearchLibraryStrings.de,
   ...powerToolStrings.de,
+  ...mediaUploadStrings.de,
   ...itemActionStrings.de,
   ...playerRecoveryStrings.de,
   ...watchPartyStrings.de,
@@ -434,6 +438,7 @@ export const es = {
   ...profileSearchStrings.es,
   ...profileSearchLibraryStrings.es,
   ...powerToolStrings.es,
+  ...mediaUploadStrings.es,
   ...itemActionStrings.es,
   ...playerRecoveryStrings.es,
   ...watchPartyStrings.es,
@@ -527,6 +532,7 @@ export const pt = {
   ...profileSearchStrings.pt,
   ...profileSearchLibraryStrings.pt,
   ...powerToolStrings.pt,
+  ...mediaUploadStrings.pt,
   ...itemActionStrings.pt,
   ...playerRecoveryStrings.pt,
   ...watchPartyStrings.pt,

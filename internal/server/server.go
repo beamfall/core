@@ -108,6 +108,8 @@ type Server struct {
 	knownProxies        *KnownProxies
 	artworkImport       ArtworkImporter
 	artworkApply        artworkApplyStore
+	mediaUploadPlanner  MediaUploadPlanner
+	mediaUploads        mediaUploadStore
 	subscriptionExport  subscriptionExportStore
 	subscriptionSealed  func(store.LibraryID) bool
 	profilePictures     profilePictureStore
@@ -318,6 +320,9 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	if deviceBuilds, ok := jobStats.(deviceBuildStore); ok {
 		s.deviceBuilds = deviceBuilds
 	}
+	if uploads, ok := jobStats.(mediaUploadStore); ok {
+		s.mediaUploads = uploads
+	}
 	s.handle(http.MethodGet, "/health", "", s.health)
 	s.handle(http.MethodGet, "/metrics", reveal.Aggregate, s.metrics)
 	// AGPL §13 source offer for the exact running release. The redirect target
@@ -369,6 +374,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	// like the other web-Console write routes; the multipart body is excluded
 	// from the JSON-Content-Type check below, mirroring "/v1/backups/media".
 	s.handle(http.MethodPost, artworkUploadPattern, reveal.ContentJSON, s.uploadArtwork)
+	s.registerMediaUploadRoutes()
 	s.handle(http.MethodPost, profilePictureUploadPattern, reveal.ContentJSON, s.uploadProfilePicture)
 	s.handle(http.MethodDelete, profilePicturePattern, reveal.ContentJSON, s.deleteProfilePicture)
 	s.handle(http.MethodGet, profilePicturePattern, reveal.ContentBytes, s.profilePicture)

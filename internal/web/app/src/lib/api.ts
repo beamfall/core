@@ -5,7 +5,7 @@
 //     cross-origin without CORS (internal/web/static/app.js CSRF_HEADER)
 //   - all content arrives through these surfaces; the bundle is static bytes
 
-const CSRF_HEADER = "X-Beamfall-Csrf";
+export const CSRF_HEADER = "X-Beamfall-Csrf";
 const DEFAULT_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const DEFAULT_DEADLINE_MS = 30_000;

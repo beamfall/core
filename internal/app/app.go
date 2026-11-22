@@ -1358,6 +1358,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		server.WithUnmatchedArtworkCreator(graphServer),
 		server.WithCompatRefusalJournalDir(filepath.Join(cfg.DataDir, "compat-refusals")),
 		server.WithSubscriptionLibrarySealed(sealedPredicate),
+		server.WithMediaUploadPlanner(newMediaUploadPlanner(st, parsers, executablePlugins, jobWake)),
 	)
 	// Guideline 1.2 UGC moderation substrate (NATIVEMGR-4, apple ADR-0004 §4):
 	// file-backed per-Profile content report/block store + published moderation
