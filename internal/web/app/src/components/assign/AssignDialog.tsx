@@ -108,7 +108,9 @@ export function AssignDialog({
         </Button>
       </DialogTrigger>
       <DialogContent
-        className="max-h-[85dvh] overflow-y-auto sm:max-w-xl"
+        className={`max-h-[85dvh] overflow-y-auto sm:max-w-xl ${
+          assignment?.sources.some((source) => source.supportsChildren) ? "lg:max-w-5xl" : ""
+        }`}
         showCloseButton={!writing}
       >
         <DialogTitle>{t("assignHeading")}</DialogTitle>

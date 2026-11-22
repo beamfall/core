@@ -7,6 +7,7 @@ import { setIdentityEpochSignal } from "@/lib/api";
 import {
   fixMatch,
   fixMatchCandidates,
+  fixMatchChildren,
   fixMatchCurrent,
   fixMatchLockedFields,
   fixMatchPreview,
@@ -25,6 +26,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
   fixMatch: vi.fn(),
   fixMatchCandidates: vi.fn(),
+  fixMatchChildren: vi.fn(),
   fixMatchCurrent: vi.fn(),
   fixMatchLockedFields: vi.fn(),
   fixMatchPreview: vi.fn(),
@@ -39,6 +41,7 @@ const catalog = {
   label: "Catalog",
   acceptsPastedID: true,
   supportsChildren: false,
+  childLevels: [],
   isDefault: true,
 };
 const alternate = {
@@ -165,6 +168,8 @@ describe("Assign metadata", () => {
       expect(await dialog.findByText("A corrected overview.")).toBeVisible();
       expect(dialog.getByText("An old overview.")).toBeVisible();
       expect(fixMatch).not.toHaveBeenCalled();
+      expect(fixMatchChildren).not.toHaveBeenCalled();
+      expect(dialog.queryByRole("heading", { name: "Season" })).not.toBeInTheDocument();
       const checkbox = within(dialog.getByRole("group", { name: "Locked fields" })).getByRole(
         "checkbox",
         { name: /Replace Title with new value/ },
@@ -434,5 +439,305 @@ describe("Assign metadata", () => {
     );
     expect(view.dialog.getByRole("button", { name: "Apply" })).toBeDisabled();
     expect(fixMatch).not.toHaveBeenCalled();
+  });
+});
+
+describe("Assign catalog children", () => {
+  const show = { ...ids, candidateID: "show" };
+  const episodes = [
+    { key: "e1", label: "Episode One", sequence: "2", index: 1, artworkURL: "/art/e1" },
+    { key: "e2", label: "Episode Two", sequence: "2", index: 2 },
+    { key: "e3", label: "Episode Three", sequence: "2", index: 3 },
+    { key: "e5", label: "Episode Five", sequence: "2", index: 5, year: 2024 },
+    { key: "e0", label: "Unnumbered Special", sequence: "2", index: null },
+  ];
+  const season = { key: "s2", label: "Second season", sequence: "2", year: 2024 };
+  const specials = { key: "s0", label: "Specials", sequence: "0" };
+  const childSource = { ...catalog, supportsChildren: true, childLevels: ["season", "episode"] };
+
+  beforeEach(() => {
+    vi.mocked(fixMatchSources).mockResolvedValue([childSource]);
+    vi.mocked(fixMatchCurrent).mockResolvedValue(null);
+    vi.mocked(fixMatchCandidates).mockResolvedValue([
+      {
+        ...ids,
+        id: show.candidateID,
+        title: "Catalog show",
+        year: 2023,
+        artwork: { poster: "/art/show" },
+        confidence: 0.9,
+        scored: true,
+        threshold: 0.8,
+      },
+    ]);
+    vi.mocked(fixMatchChildren).mockImplementation(async ({ level, parentKey }) => {
+      if (level === 1) return [season, specials];
+      if (parentKey === "s0")
+        return [{ key: "s0e1", label: "Holiday episode", sequence: "0", index: 1 }];
+      return episodes;
+    });
+  });
+
+  async function pickCandidate({ user, dialog }: Awaited<ReturnType<typeof open>>) {
+    await user.click(dialog.getByRole("button", { name: "Search" }));
+    await user.click(await dialog.findByRole("button", { name: /Catalog show/ }));
+  }
+
+  it.each([
+    { parent: /Second season/, key: "s2", child: /Episode Five/, sequence: "2", index: 5 },
+    { parent: /Specials/, key: "s0", child: /Holiday episode/, sequence: "0", index: 1 },
+  ])("previews and applies a selected child from sequence $sequence", async (row) => {
+    const view = await open([{ mediaID: "m1", title: "Catalog show", sequence: 1, index: 3 }]);
+    const { user, dialog } = view;
+    await pickCandidate(view);
+    expect(fixMatchChildren).toHaveBeenNthCalledWith(1, { mediaID: "m1", ...show, level: 1 });
+    expect(dialog.getByRole("img", { name: "Catalog show" })).toHaveAttribute("loading", "lazy");
+    expect(dialog.getByRole("heading", { name: "Season" })).toBeInTheDocument();
+    expect(dialog.getByRole("heading", { name: "Episode" })).toBeInTheDocument();
+    await user.click(await dialog.findByRole("button", { name: row.parent }));
+    expect(fixMatchChildren).toHaveBeenNthCalledWith(2, {
+      mediaID: "m1",
+      ...show,
+      level: 2,
+      parentKey: row.key,
+    });
+    if (row.key === "s2") {
+      expect(await dialog.findByRole("img", { name: "Episode One" })).toHaveAttribute(
+        "loading",
+        "lazy",
+      );
+    }
+    await user.click(await dialog.findByRole("button", { name: row.child }));
+    const expected = { mediaID: "m1", ...show, sequence: row.sequence, index: row.index };
+    expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith(expected);
+    expect(
+      await dialog.findByText(
+        `Season 1 · Episode 3 → Season ${row.sequence} · Episode ${row.index}`,
+      ),
+    ).toBeVisible();
+    expect(fixMatch).not.toHaveBeenCalled();
+    await user.click(dialog.getByRole("button", { name: "Apply" }));
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(expected, undefined);
+  });
+
+  it("previews a candidate without sending ordinals", async () => {
+    const view = await open();
+    await pickCandidate(view);
+    await view.user.click(view.dialog.getByRole("button", { name: "Preview candidate" }));
+    await view.dialog.findByText("A corrected overview.");
+    await view.user.click(view.dialog.getByRole("button", { name: "Apply" }));
+    expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith({ mediaID: "m1", ...show });
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith({ mediaID: "m1", ...show }, undefined);
+  });
+
+  it("reports loading, errors and empty results in their own column", async () => {
+    let fail: (error: Error) => void = () => {};
+    vi.mocked(fixMatchChildren)
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            fail = reject;
+          }),
+      )
+      .mockResolvedValueOnce([]);
+    const view = await open();
+    await pickCandidate(view);
+    expect(view.dialog.getByRole("status")).toHaveTextContent("Loading");
+    await act(async () => fail(new Error("network")));
+    expect(view.dialog.getByRole("alert")).toHaveTextContent(
+      "Could not load entries at this level.",
+    );
+    await view.user.click(view.dialog.getByRole("button", { name: "Try again" }));
+    expect(await view.dialog.findByText("No entries at this level.")).toBeVisible();
+  });
+
+  it("keeps the latest parent selection when child requests resolve out of order", async () => {
+    let resume = () => {};
+    vi.mocked(fixMatchChildren).mockImplementation(({ level, parentKey }) => {
+      if (level === 1) return Promise.resolve([season, specials]);
+      if (parentKey === "s0") {
+        return Promise.resolve([{ key: "holiday", label: "Holiday", sequence: "0", index: 1 }]);
+      }
+      return new Promise((resolve) => {
+        resume = () => resolve(episodes);
+      });
+    });
+    const view = await open();
+    const { user, dialog } = view;
+    await pickCandidate(view);
+    await user.click(await dialog.findByRole("button", { name: /Second season/ }));
+    await user.click(dialog.getByRole("button", { name: "Back" }));
+    await user.click(dialog.getByRole("button", { name: /Specials/ }));
+    expect(await dialog.findByRole("button", { name: "Holiday" })).toBeVisible();
+    await act(async () => resume());
+    expect(dialog.getByRole("button", { name: "Holiday" })).toBeVisible();
+    expect(dialog.queryByRole("button", { name: /Episode Five/ })).not.toBeInTheDocument();
+  });
+
+  it("validates manual numbers and uses the source's generic labels", async () => {
+    vi.mocked(fixMatchSources).mockResolvedValue([
+      { ...childSource, childLevels: ["release", "bonus-track"] },
+    ]);
+    const view = await open();
+    const { user, dialog } = view;
+    await pickCandidate(view);
+    expect(dialog.getByRole("heading", { name: "Bonus track" })).toBeInTheDocument();
+    await user.click(dialog.getByRole("button", { name: "Enter numbers instead" }));
+    const sequence = dialog.getByRole("textbox", { name: "Release" });
+    await user.type(sequence, "x".repeat(33));
+    expect(dialog.getByRole("alert")).toHaveTextContent(
+      "Enter a sequence with at most 32 characters.",
+    );
+    await user.clear(sequence);
+    await user.type(sequence, "A-side");
+    const number = dialog.getByRole("spinbutton", { name: "Bonus track" });
+    await user.type(number, "-1");
+    expect(dialog.getByRole("alert")).toHaveTextContent("Enter a whole number");
+    const previewButton = dialog.getByRole("button", { name: "Preview changes" });
+    expect(previewButton).toBeDisabled();
+    expect(fixMatchPreview).not.toHaveBeenCalled();
+    await user.clear(number);
+    await user.type(number, "0");
+    await user.click(previewButton);
+    const expected = { mediaID: "m1", ...show, sequence: "A-side", index: 0 };
+    expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith(expected);
+    expect(await dialog.findByText("— → Release A-side · Bonus track 0")).toBeVisible();
+    await user.click(dialog.getByRole("button", { name: "Apply" }));
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(expected, undefined);
+  });
+
+  it("retains an unnumbered child's sequence and requires a manual index before preview", async () => {
+    const view = await open();
+    const { user, dialog } = view;
+    await pickCandidate(view);
+    await user.click(await dialog.findByRole("button", { name: /Second season/ }));
+    await user.click(await dialog.findByRole("button", { name: "Unnumbered Special" }));
+    expect(dialog.getByText("Enter a number for Episode.")).toBeVisible();
+    expect(dialog.getByRole("textbox", { name: "Season" })).toHaveValue("2");
+    expect(dialog.getByRole("textbox", { name: "Season" })).toHaveAttribute("readonly");
+    expect(dialog.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(fixMatchPreview).not.toHaveBeenCalled();
+    await user.type(dialog.getByRole("spinbutton", { name: "Episode" }), "7");
+    await user.click(dialog.getByRole("button", { name: "Preview changes" }));
+    expect(await dialog.findByText("— → Season 2 · Episode 7")).toBeVisible();
+    const expected = { mediaID: "m1", ...show, sequence: "2", index: 7 };
+    expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith(expected);
+    await user.click(dialog.getByRole("button", { name: "Apply" }));
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(expected, undefined);
+  });
+
+  it.each([true, false])("defaults the ordinal lock by candidate ID (same: %s)", async (same) => {
+    vi.mocked(fixMatchCurrent).mockResolvedValue({
+      ...show,
+      candidateID: same ? "show" : "other",
+      title: "Old",
+      year: 2022,
+    });
+    vi.mocked(fixMatchLockedFields).mockResolvedValue([{ field: "ordinal", value: "1 / 3" }]);
+    const view = await open();
+    const { user, dialog } = view;
+    await pickCandidate(view);
+    await user.click(dialog.getByRole("button", { name: "Preview candidate" }));
+    const lock = await dialog.findByRole("checkbox", { name: /Clear operator ordinal/ });
+    if (same) expect(lock).not.toBeChecked();
+    else expect(lock).toBeChecked();
+    await user.click(lock);
+    await user.click(dialog.getByRole("button", { name: "Apply" }));
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
+      { mediaID: "m1", ...show, clearLocks: same ? ["ordinal"] : [] },
+      undefined,
+    );
+  });
+
+  it.each([true, false])(
+    "previews the effective ordinal when replacing a lock (%s)",
+    async (replace) => {
+      vi.mocked(fixMatchCurrent).mockResolvedValue({ ...show, title: "Old", year: 2022 });
+      vi.mocked(fixMatchLockedFields).mockResolvedValue([{ field: "ordinal", value: "1 / 3" }]);
+      vi.mocked(fixMatchPreview).mockImplementation(async ({ index }) => [
+        { field: "title", current: "Old", proposed: `Proposed title for ${index}`, changed: true },
+      ]);
+      const view = await open();
+      const { user, dialog } = view;
+      await pickCandidate(view);
+      await user.click(await dialog.findByRole("button", { name: /Second season/ }));
+      await user.click(await dialog.findByRole("button", { name: /Episode Five/ }));
+      const lock = await dialog.findByRole("checkbox", { name: /Replace Ordinal/ });
+      expect(lock).not.toBeChecked();
+      expect(dialog.getByText("Proposed title for 3")).toBeVisible();
+      if (replace) {
+        await user.click(lock);
+        expect(dialog.getByText("Proposed title for 5")).toBeVisible();
+      }
+      await user.click(dialog.getByRole("button", { name: "Apply" }));
+      expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
+        {
+          mediaID: "m1",
+          ...show,
+          ...(replace ? { clearLocks: ["ordinal"], sequence: "2", index: 5 } : { clearLocks: [] }),
+        },
+        undefined,
+      );
+    },
+  );
+
+  it("pre-pairs parsed and title indexes, refuses duplicates, and continues after a failure", async () => {
+    const batch = [
+      { mediaID: "m1", title: "File with an authoritative index S02E09", index: 1 },
+      { mediaID: "m2", title: "File S02E02.mkv" },
+      { mediaID: "m3", title: "File 03" },
+    ];
+    vi.mocked(fetchMedia).mockImplementation(async (id) => {
+      const { mediaID, ...item } = batch.find(({ mediaID }) => mediaID === id)!;
+      return { ...item, id: mediaID, favorited: false };
+    });
+    vi.mocked(fixMatch).mockImplementation(async ({ mediaID }) => {
+      if (mediaID === "m2") throw new Error("Provider refused this item");
+      return { id: mediaID, title: "Matched", favorited: false };
+    });
+    const view = await open(selection);
+    const { user, dialog } = view;
+    await pickCandidate(view);
+    await user.click(await dialog.findByRole("button", { name: /Second season/ }));
+    const table = within(await dialog.findByRole("table"));
+    const [first, second, third] = table.getAllByRole("combobox");
+    expect(first).toHaveValue("e1");
+    expect(second).toHaveValue("e2");
+    expect(third).toHaveValue("e3");
+
+    const previewButton = dialog.getByRole("button", { name: "Preview changes" });
+    const apply = dialog.getByRole("button", { name: "Apply" });
+    await user.click(previewButton);
+    await dialog.findByText("File 03", { selector: "h4" });
+    expect(apply).toBeEnabled();
+    await user.selectOptions(third, "e2");
+    expect(await dialog.findByRole("alert")).toHaveTextContent(
+      "Pair each catalog row with at most one item.",
+    );
+    expect(apply).toBeDisabled();
+    expect(previewButton).toBeDisabled();
+    await user.selectOptions(third, "");
+    expect(table.getByText("Skipped")).toBeVisible();
+    await user.selectOptions(third, "e5");
+    expect(apply).toBeDisabled();
+    await user.click(previewButton);
+    await dialog.findByText("File 03", { selector: "h4" });
+    await user.click(apply);
+
+    expect(await table.findByText("Failed: Provider refused this item")).toBeVisible();
+    expect(await table.findAllByText("Applied")).toHaveLength(2);
+    const expected = [1, 2, 5].map((index, i) => ({
+      mediaID: batch[i].mediaID,
+      ...show,
+      sequence: "2",
+      index,
+    }));
+    expect(
+      vi
+        .mocked(fixMatchPreview)
+        .mock.calls.slice(-3)
+        .map(([vars]) => vars),
+    ).toEqual(expected);
+    expect(vi.mocked(fixMatch).mock.calls.map(([vars]) => vars)).toEqual(expected);
   });
 });

@@ -6,11 +6,13 @@ import { getIdentityEpochSignal } from "@/lib/api";
 import {
   fixMatch,
   fixMatchCandidates,
+  fixMatchChildren,
   fixMatchLockedFields,
   fixMatchPreview,
   identifyLookup,
 } from "@/lib/graphql";
 import type {
+  FixMatchChildInfo,
   FixMatchCurrentInfo,
   FixMatchLockedFieldInfo,
   FixMatchSourceInfo,
@@ -19,7 +21,19 @@ import type { FixMatchCandidateInfo, FixMatchFieldDiff } from "@/lib/graphql/typ
 import { useT } from "@/lib/i18n";
 import { clearViewerCache } from "@/lib/viewerCache";
 import type { StringKey } from "@/strings";
+import { AssignChildColumn, type ChildColumn } from "./AssignChildColumn";
 import { useAssignInterruptionNotice } from "./AssignInterruptionNotice";
+import { AssignOrdinalForm } from "./AssignOrdinalForm";
+import { AssignPairingSelect, type ChildChoice } from "./AssignPairingSelect";
+import {
+  formatOrdinal,
+  itemIndex,
+  levelLabel,
+  lockedOrdinal,
+  type Ordinal,
+  ordinalIndex,
+  ordinalLabels,
+} from "./assignOrdinals";
 import { percent, reasonLabel } from "./matchLabels";
 
 export interface AssignItem {
@@ -31,15 +45,25 @@ export interface AssignItem {
   current?: FixMatchCurrentInfo | null;
 }
 
-type Source = Pick<FixMatchSourceInfo, "pluginID" | "scraperID" | "label" | "acceptsPastedID">;
-type Pairing = {
+type Source = Pick<FixMatchSourceInfo, "pluginID" | "scraperID" | "label" | "acceptsPastedID"> &
+  Partial<Pick<FixMatchSourceInfo, "supportsChildren" | "childLevels">>;
+type MatchTarget = { pluginID: string; scraperID: string; candidateID: string };
+type PlannedMatch = {
   mediaID: string;
+  ordinal?: Ordinal;
+};
+type Pairing = PlannedMatch & {
   diff: FixMatchFieldDiff[];
+  keptOrdinalDiff?: FixMatchFieldDiff[];
   locked: FixMatchLockedFieldInfo[];
   clearLocks: string[];
 };
 type Result = { mediaID: string; error?: string };
-type Preview = { rows: Pairing[]; epoch: AbortSignal | undefined };
+type Preview = { candidate: MatchTarget; rows: Pairing[]; epoch: AbortSignal | undefined };
+type ChildPairings = {
+  rows: FixMatchChildInfo[];
+  choices: Record<string, ChildChoice>;
+};
 
 interface UnmatchedFlow {
   threshold: number;
@@ -55,10 +79,15 @@ const fieldLabels: Record<string, StringKey> = {
   artworkPoster: "artworkSlotPoster",
   artworkBackdrop: "artworkSlotBackdrop",
   artworkThumb: "artworkSlotThumb",
+  ordinal: "assignOrdinal",
 };
 
 function sourceKey(source: Pick<Source, "pluginID" | "scraperID">) {
   return JSON.stringify([source.pluginID, source.scraperID]);
+}
+
+function keepsOrdinal(row: Pairing) {
+  return row.locked.some(({ field }) => field === "ordinal") && !row.clearLocks.includes("ordinal");
 }
 
 export function AssignPanel({
@@ -97,6 +126,11 @@ export function AssignPanel({
   const [year, setYear] = useState(initialYear ? String(initialYear) : "");
   const [candidates, setCandidates] = useState<FixMatchCandidateInfo[]>([]);
   const [selectedID, setSelectedID] = useState("");
+  const [columns, setColumns] = useState<ChildColumn[]>([]);
+  const [activeColumn, setActiveColumn] = useState(0);
+  const [deepestKey, setDeepestKey] = useState<string>();
+  const [ordinalEntry, setOrdinalEntry] = useState<{ fixedSequence?: string }>();
+  const [childPairings, setChildPairings] = useState<ChildPairings>();
   const [pastedID, setPastedID] = useState("");
   const [approval, setApproval] = useState<Preview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -108,15 +142,22 @@ export function AssignPanel({
   const [suggestedYear, setSuggestedYear] = useState<number>();
   const searched = useRef(false);
   const selection = useRef(0);
+  const childRequest = useRef(0);
   const live = useRef(true);
   const preview = approval?.rows;
 
   const multi = items.length > 1 && !unmatched;
-  // A single candidate cannot describe multiple child positions in this flow.
-  // Only an unnumbered selection can share a candidate after confirmation.
+  const levels = (!unmatched && source?.supportsChildren && source.childLevels) || [];
+  const hierarchy = levels.length > 0;
+  const labels = ordinalLabels(levels, t);
   const ordinalConflict =
     multi &&
-    items.some((item) => typeof item.sequence === "number" || typeof item.index === "number");
+    !childPairings &&
+    items.some(
+      (item) =>
+        typeof item.sequence === "number" ||
+        (hierarchy ? itemIndex(item) !== undefined : typeof item.index === "number"),
+    );
   const disabled = busy || blocked;
   const fieldLabel = (field: string) =>
     Object.hasOwn(fieldLabels, field) ? t(fieldLabels[field]) : field;
@@ -131,13 +172,23 @@ export function AssignPanel({
     if (live.current) onActivityChange?.(active);
   };
 
-  const select = (id: string) => {
+  const resetPreview = () => {
     selection.current++;
-    setSelectedID(id);
     setApproval(null);
     setConfirmed(false);
     setResults([]);
     setError("");
+  };
+
+  const select = (id: string) => {
+    childRequest.current++;
+    setSelectedID(id);
+    setColumns([]);
+    setActiveColumn(0);
+    setDeepestKey(undefined);
+    setOrdinalEntry(undefined);
+    setChildPairings(undefined);
+    resetPreview();
   };
 
   const runSearch = async () => {
@@ -160,7 +211,7 @@ export function AssignPanel({
       const preferred = searchYear
         ? scored.find((candidate) => candidate.year === searchYear)
         : undefined;
-      select((preferred ?? scored[0])?.id ?? "");
+      if (!hierarchy) select((preferred ?? scored[0])?.id ?? "");
     } catch {
       report(t(unmatched ? "unmatchedUnavailable" : "assignSearchFailed"));
     } finally {
@@ -172,6 +223,7 @@ export function AssignPanel({
     live.current = true;
     return () => {
       selection.current++;
+      childRequest.current++;
       live.current = false;
     };
   }, []);
@@ -186,46 +238,150 @@ export function AssignPanel({
   const selected = candidates.find((candidate) => candidate.id === selectedID);
   // Older unmatched rows are tied to their recorded source. In Assign, use
   // the source carried by the chosen search result when the provider supplies it.
-  const target = (candidateID: string) => ({
-    pluginID: (!unmatched && selected?.pluginID) || source.pluginID,
-    scraperID: (!unmatched && selected?.scraperID) || source.scraperID,
+  const target = (candidateID: string, result = selected): MatchTarget => ({
+    pluginID: (!unmatched && result?.pluginID) || source.pluginID,
+    scraperID: (!unmatched && result?.scraperID) || source.scraperID,
     candidateID,
   });
 
-  const loadPreview = async (candidateID: string, fromPaste = false) => {
+  const loadChildren = async (
+    candidate: MatchTarget,
+    level: number,
+    parent?: FixMatchChildInfo,
+  ) => {
+    const asked = ++childRequest.current;
+    const epoch = getIdentityEpochSignal();
+    const setColumn = (column: ChildColumn) =>
+      setColumns((current) => [...current.slice(0, level - 1), column]);
+    resetPreview();
+    setDeepestKey(undefined);
+    setOrdinalEntry(undefined);
+    setChildPairings(undefined);
+    setActiveColumn(level);
+    setColumn({ parent });
+    const currentRequest = () =>
+      asked === childRequest.current && !epoch?.aborted && epoch === getIdentityEpochSignal();
+    try {
+      const rows = await fixMatchChildren({
+        mediaID: first.mediaID,
+        ...candidate,
+        level,
+        ...(parent ? { parentKey: parent.key } : {}),
+      });
+      if (!currentRequest()) return;
+      setColumn({ parent, rows });
+      if (multi && level === levels.length && rows.length) {
+        setChildPairings({
+          rows,
+          choices: Object.fromEntries(
+            items.map((item) => {
+              const index = itemIndex(item);
+              const matches = rows.filter((row) => row.index === index && index !== undefined);
+              return [item.mediaID, { key: matches.length === 1 ? matches[0].key : "", index: "" }];
+            }),
+          ),
+        });
+      }
+    } catch {
+      if (currentRequest()) setColumn({ parent, failed: true });
+    }
+  };
+
+  const loadPreview = async (
+    candidateID: string,
+    fromPaste = false,
+    plan: PlannedMatch[] = (unmatched ? [first] : items).map(({ mediaID }) => ({ mediaID })),
+  ) => {
     if (!candidateID) return;
     if (fromPaste) {
       setCandidates([]);
       select(candidateID);
     } else {
-      select(selectedID);
+      resetPreview();
     }
     const asked = selection.current;
     const epoch = getIdentityEpochSignal();
     const candidate = fromPaste
       ? { pluginID: source.pluginID, scraperID: source.scraperID, candidateID }
       : target(candidateID);
+    const currentRequest = () =>
+      asked === selection.current && !epoch?.aborted && epoch === getIdentityEpochSignal();
     setActivity(true);
     try {
       const rows = await Promise.all(
-        (unmatched ? [first] : items).map(async ({ mediaID }) => {
+        plan.map(async ({ mediaID, ordinal }) => {
           const [diff, locked] = await Promise.all([
-            fixMatchPreview({ mediaID, ...candidate }),
+            fixMatchPreview({ mediaID, ...candidate, ...ordinal }),
             unmatched ? [] : fixMatchLockedFields(mediaID),
           ]);
-          return { mediaID, diff, locked, clearLocks: [] };
+          const currentID = items.find((item) => item.mediaID === mediaID)?.current?.candidateID;
+          const ordinalLock = locked.find(({ field }) => field === "ordinal");
+          const previous = ordinalLock && lockedOrdinal(ordinalLock.value);
+          // Preview doesn't return lock disposition. The server defaults to
+          // keeping an existing ordinal when the recorded candidate ID matches.
+          const clearOrdinal = !!ordinalLock && currentID !== candidateID;
+          const needsKeepDiff = ordinal
+            ? previous?.sequence !== ordinal.sequence || previous?.index !== ordinal.index
+            : clearOrdinal;
+          const keptOrdinalDiff =
+            previous && needsKeepDiff && currentRequest()
+              ? await fixMatchPreview({ mediaID, ...candidate, ...previous })
+              : undefined;
+          return {
+            mediaID,
+            ordinal,
+            diff,
+            keptOrdinalDiff,
+            locked,
+            clearLocks: clearOrdinal ? ["ordinal"] : [],
+          };
         }),
       );
-      if (asked === selection.current && !epoch?.aborted && epoch === getIdentityEpochSignal()) {
-        setApproval({ rows, epoch });
-      }
+      if (currentRequest()) setApproval({ candidate, rows, epoch });
     } catch {
-      if (asked === selection.current && !epoch?.aborted && epoch === getIdentityEpochSignal())
-        report(t(unmatched ? "unmatchedUnavailable" : "assignPreviewFailed"));
+      if (currentRequest()) report(t(unmatched ? "unmatchedUnavailable" : "assignPreviewFailed"));
     } finally {
       setActivity(false);
     }
   };
+
+  const pickChild = (level: number, row: FixMatchChildInfo) => {
+    if (level < levels.length) {
+      void loadChildren(target(selectedID), level + 1, row);
+      return;
+    }
+    if (multi) return;
+    resetPreview();
+    setDeepestKey(row.key);
+    const sequence = row.sequence ?? "";
+    if (row.index == null) {
+      setOrdinalEntry({ fixedSequence: sequence });
+    } else {
+      setOrdinalEntry(undefined);
+      void loadPreview(selectedID, false, [
+        { mediaID: first.mediaID, ordinal: { sequence, index: row.index } },
+      ]);
+    }
+  };
+
+  const pairingKeys = childPairings
+    ? Object.values(childPairings.choices)
+        .map(({ key }) => key)
+        .filter(Boolean)
+    : [];
+  const duplicatePairing = new Set(pairingKeys).size < pairingKeys.length;
+  const pairedPlan = childPairings
+    ? items.flatMap(({ mediaID }) => {
+        const choice = childPairings.choices[mediaID];
+        const row = childPairings.rows.find(({ key }) => key === choice.key);
+        if (!row) return [];
+        const index = row.index ?? ordinalIndex(choice.index);
+        if (index === undefined) return [];
+        return [{ mediaID, ordinal: { sequence: row.sequence ?? "", index } }];
+      })
+    : [];
+  const canPreviewPairs =
+    pairedPlan.length > 0 && pairedPlan.length === pairingKeys.length && !duplicatePairing;
 
   const fetchUnmatchedID = async () => {
     const candidateID = pastedID.trim();
@@ -258,24 +414,34 @@ export function AssignPanel({
     !!selectedID &&
     !disabled &&
     (!!unmatched ||
-      (!!preview && results.length === 0 && !ordinalConflict && (!multi || confirmed)));
+      (!!preview &&
+        results.length === 0 &&
+        !ordinalConflict &&
+        !duplicatePairing &&
+        (!multi || (childPairings ? preview.every(({ ordinal }) => ordinal) : confirmed))));
 
   const apply = async () => {
     if (!canApply) return;
-    const candidate = target(selectedID);
+    const candidate = approval?.candidate ?? target(selectedID);
     const epoch = approval ? approval.epoch : getIdentityEpochSignal();
     const identityEnded = () => epoch?.aborted || epoch !== getIdentityEpochSignal();
     onWriteChange?.(true);
     setActivity(true);
     const next: Result[] = [];
-    for (const [index, item] of items.entries()) {
+    const writes = unmatched ? items.map(({ mediaID }) => ({ mediaID })) : (preview ?? []);
+    for (const [index, { mediaID }] of writes.entries()) {
       if (identityEnded()) break;
-      const { mediaID } = item;
-      setProgress(t("unmatchedMatching", { done: index + 1, total: items.length }));
-      const clearLocks = preview?.find((row) => row.mediaID === mediaID)?.clearLocks;
+      setProgress(t("unmatchedMatching", { done: index + 1, total: writes.length }));
+      const row = unmatched ? undefined : preview?.[index];
+      const keep = row && keepsOrdinal(row);
       try {
         await fixMatch(
-          { mediaID, ...candidate, ...(clearLocks?.length ? { clearLocks } : {}) },
+          {
+            mediaID,
+            ...candidate,
+            ...(row && (keep || row.clearLocks.length) ? { clearLocks: row.clearLocks } : {}),
+            ...(keep ? undefined : row?.ordinal),
+          },
           epoch,
         );
         next.push({ mediaID });
@@ -292,10 +458,10 @@ export function AssignPanel({
       setResults([...next]);
     }
     const confirmedChanges =
-      next.length < items.length ? next.filter((result) => !result.error).length : undefined;
+      next.length < writes.length ? next.filter((result) => !result.error).length : undefined;
     if (confirmedChanges !== undefined) {
       setInterrupted(confirmedChanges);
-      showInterruptionNotice?.({ done: confirmedChanges, total: items.length });
+      showInterruptionNotice?.({ done: confirmedChanges, total: writes.length });
     }
     setProgress("");
     setActivity(false);
@@ -328,7 +494,10 @@ export function AssignPanel({
   if (interrupted !== undefined) {
     return (
       <p role="status" className="text-sm">
-        {t("assignInterrupted", { done: interrupted, total: items.length })}
+        {t("assignInterrupted", {
+          done: interrupted,
+          total: unmatched ? items.length : (preview?.length ?? items.length),
+        })}
       </p>
     );
   }
@@ -414,53 +583,116 @@ export function AssignPanel({
             </Button>
           </form>
 
-          {candidates.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              {busy ? t("loading") : t("unmatchedNoCandidates")}
-            </p>
-          ) : (
-            <>
-              <p className="text-xs text-muted-foreground">
-                {t(unmatched ? "unmatchedPickHint" : "assignPickHint")}
-              </p>
-              <ul className="space-y-2">
-                {candidates.map((candidate) => (
-                  <li key={candidate.id}>
-                    <button
-                      type="button"
-                      className="grid w-full gap-1 rounded-md border px-3 py-2 text-left hover:bg-muted/50 data-[active=true]:border-primary data-[active=true]:bg-muted/40"
-                      data-active={selectedID === candidate.id}
-                      aria-pressed={selectedID === candidate.id}
-                      disabled={blocked || (!unmatched && busy)}
-                      onClick={() => select(candidate.id)}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="min-w-0 break-words text-sm font-medium">
-                          {candidate.title}
-                          {candidate.year ? ` (${candidate.year})` : ""}
-                        </span>
-                        <span className="flex shrink-0 gap-1">
-                          {suggestedYear !== undefined && candidate.year === suggestedYear && (
-                            <Badge>{t("unmatchedSuggested")}</Badge>
-                          )}
-                          <Badge variant={candidate.scored ? "secondary" : "outline"}>
-                            {candidate.scored
-                              ? percent(candidate.confidence)
-                              : t("unmatchedCandidateUnscored")}
-                          </Badge>
-                        </span>
-                      </div>
-                      {candidate.reason && (
-                        <span className="text-xs text-muted-foreground">
-                          {reasonLabel(t, candidate.reason)}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
+          {hierarchy && activeColumn > 0 && (
+            <Button
+              className="lg:hidden"
+              size="sm"
+              variant="outline"
+              onClick={() => setActiveColumn(activeColumn - 1)}
+            >
+              {t("back")}
+            </Button>
           )}
+          <div className={hierarchy ? "lg:flex lg:items-start lg:gap-3" : undefined}>
+            <div
+              className={
+                hierarchy
+                  ? `${activeColumn === 0 ? "" : "hidden lg:block"} min-w-0 flex-1 space-y-2`
+                  : undefined
+              }
+            >
+              {hierarchy && <h4 className="text-sm font-semibold">{t("assignCandidates")}</h4>}
+              {candidates.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {busy ? t("loading") : t("unmatchedNoCandidates")}
+                </p>
+              ) : (
+                <>
+                  {!hierarchy && (
+                    <p className="text-xs text-muted-foreground">
+                      {t(unmatched ? "unmatchedPickHint" : "assignPickHint")}
+                    </p>
+                  )}
+                  <ul className="space-y-2">
+                    {candidates.map((candidate) => (
+                      <li key={candidate.id}>
+                        <button
+                          type="button"
+                          className="grid w-full gap-1 rounded-md border px-3 py-2 text-left hover:bg-muted/50 data-[active=true]:border-primary data-[active=true]:bg-muted/40"
+                          data-active={selectedID === candidate.id}
+                          aria-pressed={selectedID === candidate.id}
+                          disabled={blocked || (!unmatched && busy)}
+                          onClick={() => {
+                            select(candidate.id);
+                            if (hierarchy) void loadChildren(target(candidate.id, candidate), 1);
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            {hierarchy && candidate.artwork?.poster && (
+                              <img
+                                className="h-10 w-8 shrink-0 rounded object-cover"
+                                src={candidate.artwork.poster}
+                                alt={candidate.title}
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                              />
+                            )}
+                            <span className="min-w-0 break-words text-sm font-medium">
+                              {hierarchy && candidate.artwork?.poster ? (
+                                <span aria-hidden="true">{candidate.title}</span>
+                              ) : (
+                                candidate.title
+                              )}
+                              {candidate.year ? ` (${candidate.year})` : ""}
+                            </span>
+                            <span className="flex shrink-0 gap-1">
+                              {suggestedYear !== undefined && candidate.year === suggestedYear && (
+                                <Badge>{t("unmatchedSuggested")}</Badge>
+                              )}
+                              <Badge variant={candidate.scored ? "secondary" : "outline"}>
+                                {candidate.scored
+                                  ? percent(candidate.confidence)
+                                  : t("unmatchedCandidateUnscored")}
+                              </Badge>
+                            </span>
+                          </div>
+                          {candidate.reason && (
+                            <span className="text-xs text-muted-foreground">
+                              {reasonLabel(t, candidate.reason)}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+            {levels.map((name, index) => (
+              <div
+                key={`${index}-${name}`}
+                className={`${activeColumn === index + 1 ? "" : "hidden lg:block"} min-w-0 flex-1 space-y-2`}
+              >
+                <AssignChildColumn
+                  label={levelLabel(name, t)}
+                  column={columns[index]}
+                  selectedKey={
+                    columns[index + 1]?.parent?.key ??
+                    (index + 1 === levels.length ? deepestKey : undefined)
+                  }
+                  disabled={disabled}
+                  onPick={
+                    multi && index + 1 === levels.length
+                      ? undefined
+                      : (row) => pickChild(index + 1, row)
+                  }
+                  onRetry={() =>
+                    void loadChildren(target(selectedID), index + 1, columns[index]?.parent)
+                  }
+                />
+              </div>
+            ))}
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {unmatched && (
@@ -470,15 +702,48 @@ export function AssignPanel({
                   : t("unmatchedMatchAll", { count: items.length })}
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={disabled || !selectedID || (!unmatched && results.length > 0)}
-              onClick={() => void loadPreview(selectedID)}
-            >
-              {t("unmatchedPreviewLoad")}
-            </Button>
+            {!childPairings && !deepestKey && !ordinalEntry && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={disabled || !selectedID || (!unmatched && results.length > 0)}
+                onClick={() => void loadPreview(selectedID)}
+              >
+                {t(hierarchy ? "assignPreviewCandidate" : "unmatchedPreviewLoad")}
+              </Button>
+            )}
+            {hierarchy && selected && !multi && !ordinalEntry && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={disabled || results.length > 0}
+                onClick={() => {
+                  resetPreview();
+                  setDeepestKey(undefined);
+                  setOrdinalEntry({});
+                }}
+              >
+                {t("assignEnterNumbers")}
+              </Button>
+            )}
           </div>
+          {ordinalEntry && (
+            <AssignOrdinalForm
+              key={deepestKey === undefined ? "manual" : `row-${deepestKey}`}
+              fixedSequence={ordinalEntry.fixedSequence}
+              labels={labels}
+              disabled={disabled || results.length > 0}
+              onChange={resetPreview}
+              onCancel={() => {
+                resetPreview();
+                setDeepestKey(undefined);
+                setOrdinalEntry(undefined);
+              }}
+              onPreview={(ordinal) =>
+                void loadPreview(selectedID, false, [{ mediaID: first.mediaID, ordinal }])
+              }
+            />
+          )}
 
           {source.acceptsPastedID && (
             <details className="rounded-md border px-3 py-2">
@@ -513,7 +778,7 @@ export function AssignPanel({
             </details>
           )}
 
-          {multi && preview && (
+          {multi && (preview || childPairings) && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
@@ -538,14 +803,33 @@ export function AssignPanel({
                           {item.title || item.mediaID}
                         </th>
                         <td className="p-2">
-                          {selected
-                            ? selected.year
-                              ? `${selected.title} (${selected.year})`
-                              : selected.title
-                            : selectedID}
+                          {childPairings ? (
+                            <AssignPairingSelect
+                              rows={childPairings.rows}
+                              choice={childPairings.choices[item.mediaID]}
+                              title={item.title || item.mediaID}
+                              indexLabel={labels.index}
+                              disabled={disabled || results.length > 0}
+                              onChange={(choice) => {
+                                resetPreview();
+                                setChildPairings({
+                                  ...childPairings,
+                                  choices: { ...childPairings.choices, [item.mediaID]: choice },
+                                });
+                              }}
+                            />
+                          ) : selected?.year ? (
+                            `${selected.title} (${selected.year})`
+                          ) : (
+                            (selected?.title ?? selectedID)
+                          )}
                         </td>
                         <td className="p-2" aria-live="polite">
-                          {result ? resultText(result) : "—"}
+                          {result
+                            ? resultText(result)
+                            : childPairings && !childPairings.choices[item.mediaID].key
+                              ? t("assignSkipped")
+                              : "—"}
                         </td>
                       </tr>
                     );
@@ -555,62 +839,112 @@ export function AssignPanel({
             </div>
           )}
 
-          {preview?.map((row, index) => (
-            <div key={row.mediaID} className="space-y-2 rounded-md border p-2">
-              {!unmatched && (
-                <h4 className="text-sm font-semibold">
-                  {multi ? items[index].title || row.mediaID : t("assignPreviewHeading")}
-                </h4>
+          {childPairings && (
+            <>
+              {duplicatePairing && (
+                <p role="alert" className="text-sm">
+                  {t("assignDuplicatePairing")}
+                </p>
               )}
-              <dl className="grid gap-2">
-                {row.diff.map((change) => (
-                  <div key={change.field} className="grid gap-0.5">
-                    <dt className="text-xs text-muted-foreground">{fieldLabel(change.field)}</dt>
-                    <dd className="break-words text-sm">
-                      {change.changed ? (
-                        <>
-                          <span className="text-muted-foreground line-through">
-                            {change.current || "—"}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={disabled || results.length > 0 || !canPreviewPairs}
+                onClick={() => void loadPreview(selectedID, false, pairedPlan)}
+              >
+                {t("unmatchedPreviewLoad")}
+              </Button>
+            </>
+          )}
+
+          {preview?.map((row) => {
+            const item = items.find(({ mediaID }) => mediaID === row.mediaID);
+            const lock = row.locked.find(({ field }) => field === "ordinal");
+            const index = item ? itemIndex(item) : undefined;
+            const before = lock
+              ? lockedOrdinal(lock.value)
+              : index !== undefined
+                ? { sequence: item?.sequence?.toString() ?? "", index }
+                : undefined;
+            const keep = keepsOrdinal(row);
+            const after = keep ? before : row.ordinal;
+            const diff = (keep && row.keptOrdinalDiff) || row.diff;
+            return (
+              <div key={row.mediaID} className="space-y-2 rounded-md border p-2">
+                {!unmatched && (
+                  <h4 className="text-sm font-semibold">
+                    {multi ? item?.title || row.mediaID : t("assignPreviewHeading")}
+                  </h4>
+                )}
+                <dl className="grid gap-2">
+                  {(row.ordinal || lock) && (
+                    <div className="grid gap-0.5">
+                      <dt className="text-xs text-muted-foreground">{t("assignOrdinal")}</dt>
+                      <dd className="break-words text-sm">
+                        {before ? formatOrdinal(before, labels) : lock?.value || "—"}
+                        {" → "}
+                        {after ? formatOrdinal(after, labels) : t("assignUseParsedOrdinal")}
+                      </dd>
+                    </div>
+                  )}
+                  {diff.map((change) => (
+                    <div key={change.field} className="grid gap-0.5">
+                      <dt className="text-xs text-muted-foreground">{fieldLabel(change.field)}</dt>
+                      <dd className="break-words text-sm">
+                        {change.changed ? (
+                          <>
+                            <span className="text-muted-foreground line-through">
+                              {change.current || "—"}
+                            </span>
+                            {" → "}
+                            <span className="font-medium">{change.proposed}</span>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            {t("unmatchedPreviewUnchanged")}
                           </span>
-                          {" → "}
-                          <span className="font-medium">{change.proposed}</span>
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          {t("unmatchedPreviewUnchanged")}
-                        </span>
-                      )}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              {!unmatched && (
-                <fieldset
-                  disabled={disabled || results.length > 0}
-                  className="space-y-2 border-t pt-2 text-sm"
-                >
-                  <legend className="font-semibold">{t("assignLockedFields")}</legend>
-                  {row.locked.length === 0 && <p>{t("assignNoLocks")}</p>}
-                  {row.locked.map(({ field, value }) => (
-                    <label key={field} className="flex items-start gap-2">
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={row.clearLocks.includes(field)}
-                        onChange={(event) => toggleLock(row.mediaID, field, event.target.checked)}
-                      />
-                      <span className="min-w-0 break-words">
-                        {t("assignReplaceLock", { field: fieldLabel(field) })}
-                        {value && <span className="block text-muted-foreground">{value}</span>}
-                      </span>
-                    </label>
+                        )}
+                      </dd>
+                    </div>
                   ))}
-                </fieldset>
-              )}
-            </div>
-          ))}
+                </dl>
+                {!unmatched && (
+                  <fieldset
+                    disabled={disabled || results.length > 0}
+                    className="space-y-2 border-t pt-2 text-sm"
+                  >
+                    <legend className="font-semibold">{t("assignLockedFields")}</legend>
+                    {row.locked.length === 0 && <p>{t("assignNoLocks")}</p>}
+                    {row.locked.map(({ field, value }) => (
+                      <label key={field} className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={row.clearLocks.includes(field)}
+                          onChange={(event) => toggleLock(row.mediaID, field, event.target.checked)}
+                        />
+                        <span className="min-w-0 break-words">
+                          {field === "ordinal" && !row.ordinal
+                            ? t("assignClearOrdinal")
+                            : t("assignReplaceLock", { field: fieldLabel(field) })}
+                          {value && (
+                            <span className="block text-muted-foreground">
+                              {field === "ordinal" && before
+                                ? formatOrdinal(before, labels)
+                                : value}
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
+              </div>
+            );
+          })}
           {preview &&
             multi &&
+            !childPairings &&
             (ordinalConflict ? (
               <p role="alert" className="text-sm">
                 {t("assignOrdinalConflict")}

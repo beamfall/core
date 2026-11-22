@@ -1,10 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bulkEditApply,
+  clearMediaOrdinal,
   editMediaMetadata,
   fetchArtworkCandidates,
   fetchMediaFields,
@@ -30,6 +31,7 @@ vi.mock("@/lib/graphql", () => ({
     restrictedResultsPresent: false,
   })),
   bulkEditApply: vi.fn(),
+  clearMediaOrdinal: vi.fn(),
   editMediaMetadata: vi.fn(),
   fetchArtworkCandidates: vi.fn(),
   fetchMediaFields: vi.fn(),
@@ -110,6 +112,42 @@ describe("ItemMetadataPage", () => {
     const action = screen.queryByRole("button", { name: "Assign…" });
     if (manager) expect(action).toBeEnabled();
     else expect(action).not.toBeInTheDocument();
+  });
+
+  it.each([true, false])("exposes the operator ordinal only to managers (%s)", async (manager) => {
+    access.manager = manager;
+    vi.mocked(fetchMediaMetadata).mockResolvedValue(
+      info({ operatorOrdinal: { sequence: "0", index: 0 } }),
+    );
+    vi.mocked(clearMediaOrdinal).mockResolvedValue(true);
+    renderAt("/manage/items/media-1");
+    await screen.findByLabelText("Title");
+    const section = screen.queryByRole("region", { name: "Ordinal" });
+    if (!manager) {
+      expect(section).not.toBeInTheDocument();
+      expect(clearMediaOrdinal).not.toHaveBeenCalled();
+      return;
+    }
+    expect(section).toBeInTheDocument();
+    const ordinal = within(section!);
+    expect(ordinal.getByText("Sequence 0 · Index 0")).toBeVisible();
+    await userEvent.click(ordinal.getByRole("button", { name: "Clear operator ordinal" }));
+    expect(await ordinal.findByText("No operator ordinal is set.")).toBeVisible();
+    expect(screen.getByText("Operator ordinal cleared.")).toBeVisible();
+    expect(clearMediaOrdinal).toHaveBeenCalledExactlyOnceWith("media-1");
+    expect(editMediaMetadata).not.toHaveBeenCalled();
+  });
+
+  it("preserves the displayed ordinal when clearing fails", async () => {
+    access.manager = true;
+    vi.mocked(fetchMediaMetadata).mockResolvedValue(
+      info({ operatorOrdinal: { sequence: "A", index: 3 } }),
+    );
+    vi.mocked(clearMediaOrdinal).mockRejectedValueOnce(new Error("network"));
+    renderAt("/manage/items/media-1");
+    await userEvent.click(await screen.findByRole("button", { name: "Clear operator ordinal" }));
+    expect(await screen.findByText("Could not clear the operator ordinal.")).toBeVisible();
+    expect(screen.getByText("Sequence A · Index 3")).toBeVisible();
   });
 
   it("asks for a media ID when none is in the route", () => {
