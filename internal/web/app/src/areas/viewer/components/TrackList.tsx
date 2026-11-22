@@ -23,20 +23,25 @@ import "./listening.css";
 // sequence group under its heading, with one queue in display order so
 // playback runs on across groups. The Entity page lists it under "Tracks"; a
 // Media detail page lists its container's under the container's title and
-// marks its own row (CORE-3065).
+// marks its own row (CORE-3065). A relation-sequenced container (a book
+// series, CORE-3014) gives each row a queue of its own Media only, so
+// finishing one never starts the next (ADR-0055 §2.4).
 export function ContainerTracks({
   tracks,
   title,
   currentID,
+  sequenced = false,
 }: {
   tracks: readonly TrackRow[];
   /** The section heading; defaults to the list label. */
   title?: ReactNode;
   /** The Media whose page this is, marked as the current row. */
   currentID?: string;
+  /** Each row plays alone rather than queueing the rows after it. */
+  sequenced?: boolean;
 }) {
   const t = useT();
-  const queue = audioQueue(tracks.map((track) => track.item));
+  const queue = sequenced ? null : audioQueue(tracks.map((track) => track.item));
   return (
     <section className="bf-section flex flex-col gap-3">
       <h2 className="bf-section-title">
@@ -76,8 +81,8 @@ export function TrackList({
   currentID,
 }: {
   rows: readonly TrackRow[];
-  /** The list's playable rows, in order, handed to the player. */
-  queue: readonly PlayQueueItem[];
+  /** The list's playable rows, in order, handed to the player; null plays each row alone. */
+  queue: readonly PlayQueueItem[] | null;
   /** Accessible name of the list. */
   label: string;
   /** The Media whose page this is, marked as the current row. */
@@ -91,14 +96,15 @@ export function TrackList({
     <ol className="bf-track-list" aria-label={label}>
       {rows.map((row) => {
         const { item } = row;
+        const rowQueue = queue ?? audioQueue([item]);
         const duration = formatDuration(row.durationSeconds);
         const path = mediaPath("media", item.id);
         const openDetails = () =>
           navigate(path, {
-            state: { ...mediaLinkState(item, identity), ...playState(identity, queue, item) },
+            state: { ...mediaLinkState(item, identity), ...playState(identity, rowQueue, item) },
           });
         const play = () =>
-          navigate(mediaPath("watch", item.id), { state: playState(identity, queue, item) });
+          navigate(mediaPath("watch", item.id), { state: playState(identity, rowQueue, item) });
         return (
           <li
             key={item.id}

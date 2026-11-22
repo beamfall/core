@@ -146,6 +146,12 @@ function watchState() {
   return rest;
 }
 
+// The queue the last track-row Play sent; a row's Play carries no startID.
+function rowQueueIDs(): string[] {
+  const state = JSON.parse(screen.getByTestId("state").textContent || "null");
+  return state.queue.map((item: { id: string }) => item.id);
+}
+
 function pending<T>() {
   let resolve!: (value: T) => void;
   let reject!: (err: unknown) => void;
@@ -1549,6 +1555,28 @@ describe("MediaDetailPage", () => {
       );
       expect(screen.getByRole("heading", { level: 2, name: "The Set" })).toBeInTheDocument();
       expect(screen.queryByRole("list", { name: "More in The Set" })).toBeNull();
+
+      fireEvent.click(within(first).getByRole("button", { name: "Play Opening" }));
+      expect(rowQueueIDs()).toEqual(["m0", "m1", "m2"]);
+    });
+
+    // ADR-0055 §2.4: a row of a relation-sequenced series plays its book
+    // alone, so finishing it never starts the next one.
+    it("plays each row of a sequenced series alone", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue({
+        ...listed,
+        credits: [
+          { ...listed.credits![0], attributes: { sequence: "2" } },
+          person("p1", "Ada Lead"),
+        ],
+      });
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(siblings);
+      vi.mocked(fetchEntity).mockResolvedValue(setEntity as never);
+      renderAt(["/media/m1"]);
+
+      const first = await screen.findByRole("list", { name: "Disc 1" });
+      fireEvent.click(within(first).getByRole("button", { name: "Play Opening" }));
+      expect(rowQueueIDs()).toEqual(["m0"]);
     });
   });
 

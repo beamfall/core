@@ -24,8 +24,16 @@ if [[ "${1:-}" == "--stdout" ]]; then
 fi
 
 cd "$REPO_ROOT"
-go run ./tools/mgmt-manifest > "$OUT"
-echo "==> mgmt-manifest written: $OUT"
 APPSTORE_OUT="$REPO_ROOT/internal/conformance/mgmt-manifest-appstore.json"
-go run -tags beamfall_appstore ./tools/mgmt-manifest > "$APPSTORE_OUT"
+# Generate both into temp files first, so a failed build never truncates a
+# tracked manifest.
+TMP_OUT="$(mktemp)"
+TMP_APPSTORE="$(mktemp)"
+trap 'rm -f "$TMP_OUT" "$TMP_APPSTORE"' EXIT
+go run ./tools/mgmt-manifest > "$TMP_OUT"
+go run -tags beamfall_appstore ./tools/mgmt-manifest > "$TMP_APPSTORE"
+chmod 0644 "$TMP_OUT" "$TMP_APPSTORE"
+mv -f "$TMP_OUT" "$OUT"
+mv -f "$TMP_APPSTORE" "$APPSTORE_OUT"
+echo "==> mgmt-manifest written: $OUT"
 echo "==> mgmt-manifest written: $APPSTORE_OUT"

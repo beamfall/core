@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { getIdentityEpochSignal, graphql } from "@/lib/api";
+import { type PlayModes, upcomingItems } from "../player/nowPlaying";
 
 // Radio (CORE-2772): a Station started from one Media or one Entity fills the
 // Profile's Play Queue with related Media and keeps topping it up while it
@@ -59,6 +60,23 @@ const ADD = `mutation RadioAdd($mediaID: String!, $expectedProfileID: String) {
 export const RADIO_TOP_UP = 10;
 /** A top-up starts when this few playable items remain after the current one. */
 export const RADIO_LOW_WATER = 5;
+
+/**
+ * Whether the queue runs low after `id`: fewer than RADIO_LOW_WATER playable
+ * items still to play, counted in the order playback follows (the shuffled
+ * order under shuffle, not the server's). Repeat all would count the whole
+ * queue forever, so the count never wraps. False when `id` is not queued.
+ */
+export function radioNeedsTopUp<T extends { id: string }>(
+  rows: readonly T[],
+  id: string,
+  modes: Pick<PlayModes, "shuffle" | "seed" | "anchor">,
+  playable: (row: T) => boolean,
+): boolean {
+  if (!rows.some((row) => row.id === id)) return false;
+  const order: PlayModes = { ...modes, repeat: "off" };
+  return upcomingItems(rows, id, order, RADIO_LOW_WATER, playable).length < RADIO_LOW_WATER;
+}
 
 function randomSeed(): string {
   return Math.random().toString(36).slice(2);

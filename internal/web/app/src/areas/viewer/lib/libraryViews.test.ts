@@ -228,6 +228,25 @@ describe("libraryEntities cache (CORE-3064)", () => {
     expect(cachedLibraryEntities(request)).toBeUndefined();
   });
 
+  // Codex stack 5 review: a caller after an engagement change must not join
+  // an older read, and that older read must not overwrite the newer answer.
+  it("reads afresh after an engagement change and keeps the newer answer", async () => {
+    const answers: ((value: unknown) => void)[] = [];
+    vi.mocked(graphql).mockImplementation(() => new Promise((resolve) => answers.push(resolve)));
+    const before = fetchLibraryEntities(request);
+    notifyEngagementChanged();
+    const after = fetchLibraryEntities(request);
+    expect(graphql).toHaveBeenCalledTimes(2);
+    const newer = {
+      libraryEntities: { ...served.libraryEntities, items: [{ id: "e2", title: "Two" }] },
+    };
+    answers[1]!(newer);
+    expect((await after).items.map((item) => item.id)).toEqual(["e2"]);
+    answers[0]!(served);
+    await before;
+    expect(cachedLibraryEntities(request)?.items.map((item) => item.id)).toEqual(["e2"]);
+  });
+
   it("rejects an aborted caller and still caches the shared read", async () => {
     let finish: (value: unknown) => void = () => {};
     vi.mocked(graphql).mockReturnValue(new Promise((resolve) => (finish = resolve)));

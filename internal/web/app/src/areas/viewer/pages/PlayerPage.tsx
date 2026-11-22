@@ -51,7 +51,7 @@ import {
   skipIntervalOverrideKey,
   skipIntervalOverrideValue,
 } from "../lib/preferences";
-import { RADIO_LOW_WATER, topUpRadio, useActiveRadio } from "../lib/radio";
+import { radioNeedsTopUp, topUpRadio, useActiveRadio } from "../lib/radio";
 import { sequencePosition } from "../lib/relationOrder";
 import { noteAutoAdvance } from "../lib/stillWatching";
 import {
@@ -312,11 +312,16 @@ function FeaturePlayer({
   const endedWithoutNext = useRef<string | null>(null);
   const retryEnded = useRef<() => void>(() => {});
   const queueRows = musicQueue?.rows;
+  // Under shuffle the items still to play are those after this one in the
+  // shuffled order, not the server's; repeat all would count the whole queue
+  // forever, so the count never wraps.
+  const radioShuffle = playModes.shuffle;
+  const radioSeed = playModes.seed;
+  const radioAnchor = playModes.anchor;
   useEffect(() => {
     if (!station || !queueRows || toppingUp.current) return;
-    const index = queueRows.findIndex((row) => row.id === mediaId);
-    if (index < 0) return;
-    if (queueRows.slice(index + 1).filter(playableMusic).length >= RADIO_LOW_WATER) return;
+    const order = { shuffle: radioShuffle, seed: radioSeed, anchor: radioAnchor };
+    if (!radioNeedsTopUp(queueRows, mediaId, order, playableMusic)) return;
     toppingUp.current = true;
     topUpRadio(station, new Set(queueRows.map((row) => row.id)))
       .then(async (added) => {
@@ -338,7 +343,7 @@ function FeaturePlayer({
       .finally(() => {
         toppingUp.current = false;
       });
-  }, [station, queueRows, mediaId, refreshMusicQueue]);
+  }, [station, queueRows, mediaId, refreshMusicQueue, radioShuffle, radioSeed, radioAnchor]);
 
   const needsInitialQueueRead = serverQueueRun && queueMatchesProfile && !musicQueue;
   useEffect(() => {

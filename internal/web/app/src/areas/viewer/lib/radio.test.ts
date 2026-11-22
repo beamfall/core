@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, graphql, setIdentityEpochSignal } from "@/lib/api";
-import { activeRadio, startRadio, stopRadio, topUpRadio } from "./radio";
+import { playOrder } from "../player/nowPlaying";
+import { activeRadio, radioNeedsTopUp, startRadio, stopRadio, topUpRadio } from "./radio";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
@@ -388,5 +389,37 @@ describe("radio", () => {
     expect(await first).toEqual({ status: "cancelled" });
     expect(await second).toMatchObject({ status: "started" });
     expect(activeRadio("p1")?.seedID).toBe("m2");
+  });
+});
+
+describe("radioNeedsTopUp", () => {
+  const rows = queued(...Array.from({ length: 12 }, (_, i) => `m${i}`));
+  const always = () => true;
+  const inOrder = { shuffle: false, seed: 0, anchor: "" };
+
+  it("counts the playable items after the current one in server order", () => {
+    expect(radioNeedsTopUp(rows, "m6", inOrder, always)).toBe(false);
+    expect(radioNeedsTopUp(rows, "m7", inOrder, always)).toBe(true);
+    expect(radioNeedsTopUp(rows, "m1", inOrder, (row) => row.id < "m3")).toBe(true);
+    expect(radioNeedsTopUp(rows, "gone", inOrder, always)).toBe(false);
+  });
+
+  // Codex stack 5 review: under shuffle the server order says nothing about
+  // what is still to play.
+  it("counts in the shuffled order playback follows", () => {
+    const serverIndex = (id: string) => rows.findIndex((row) => row.id === id);
+    // A seed whose shuffled order puts a late server item second, so the two
+    // orders disagree about what is left after it.
+    let picked: { modes: typeof inOrder; id: string } | null = null;
+    for (let seed = 1; seed < 100 && !picked; seed++) {
+      const modes = { shuffle: true, seed, anchor: "m0" };
+      const second = playOrder(rows, { ...modes, repeat: "off" })[1]!.id;
+      if (serverIndex(second) >= 8) picked = { modes, id: second };
+    }
+    if (!picked) throw new Error("no seed shuffles a late item early");
+    const order = playOrder(rows, { ...picked.modes, repeat: "off" }).map((row) => row.id);
+    expect(radioNeedsTopUp(rows, picked.id, inOrder, always)).toBe(true);
+    expect(radioNeedsTopUp(rows, picked.id, picked.modes, always)).toBe(false);
+    expect(radioNeedsTopUp(rows, order[order.length - 2]!, picked.modes, always)).toBe(true);
   });
 });

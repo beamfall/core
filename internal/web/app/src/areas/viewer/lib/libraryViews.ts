@@ -113,6 +113,9 @@ function entityCacheKey(request: LibraryEntitiesRequest): string {
 }
 
 function rememberLibraryEntities(key: string, epoch: number, page: LibraryEntitiesPage) {
+  // A read from before an engagement change never replaces a newer one.
+  const held = entityCache.get(key);
+  if (held && held.epoch > epoch) return;
   entityCache.delete(key);
   entityCache.set(key, { epoch, page });
   for (const oldest of entityCache.keys()) {
@@ -137,7 +140,9 @@ export function clearLibraryEntitiesCache(): void {
 
 /**
  * Reads one libraryEntities page and caches it. Callers asking for the same
- * page at once share one request; a caller's abort rejects its own promise
+ * page at once, in the same engagement epoch, share one request: a caller
+ * after an engagement change reads afresh rather than joining a read whose
+ * answer may predate it. A caller's abort rejects its own promise
  * and leaves the shared read to finish into the cache. A read that names no
  * kind is also cached under the kind the server chose.
  */
@@ -146,9 +151,10 @@ export function fetchLibraryEntities(
   signal?: AbortSignal,
 ): Promise<LibraryEntitiesPage> {
   const key = entityCacheKey(request);
-  let read = entityReads.get(key);
+  const epoch = readEngagementEpoch();
+  const readKey = `${epoch}:${key}`;
+  let read = entityReads.get(readKey);
   if (!read) {
-    const epoch = readEngagementEpoch();
     read = readLibraryEntities(request)
       .then((page) => {
         rememberLibraryEntities(key, epoch, page);
@@ -158,9 +164,9 @@ export function fetchLibraryEntities(
         return page;
       })
       .finally(() => {
-        if (entityReads.get(key) === read) entityReads.delete(key);
+        if (entityReads.get(readKey) === read) entityReads.delete(readKey);
       });
-    entityReads.set(key, read);
+    entityReads.set(readKey, read);
   }
   if (!signal) return read;
   if (signal.aborted) return Promise.reject(signal.reason);
