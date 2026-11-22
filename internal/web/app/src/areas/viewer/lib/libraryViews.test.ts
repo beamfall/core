@@ -247,6 +247,23 @@ describe("libraryEntities cache (CORE-3064)", () => {
     expect(cachedLibraryEntities(request)?.items.map((item) => item.id)).toEqual(["e2"]);
   });
 
+  it("never lets a kindless read's alias replace a read of that kind", async () => {
+    const answers: ((value: unknown) => void)[] = [];
+    vi.mocked(graphql).mockImplementation(() => new Promise((resolve) => answers.push(resolve)));
+    const kindless = fetchLibraryEntities(request);
+    const named = fetchLibraryEntities({ ...request, kind: "maker" });
+    const fresh = {
+      libraryEntities: { ...served.libraryEntities, items: [{ id: "e2", title: "Two" }] },
+    };
+    answers[1]!(fresh);
+    await named;
+    answers[0]!(served);
+    await kindless;
+    expect(
+      cachedLibraryEntities({ ...request, kind: "maker" })?.items.map((item) => item.id),
+    ).toEqual(["e2"]);
+  });
+
   it("rejects an aborted caller and still caches the shared read", async () => {
     let finish: (value: unknown) => void = () => {};
     vi.mocked(graphql).mockReturnValue(new Promise((resolve) => (finish = resolve)));

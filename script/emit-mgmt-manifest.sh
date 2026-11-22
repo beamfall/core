@@ -25,10 +25,10 @@ fi
 
 cd "$REPO_ROOT"
 APPSTORE_OUT="$REPO_ROOT/internal/conformance/mgmt-manifest-appstore.json"
-# Generate both into temp files first, so a failed build never truncates a
-# tracked manifest.
-TMP_OUT="$(mktemp)"
-TMP_APPSTORE="$(mktemp)"
+# Generate both into temp files beside their targets first, so a failed build
+# never truncates a tracked manifest and each mv is a same-filesystem rename.
+TMP_OUT="$(mktemp "$OUT.XXXXXX")"
+TMP_APPSTORE="$(mktemp "$APPSTORE_OUT.XXXXXX")"
 trap 'rm -f "$TMP_OUT" "$TMP_APPSTORE"' EXIT
 go run ./tools/mgmt-manifest > "$TMP_OUT"
 go run -tags beamfall_appstore ./tools/mgmt-manifest > "$TMP_APPSTORE"

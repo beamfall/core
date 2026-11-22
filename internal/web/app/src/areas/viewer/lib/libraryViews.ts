@@ -112,10 +112,17 @@ function entityCacheKey(request: LibraryEntitiesRequest): string {
   return JSON.stringify(libraryEntitiesVariables(request));
 }
 
-function rememberLibraryEntities(key: string, epoch: number, page: LibraryEntitiesPage) {
-  // A read from before an engagement change never replaces a newer one.
+function rememberLibraryEntities(
+  key: string,
+  epoch: number,
+  page: LibraryEntitiesPage,
+  alias = false,
+) {
+  // A read from before an engagement change never replaces a newer one, and
+  // a page cached under the kind the server chose never replaces a read that
+  // named that kind itself in the same epoch.
   const held = entityCache.get(key);
-  if (held && held.epoch > epoch) return;
+  if (held && (held.epoch > epoch || (alias && held.epoch === epoch))) return;
   entityCache.delete(key);
   entityCache.set(key, { epoch, page });
   for (const oldest of entityCache.keys()) {
@@ -159,7 +166,12 @@ export function fetchLibraryEntities(
       .then((page) => {
         rememberLibraryEntities(key, epoch, page);
         if (!request.kind && page.kind) {
-          rememberLibraryEntities(entityCacheKey({ ...request, kind: page.kind }), epoch, page);
+          rememberLibraryEntities(
+            entityCacheKey({ ...request, kind: page.kind }),
+            epoch,
+            page,
+            true,
+          );
         }
         return page;
       })
