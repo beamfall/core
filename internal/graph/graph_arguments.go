@@ -346,8 +346,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "kind", Kind: "string"},
 		{Name: "mediaID", Kind: "string", Optional: true},
 	},
-	"entitiesformedia": fieldArguments["entitiesformedia"],
-	"entity":           fieldArguments["entity"],
+	"entitiesformedia":    fieldArguments["entitiesformedia"],
+	"entitysearch":        fieldArguments["entitysearch"],
+	"setmediarelation":    fieldArguments["setmediarelation"],
+	"removemediarelation": fieldArguments["removemediarelation"],
+	"entity":              fieldArguments["entity"],
 	"entityrelations": slices.Concat(fieldArguments["entityrelations"], []NestedArgument{
 		{Name: "limit", Kind: "int", Optional: true},
 		{Name: "offset", Kind: "int", Optional: true},

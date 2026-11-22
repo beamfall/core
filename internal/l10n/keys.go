@@ -7,6 +7,11 @@ type Key string
 
 const WorkflowCapabilityDisabled Key = "workflow.capability_disabled"
 
+const (
+	InvalidMediaRelation         Key = "media_relation.invalid_input"
+	OperatorRelationUndoConflict Key = "media_relation.undo_conflict"
+)
+
 const QueueMediaLocked Key = "queue.media_locked"
 
 const (

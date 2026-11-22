@@ -383,6 +383,90 @@ export async function fetchMediaRelations(
   return data.mediaRelations ?? [];
 }
 
+export interface MediaEntityRelation {
+  id: string;
+  title: string;
+  kind: string;
+  relation: string;
+  attributes: Record<string, string>;
+  sortOrder?: number | null;
+  operatorLocked: boolean;
+  undeclared: boolean;
+}
+
+export interface EntitySearchMatch {
+  id: string;
+  title: string;
+  kind: string;
+  libraryID: string;
+}
+
+const MEDIA_ENTITY_RELATIONS_QUERY =
+  "query MediaEntityRelations($mediaID: String!, $relation: String) { entitiesForMedia(mediaID: $mediaID, relation: $relation) { id title kind relation attributes sortOrder operatorLocked undeclared } }";
+
+export async function fetchMediaEntityRelations(
+  mediaID: string,
+  relation?: string,
+): Promise<MediaEntityRelation[]> {
+  const data = await graphql<{ entitiesForMedia: MediaEntityRelation[] | null }>(
+    MEDIA_ENTITY_RELATIONS_QUERY,
+    { mediaID, relation },
+  );
+  return data.entitiesForMedia ?? [];
+}
+
+const ENTITY_SEARCH_QUERY =
+  "query EntitySearch($kind: String!, $query: String!, $limit: Int) { entitySearch(kind: $kind, query: $query, limit: $limit) { id title kind libraryID } }";
+
+export async function entitySearch(vars: {
+  kind: string;
+  query: string;
+  limit?: number;
+}): Promise<EntitySearchMatch[]> {
+  const data = await graphql<{ entitySearch: EntitySearchMatch[] | null }>(
+    ENTITY_SEARCH_QUERY,
+    vars,
+  );
+  return data.entitySearch ?? [];
+}
+
+type MediaRelationEntityInput =
+  | { entityID: string; newEntity?: never }
+  | { entityID?: never; newEntity: { kind: string; name: string } };
+
+const SET_MEDIA_RELATION_MUTATION =
+  "mutation SetMediaRelation($mediaID: String!, $relation: String!, $entityID: String, $newEntity: JSON, $attributes: JSON, $sortOrder: Int) { setMediaRelation(mediaID: $mediaID, relation: $relation, entityID: $entityID, newEntity: $newEntity, attributes: $attributes, sortOrder: $sortOrder) { relation sourceID targetID } }";
+
+export async function setMediaRelation(
+  vars: MediaRelationEntityInput & {
+    mediaID: string;
+    relation: string;
+    attributes?: Record<string, string>;
+    sortOrder?: number;
+  },
+): Promise<RelationWriteResult> {
+  const data = await graphql<{ setMediaRelation: RelationWriteResult }>(
+    SET_MEDIA_RELATION_MUTATION,
+    vars,
+  );
+  return data.setMediaRelation;
+}
+
+const REMOVE_MEDIA_RELATION_MUTATION =
+  "mutation RemoveMediaRelation($mediaID: String!, $relation: String!, $entityID: String!) { removeMediaRelation(mediaID: $mediaID, relation: $relation, entityID: $entityID) { relation sourceID targetID } }";
+
+export async function removeMediaRelation(vars: {
+  mediaID: string;
+  relation: string;
+  entityID: string;
+}): Promise<RelationWriteResult> {
+  const data = await graphql<{ removeMediaRelation: RelationWriteResult }>(
+    REMOVE_MEDIA_RELATION_MUTATION,
+    vars,
+  );
+  return data.removeMediaRelation;
+}
+
 const UPSERT_ENTITY_RELATION_MUTATION =
   "mutation UpsertEntityRelation($fromEntityID: String!, $relation: String!, $toEntityID: String, $toMediaID: String, $sortOrder: Int, $position: Int) { upsertEntityRelation(fromEntityID: $fromEntityID, relation: $relation, toEntityID: $toEntityID, toMediaID: $toMediaID, sortOrder: $sortOrder, position: $position) { relation sourceID targetID } }";
 

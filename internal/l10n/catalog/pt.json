@@ -7,6 +7,8 @@
   "library_root.not_folder": "{path} é um arquivo, não uma pasta.",
   "library_root.unreadable": "O servidor não tem permissão para ler {path}.",
   "manifest.shelf.next_up": "A seguir",
+  "media_relation.invalid_input": "Verifique o conteúdo, o tipo de entidade, a relação e os atributos.",
+  "media_relation.undo_conflict": "Não é possível desfazer esta mesclagem porque uma relação foi editada depois.",
   "notification.access_request.title": "Acesso solicitado",
   "notification.extension_request.title": "Mais tempo solicitado",
   "notification.watch_party_invite.title": "Convite Watch Party",

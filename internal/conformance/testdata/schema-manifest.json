@@ -470,6 +470,11 @@
     "tier": "session"
   },
   {
+    "field": "entitysearch",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "evictplaybackrenditioncache",
     "effect": "write",
     "tier": "admin"
@@ -995,6 +1000,11 @@
     "tier": "session"
   },
   {
+    "field": "removemediarelation",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "removesubscription",
     "effect": "write",
     "tier": "session"
@@ -1341,6 +1351,11 @@
   },
   {
     "field": "setmediafieldlock",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setmediarelation",
     "effect": "write",
     "tier": "session"
   },

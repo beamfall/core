@@ -1,5 +1,5 @@
 {
-  "schemaFingerprint": "503330211c2a459b74dc25f9e1e1497d4b1c573db5af8d28f3373b2376e17af7",
+  "schemaFingerprint": "4381cd75580bc12b1ac0332f59e5b6a26eba1ed95a8b609f3397296db2d54dae",
   "tables": {
     "catalog.access_grant": {
       "rows": 1,
@@ -123,7 +123,7 @@
     },
     "catalog.entity_relation": {
       "rows": 2,
-      "checksum": "f549ccb19127382144891fd3bf8ca518b0f2163b7e465cb40f16fa410402e69a"
+      "checksum": "ea8dcd0e74ce1c962f0138ca126c4a3e60394f875b20d0d1461aafecd5ecc524"
     },
     "catalog.entity_tag": {
       "rows": 1,
@@ -245,6 +245,10 @@
       "rows": 1,
       "checksum": "2f1e169ea7048249e812af972476d535608c30e07f660b98475b3d7959ca141f"
     },
+    "catalog.media_relation_activity": {
+      "rows": 1,
+      "checksum": "5cbc5b9781341909d591a9dcb3dd55d09d0468a15075ed9380085f741329182b"
+    },
     "catalog.media_sort_title": {
       "rows": 1,
       "checksum": "75f372bcc36c0510befff16795df933937cb1bcd2c10dbcd74e8dade56d95f95"
@@ -362,8 +366,8 @@
       "checksum": "78db107c4d13509a4581394e44b0bacc109b78bcfb28331592e09f2030821dbd"
     },
     "catalog.schema_migrations": {
-      "rows": 125,
-      "checksum": "68eadacb1b6a17df7a8dcecf9b3326c4a3024acbaf8ee432a4d0ab3b401aa754"
+      "rows": 126,
+      "checksum": "c51966512d701d20d00c305fb59a5675f97853acbc63ee5cdbd0bbcf9a216341"
     },
     "catalog.scoped_api_key": {
       "rows": 1,
@@ -383,7 +387,7 @@
     },
     "catalog.server_config": {
       "rows": 2,
-      "checksum": "642d6019cb300dd2cfe5331278665161b53b49c3c9d1300e541fc7cddc8b5f26"
+      "checksum": "16700634efa028785797827bd051987f83b8ccc4738d1fab588bcb35c269657c"
     },
     "catalog.smart_collection": {
       "rows": 1,
@@ -451,7 +455,7 @@
     },
     "encrypted:library-acc-archive.entity_relation": {
       "rows": 1,
-      "checksum": "5d78b6bc064c57e0d6b94f6c6af236bafaefc68f54cebe2dc4f42dc2db558075"
+      "checksum": "cdcf529a97e2e42af8f951adb09975b208c353695d3767f93bab7dd9a050074a"
     },
     "encrypted:library-acc-archive.media": {
       "rows": 2,
@@ -483,7 +487,7 @@
     },
     "encrypted:library-acc-archive.media_file": {
       "rows": 1,
-      "checksum": "e4dc5825c4e96f77d8b4a414793fddf6249153096a229d2aeb04ab31cddcd3aa"
+      "checksum": "44d188c3915abb62509aae36637a4eb0fd4cea0be0856e49584dc0020634f9a4"
     },
     "encrypted:library-acc-archive.media_file_font_attachment": {
       "rows": 1,
@@ -505,13 +509,17 @@
       "rows": 1,
       "checksum": "537e3f546ea4a61720077b6dc5c8c7d0e92b0f453b23a810610e3d4a6677a734"
     },
+    "encrypted:library-acc-archive.media_relation_activity": {
+      "rows": 1,
+      "checksum": "822740fc5e35a5a5004007cb4e7ffa53c4a5a5eb827404cdfe1b71e4326713b1"
+    },
     "encrypted:library-acc-archive.playback_rendition": {
       "rows": 1,
       "checksum": "75408736536e7dfbaf0c259862678e099f34667f3125f43a466f7e28c6c79740"
     },
     "encrypted:library-acc-archive.schema_migrations": {
-      "rows": 11,
-      "checksum": "ffdcb17e1f37c02c63d1a47b0c56e967285eea3527307c1d4f3a02f7973ec44f"
+      "rows": 12,
+      "checksum": "ca0c751cb073d10ea4bc0eed1e4f9dcd19d58db936d2c5d3d83395260c407c8a"
     },
     "encrypted:library-acc-archive.source_end_observation": {
       "rows": 1,
@@ -531,7 +539,7 @@
     },
     "events.engagement_event": {
       "rows": 3,
-      "checksum": "56876296823c01cd64084c90a7d35d3bb9175428aa5fe0f62d8ee8309c177b93"
+      "checksum": "a8101659bf32fc9be894685878a4f10e349811d9e5af152b9269d33c7e1012a2"
     },
     "events.event_outbox": {
       "rows": 1,
@@ -587,7 +595,7 @@
     },
     "events.schema_migrations": {
       "rows": 24,
-      "checksum": "7581a2bea58422e1f2c297da81ddb3605c20be4aaac72b84fcb04e46e65b6bdc"
+      "checksum": "203673c5ad2ac101cd4eaa5d86daa363e677547e1e7a7d185a6dd209014f0ed1"
     },
     "events.stream_token_ledger": {
       "rows": 1,
@@ -603,8 +611,8 @@
     }
   },
   "schemaVersions": {
-    "catalog": 125,
-    "encrypted:library-acc-archive": 11,
+    "catalog": 126,
+    "encrypted:library-acc-archive": 12,
     "events": 24
   },
   "fixturePolicy": {

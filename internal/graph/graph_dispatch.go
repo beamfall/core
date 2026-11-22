@@ -394,6 +394,8 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	153: dispatchFieldBlock153,
 	154: dispatchFieldBlock154,
 	155: dispatchFieldBlock155,
+	156: dispatchFieldBlock156,
+	157: dispatchFieldBlock157,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -477,6 +479,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"engagementcounter":                  newFieldHandler("engagementCounter", "engagementCounter", fieldRead, roleSession, 126),
 	"entitiesformedia":                   newFieldHandler("entitiesForMedia", "entitiesForMedia", fieldRead, roleSession, 6),
 	"entity":                             newFieldHandler("entity", "entity", fieldRead, roleSession, 11),
+	"entitysearch":                       newFieldHandler("entitySearch", "entitySearch", fieldRead, roleSession|roleManager, 156),
 	"entityrelations":                    newFieldHandler("entityRelations", "entityRelations", fieldRead, roleSession, 7),
 	"evictplaybackrenditioncache":        newFieldHandler("evictPlaybackRenditionCache", "evictPlaybackRenditionCache", fieldMutation, roleSession|roleAdmin, 75),
 	"extensionrequest":                   newFieldHandler("extensionRequest", "extensionRequest", fieldRead, roleSession, 95),
@@ -585,6 +588,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"removecollectionmedia":              newFieldHandler("removeCollectionMedia", "removeCollectionMedia", fieldMutation, roleSession|roleManager, 57),
 	"removelastengagement":               newFieldHandler("removeLastEngagement", "removeLastEngagement", fieldMutation, roleSession, 128),
 	"removesubscription":                 newFieldHandler("removeSubscription", "removeSubscription", fieldMutation, roleSession|roleManager, 54),
+	"removemediarelation":                newFieldHandler("removeMediaRelation", "removeMediaRelation", fieldMutation, roleSession|roleManager, 157),
 	"renamemanagedpath":                  newFieldHandler("renameManagedPath", "renameManagedPath", fieldMutation, roleSession|roleManager, 110),
 	"reordercollectionmedia":             newFieldHandler("reorderCollectionMedia", "reorderCollectionMedia", fieldMutation, roleSession|roleManager, 57),
 	"reportdrift":                        newFieldHandler("reportDrift", "reportDrift", fieldMutation, roleSession, 135),
@@ -649,6 +653,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setlibraryshowonhome":               newFieldHandler("setLibraryShowOnHome", "setLibraryShowOnHome", fieldMutation, roleSession|roleAdmin, 47),
 	"setlibraryrestricted":               newFieldHandler("setLibraryRestricted", "setLibraryRestricted", fieldMutation, roleSession|roleAdmin, 49),
 	"setlibraryroots":                    newFieldHandler("setLibraryRoots", "setLibraryRoots", fieldMutation, roleSession|roleAdmin, 46),
+	"setmediarelation":                   newFieldHandler("setMediaRelation", "setMediaRelation", fieldMutation, roleSession|roleManager, 157),
 	"setmediafieldlock":                  newFieldHandler("setMediaFieldLock", "setMediaFieldLock", fieldMutation, roleSession|roleManager, 108),
 	"editmediametadata":                  newFieldHandler("editMediaMetadata", "editMediaMetadata", fieldMutation, roleSession|roleManager, 108),
 	"refreshmediametadata":               newFieldHandler("refreshMediaMetadata", "refreshMediaMetadata", fieldMutation, roleSession|roleManager, 108),
@@ -4465,6 +4470,42 @@ func dispatchFieldBlock155(dispatch *fieldDispatchContext) response {
 	if fields["jellyfincompatkeys"] {
 		keys, err := h.jellyfinCompatKeys(ctx)
 		if resp := resolveField(dispatch, "jellyfincompatkeys", keys, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+func dispatchFieldBlock156(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["entitysearch"] {
+		items, err := h.entitySearch(ctx, scope, req)
+		if resp := resolveField(dispatch, "entitysearch", items, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+func dispatchFieldBlock157(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["setmediarelation"] {
+		result, err := h.setMediaRelation(ctx, scope, req)
+		if resp := resolveField(dispatch, "setmediarelation", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["removemediarelation"] {
+		result, err := h.removeMediaRelation(ctx, scope, req)
+		if resp := resolveField(dispatch, "removemediarelation", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

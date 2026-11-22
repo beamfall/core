@@ -102,8 +102,11 @@ type EntityRelation struct {
 // RelatedEntity pairs an Entity with the attributes of the relation row that
 // reached it.
 type RelatedEntity struct {
-	Entity     Entity
-	Attributes map[string]string
+	Entity         Entity
+	Attributes     map[string]string
+	Relation       string
+	SortOrder      *int
+	OperatorLocked bool
 }
 
 // EntityRelationRow is a reveal-filtered curation read over one source
@@ -268,6 +271,13 @@ func (s *Store) EnsureEntity(ctx context.Context, entity Entity) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := s.ensureEntityTx(ctx, tx, entity); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) ensureEntityTx(ctx context.Context, tx *sql.Tx, entity Entity) error {
 	// One insert-if-absent statement, so a concurrent UpsertEntity of the
 	// same Entity either lands first and is kept or lands after and wins.
 	result, err := tx.ExecContext(ctx, `
@@ -287,7 +297,7 @@ func (s *Store) EnsureEntity(ctx context.Context, entity Entity) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 var entityFieldTables = []string{
@@ -380,6 +390,15 @@ func (s *Store) EntitiesByKind(ctx context.Context, library LibraryID, kind stri
 // Media target replaces any other source entity's row for the same relation
 // name on that Media.
 func (s *Store) UpsertEntityRelation(ctx context.Context, relation EntityRelation) error {
+	return s.upsertEntityRelation(ctx, relation, false)
+}
+
+// UpsertHydratedEntityRelation adds a derived link while respecting operator locks.
+func (s *Store) UpsertHydratedEntityRelation(ctx context.Context, relation EntityRelation) error {
+	return s.upsertEntityRelation(ctx, relation, true)
+}
+
+func (s *Store) upsertEntityRelation(ctx context.Context, relation EntityRelation, hydrated bool) error {
 	// Authority face: Entity-relation catalog rows are main-only.
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
 		return err
@@ -427,13 +446,20 @@ func (s *Store) UpsertEntityRelation(ctx context.Context, relation EntityRelatio
 		return err
 	}
 	defer tx.Rollback()
+	if hydrated {
+		blocked, err := hydrationRelationBlocked(ctx, tx, relation)
+		if err != nil || blocked {
+			return err
+		}
+	}
 	if relation.Cardinality == "one" {
 		// One-cardinality: this Media belongs to at most one source entity
 		// for this relation name — replace, never duplicate.
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM entity_relation
 			WHERE relation = ? AND to_media_id = ? AND from_entity_id <> ?
-		`, relation.Name, relation.ToMediaID, relation.FromEntityID); err != nil {
+			  AND (NOT ? OR operator_locked_at_ms IS NULL)
+		`, relation.Name, relation.ToMediaID, relation.FromEntityID, hydrated); err != nil {
 			return err
 		}
 	}
@@ -445,9 +471,9 @@ func (s *Store) UpsertEntityRelation(ctx context.Context, relation EntityRelatio
 
 // ReplaceMediaRelations rewrites the Media-target relations of one Media for
 // every relation name the given rows carry: the Media's previous rows under
-// each of those names are deleted, whatever their cardinality, and the given
-// rows inserted, in one transaction. Relation names absent from the rows are
-// left as they are. Every row must target mediaID; the source Entities must
+// each name are replaced in one transaction. Operator locks protect their
+// rows and block conflicting derived rows. Names absent from the input stay
+// as they are. Every row must target mediaID and the source Entities must
 // already exist on the Media's catalog plane.
 func (s *Store) ReplaceMediaRelations(ctx context.Context, mediaID MediaID, relations []EntityRelation) error {
 	// Authority face: Entity-relation catalog rows are main-only.
@@ -519,12 +545,19 @@ func (s *Store) ReplaceMediaRelations(ctx context.Context, mediaID MediaID, rela
 	defer tx.Rollback()
 	for _, name := range names {
 		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM entity_relation WHERE relation = ? AND to_media_id = ?`, name, mediaID,
+			`DELETE FROM entity_relation WHERE relation = ? AND to_media_id = ? AND operator_locked_at_ms IS NULL`, name, mediaID,
 		); err != nil {
 			return err
 		}
 	}
 	for _, r := range rows {
+		blocked, err := hydrationRelationBlocked(ctx, tx, r.relation)
+		if err != nil {
+			return err
+		}
+		if blocked {
+			continue
+		}
 		if err := insertMediaRelationTx(ctx, tx, r.relation, r.attributes, r.sortOrder); err != nil {
 			return err
 		}
@@ -626,6 +659,20 @@ func (s *Store) ReplaceEntityRelations(ctx context.Context, fromID EntityID, nam
 	return tx.Commit()
 }
 
+// hydrationRelationBlocked also honors stored single-valued locks when a
+// derived writer omits cardinality.
+func hydrationRelationBlocked(ctx context.Context, tx *sql.Tx, relation EntityRelation) (bool, error) {
+	var blocked bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM entity_relation
+			WHERE to_media_id = ? AND relation = ? AND operator_locked_at_ms IS NOT NULL
+			  AND (operator_lock_one = 1 OR ? OR from_entity_id = ?)
+		)
+	`, relation.ToMediaID, relation.Name, relation.Cardinality == "one", relation.FromEntityID).Scan(&blocked)
+	return blocked, err
+}
+
 // entityRelationRowValues encodes a relation's attributes and sort order as
 // their nullable column values.
 func entityRelationRowValues(relation EntityRelation) (attributes, sortOrder any, err error) {
@@ -653,14 +700,10 @@ func insertMediaRelationTx(ctx context.Context, tx *sql.Tx, relation EntityRelat
 	return err
 }
 
-// EntitiesForMedia returns the Entities related to one visible Media item by
-// the named relation, with the relation's render-only attributes, in relation
-// sort order (the provider's credit order) and then by title. Entities whose
-// own Library is not visible under the filter are omitted.
+// EntitiesForMedia returns the visible Entities linked to one visible Media.
+// An empty name reads all links, grouped by relation name. Each group's rows
+// follow relation sort order and then title.
 func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationName string, filter LibraryFilter) ([]RelatedEntity, error) {
-	if relationName == "" {
-		return nil, errors.New("relation name is required")
-	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
@@ -678,33 +721,38 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 	// Read before the relation query: a catalog read nested inside an open
 	// catalog cursor holds two reader connections at once and can exhaust the
 	// pool under concurrent reads.
-	restricted, err := s.libraryRestrictionsLocked(ctx)
+	visibleLibraries, err := s.visibleLibraryIDsLocked(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := plane.reader.QueryContext(ctx, `
-		SELECT e.id, e.library_id, e.kind, e.title, r.attributes
+	query := `
+		SELECT e.id, e.library_id, e.kind, e.title, r.attributes, r.relation, r.sort_order, r.operator_locked_at_ms IS NOT NULL
 		FROM entity_relation r
 		JOIN entity e ON e.id = r.from_entity_id
-		WHERE r.to_media_id = ? AND r.relation = ? AND e.trashed_at_ms IS NULL
-		ORDER BY (r.sort_order IS NULL), r.sort_order, e.title, e.id
-	`, mediaID, relationName)
+		WHERE r.to_media_id = ? AND e.trashed_at_ms IS NULL`
+	args := []any{mediaID}
+	if relationName != "" {
+		query += " AND r.relation = ?"
+		args = append(args, relationName)
+	}
+	rows, err := plane.reader.QueryContext(ctx, query+
+		" ORDER BY r.relation, (r.sort_order IS NULL), r.sort_order, e.title, e.id", args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	related := []RelatedEntity{}
 	for rows.Next() {
-		var entity Entity
+		var item RelatedEntity
+		entity := &item.Entity
 		var attributes sql.NullString
-		if err := rows.Scan(&entity.ID, &entity.LibraryID, &entity.Kind, &entity.Title, &attributes); err != nil {
+		if err := rows.Scan(&entity.ID, &entity.LibraryID, &entity.Kind, &entity.Title,
+			&attributes, &item.Relation, &item.SortOrder, &item.OperatorLocked); err != nil {
 			return nil, err
 		}
-		isRestricted, ok := restricted[entity.LibraryID]
-		if !ok || !libraryVisible(Library{ID: entity.LibraryID, IsRestricted: isRestricted}, filter) {
+		if !slices.Contains(visibleLibraries, entity.LibraryID) {
 			continue
 		}
-		item := RelatedEntity{Entity: entity}
 		if item.Attributes, err = decodeRelationAttributes(attributes); err != nil {
 			return nil, err
 		}
@@ -713,15 +761,22 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	index := make(map[EntityID]int, len(related))
-	ids := make([]EntityID, len(related))
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	index := make(map[EntityID][]int, len(related))
+	ids := make([]EntityID, 0, len(related))
 	for i := range related {
-		index[related[i].Entity.ID] = i
-		ids[i] = related[i].Entity.ID
+		id := related[i].Entity.ID
+		if len(index[id]) == 0 {
+			ids = append(ids, id)
+		}
+		index[id] = append(index[id], i)
 	}
 	if err := s.loadEntityFieldsFrom(ctx, plane.reader, ids, func(id EntityID, field EntityField) {
-		i := index[id]
-		related[i].Entity.Fields = append(related[i].Entity.Fields, field)
+		for _, i := range index[id] {
+			related[i].Entity.Fields = append(related[i].Entity.Fields, field)
+		}
 	}); err != nil {
 		return nil, err
 	}

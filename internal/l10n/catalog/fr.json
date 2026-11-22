@@ -7,6 +7,8 @@
   "library_root.not_folder": "{path} est un fichier, pas un dossier.",
   "library_root.unreadable": "Le serveur n’a pas l’autorisation de lire {path}.",
   "manifest.shelf.next_up": "À suivre",
+  "media_relation.invalid_input": "Vérifiez le média, le type d’entité, la relation et les attributs.",
+  "media_relation.undo_conflict": "Cette fusion ne peut pas être annulée, car une relation a été modifiée depuis.",
   "notification.access_request.title": "Accès demandé",
   "notification.extension_request.title": "Demande de temps supplémentaire",
   "notification.watch_party_invite.title": "Invitation Watch Party",

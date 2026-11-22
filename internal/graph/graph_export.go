@@ -107,11 +107,12 @@ type ExportEntityInfo struct {
 // the relation name, exactly one target (entity or Media), and the render-only
 // attributes.
 type ExportEntityRelationInfo struct {
-	FromEntityID string            `json:"fromEntityID"`
-	Relation     string            `json:"relation"`
-	ToEntityID   string            `json:"toEntityID,omitempty"`
-	ToMediaID    string            `json:"toMediaID,omitempty"`
-	Attributes   map[string]string `json:"attributes,omitempty"`
+	FromEntityID   string            `json:"fromEntityID"`
+	Relation       string            `json:"relation"`
+	ToEntityID     string            `json:"toEntityID,omitempty"`
+	ToMediaID      string            `json:"toMediaID,omitempty"`
+	Attributes     map[string]string `json:"attributes,omitempty"`
+	OperatorLocked bool              `json:"operatorLocked,omitempty"`
 }
 
 // ExportMediaRelationInfo is one exported Media→Media relation (ADR-0009 fixed
@@ -229,11 +230,12 @@ func (h *Handler) metadataExport(ctx context.Context, scope auth.Scope) (Metadat
 	}
 	for _, r := range export.EntityRelations {
 		info.Relations = append(info.Relations, ExportEntityRelationInfo{
-			FromEntityID: string(r.FromEntityID),
-			Relation:     r.Relation,
-			ToEntityID:   string(r.ToEntityID),
-			ToMediaID:    string(r.ToMediaID),
-			Attributes:   r.Attributes,
+			FromEntityID:   string(r.FromEntityID),
+			Relation:       r.Relation,
+			ToEntityID:     string(r.ToEntityID),
+			ToMediaID:      string(r.ToMediaID),
+			Attributes:     r.Attributes,
+			OperatorLocked: r.OperatorLocked,
 		})
 	}
 	for _, r := range export.MediaRelations {

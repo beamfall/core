@@ -337,7 +337,7 @@ func (s *Service) applyContainerLinks(ctx context.Context, library store.Library
 		return replacer.ReplaceEntityRelations(ctx, target, names, rows)
 	}
 	for _, row := range rows {
-		if err := s.entities.UpsertEntityRelation(ctx, row); err != nil {
+		if err := s.entities.UpsertHydratedEntityRelation(ctx, row); err != nil {
 			return err
 		}
 	}

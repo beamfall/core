@@ -126,4 +126,5 @@ package store
 // CORE-2884 adds 0128_entity_enrichment, keyed by entity and read only by the
 // background enrichment job, off the entity-query hot path.
 // CORE-3128 adds 0129_media_operator_ordinal, keyed by Media ID and read off the entity-query hot path.
-const schemaFreezeCatalogMigrations = 125
+// CORE-3131 adds 0130_media_relation_operator_lock, with relation locks and catalog-local recovery history.
+const schemaFreezeCatalogMigrations = 126
