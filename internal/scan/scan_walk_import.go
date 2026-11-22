@@ -140,7 +140,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		}
 		return s.ctx.Err()
 	}
-	if err := s.flushPendingPartsUnlessImage(imported.Class == store.MediaClassImage); err != nil {
+	if err := s.flushPendingPartsUnlessInGroup(path, imported.Class == store.MediaClassImage); err != nil {
 		return err
 	}
 	versionKey := ""
@@ -312,7 +312,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		}
 		return s.ctx.Err()
 	}
-	if err := s.flushPendingPartsUnlessImage(standalone); err != nil {
+	if err := s.flushPendingPartsUnlessInGroup(path, standalone); err != nil {
 		return err
 	}
 	versionKey := ""
