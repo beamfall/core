@@ -98,6 +98,7 @@ var resultTypes = map[string]any{
 	"navoverridehistory":            NavOverrideHistoryInfo{}, // WEB-5J (ADR-0061 §Layout editor): audit-log entry shape
 	"subscriptions":                 SubscriptionInfo{},
 	"subscriptionentries":           SubscriptionEntryInfo{},
+	"subscriptionfollow":            FollowInfo{},
 	"followfeed":                    SubscriptionInfo{},
 	"setsubscriptiondownloadpolicy": SubscriptionInfo{},
 	"jobs":                          JobInfo{},

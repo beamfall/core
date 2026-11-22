@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import {
   type FeedSubscription,
+  type FollowInfo,
   fetchFeedSubscriptions,
   fetchSubscriptionEntries,
+  fetchSubscriptionFollow,
   type NavigationNode,
   type SubscriptionEntry,
   setFollowNewEntryRoute,
@@ -179,7 +181,12 @@ export function LibraryFeedsPage() {
 type CatalogueState =
   | { kind: "loading" }
   | { kind: "failed" }
-  | { kind: "ready"; entries: SubscriptionEntry[]; subscription: FeedSubscription | null };
+  | {
+      kind: "ready";
+      entries: SubscriptionEntry[];
+      subscription: FeedSubscription | null;
+      follow: FollowInfo | null;
+    };
 
 export function FeedCataloguePage() {
   const t = useT();
@@ -199,9 +206,11 @@ export function FeedCataloguePage() {
     const subscription = fetchFeedSubscriptions(libraryID)
       .then((items) => items.find((item) => item.id === subscriptionId) ?? null)
       .catch(() => null);
-    Promise.all([fetchSubscriptionEntries(subscriptionId), subscription])
-      .then(([entries, found]) => {
-        if (live) setState({ kind: "ready", entries, subscription: found });
+    // The follow state is the Profile's own and readable on any device.
+    const follow = fetchSubscriptionFollow(subscriptionId).catch(() => null);
+    Promise.all([fetchSubscriptionEntries(subscriptionId), subscription, follow])
+      .then(([entries, found, followed]) => {
+        if (live) setState({ kind: "ready", entries, subscription: found, follow: followed });
       })
       .catch(() => {
         if (live) setState({ kind: "failed" });
@@ -214,6 +223,7 @@ export function FeedCataloguePage() {
   if (!node) return fallback;
 
   const subscription = state.kind === "ready" ? state.subscription : null;
+  const follow = state.kind === "ready" ? state.follow : null;
   const heading = subscription?.title || displayString(node.title, displayLocale);
   return (
     <AppShell actions={<ViewerActions />}>
@@ -231,17 +241,16 @@ export function FeedCataloguePage() {
         {subscription && (
           <FeedHealth health={subscription} lastPolledAt={subscription.lastPolledAt} />
         )}
-        {subscription?.followed && (
+        {follow?.followed && (
           <FeedRouteSelect
-            route={subscription.newEntryRoute || "new"}
+            route={follow.newEntryRoute || "new"}
             onChange={async (route) => {
-              const follow = await setFollowNewEntryRoute(subscription.id, route);
+              const saved = await setFollowNewEntryRoute(follow.id, route);
+              // A save that settles after leaving for another feed must not
+              // overwrite that feed's route.
               setState((prev) =>
-                prev.kind === "ready" && prev.subscription
-                  ? {
-                      ...prev,
-                      subscription: { ...prev.subscription, newEntryRoute: follow.newEntryRoute },
-                    }
+                prev.kind === "ready" && prev.follow?.id === saved.id
+                  ? { ...prev, follow: saved }
                   : prev,
               );
             }}

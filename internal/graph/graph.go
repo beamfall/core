@@ -6495,6 +6495,7 @@ var queryFields = map[string]bool{
 	"navoverridehistory":     true, // WEB-5J (ADR-0061 §Layout editor): audit log of prior overrides
 	"subscriptions":          true,
 	"subscriptionentries":    true, // CORE-2957: catalogued feed entries, no enclosure URL
+	"subscriptionfollow":     true, // CORE-2959: the caller's follow state and route
 	"jobs":                   true,
 	"job":                    true,
 	"jobevents":              true,

@@ -1683,6 +1683,11 @@
       "tier": "session"
     },
     {
+      "field": "subscriptionfollow",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "subscriptions",
       "effect": "read",
       "tier": "session"
@@ -50032,6 +50037,28 @@
           "name": "publishedAt",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "subscriptionfollow",
+      "kind": "object",
+      "children": [
+        {
+          "name": "followed",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "newEntryRoute",
+          "kind": "scalar"
         },
         {
           "name": "title",

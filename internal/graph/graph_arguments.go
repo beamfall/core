@@ -1193,6 +1193,9 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"subscriptionentries": {
 		{Name: "subscriptionID", Kind: "string"},
 	},
+	"subscriptionfollow": {
+		{Name: "subscriptionID", Kind: "string"},
+	},
 	"suppressunmatched": {
 		{Name: "candidateID", Kind: "string", Optional: true},
 		{Name: "fingerprint", Kind: "string", Optional: true},

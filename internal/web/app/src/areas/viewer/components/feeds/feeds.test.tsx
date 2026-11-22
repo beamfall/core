@@ -7,7 +7,6 @@ import { ApiError } from "@/lib/api";
 import {
   type FeedSubscription,
   followFeed,
-  queuePlayNextMedia,
   refreshSubscription,
   type SubscriptionEntry,
   type SubscriptionHealth,
@@ -17,7 +16,7 @@ import {
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { nodePath } from "@/lib/nodePath";
-import { asFeedURL, formatBytes, isRateLimited } from "../../lib/feeds";
+import { asFeedURL, catalogueView, formatBytes, isRateLimited } from "../../lib/feeds";
 import { FeedCatalogue } from "./FeedCatalogue";
 import { FeedFollowPanel } from "./FeedFollowPanel";
 import { FeedHealth } from "./FeedHealth";
@@ -34,7 +33,6 @@ vi.mock("@/lib/graphql", async (importOriginal) => {
     followFeed: vi.fn(),
     refreshSubscription: vi.fn(),
     setSubscriptionDownloadPolicy: vi.fn(),
-    queuePlayNextMedia: vi.fn(),
     setWatched: vi.fn(),
   };
 });
@@ -45,7 +43,6 @@ beforeEach(() => {
   vi.mocked(followFeed).mockReset();
   vi.mocked(refreshSubscription).mockReset();
   vi.mocked(setSubscriptionDownloadPolicy).mockReset();
-  vi.mocked(queuePlayNextMedia).mockReset();
   vi.mocked(setWatched).mockReset();
 });
 afterEach(cleanup);
@@ -416,9 +413,8 @@ describe("FeedCatalogue", () => {
     expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["m-1", "m-2", "m-3"]);
   });
 
-  it("filters Unplayed, sorts oldest first, queues next and marks played (CORE-2959)", async () => {
+  it("filters Unplayed, sorts oldest first and marks played (CORE-2959)", async () => {
     const user = userEvent.setup();
-    vi.mocked(queuePlayNextMedia).mockResolvedValue();
     vi.mocked(setWatched).mockResolvedValue({} as Awaited<ReturnType<typeof setWatched>>);
     const entries = [
       entry({
@@ -454,10 +450,6 @@ describe("FeedCatalogue", () => {
     await user.selectOptions(screen.getByLabelText("Show"), "unplayed");
     expect(order()).toEqual(["m-1", "m-3"]);
 
-    await user.click(screen.getByRole("button", { name: "Play Third next" }));
-    expect(queuePlayNextMedia).toHaveBeenCalledWith("m-3");
-    expect(await screen.findByRole("status")).toHaveTextContent("Third plays next.");
-
     await user.click(screen.getByRole("button", { name: "Mark First played" }));
     expect(setWatched).toHaveBeenCalledWith({ mediaID: "m-1" }, true);
     expect(order()).toEqual(["m-3"]);
@@ -465,5 +457,17 @@ describe("FeedCatalogue", () => {
     await user.selectOptions(screen.getByLabelText("Show"), "all");
     await user.click(screen.getByRole("button", { name: "Mark Second unplayed" }));
     expect(setWatched).toHaveBeenLastCalledWith({ mediaID: "m-2" }, false);
+  });
+
+  it("places undated entries after dated ones in both sorts (CORE-2959)", () => {
+    const entries = [
+      entry({ mediaID: "jan-1", feedPosition: 0, publishedAt: "2026-01-01T12:00:00Z" }),
+      entry({ mediaID: "undated", feedPosition: 1, publishedAt: "" }),
+      entry({ mediaID: "jan-3", feedPosition: 2, publishedAt: "2026-01-03T12:00:00Z" }),
+    ];
+    const ids = (sort: "newest" | "oldest") =>
+      catalogueView(entries, "all", sort).map((item) => item.mediaID);
+    expect(ids("newest")).toEqual(["jan-3", "jan-1", "undated"]);
+    expect(ids("oldest")).toEqual(["undated", "jan-1", "jan-3"]);
   });
 });

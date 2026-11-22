@@ -437,6 +437,21 @@ type SubscriptionEntryInfo struct {
 	Played bool `json:"played"`
 }
 
+// subscriptionFollow is the caller's follow state and new-entry route for one
+// Subscription it can see (CORE-2959): the viewer-safe read of what setFollow
+// echoes, so a non-manager can show and change its route.
+func (h *Handler) subscriptionFollow(ctx context.Context, scope auth.Scope, req request) (FollowInfo, error) {
+	id := store.SubscriptionID(trimmedVariable(req, "subscriptionID"))
+	if id == "" {
+		return FollowInfo{}, clientError("subscriptionID is required")
+	}
+	subscription, err := h.visibleSubscription(ctx, scope, id)
+	if err != nil {
+		return FollowInfo{}, err
+	}
+	return h.followInfo(ctx, scope, subscription)
+}
+
 func (h *Handler) subscriptionEntries(ctx context.Context, scope auth.Scope, req request) ([]SubscriptionEntryInfo, error) {
 	id := store.SubscriptionID(trimmedVariable(req, "subscriptionID"))
 	if id == "" {
