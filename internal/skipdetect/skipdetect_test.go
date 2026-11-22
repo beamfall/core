@@ -3,6 +3,7 @@ package skipdetect
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -455,6 +456,189 @@ func TestFingerprintSweepInvalidatesLegacyCreditsWithoutSiblings(t *testing.T) {
 	}
 	if _, ok := segmentOfKind(markersOf(t, st, media.ID), "credits"); ok {
 		t.Fatal("legacy head-derived credits survived next detection sweep")
+	}
+}
+
+// TestFingerprintRejectsWholeFileMatchOnShortSiblings is the CORE-3079
+// regression: short siblings whose loudness never diverges (a shared constant
+// audio bed) matched over their whole length, so intro and credits both
+// covered the file and Skip intro jumped to the end. Neither may be written.
+func TestFingerprintRejectsWholeFileMatchOnShortSiblings(t *testing.T) {
+	st := storetest.Open(t)
+	a, pathA := seedVideo(t, st, "library-local", "bed-a", 111)
+	b, pathB := seedVideo(t, st, "library-local", "bed-b", 111)
+	c, pathC := seedVideo(t, st, "library-local", "bed-c", 111)
+	enable(t, st, "library-local")
+	linkOrderedContainer(t, st, "library-local", "container-bed", a.ID, b.ID, c.ID)
+	bed := repeat(0.5, 111)
+	det := &fakeDetector{
+		chaptersByPath:    map[string][]ffmpeg.Chapter{},
+		fingerprintByPath: map[string][]float64{pathA: bed, pathB: bed, pathC: bed},
+		tailByPath:        map[string][]float64{pathA: bed, pathB: bed, pathC: bed},
+	}
+	svc := &Service{store: st, detector: det, now: fixedClock()}
+	if err := svc.DetectForMedia(context.Background(), b.ID); err != nil {
+		t.Fatalf("DetectForMedia: %v", err)
+	}
+	markers := markersOf(t, st, b.ID)
+	for _, kind := range []string{"intro", "credits"} {
+		if m, ok := segmentOfKind(markers, kind); ok {
+			t.Errorf("%s written over [%v, %v] from a run that never diverged", kind, m.StartSeconds, m.EndSeconds)
+		}
+	}
+}
+
+// TestFingerprintRejectsIntroLongerThanMax verifies a shared opening longer
+// than maxIntroWindows is not written as an intro.
+func TestFingerprintRejectsIntroLongerThanMax(t *testing.T) {
+	st := storetest.Open(t)
+	a, pathA := seedVideo(t, st, "library-local", "long-a", 1800)
+	b, pathB := seedVideo(t, st, "library-local", "long-b", 1800)
+	enable(t, st, "library-local")
+	linkOrderedContainer(t, st, "library-local", "container-long", a.ID, b.ID)
+	shared := repeat(0.5, maxIntroWindows+10)
+	rest := fingerprintHeadWindows - len(shared)
+	det := &fakeDetector{
+		chaptersByPath: map[string][]ffmpeg.Chapter{},
+		fingerprintByPath: map[string][]float64{
+			pathA: append(append([]float64{}, shared...), repeat(0.1, rest)...),
+			pathB: append(append([]float64{}, shared...), repeat(0.9, rest)...),
+		},
+	}
+	svc := &Service{store: st, detector: det, now: fixedClock()}
+	if err := svc.DetectForMedia(context.Background(), a.ID); err != nil {
+		t.Fatalf("DetectForMedia: %v", err)
+	}
+	if m, ok := segmentOfKind(markersOf(t, st, a.ID), "intro"); ok {
+		t.Fatalf("intro written over [%v, %v], longer than the %d s cap", m.StartSeconds, m.EndSeconds, maxIntroWindows)
+	}
+}
+
+// TestFingerprintNearDuplicateSiblingDoesNotHideRealIntro verifies the best
+// sibling is chosen among plausible runs only: a near-duplicate sibling that
+// matches the whole head must not displace a real 40 s intro found against
+// another sibling.
+func TestFingerprintNearDuplicateSiblingDoesNotHideRealIntro(t *testing.T) {
+	st := storetest.Open(t)
+	a, pathA := seedVideo(t, st, "library-local", "dup-a", 1800)
+	dup, pathDup := seedVideo(t, st, "library-local", "dup-copy", 1800)
+	c, pathC := seedVideo(t, st, "library-local", "dup-c", 1800)
+	enable(t, st, "library-local")
+	linkOrderedContainer(t, st, "library-local", "container-dup", a.ID, dup.ID, c.ID)
+	sigA := append(repeat(0.5, 40), repeat(0.1, 140)...)
+	det := &fakeDetector{
+		chaptersByPath: map[string][]ffmpeg.Chapter{},
+		fingerprintByPath: map[string][]float64{
+			pathA:   sigA,
+			pathDup: append([]float64{}, sigA...),
+			pathC:   append(repeat(0.5, 40), repeat(0.9, 140)...),
+		},
+	}
+	svc := &Service{store: st, detector: det, now: fixedClock()}
+	if err := svc.DetectForMedia(context.Background(), a.ID); err != nil {
+		t.Fatalf("DetectForMedia: %v", err)
+	}
+	intro, ok := segmentOfKind(markersOf(t, st, a.ID), "intro")
+	if !ok {
+		t.Fatal("expected the 40 s intro shared with the non-duplicate sibling")
+	}
+	if intro.StartSeconds != 0 || intro.EndSeconds == nil || *intro.EndSeconds != 40 {
+		t.Fatalf("intro range = [%v, %v], want [0, 40]", intro.StartSeconds, intro.EndSeconds)
+	}
+}
+
+// TestFingerprintNearDuplicateSiblingDoesNotHideRealCredits is the tail
+// counterpart: a sibling whose whole tail matches shows no credits start and
+// must not displace a real 40 s credits run found against another sibling.
+func TestFingerprintNearDuplicateSiblingDoesNotHideRealCredits(t *testing.T) {
+	st := storetest.Open(t)
+	a, pathA := seedVideo(t, st, "library-local", "tdup-a", 1800)
+	dup, pathDup := seedVideo(t, st, "library-local", "tdup-copy", 1800)
+	c, pathC := seedVideo(t, st, "library-local", "tdup-c", 1800)
+	enable(t, st, "library-local")
+	linkOrderedContainer(t, st, "library-local", "container-tdup", a.ID, dup.ID, c.ID)
+	tailA := append(repeat(0.1, fingerprintTailWindows-40), repeat(0.5, 40)...)
+	det := &fakeDetector{
+		chaptersByPath:    map[string][]ffmpeg.Chapter{},
+		fingerprintByPath: map[string][]float64{},
+		tailByPath: map[string][]float64{
+			pathA:   tailA,
+			pathDup: append([]float64{}, tailA...),
+			pathC:   append(repeat(0.9, fingerprintTailWindows-40), repeat(0.5, 40)...),
+		},
+	}
+	svc := &Service{store: st, detector: det, now: fixedClock()}
+	if err := svc.DetectForMedia(context.Background(), a.ID); err != nil {
+		t.Fatalf("DetectForMedia: %v", err)
+	}
+	credits, ok := segmentOfKind(markersOf(t, st, a.ID), "credits")
+	if !ok {
+		t.Fatal("expected the 40 s credits shared with the non-duplicate sibling")
+	}
+	if credits.StartSeconds != 1760 {
+		t.Fatalf("credits start = %v, want 1760", credits.StartSeconds)
+	}
+}
+
+// TestFingerprintRunLengthBoundaries pins the caps at their edges: a run of
+// exactly half the runtime or exactly maxIntroWindows is kept, one window more
+// is dropped.
+func TestFingerprintRunLengthBoundaries(t *testing.T) {
+	cases := []struct {
+		name     string
+		duration int
+		kind     string
+		shared   int
+		want     bool
+	}{
+		{"intro at half runtime", 100, "intro", 50, true},
+		{"intro over half runtime", 100, "intro", 51, false},
+		{"credits at half runtime", 100, "credits", 50, true},
+		{"credits over half runtime", 100, "credits", 51, false},
+		{"intro at max", 1800, "intro", maxIntroWindows, true},
+		{"intro over max", 1800, "intro", maxIntroWindows + 1, false},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := storetest.Open(t)
+			a, pathA := seedVideo(t, st, "library-local", fmt.Sprintf("edge-a-%d", i), tc.duration)
+			b, pathB := seedVideo(t, st, "library-local", fmt.Sprintf("edge-b-%d", i), tc.duration)
+			enable(t, st, "library-local")
+			linkOrderedContainer(t, st, "library-local", store.EntityID(fmt.Sprintf("container-edge-%d", i)), a.ID, b.ID)
+			region := fingerprintHeadWindows
+			if tc.kind == "credits" {
+				region = fingerprintTailWindows
+			}
+			if tc.duration < region {
+				region = tc.duration
+			}
+			rest := region - tc.shared
+			var sigA, sigB []float64
+			if tc.kind == "intro" {
+				sigA = append(repeat(0.5, tc.shared), repeat(0.1, rest)...)
+				sigB = append(repeat(0.5, tc.shared), repeat(0.9, rest)...)
+			} else {
+				sigA = append(repeat(0.1, rest), repeat(0.5, tc.shared)...)
+				sigB = append(repeat(0.9, rest), repeat(0.5, tc.shared)...)
+			}
+			det := &fakeDetector{
+				chaptersByPath:    map[string][]ffmpeg.Chapter{},
+				fingerprintByPath: map[string][]float64{},
+				tailByPath:        map[string][]float64{},
+			}
+			if tc.kind == "intro" {
+				det.fingerprintByPath[pathA], det.fingerprintByPath[pathB] = sigA, sigB
+			} else {
+				det.tailByPath[pathA], det.tailByPath[pathB] = sigA, sigB
+			}
+			svc := &Service{store: st, detector: det, now: fixedClock()}
+			if err := svc.DetectForMedia(context.Background(), a.ID); err != nil {
+				t.Fatalf("DetectForMedia: %v", err)
+			}
+			if _, got := segmentOfKind(markersOf(t, st, a.ID), tc.kind); got != tc.want {
+				t.Fatalf("%s written = %v, want %v for a %d-window run on %d s", tc.kind, got, tc.want, tc.shared, tc.duration)
+			}
+		})
 	}
 }
 
