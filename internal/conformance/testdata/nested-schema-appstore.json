@@ -13124,6 +13124,58 @@
     ]
   },
   {
+    "field": "medialyrics",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "mediaID",
+        "kind": "string"
+      }
+    ],
+    "children": [
+      {
+        "name": "lines",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "startMs",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
+              "name": "text",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "startMs",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "text",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "source",
+        "kind": "scalar"
+      },
+      {
+        "name": "synced",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "mediametadata",
     "kind": "object",
     "children": [

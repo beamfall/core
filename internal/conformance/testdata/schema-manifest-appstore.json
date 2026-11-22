@@ -670,6 +670,11 @@
     "tier": "session"
   },
   {
+    "field": "medialyrics",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "mediametadata",
     "effect": "read",
     "tier": "session"

@@ -185,6 +185,7 @@ var originalScopedFields = []string{
 	"mediaforentity",
 	"mediarelations", // WEB-5B: generic Media relation read
 	"mediatracks",    // CORE-2442: Versions and tracks before playback
+	"medialyrics",    // CORE-1638: lyrics of an audio item
 	"relatedmedia",   // CORE-2444: ranked Media sharing credits, discovery-suppressed
 	"mergeentities",
 	"mergemedia",

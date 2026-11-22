@@ -34,6 +34,7 @@ var archWhitelist = map[string][]string{
 	"discovery":         {},
 	"hostmetrics":       {},                  // leaf; in-memory one-hour ring of host CPU, memory and this server's own network traffic for the console (CORE-1195), stdlib only, never persisted or sent off the server
 	"redact":            {},                  // leaf; log-text redaction shared by jobs and logtail (CORE-1716), stdlib only
+	"lyrics":            {},                  // leaf; local lyric reads (LRC and plain sidecars, ID3v2 SYLT/USLT) for the mediaLyrics graph read (CORE-1638), stdlib only
 	"l10n":              {},                  // leaf; server-text locale negotiation and catalogs over the vendored shared locale declaration (CORE-2102)
 	"logtail":           {"redact"},          // in-memory tail of redacted operator log lines for the console server-log read (CORE-1716)
 	"restorestage":      {"store", "backup"}, // staged restore (CORE-1720): backup decrypts the set, store reads the manifest and checks the restore identity; the apply runs in cmd/beamfall under the server lock

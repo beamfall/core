@@ -1,6 +1,6 @@
 # Music lyrics: a `mediaLyrics` read and a web Lyrics view
 
-Ticket: CORE-3068 (`queue:core:main`).
+Ticket: CORE-1638 (`queue:core:main`), lyrics half only; its ReplayGain half stays open there.
 
 ## Why
 

@@ -4,4 +4,4 @@
 - [ ] Web: Lyrics toggle in the transport, art-left lyrics-right view, synced highlight, auto-scroll, click to seek, plain text, quiet "No lyrics"
 - [ ] Web strings in every shipped locale; vitest coverage
 - [ ] `make gate`
-- [ ] `openspec archive core-3068-music-lyrics` after landing
+- [ ] `openspec archive core-1638-music-lyrics` after landing
