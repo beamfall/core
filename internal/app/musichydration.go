@@ -28,6 +28,7 @@ import (
 type hydrationStore interface {
 	InsertMediaFieldsIfAbsent(ctx context.Context, id store.MediaID, fields []store.MediaField) error
 	UpsertMediaFieldsWithSource(ctx context.Context, id store.MediaID, fields []store.MediaField, source store.MutationSource) error
+	UpsertScannedMediaTag(ctx context.Context, id store.MediaID, name, value string) error
 	MediaFields(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaField, error)
 	MediaFieldLocks(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFieldLock, error)
 	UpsertEntity(ctx context.Context, entity store.Entity) error
@@ -137,8 +138,16 @@ func newHydrationAdapters(registry *plugin.Registry, st hydrationStore, mappers 
 			adapter.fingerprintField = rehydrator.FingerprintField()
 		}
 		if tagged, ok := mapper.(HydrationTagMapper); ok {
-			adapter.tag = tagged.HydrationTag()
-			adapter.capability.TrackFilePath = adapter.tag.Field != ""
+			tag := tagged.HydrationTag()
+			if tag.Field != "" {
+				plan := HydrationPlan{MediaFields: []store.MediaField{{Name: tag.Field, Type: store.EntityFieldText}}}
+				if _, err := adapter.validatePlan(plan, adapter.capability.MarkerField); err != nil {
+					slog.Warn("hydration: invalid standalone tag declaration", "plugin", pluginID, "error", err)
+				} else {
+					adapter.tag = tag
+					adapter.capability.TrackFilePath = true
+				}
+			}
 		}
 		if bounded, ok := mapper.(HydrationMediaFieldsMapper); ok {
 			fields := slices.Clone(bounded.HydratedMediaFields())
@@ -253,7 +262,11 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 		}}
 	}
 	if write == HydrationWriteSkip {
-		return a.writeMediaFields(ctx, input.MediaID, tag, "", HydrationWriteFresh, nil)
+		if tag.Empty() {
+			return nil
+		}
+		field := tag.MediaFields[0]
+		return a.store.UpsertScannedMediaTag(ctx, input.MediaID, field.Name, field.Text)
 	}
 	var locked map[string]bool
 	if write == HydrationWriteReplace {

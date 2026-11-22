@@ -151,3 +151,54 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 		t.Fatalf("media-only entity = %#v, want no related groups", solo)
 	}
 }
+
+func TestUnruledRelatedEntityCardsUseOwningPluginArchetype(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	var bundles []plugin.Bundle
+	var libraries []store.LibraryID
+	for i, archetype := range []string{"container", "category"} {
+		bundles = append(bundles, plugin.Bundle{
+			ID: plugin.ID(archetype), Version: "1.0.0", DisplayName: plugin.L(archetype),
+			MediaLabel:  plugin.L("Item"),
+			EntityKinds: []plugin.EntityKind{{Name: "record", Archetype: archetype}},
+			Layouts:     []plugin.LayoutSpec{{ID: "home", Role: "browse"}},
+		})
+		library, err := st.CreateLibrary(ctx, archetype, false, archetype, "profile-default")
+		if err != nil {
+			t.Fatal(err)
+		}
+		libraries = append(libraries, library.ID)
+		if i == 0 {
+			if err := st.UpsertEntity(ctx, store.Entity{ID: "context", LibraryID: library.ID, Kind: "record", Title: "Context"}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		id := store.EntityID(archetype)
+		if err := st.UpsertEntity(ctx, store.Entity{ID: id, LibraryID: library.ID, Kind: "record", Title: archetype}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: id, Name: "related", ToEntityID: "context"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry, err := newTestPluginRegistry(bundles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(manifest.NewService(st, time.Now, registry), auth.NewService(st), st, registry)
+	detail, err := handler.entityQuery(ctx, auth.Scope{ProfileID: "profile-default", LibraryIDs: libraries},
+		request{Variables: map[string]any{"id": "context"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := detail.RelatedEntities
+	if len(groups) != 2 {
+		t.Fatalf("related groups = %+v, want two owning plugin groups", groups)
+	}
+	for _, group := range groups {
+		if len(group.Items) != 1 || group.Items[0].ID != group.Archetype || len(group.Sections) != 0 {
+			t.Fatalf("group = %+v, want one card with its owning plugin's archetype and no sections", group)
+		}
+	}
+}

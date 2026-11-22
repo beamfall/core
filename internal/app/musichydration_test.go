@@ -237,6 +237,15 @@ func (f *fakeHydrationStore) field(id store.MediaID, name string) (store.MediaFi
 	return store.MediaField{}, false
 }
 
+func (f *fakeHydrationStore) UpsertScannedMediaTag(ctx context.Context, id store.MediaID, name, value string) error {
+	if value == "" {
+		f.fields[id] = slices.DeleteFunc(f.fields[id], func(field store.MediaField) bool { return field.Name == name })
+		return nil
+	}
+	field := store.MediaField{Name: name, Type: store.EntityFieldText, Text: value}
+	return f.UpsertMediaFieldsWithSource(ctx, id, []store.MediaField{field}, store.MutationSourceScan)
+}
+
 func (f *fakeHydrationStore) relation(name string, to store.MediaID) (store.EntityRelation, bool) {
 	for _, r := range f.relations {
 		if r.Name == name && r.ToMediaID == to {
@@ -1038,6 +1047,12 @@ func (r *rendezvousHydrationStore) UpsertMediaFieldsWithSource(ctx context.Conte
 	return r.inner.UpsertMediaFieldsWithSource(ctx, id, fields, source)
 }
 
+func (r *rendezvousHydrationStore) UpsertScannedMediaTag(ctx context.Context, id store.MediaID, name, value string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.UpsertScannedMediaTag(ctx, id, name, value)
+}
+
 func (r *rendezvousHydrationStore) MediaFields(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaField, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1194,7 +1209,10 @@ func (rehydratingTestMapper) DecideHydrationWrite(recorded, current string) Hydr
 
 func rehydrationBundle() plugin.Bundle {
 	bundle := testHydrationBundle()
-	bundle.MediaFields = append(bundle.MediaFields, plugin.FieldSpec{Name: testHydrationFingerprintField, Type: "text", Label: plugin.L("Hydrated From")})
+	bundle.MediaFields = append(bundle.MediaFields,
+		plugin.FieldSpec{Name: testHydrationFingerprintField, Type: "text", Label: plugin.L("Hydrated From")},
+		plugin.FieldSpec{Name: "format", Type: "text", Label: plugin.L("Format")},
+	)
 	return bundle
 }
 
@@ -1386,6 +1404,29 @@ func (taggedFixtureHydration) HydrationTag() HydrationTag {
 	return HydrationTag{Field: "format", Keys: []string{"releasetype"}, Read: func(tags map[string]string) string { return tags["releasetype"] }}
 }
 
+func TestHydrationRegistrationRejectsInvalidTagField(t *testing.T) {
+	for _, fieldType := range []string{"", "number"} {
+		t.Run("type="+fieldType, func(t *testing.T) {
+			bundle := rehydrationBundle()
+			i := slices.IndexFunc(bundle.MediaFields, func(f plugin.FieldSpec) bool { return f.Name == "format" })
+			if fieldType == "" {
+				bundle.MediaFields = slices.Delete(bundle.MediaFields, i, i+1)
+			} else {
+				bundle.MediaFields[i].Type = fieldType
+			}
+			registry, err := plugin.NewRegistry([]plugin.Bundle{bundle})
+			if err != nil {
+				t.Fatal(err)
+			}
+			hydrators := newHydrationAdapters(registry, newFakeHydrationStore(), map[string]HydrationMapper{testHydrationPluginID: taggedFixtureHydration{}})
+			adapter := hydrators[testHydrationPluginID].(*hydrationAdapter)
+			if adapter.tag.Field != "" || adapter.Capability().TrackFilePath {
+				t.Fatalf("invalid tag field %q was registered", adapter.tag.Field)
+			}
+		})
+	}
+}
+
 type backfillTagProbe struct {
 	paths []string
 	keys  []string
@@ -1475,6 +1516,90 @@ func TestScanWritesAndClearsIndependentTag(t *testing.T) {
 	r.scan()
 	if got := r.field("format"); got != "" {
 		t.Fatalf("tag after clearing = %q, want empty", got)
+	}
+}
+
+func TestHydrationRefreshesTagWithUnchangedKey(t *testing.T) {
+	r := newRehydrationScan(t)
+	registry, err := plugin.NewRegistry([]plugin.Bundle{rehydrationBundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hydrators := newHydrationAdapters(registry, r.st, map[string]HydrationMapper{testHydrationPluginID: taggedFixtureHydration{}})
+	r.adapter = hydrators[testHydrationPluginID].(*hydrationAdapter)
+	r.write("unchanged audio fingerprint", 3*time.Hour, map[string]string{"title": "Track", "releasetype": "ep"})
+	r.scan()
+	key := r.field(testHydrationFingerprintField)
+	if key == "" || r.field("format") != "ep" {
+		t.Fatal("initial scan did not record the key and tag")
+	}
+	input := scanpkg.MetadataHydrationInput{
+		MediaID: r.mediaID, LibraryID: r.library, Class: store.MediaClassAudio,
+		Path: r.path, MetadataProbed: true, ContentFingerprint: recordedFingerprint(key),
+		Metadata: map[string]string{"title": "Track", "releasetype": "lp"},
+	}
+	if err := r.adapter.HydrateMetadata(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.field("format"); got != "lp" {
+		t.Fatalf("refreshed tag = %q, want lp", got)
+	}
+	delete(input.Metadata, "releasetype")
+	input.MetadataProbed = false
+	if err := r.adapter.HydrateMetadata(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.field("format"); got != "lp" {
+		t.Fatalf("tag after an unprobed scan = %q, want lp", got)
+	}
+	input.MetadataProbed = true
+	if err := r.adapter.HydrateMetadata(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	// A backfill that already read the old tag cannot reinsert it after the clear.
+	if err := r.st.InsertHydrationTagIfAbsent(t.Context(), r.mediaID, "format", "lp"); err != nil {
+		t.Fatal(err)
+	}
+	fields, err := r.st.MediaFields(t.Context(), r.mediaID, metadataLibraryFilter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(fields, func(f store.MediaField) bool { return f.Name == "format" }) {
+		t.Fatalf("cleared tag still has a field row: %v", fields)
+	}
+	if got := r.field(testHydrationFingerprintField); got != key {
+		t.Fatalf("hydration key = %q, want unchanged %q", got, key)
+	}
+}
+
+func TestTagBackfillIncludesTrashedMedia(t *testing.T) {
+	r := newRehydrationScan(t)
+	ctx := t.Context()
+	r.write("audio to backfill", 3*time.Hour, map[string]string{"title": "Track"})
+	r.scan()
+	if err := r.st.TrashMedia(ctx, r.mediaID, metadataLibraryFilter); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := plugin.NewRegistry([]plugin.Bundle{rehydrationBundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hydrators := newHydrationAdapters(registry, r.st, map[string]HydrationMapper{testHydrationPluginID: taggedFixtureHydration{}})
+	logger := slog.New(slog.DiscardHandler)
+	queueHydrationTagBackfills(ctx, r.st, hydrators, newJobWake(), logger)
+	queued, err := r.st.ListJobs(ctx)
+	if err != nil || len(queued) != 1 || queued[0].Kind != hydrationTagBackfillKind {
+		t.Fatalf("jobs = %+v, err = %v; want one tag backfill for trashed Media", queued, err)
+	}
+	probe := &backfillTagProbe{tags: map[string]string{"releasetype": "ep"}}
+	if _, err := hydrationTagBackfillHandler(r.st, hydrators, probe, logger)(ctx, queued[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.st.RestoreMedia(ctx, r.mediaID, metadataLibraryFilter); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.field("format"); got != "ep" {
+		t.Fatalf("restored Media tag = %q, want ep", got)
 	}
 }
 

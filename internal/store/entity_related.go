@@ -109,7 +109,7 @@ func (s *Store) RelatedEntityGroupsBy(ctx context.Context, entityID EntityID, fi
 			return nil, err
 		}
 		if len(groups) == 0 || groups[len(groups)-1].Kind != kind {
-			groups = append(groups, RelatedEntityGroup{Kind: kind, LibraryID: libraryID})
+			groups = append(groups, RelatedEntityGroup{Kind: kind})
 			ordered = append(ordered, 0)
 		}
 		if sortOrder.Valid {
@@ -156,11 +156,6 @@ func (s *Store) RelatedEntityGroupsBy(ctx context.Context, entityID EntityID, fi
 }
 
 func relatedGroupsByOwner(group RelatedEntityGroup, owners map[LibraryID]string, groupField func(pluginID, kind string) string) []RelatedEntityGroup {
-	if groupField == nil || !slices.ContainsFunc(group.Items, func(item SourceItem) bool {
-		return groupField(owners[item.LibraryID], group.Kind) != ""
-	}) {
-		return []RelatedEntityGroup{group}
-	}
 	type owner struct {
 		plugin  string
 		library LibraryID
@@ -169,7 +164,7 @@ func relatedGroupsByOwner(group RelatedEntityGroup, owners map[LibraryID]string,
 	var groups []RelatedEntityGroup
 	for _, item := range group.Items {
 		key := owner{plugin: owners[item.LibraryID]}
-		if groupField(key.plugin, group.Kind) != "" {
+		if groupField != nil && groupField(key.plugin, group.Kind) != "" {
 			key.library = item.LibraryID
 		}
 		i, ok := index[key]

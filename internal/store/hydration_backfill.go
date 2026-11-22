@@ -66,16 +66,16 @@ func (s *Store) MarkHydrationBackfillChecked(ctx context.Context, libraryID Libr
 	return err
 }
 
-// HydrationTagCandidate is a live Media row missing one text tag.
+// HydrationTagCandidate is a Media row that has yet to receive a text tag.
 type HydrationTagCandidate struct {
 	MediaID        MediaID
 	Path           string
 	PersistedValue string
 }
 
-// HydrationTagCandidates selects each available Media's primary path and
-// any old per-Media tag stored with a hydration relation. A shared Entity's
-// fields cannot establish the tag for any individual Media.
+// HydrationTagCandidates selects Media with an available primary path,
+// including trashed Media that may later be restored. It also finds any old
+// per-Media tag stored with a hydration relation.
 func (s *Store) HydrationTagCandidates(ctx context.Context, libraryID LibraryID, classes []MediaClass, field string) ([]HydrationTagCandidate, error) {
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
 		return nil, err
@@ -101,9 +101,10 @@ func (s *Store) HydrationTagCandidates(ctx context.Context, libraryID LibraryID,
 				ORDER BY f.version_label, f.part_ordinal, f.path LIMIT 1
 			) AS path
 			FROM media m
-			WHERE m.library_id = ? AND m.trashed_at_ms IS NULL
+			WHERE m.library_id = ?
 			  AND m.media_class IN (SELECT value FROM json_each(?))
 			  AND NOT EXISTS (SELECT 1 FROM media_field_text f WHERE f.media_id = m.id AND f.field = ?)
+			  AND NOT EXISTS (SELECT 1 FROM media_field_provenance p WHERE p.media_id = m.id AND p.field = ?)
 		)
 		SELECT c.id, c.path, COALESCE((
 			SELECT MIN(NULLIF(json_extract(r.attributes, '$."@hydration".Value'), '') COLLATE BINARY)
@@ -111,7 +112,7 @@ func (s *Store) HydrationTagCandidates(ctx context.Context, libraryID LibraryID,
 			WHERE r.to_media_id = c.id AND json_extract(r.attributes, '$."@hydration".Field') = ?
 		), '')
 		FROM candidates c WHERE c.path IS NOT NULL ORDER BY c.id
-	`, libraryID, string(encoded), field, field)
+	`, libraryID, string(encoded), field, field, field)
 	if err != nil {
 		return nil, err
 	}

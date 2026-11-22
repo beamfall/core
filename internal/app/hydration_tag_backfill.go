@@ -104,9 +104,7 @@ func hydrationTagBackfillHandler(st *store.Store, hydrators map[string]scan.Meta
 				value = adapter.tag.Read(tags)
 			}
 			// An empty value records a successful probe of an untagged file.
-			// Absence-only prevents overwriting a tag written by a scan.
-			field := store.MediaField{Name: adapter.tag.Field, Type: store.EntityFieldText, Text: value}
-			if err := st.InsertMediaFieldsIfAbsent(ctx, candidate.MediaID, []store.MediaField{field}); err != nil {
+			if err := st.InsertHydrationTagIfAbsent(ctx, candidate.MediaID, adapter.tag.Field, value); err != nil {
 				return jobs.Result{}, err
 			}
 		}
