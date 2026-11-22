@@ -19,6 +19,7 @@ import {
   topTracks,
   trackGroups,
 } from "../lib/trackList";
+import { playQueueOf } from "../lib/watchQueue";
 import { ContainerChildren } from "./ContainerChildren";
 import { MediaItemCard } from "./MediaItemCard";
 import { TrackList } from "./TrackList";
@@ -36,8 +37,8 @@ import type { RelationProbe } from "./useRelationProbe";
 // (useListingRows) and passes them in, so its Play action and this list use
 // one track order (containerTrackRows). An audio listing whose relation
 // carries a sequence or roles (useRelationProbe, CORE-3014) lists instead as
-// a poster grid in the server's sequence order, or grouped by role; neither
-// hands its cards a play queue, so finishing one Media never starts the next.
+// a poster grid in the server's sequence order, or grouped by role; each card
+// queues only its own Media, so finishing one never starts the next.
 export function EntityMediaBrowse({
   entity,
   items,
@@ -87,6 +88,7 @@ function SequencedMedia({ items, label }: { items: SourceItem[]; label: string }
             posInSet={index + 1}
             setSize={media.length}
             nameContainer={false}
+            queue={playQueueOf([item])}
           />
         ))}
       </ul>
@@ -115,6 +117,7 @@ function PersonRoles({ items, roles }: { items: SourceItem[]; roles: Record<stri
                   posInSet={index + 1}
                   setSize={groupItems.length}
                   nameContainer={false}
+                  queue={playQueueOf([item])}
                 />
               ))}
             </ul>

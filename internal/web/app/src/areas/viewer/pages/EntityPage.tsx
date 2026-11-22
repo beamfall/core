@@ -443,8 +443,11 @@ export function EntityPage() {
     if (!nextUp) return;
     const { item } = nextUp;
     const state: PlayerNavState = { title: item.title };
-    if (identity && fallbackQueue && fallbackQueue.length > 0) {
-      state.queue = queueWindow(fallbackQueue, item.id);
+    // A relation-ordered listing's Media plays alone; the one-item queue also
+    // ends an earlier Play all queue, so it never runs on (ADR-0055 §2.4).
+    const queue = relationOrdered ? playQueueOf([item]) : fallbackQueue;
+    if (identity && queue && queue.length > 0) {
+      state.queue = queueWindow(queue, item.id);
       state.queueIdentity = identity;
     }
     navigate(mediaPath("watch", item.id), { state });

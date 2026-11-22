@@ -156,7 +156,7 @@ function renderBrowse(entity: EntityInfo, items: SourceItem[]) {
 }
 
 describe("EntityMediaBrowse", () => {
-  it("lists a relation-sequenced container as a poster grid in server order with no play queue", async () => {
+  it("lists a relation-sequenced container as a poster grid in server order, each book queued alone", async () => {
     const sequenced = (id: string, sequence: string) => ({
       ...rows[id],
       credits: [{ ...credit("album-1", "Test Album", "container"), attributes: { sequence } }],
@@ -173,9 +173,10 @@ describe("EntityMediaBrowse", () => {
     const grid = await screen.findByRole("list", { name: "Children" });
     expect(within(grid).getAllByRole("listitem")).toHaveLength(3);
     expect(screen.queryByRole("list", { name: "Tracks" })).not.toBeInTheDocument();
-    // A card starts its own book alone: no queue runs on to the next.
+    // A card starts its own book alone: its one-item queue runs on to no next
+    // book and ends an earlier Play all queue.
     fireEvent.click(within(grid).getAllByRole("button", { name: /^Play / })[0]);
-    expect(screen.getByTestId("watch")).toHaveTextContent(/^\/watch\/t1\|$/);
+    expect(screen.getByTestId("watch")).toHaveTextContent(/^\/watch\/t1\|t1:(audio)?$/);
   });
 
   it("groups a person's audio Media by credited role", async () => {

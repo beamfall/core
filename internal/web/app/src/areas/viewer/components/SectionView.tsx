@@ -7,12 +7,9 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import { isRankedShelf, rankShelfItems } from "../lib/containerPage";
 import { SECTION_GRID_CAP } from "../lib/sections";
-import { playQueueOf } from "../lib/watchQueue";
+import { playQueueOf, sectionQueue } from "../lib/watchQueue";
 import { MediaItemCard } from "./MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "./useVirtualGrid";
-
-/** Source kinds that list one item per container: their items are not siblings. */
-const PER_CONTAINER_SOURCES = new Set(["continue-watching", "next-up"]);
 
 /** A See-All target: the route plus the navigation state carrying the Source context. */
 export interface SeeAllTarget {
@@ -86,12 +83,8 @@ export function SectionView({
   const start = window ? window.startIndex : 0;
   const end = window ? window.endIndex : items.length;
   const visible = window ? items.slice(start, end) : items;
-  // A Source that lists each container's own next or resume point lists items
-  // of unrelated containers, so no card queues its neighbours: playing one
-  // never runs on into another container's item (ADR-0055 §2.4). A one-item
-  // queue still goes, so it ends an earlier Play all queue.
-  const unrelated = PER_CONTAINER_SOURCES.has(section.source?.kind ?? "");
-  const queue = useMemo(() => (unrelated ? undefined : playQueueOf(items)), [unrelated, items]);
+  const sourceKind = section.source?.kind;
+  const queue = useMemo(() => sectionQueue(sourceKind, items), [sourceKind, items]);
   const repeated = useMemo(() => repeatedTitles(items), [items]);
   const title = displayString(section.title, displayLocale);
 

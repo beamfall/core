@@ -56,9 +56,14 @@ export function useRelationProbe(
     (async () => {
       const rows = await fetchMediaRows(ids, signal);
       const read = ids.map((id) => rows[id]).filter((row) => row !== undefined);
-      if (!read.some((row) => row.mediaClass === AUDIO_CLASS)) return settle(NONE);
       const attribute = archetype === "container" ? SEQUENCE_ATTRIBUTE : ROLE_ATTRIBUTE;
-      const carried = read.some((row) => creditAttribute(row.credits, entityID, attribute) !== "");
+      // One audio row carrying the attribute: a video row carrying it, beside
+      // an audio row without it, does not reshape a mixed listing.
+      const carried = read.some(
+        (row) =>
+          row.mediaClass === AUDIO_CLASS &&
+          creditAttribute(row.credits, entityID, attribute) !== "",
+      );
       if (!carried) return settle(NONE);
       if (archetype === "container") return settle({ ...NONE, sequenced: true });
       const roles: Record<string, string[]> = {};
