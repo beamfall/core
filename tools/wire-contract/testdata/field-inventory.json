@@ -1886,6 +1886,16 @@
       ]
     },
     {
+      "field": "medialyrics",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "lines",
+        "source",
+        "synced"
+      ]
+    },
+    {
       "field": "mediametadata",
       "effect": "read",
       "tier": "session",

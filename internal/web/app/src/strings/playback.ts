@@ -79,6 +79,8 @@ export const playbackStrings = {
     visualCurrent: "Visualizer: {name}",
     visualPrevious: "Previous visual",
     visualNext: "Next visual",
+    lyrics: "Lyrics",
+    lyricsNone: "No lyrics",
   },
   fr: {
     seeAll: "Tout voir",
@@ -160,6 +162,8 @@ export const playbackStrings = {
     visualCurrent: "Visualiseur : {name}",
     visualPrevious: "Visuel précédent",
     visualNext: "Visuel suivant",
+    lyrics: "Paroles",
+    lyricsNone: "Pas de paroles",
   },
   de: {
     seeAll: "Alle anzeigen",
@@ -241,6 +245,8 @@ export const playbackStrings = {
     visualCurrent: "Visualisierung: {name}",
     visualPrevious: "Vorherige Visualisierung",
     visualNext: "Nächste Visualisierung",
+    lyrics: "Songtext",
+    lyricsNone: "Kein Songtext",
   },
   es: {
     seeAll: "Ver todo",
@@ -322,6 +328,8 @@ export const playbackStrings = {
     visualCurrent: "Visualizador: {name}",
     visualPrevious: "Visual anterior",
     visualNext: "Visual siguiente",
+    lyrics: "Letra",
+    lyricsNone: "Sin letra",
   },
   pt: {
     seeAll: "Ver tudo",
@@ -403,5 +411,7 @@ export const playbackStrings = {
     visualCurrent: "Visualizador: {name}",
     visualPrevious: "Visual anterior",
     visualNext: "Próximo visual",
+    lyrics: "Letra",
+    lyricsNone: "Sem letra",
   },
 } as const;

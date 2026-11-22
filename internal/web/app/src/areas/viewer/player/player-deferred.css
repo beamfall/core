@@ -1345,6 +1345,136 @@
   color: inherit;
 }
 
+/* The lyrics view (CORE-1638): the artwork and its words keep the left column, the lyrics fill
+   the right. The words take no width of their own, so the artwork sets the column. */
+.bf-audio-card.has-lyrics {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: clamp(24px, 5vw, 72px);
+  row-gap: 16px;
+  max-width: 1280px;
+}
+
+/* Sized by width: a grid column cannot size itself from a percentage height. The cap leaves the
+   words room under the artwork inside the stage's padding. */
+.bf-audio-card.has-lyrics .bf-audio-artwork {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
+  width: min(400px, 30vw, max(160px, calc(100dvh - 72px - clamp(176px, 26vh, 240px) - 140px)));
+  height: auto;
+}
+
+.bf-audio-card.has-lyrics .bf-audio-meta {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+  contain: inline-size;
+}
+
+.bf-audio-card.has-lyrics .bf-audio-title {
+  font-size: clamp(20px, 2.2vw, 28px);
+}
+
+.bf-audio-lyrics {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.bf-lyrics {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  container-type: size;
+  color: var(--on-scrim);
+  text-shadow: 0 1px 12px color-mix(in oklab, var(--scrim) 60%, transparent);
+}
+
+.bf-lyrics-scroll {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8cqh 0;
+  scrollbar-width: none;
+  mask-image: linear-gradient(transparent, #000 10%, #000 90%, transparent);
+}
+
+/* Room above the first line and below the last, so either can sit in the middle. */
+.bf-lyrics-scroll.is-synced {
+  padding: 40cqh 0;
+}
+
+.bf-lyrics-line {
+  display: block;
+  margin: 0;
+  font-size: clamp(17px, 1.7vw, 22px);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  opacity: 0.9;
+}
+
+.is-synced .bf-lyrics-line {
+  width: 100%;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: clamp(22px, 2.6vw, 34px);
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: start;
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 300ms var(--ease-emphasis);
+}
+
+.is-synced .bf-lyrics-line[data-state="past"] {
+  opacity: 0.28;
+}
+
+.is-synced .bf-lyrics-line:hover {
+  opacity: 0.7;
+}
+
+.is-synced .bf-lyrics-line[data-state="current"] {
+  opacity: 1;
+}
+
+.is-synced .bf-lyrics-line:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.bf-lyrics-none {
+  margin: 0;
+  color: var(--on-scrim-muted);
+  font-size: 15px;
+  text-align: center;
+}
+
+.bf-transport .bf-lyrics-toggle[aria-pressed="true"] svg {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-synced .bf-lyrics-line {
+    transition: none;
+  }
+}
+
 /* Narrow windows stack the artwork above the words. The artwork takes the
    height the words leave, so a short window shrinks it instead of clipping it
    under the top bar or the transport. */
@@ -1362,6 +1492,29 @@
     height: min(100%, 64vw);
     width: auto;
     min-height: 0;
+  }
+
+  /* With the lyrics open a phone has no room for the artwork beside them: the words sit above
+     the lyrics instead. */
+  .bf-audio-card.has-lyrics {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    justify-items: stretch;
+    align-content: stretch;
+  }
+
+  .bf-audio-card.has-lyrics .bf-audio-artwork {
+    display: none;
+  }
+
+  .bf-audio-card.has-lyrics .bf-audio-meta {
+    grid-row: 1;
+    contain: none;
+  }
+
+  .bf-audio-lyrics {
+    grid-column: 1;
+    grid-row: 2;
   }
 
   .bf-audio-meta {

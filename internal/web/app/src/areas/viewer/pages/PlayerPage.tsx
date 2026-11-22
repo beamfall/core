@@ -63,6 +63,7 @@ import {
 import { readWatchPartyIntent } from "../lib/watchTogether";
 import { AudioStage } from "../player/AudioStage";
 import { KaraokeControls } from "../player/KaraokeControls";
+import { LyricsPanel } from "../player/LyricsPanel";
 import { MiniPlayer } from "../player/MiniPlayer";
 import { type HostedPlayerProps, usePlayerHost, type WatchEntry } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
@@ -239,6 +240,8 @@ function FeaturePlayer({
   const serverQueueRun = queueProfile !== null;
   const queueMatchesProfile = !!profileID && queueProfile === profileID;
   const [musicQueueOpen, setMusicQueueOpen] = useState(false);
+  // The audio stage's lyrics view (CORE-1638); it stays open across tracks.
+  const [lyricsOpen, setLyricsOpen] = useState(false);
   const { view: musicQueue, refresh: refreshMusicQueue, readMedia, isCurrent } = useMusicQueue();
   const queueAllowed = !serverQueueRun || (queueMatchesProfile && !musicQueue?.invalid);
   const queueReady = queueAllowed && (!serverQueueRun || musicQueue?.rows !== undefined);
@@ -1068,6 +1071,15 @@ function FeaturePlayer({
                     ? { key: issuedNext.mediaID, stream: decodableStream(issuedNext) }
                     : null
                 }
+                lyrics={
+                  lyricsOpen ? (
+                    <LyricsPanel
+                      mediaID={infoIsCurrent ? mediaId : ""}
+                      videoRef={videoRef}
+                      songScale={songScale}
+                    />
+                  ) : null
+                }
               />
             )}
             {(showSpinner || !queueReady) && (
@@ -1166,6 +1178,8 @@ function FeaturePlayer({
                 onMusicQueueOpenChange={setMusicQueueOpen}
                 serverQueueNextID={serverQueueRun ? (issuedNext?.mediaID ?? "") : undefined}
                 audioStage={showAudioStage}
+                lyricsOpen={lyricsOpen}
+                onLyricsOpenChange={setLyricsOpen}
                 onStop={back}
                 onRemoteStop={stopRemotely}
                 onRemoteRestart={restart}

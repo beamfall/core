@@ -6237,6 +6237,7 @@ var queryFields = map[string]bool{
 	"mediaforentity":         true,
 	"mediafiles":             true,
 	"mediatracks":            true,
+	"medialyrics":            true,
 	"relatedmedia":           true,
 	"similarmedia":           true, // CORE-3074: sonically similar Media
 	"mediarelations":         true,

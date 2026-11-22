@@ -8,6 +8,7 @@ import {
   Gauge,
   Layers,
   Maximize,
+  MicVocal,
   Minimize,
   MonitorPlay,
   Pause,
@@ -134,6 +135,8 @@ export function PlayerTransport({
   musicQueueOpen = false,
   serverQueueNextID,
   audioStage = false,
+  lyricsOpen = false,
+  onLyricsOpenChange,
   onStop,
   onRemoteStop,
   onRemoteRestart,
@@ -185,6 +188,10 @@ export function PlayerTransport({
   serverQueueNextID?: string;
   /** The audio stage is showing: the transport carries the visualizer control (CORE-2814). */
   audioStage?: boolean;
+  /** The audio stage shows the lyrics view (CORE-1638). */
+  lyricsOpen?: boolean;
+  /** Toggles the lyrics view; the control shows only on the audio stage. */
+  onLyricsOpenChange?: (open: boolean) => void;
   /** Leaves the player when another device sends stop; without it stop only pauses. */
   onStop?: () => void;
   /** Stop requested by another device; falls back to onStop. */
@@ -1043,6 +1050,18 @@ export function PlayerTransport({
 
           <span aria-hidden="true" className="bf-transport-spacer" />
 
+          {audioStage && onLyricsOpenChange && (
+            <button
+              type="button"
+              onClick={() => onLyricsOpenChange(!lyricsOpen)}
+              aria-pressed={lyricsOpen}
+              aria-label={t("lyrics")}
+              className={`bf-control is-icon bf-lyrics-toggle${lyricsOpen ? " is-open" : ""}`}
+            >
+              <MicVocal aria-hidden="true" />
+              <span className="sr-only">{t("lyrics")}</span>
+            </button>
+          )}
           {onPlayMusicQueue && onRetryMusicQueue && (
             <MusicQueuePanel
               open={musicQueueOpen}

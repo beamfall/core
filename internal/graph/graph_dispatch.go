@@ -563,6 +563,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"mediafiles":                         newFieldHandler("mediaFiles", "mediaFiles", fieldRead, roleSession, 9),
 	"mediaforentity":                     newFieldHandler("mediaForEntity", "mediaForEntity", fieldRead, roleSession, 8),
 	"mediatracks":                        newFieldHandler("mediaTracks", "mediaTracks", fieldRead, roleSession, 9),
+	"medialyrics":                        newFieldHandler("mediaLyrics", "mediaLyrics", fieldRead, roleSession, 9),
 	"relatedmedia":                       newFieldHandler("relatedMedia", "relatedMedia", fieldRead, roleSession, 9),
 	"similarmedia":                       newFieldHandler("similarMedia", "similarMedia", fieldRead, roleSession, 9),
 	"mediarelations":                     newFieldHandler("mediaRelations", "mediaRelations", fieldRead, roleSession, 10),
@@ -954,6 +955,12 @@ func dispatchFieldBlock009(dispatch *fieldDispatchContext) response {
 	if fields["mediatracks"] {
 		tracks, err := h.mediaTracks(ctx, scope, req)
 		if resp := resolveField(dispatch, "mediatracks", tracks, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["medialyrics"] {
+		lines, err := h.mediaLyrics(ctx, scope, req)
+		if resp := resolveField(dispatch, "medialyrics", lines, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

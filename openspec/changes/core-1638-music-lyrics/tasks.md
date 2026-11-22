@@ -1,0 +1,8 @@
+- [x] Graph: `mediaLyrics(mediaID)` session-role read; `.lrc`, ID3 SYLT, `lyrics` field, ID3 USLT, `.txt` in that order
+- [x] LRC and ID3v2 SYLT/USLT parsing with size caps and Go coverage
+- [x] Wire goldens regenerated with `make regen-wire-goldens`
+- [ ] client-core-wire minor published at landing
+- [x] Web: Lyrics toggle in the transport, art-left lyrics-right view, synced highlight, auto-scroll, click to seek, plain text, quiet "No lyrics"
+- [x] Web strings in every shipped locale; vitest coverage
+- [ ] `make gate`
+- [ ] `openspec archive core-1638-music-lyrics` after landing

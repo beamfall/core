@@ -193,6 +193,7 @@ var originalScopedFields = []string{
 	"similarmedia",            // CORE-3074: sonically similar Media, discovery-suppressed
 	"sonicanalysisenabled",    // CORE-3073: Admin read of the per-Library sonic toggle
 	"setsonicanalysisenabled", // CORE-3073: Admin write of the per-Library sonic toggle
+	"medialyrics",             // CORE-1638: lyrics of an audio item
 	"mergeentities",
 	"mergemedia",
 	"metadataexport",

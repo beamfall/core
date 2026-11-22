@@ -133,6 +133,7 @@ var resultTypes = map[string]any{
 	"playqueue":                     PlayQueueInfo{},
 	"similarmedia":                  SourceItem{},
 	"sonicanalysisenabled":          SonicAnalysisInfo{},
+	"medialyrics":                   MediaLyricsInfo{},
 	// ADR-0113 §2.2: per-title access request reads.
 	"accessrequest":         AccessRequestInfo{},
 	"pendingaccessrequests": AccessRequestInfo{},
@@ -421,6 +422,7 @@ var fieldArguments = map[string][]NestedArgument{
 	"mediafields":       {{Name: "mediaID", Kind: "string"}},
 	"mediafiles":        {{Name: "mediaID", Kind: "string"}},
 	"mediatracks":       {{Name: "mediaID", Kind: "string"}},
+	"medialyrics":       {{Name: "mediaID", Kind: "string"}},
 	"relatedmedia":      {{Name: "limit", Kind: "int", Optional: true}, {Name: "mediaID", Kind: "string"}},
 	"similarmedia":      {{Name: "limit", Kind: "int", Optional: true}, {Name: "mediaID", Kind: "string"}},
 	"mediaforentity":    {{Name: "entityID", Kind: "string"}},

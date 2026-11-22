@@ -21,6 +21,9 @@ const MEDIA_RELATIONS_QUERY =
 const MEDIA_TRACKS_QUERY =
   "query MediaTracks($mediaID: String!) { mediaTracks(mediaID: $mediaID) { versions { id label videoCodec hdr resolution audioTracks { streamIndex codec language channels default commentary visualImpaired } captionTracks { id format streamIndex language forced sdh visualImpaired commentary title } } } }";
 
+const MEDIA_LYRICS_QUERY =
+  "query MediaLyrics($mediaID: String!) { mediaLyrics(mediaID: $mediaID) { synced source lines { startMs text } } }";
+
 /** The server answer for an id that is missing or hidden from this Profile (no oracle). */
 const UNKNOWN_MEDIA = "unknown media";
 
@@ -128,6 +131,37 @@ export async function fetchMediaTracks(
     audioTracks: version.audioTracks ?? [],
     captionTracks: version.captionTracks ?? [],
   }));
+}
+
+/** One lyric line; `startMs` is set only when the lyrics are synced. */
+export interface MediaLyricLine {
+  startMs?: number | null;
+  text: string;
+}
+
+/** An audio item's lyrics: synced lines carry ascending start times. */
+export interface MediaLyrics {
+  synced: boolean;
+  source: string;
+  lines: MediaLyricLine[];
+}
+
+/** The item's lyrics from its local sources (CORE-1638); no lines when it has none. */
+export async function fetchMediaLyrics(
+  mediaID: string,
+  signal?: AbortSignal,
+): Promise<MediaLyrics> {
+  const data = await graphql<{ mediaLyrics: MediaLyrics | null }>(
+    MEDIA_LYRICS_QUERY,
+    { mediaID },
+    signal,
+  );
+  const lyrics = data.mediaLyrics;
+  return {
+    synced: !!lyrics?.synced,
+    source: lyrics?.source ?? "",
+    lines: lyrics?.lines ?? [],
+  };
 }
 
 function isUnknownMedia(err: unknown): boolean {
