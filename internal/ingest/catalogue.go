@@ -55,15 +55,17 @@ func (p *Poller) catalogue(ctx context.Context, subscription store.Subscription,
 			return selectByPolicy(policy, true, document.Serial, subscription.AddedAt, entries, nil)
 		}
 	}
-	created, err := p.store.UpsertSubscriptionCatalogWithInitialDownloads(ctx, subscription.ID, rows, now, selectInitial)
+	_, err = p.store.UpsertSubscriptionCatalogWithInitialDownloads(ctx, subscription.ID, rows, now, selectInitial)
 	encrypted := errors.Is(err, store.ErrSubscriptionCatalogUnsupported)
 	if err != nil && !encrypted {
 		return nil, false, err
 	}
 	firstPoll := subscription.LastPolledAt.IsZero()
-	if !firstPoll && len(created) > 0 && p.certification != nil {
-		// The first poll's back catalogue is never routed (CORE-2958).
-		if err := p.store.RouteNewSubscriptionEntries(ctx, subscription.ID, created, p.certification); err != nil {
+	if !firstPoll && !encrypted && p.certification != nil {
+		// The first poll's back catalogue is never routed (CORE-2958). Later
+		// polls route every entry past each follow's watermark, so a pass a
+		// crash interrupted resumes here.
+		if err := p.store.RouteNewSubscriptionEntries(ctx, subscription.ID, p.certification); err != nil {
 			p.logger.Warn("routing new entries failed", "subscription", subscription.ID, "error", err)
 		}
 	}

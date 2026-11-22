@@ -2008,7 +2008,17 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 			}
 		}
 	}
-	items, err := h.sourceItemsWithEntityFilters(ctx, scope.LibraryFilter(), req, store.SourceQuery{
+	filter := scope.LibraryFilter()
+	if kind == "subscription-new" {
+		// New entries reach Profiles across Libraries, so a Sealed Library's
+		// entries must drop out the moment it seals (CORE-2958).
+		sealed, err := h.sealedFilter(ctx, filter)
+		if err != nil {
+			return nil, err
+		}
+		filter = sealed
+	}
+	items, err := h.sourceItemsWithEntityFilters(ctx, filter, req, store.SourceQuery{
 		Kind:                  kind,
 		Limit:                 boundedIntVar(req, "limit", 50, 200),
 		Offset:                nonNegativeIntVar(req, "offset"),

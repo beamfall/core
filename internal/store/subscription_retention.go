@@ -33,11 +33,12 @@ func (s *Store) SetFollow(ctx context.Context, profileID ProfileID, subscription
 		return err
 	}
 	if on {
+		// A repeated follow keeps the original time, which bounds what counts
+		// as new; only an unfollow and a fresh follow set a new boundary.
 		_, err = s.eventsW.ExecContext(ctx, `
 			INSERT INTO follow(profile_id, subscription_id, followed_at_ms)
 			VALUES (?, ?, ?)
-			ON CONFLICT(profile_id, subscription_id) DO UPDATE SET
-			  followed_at_ms = excluded.followed_at_ms
+			ON CONFLICT(profile_id, subscription_id) DO NOTHING
 		`, profileID, subscriptionID, timeToMillis(now.UTC()))
 		return err
 	}
