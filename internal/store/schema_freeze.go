@@ -112,7 +112,10 @@ package store
 // is read only by the continue-watching Source, off the entity-query hot path.
 // Events 0026 (CORE-1630) gives Play Queue entries stable IDs and persists
 // Profile playback state without changing entity queries.
+// Encrypted-library 0012 (CORE-3152) adds the entity_relation writer column.
+// Encrypted-library 0013 (CORE-3131) keeps relation locks and recovery rows
+// in the owning Library plane.
 const (
 	schemaFreezeEventsMigrations           = 26
-	schemaFreezeEncryptedLibraryMigrations = 12
+	schemaFreezeEncryptedLibraryMigrations = 13
 )

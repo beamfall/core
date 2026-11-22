@@ -2,12 +2,20 @@ package graph
 
 import (
 	"context"
+	"errors"
+	"math"
+	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/identify"
+	"github.com/beamfall/core/internal/l10n"
+	"github.com/beamfall/core/internal/plugin"
+	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -162,37 +170,190 @@ func (h *Handler) fixMatch(ctx context.Context, scope auth.Scope, req request) (
 	if mediaID == "" || pluginID == "" || scraperID == "" || candidateID == "" {
 		return MediaInfo{}, clientError("mediaID, pluginID, scraperID, and candidateID are required")
 	}
-	filter := scope.LibraryFilter()
-	if _, err := h.store.Media(ctx, store.MediaID(mediaID), filter); err != nil {
-		return MediaInfo{}, clientError("unknown media")
-	}
-	if err := h.identify.Apply(ctx, store.MediaID(mediaID), pluginID, scraperID, candidateID); err != nil {
-		return MediaInfo{}, err
-	}
-	// Pin every file backing the Media so the corrected match survives rescans
-	// (a Media may carry several files across Versions/Parts, each keyed by its
-	// own content fingerprint, FREEZE-3 / ADR-0009 §7).
-	files, err := h.store.MediaFilesForMedia(ctx, store.MediaID(mediaID), filter)
+	ordinal, err := fixMatchOrdinal(req)
 	if err != nil {
 		return MediaInfo{}, err
 	}
-	for _, file := range files {
-		if file.ContentFingerprint == "" {
-			continue
+	vars := newVars(req)
+	clearLocks, _ := vars.StringList("clearLocks", "strings")
+	if err := vars.Err(); err != nil {
+		return MediaInfo{}, err
+	}
+	filter := scope.LibraryFilter()
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(mediaID))
+	if err != nil {
+		return MediaInfo{}, err
+	}
+	if err := h.identify.ApplyFixMatch(ctx, media.ID, pluginID, scraperID, candidateID, clearLocks, ordinal, scope.ProfileID); err != nil {
+		if errors.Is(err, store.ValidationError("unknown lockable field")) {
+			return MediaInfo{}, clientError("unknown lockable field")
 		}
-		if _, err := h.store.SetMatchPinned(ctx, file.ContentFingerprint, true); err != nil {
+		return MediaInfo{}, err
+	}
+	if len(clearLocks) != 0 {
+		if err := h.logActivity(ctx, scope, store.ActivityMediaFieldLock, "media", mediaID, media.LibraryID); err != nil {
 			return MediaInfo{}, err
 		}
+	}
+	if err := h.store.PinMediaMatch(ctx, media.ID, filter); err != nil {
+		return MediaInfo{}, err
 	}
 	// The item is resolved — drop its Unmatched-queue row if one was parked.
 	if _, err := h.store.ClearUnmatched(ctx, store.MediaID(mediaID)); err != nil {
 		return MediaInfo{}, err
 	}
-	media, err := h.store.Media(ctx, store.MediaID(mediaID), filter)
+	media, err = h.store.Media(ctx, media.ID, filter)
 	if err != nil {
 		return MediaInfo{}, clientError("unknown media")
 	}
 	return h.mediaInfo(ctx, scope, media)
+}
+
+func fixMatchOrdinal(req request) (*store.MediaOrdinal, error) {
+	v := newVars(req)
+	sequence, hasSequence := v.String("sequence")
+	if v.Err() != nil || utf8.RuneCountInString(sequence) > 32 {
+		return nil, &l10n.Error{
+			Key: l10n.FixMatchInvalidSequence,
+			Err: clientError("sequence must be a string of at most 32 characters"),
+		}
+	}
+	index, hasIndex := v.Number("index")
+	if v.Err() != nil || index != math.Trunc(index) || index < 0 || index > math.MaxInt32 {
+		return nil, &l10n.Error{
+			Key: l10n.FixMatchInvalidIndex,
+			Err: clientError("index must be an integer from 0 to 2147483647"),
+		}
+	}
+	if !hasSequence && !hasIndex {
+		return nil, nil
+	}
+	return &store.MediaOrdinal{Sequence: sequence, Index: int(index)}, nil
+}
+
+func (h *Handler) clearMediaOrdinal(ctx context.Context, scope auth.Scope, req request) (bool, error) {
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(trimmedVariable(req, "mediaID")))
+	if err != nil {
+		return false, err
+	}
+	cleared, err := h.identify.ClearMediaOrdinal(ctx, media.ID)
+	if err != nil {
+		return false, err
+	}
+	if cleared {
+		h.logMediaActivity(ctx, scope, store.ActivityMediaFieldLock, media.ID)
+	}
+	return cleared, nil
+}
+
+// FixMatchSourceInfo describes a searchable scraper available to this Media.
+type FixMatchSourceInfo struct {
+	PluginID         string   `json:"pluginID"`
+	ScraperID        string   `json:"scraperID"`
+	Label            string   `json:"label"`
+	SupportsChildren bool     `json:"supportsChildren"`
+	ChildLevels      []string `json:"childLevels" graphshape:"nonnull"`
+	AcceptsPastedID  bool     `json:"acceptsPastedID"`
+	IsDefault        bool     `json:"isDefault"`
+}
+
+func (h *Handler) fixMatchSources(ctx context.Context, scope auth.Scope, req request) ([]FixMatchSourceInfo, error) {
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(trimmedVariable(req, "mediaID")))
+	if err != nil {
+		return nil, err
+	}
+	sources := []FixMatchSourceInfo{}
+	pluginID, err := h.store.LibraryPluginID(ctx, media.LibraryID)
+	if err != nil {
+		return nil, err
+	}
+	if pluginID == "" || h.plugins == nil {
+		return sources, nil
+	}
+	bundle, ok := h.plugins.Bundle(plugin.ID(pluginID))
+	if !ok {
+		return sources, nil
+	}
+	current, _, err := h.store.MediaMetadataProvenance(ctx, media.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, scraper := range bundle.Scrapers {
+		if scraper.SearchTemplate == "" || plugin.LocalFileScraperKind(scraper.Kind) {
+			continue
+		}
+		label := scraper.DisplayName.Resolve("")
+		if label == "" {
+			label = scraper.ID
+		}
+		levels := make([]string, len(scraper.Children))
+		for i, listing := range scraper.Children {
+			levels[i] = listing.Level
+		}
+		source := FixMatchSourceInfo{
+			PluginID:         pluginID,
+			ScraperID:        scraper.ID,
+			Label:            label,
+			SupportsChildren: len(levels) > 0,
+			ChildLevels:      levels,
+			AcceptsPastedID:  scraper.LookupTemplate != "" || len(scraper.LookupByIDTemplate) != 0,
+		}
+		if current.PluginID == pluginID && current.ScraperID == scraper.ID {
+			sources = slices.Insert(sources, 0, source)
+		} else {
+			sources = append(sources, source)
+		}
+	}
+	if len(sources) != 0 {
+		sources[0].IsDefault = true
+	}
+	return sources, nil
+}
+
+// FixMatchCurrentInfo pairs the applied candidate with the item's stored title and year.
+type FixMatchCurrentInfo struct {
+	PluginID    string `json:"pluginID"`
+	ScraperID   string `json:"scraperID"`
+	CandidateID string `json:"candidateID"`
+	Title       string `json:"title"`
+	Year        int    `json:"year"`
+}
+
+func (h *Handler) fixMatchCurrent(ctx context.Context, scope auth.Scope, req request) (*FixMatchCurrentInfo, error) {
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(trimmedVariable(req, "mediaID")))
+	if err != nil {
+		return nil, err
+	}
+	current, found, err := h.store.MediaMetadataProvenance(ctx, media.ID)
+	if err != nil || !found {
+		return nil, err
+	}
+	return &FixMatchCurrentInfo{
+		PluginID: current.PluginID, ScraperID: current.ScraperID, CandidateID: current.CandidateID,
+		Title: media.Title, Year: media.Year,
+	}, nil
+}
+
+func (h *Handler) fixMatchMedia(ctx context.Context, scope auth.Scope, mediaID store.MediaID) (store.Media, error) {
+	if mediaID == "" {
+		return store.Media{}, clientError("mediaID is required")
+	}
+	media, err := h.store.Media(ctx, mediaID, scope.LibraryFilter())
+	if err != nil {
+		return store.Media{}, clientError("unknown media")
+	}
+	// Candidate provenance is only supported in the shared catalog.
+	encrypted, err := h.store.LibraryEncrypted(ctx, media.LibraryID)
+	if err != nil {
+		return store.Media{}, err
+	}
+	if encrypted {
+		return store.Media{}, &l10n.Error{
+			Key: l10n.FixMatchEncryptedLibrary,
+			Err: clientError("fix match is unavailable in encrypted libraries"),
+		}
+	}
+	return media, nil
 }
 
 func (h *Handler) associateImportUnmatchedRecord(ctx context.Context, scope auth.Scope, mediaID, recordID, importRunID string) (MediaInfo, error) {
@@ -200,8 +361,8 @@ func (h *Handler) associateImportUnmatchedRecord(ctx context.Context, scope auth
 		return MediaInfo{}, clientError("unknown unmatched record")
 	}
 	filter := scope.LibraryFilter()
-	if _, err := h.store.Media(ctx, store.MediaID(mediaID), filter); err != nil {
-		return MediaInfo{}, clientError("unknown media")
+	if _, err := h.fixMatchMedia(ctx, scope, store.MediaID(mediaID)); err != nil {
+		return MediaInfo{}, err
 	}
 	ok, err := h.store.AssociateImportUnmatchedRecord(ctx, recordID, importRunID, store.MediaID(mediaID), filter, time.Now().UTC())
 	if err != nil {
@@ -272,8 +433,8 @@ func (h *Handler) fixMatchCandidates(ctx context.Context, scope auth.Scope, req 
 		parsed.Year = *year
 	}
 	if mediaID != "" {
-		if _, err := h.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter()); err != nil {
-			return nil, clientError("unknown media")
+		if _, err := h.fixMatchMedia(ctx, scope, store.MediaID(mediaID)); err != nil {
+			return nil, err
 		}
 	}
 	candidates, err := h.identify.SearchYear(ctx, pluginID, scraperID, query, store.MediaID(mediaID), parsed.Year)
@@ -281,6 +442,59 @@ func (h *Handler) fixMatchCandidates(ctx context.Context, scope auth.Scope, req 
 		return nil, err
 	}
 	return h.scoreFixMatchCandidates(pluginID, scraperID, parsed, candidates), nil
+}
+
+func (h *Handler) fixMatchChildren(ctx context.Context, scope auth.Scope, req request) ([]scrape.ChildRow, error) {
+	if _, err := h.fixMatchMedia(ctx, scope, store.MediaID(trimmedVariable(req, "mediaID"))); err != nil {
+		return nil, err
+	}
+	v := newVars(req)
+	candidateID, _ := v.String("candidateID")
+	parent, hasParent := v.String("parentKey")
+	if err := v.Err(); err != nil {
+		return nil, err
+	}
+	level, err := optionalInt(req, "level")
+	if err != nil {
+		return nil, err
+	}
+	var parentKey *string
+	if hasParent {
+		parentKey = &parent
+	}
+	var levelNumber int
+	if level != nil {
+		levelNumber = *level
+	}
+	rows, err := h.identify.ListChildren(ctx, trimmedVariable(req, "pluginID"), trimmedVariable(req, "scraperID"), candidateID, levelNumber, parentKey)
+	return rows, fixMatchChildError(err)
+}
+
+func fixMatchChildError(err error) error {
+	var key l10n.Key
+	switch err {
+	case scrape.ErrNoChildListing:
+		key = l10n.FixMatchNoChildListing
+	case scrape.ErrNoSuchChildLevel:
+		key = l10n.FixMatchNoChildLevel
+	case scrape.ErrChildCandidate:
+		key = l10n.FixMatchInvalidCandidate
+	case scrape.ErrChildParentExtra:
+		key = l10n.FixMatchExtraParent
+	case scrape.ErrChildParentMissing:
+		key = l10n.FixMatchMissingParent
+	case scrape.ErrChildParentKey:
+		key = l10n.FixMatchInvalidParent
+	case scrape.ErrChildParentRow:
+		key = l10n.FixMatchUnknownParent
+	case scrape.ErrChildParentAmbig:
+		key = l10n.FixMatchAmbiguousParent
+	case scrape.ErrChildOrdinal:
+		key = l10n.FixMatchInvalidParentOrdinal
+	default:
+		return err
+	}
+	return &l10n.Error{Key: key, Err: clientError(err.Error())}
 }
 
 // scoreFixMatchCandidates scores every candidate against the operator's query
@@ -397,11 +611,22 @@ func (h *Handler) fixMatchPreview(ctx context.Context, scope auth.Scope, req req
 	if mediaID == "" || pluginID == "" || scraperID == "" || candidateID == "" {
 		return nil, clientError("mediaID, pluginID, scraperID, and candidateID are required")
 	}
-	media, err := h.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(mediaID))
 	if err != nil {
-		return nil, clientError("unknown media")
+		return nil, err
 	}
-	candidate, title, err := h.identify.PreviewLookup(ctx, pluginID, scraperID, candidateID, store.MediaID(mediaID))
+	ordinal, err := fixMatchOrdinal(req)
+	if err != nil {
+		return nil, err
+	}
+	// clearLocks mirrors fixMatch so the preview runs the lookup Apply will run,
+	// including a same-candidate Apply that clears the operator ordinal.
+	vars := newVars(req)
+	clearLocks, _ := vars.StringList("clearLocks", "strings")
+	if err := vars.Err(); err != nil {
+		return nil, err
+	}
+	candidate, title, err := h.identify.PreviewLookup(ctx, pluginID, scraperID, candidateID, media.ID, clearLocks, ordinal)
 	if err != nil {
 		return nil, err
 	}
@@ -410,6 +635,77 @@ func (h *Handler) fixMatchPreview(ctx context.Context, scope auth.Scope, req req
 		fieldDiff("summary", media.Summary, candidate.Summary),
 		fieldDiff("year", yearText(media.Year), yearText(candidate.Year)),
 	}, nil
+}
+
+// FixMatchLockedFieldInfo carries a manually locked value alongside the preview.
+type FixMatchLockedFieldInfo struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
+}
+
+func (h *Handler) fixMatchLockedFields(ctx context.Context, scope auth.Scope, req request) ([]FixMatchLockedFieldInfo, error) {
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(trimmedVariable(req, "mediaID")))
+	if err != nil {
+		return nil, err
+	}
+	filter := scope.LibraryFilter()
+	locks, err := h.store.MediaFieldLocks(ctx, media.ID, filter)
+	if err != nil {
+		return nil, err
+	}
+	fields := []FixMatchLockedFieldInfo{}
+	ordinal, err := h.store.MediaOperatorOrdinal(ctx, media.ID)
+	if err != nil {
+		return nil, err
+	}
+	if ordinal != nil {
+		value := strconv.Itoa(ordinal.Index)
+		if ordinal.Sequence != "" {
+			value = ordinal.Sequence + " / " + value
+		}
+		fields = append(fields, FixMatchLockedFieldInfo{Field: store.MediaOrdinalLockField, Value: value})
+	}
+	var pluginValues map[string]string
+	for _, lock := range locks {
+		if !lock.Locked || (ordinal != nil && lock.Field == store.MediaOrdinalLockField) {
+			continue
+		}
+		var value string
+		switch lock.Field {
+		case "title":
+			value = media.Title
+		case "summary":
+			value = media.Summary
+		case "year":
+			value = yearText(media.Year)
+		case "sortTitle":
+			value, err = h.store.MediaSortTitle(ctx, media.ID, filter)
+			if err != nil {
+				return nil, err
+			}
+		case store.ArtworkLockField("poster"), store.ArtworkLockField("backdrop"), store.ArtworkLockField("thumb"):
+			slot := strings.ToLower(strings.TrimPrefix(lock.Field, "artwork"))
+			value = h.mediaArtworkSlots(media.ID)[slot]
+		default:
+			if pluginValues == nil {
+				stored, err := h.mediaFieldsQuery(ctx, scope, req)
+				if err != nil {
+					return nil, err
+				}
+				pluginValues = make(map[string]string, len(stored))
+				for _, field := range stored {
+					pluginValues[field.Name] = field.Value
+				}
+			}
+			var ok bool
+			value, ok = pluginValues[lock.Field]
+			if !ok {
+				continue
+			}
+		}
+		fields = append(fields, FixMatchLockedFieldInfo{Field: lock.Field, Value: value})
+	}
+	return fields, nil
 }
 
 // fieldDiff pairs one field's current and proposed text. An empty proposal is

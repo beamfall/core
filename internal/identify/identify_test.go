@@ -58,14 +58,26 @@ func (f fakeBundles) Bundle(id plugin.ID) (plugin.Bundle, bool) {
 	return bundle, ok
 }
 
-// fakeStore records the one metadata write.
+// fakeStore records the one identification write.
 type fakeStore struct {
-	mediaID  store.MediaID
-	metadata store.MediaMetadata
-	calls    int
+	mediaID    store.MediaID
+	metadata   store.MediaMetadata
+	fields     *fakeFields
+	provenance *fakeProvenanceStore
+	calls      int
 }
 
-func (f *fakeStore) UpdateMediaMetadata(_ context.Context, id store.MediaID, metadata store.MediaMetadata) error {
+func (f *fakeStore) ApplyMediaIdentification(ctx context.Context, id store.MediaID, metadata store.MediaMetadata, provenance store.MediaMetadataProvenance, fields []store.MediaField) error {
+	if f.fields != nil && len(fields) != 0 {
+		if err := f.fields.UpsertMediaFieldsWithSource(ctx, id, fields, store.MutationSourceOperator); err != nil {
+			return err
+		}
+	}
+	if f.provenance != nil {
+		if err := f.provenance.SetMediaMetadataProvenance(ctx, id, provenance.PluginID, provenance.ScraperID, provenance.CandidateID); err != nil {
+			return err
+		}
+	}
 	f.mediaID, f.metadata = id, metadata
 	f.calls++
 	return nil
@@ -537,11 +549,10 @@ func TestApplyWritesImpliedMediaFields(t *testing.T) {
 	engine := &fakeEngine{lookupResult: scrape.Result{
 		Fields: map[string]any{"title": "Blue Harvest"},
 	}}
-	st := &fakeStore{}
 	fields := &fakeFields{}
+	st := &fakeStore{fields: fields}
 	spec := plugin.ScraperSpec{ID: "lookup", ImpliedMediaFields: map[string]string{"media.phase": "flight"}}
 	service := identify.NewService(engine, demoBundles(spec), st)
-	service.SetFields(fields)
 
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
 		t.Fatal(err)
@@ -566,8 +577,7 @@ func TestApplyWithoutImpliedFieldsSkipsFieldWrite(t *testing.T) {
 		Fields: map[string]any{"title": "Blue Harvest"},
 	}}
 	fields := &fakeFields{}
-	service := identify.NewService(engine, demoBundles(plugin.ScraperSpec{ID: "lookup"}), &fakeStore{})
-	service.SetFields(fields)
+	service := identify.NewService(engine, demoBundles(plugin.ScraperSpec{ID: "lookup"}), &fakeStore{fields: fields})
 
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
 		t.Fatal(err)
@@ -577,26 +587,13 @@ func TestApplyWithoutImpliedFieldsSkipsFieldWrite(t *testing.T) {
 	}
 }
 
-func TestApplyImpliedFieldsRequireWiredFieldStore(t *testing.T) {
-	engine := &fakeEngine{lookupResult: scrape.Result{
-		Fields: map[string]any{"title": "Blue Harvest"},
-	}}
-	spec := plugin.ScraperSpec{ID: "lookup", ImpliedMediaFields: map[string]string{"media.phase": "flight"}}
-	service := identify.NewService(engine, demoBundles(spec), &fakeStore{})
-
-	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err == nil {
-		t.Fatal("implied fields silently dropped without a field store")
-	}
-}
-
 func TestApplyPropagatesFieldWriteError(t *testing.T) {
 	engine := &fakeEngine{lookupResult: scrape.Result{
 		Fields: map[string]any{"title": "Blue Harvest"},
 	}}
 	fields := &fakeFields{err: errors.New("disk full")}
 	spec := plugin.ScraperSpec{ID: "lookup", ImpliedMediaFields: map[string]string{"media.phase": "flight"}}
-	service := identify.NewService(engine, demoBundles(spec), &fakeStore{})
-	service.SetFields(fields)
+	service := identify.NewService(engine, demoBundles(spec), &fakeStore{fields: fields})
 
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err == nil {
 		t.Fatal("field write error not propagated")
@@ -614,13 +611,12 @@ func TestApplyRoutesMediaFieldKeys(t *testing.T) {
 		// as strings.
 		Fields: map[string]any{"title": "Blue Harvest", "media.rating": 8.5, "media.code": "BH-001"},
 	}}
-	st := &fakeStore{}
 	fields := &fakeFields{}
+	st := &fakeStore{fields: fields}
 	spec := plugin.ScraperSpec{ID: "lookup", FieldMap: map[string]string{
 		"title": "name", "media.rating": "score", "media.code": "code",
 	}}
 	service := identify.NewService(engine, demoBundles(spec), st)
-	service.SetFields(fields)
 
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
 		t.Fatal(err)
@@ -655,8 +651,7 @@ func TestApplyReidentifyOverwritesMediaFields(t *testing.T) {
 	}}
 	fields := &fakeFields{}
 	spec := plugin.ScraperSpec{ID: "lookup", FieldMap: map[string]string{"title": "name", "media.code": "code"}}
-	service := identify.NewService(engine, demoBundles(spec), &fakeStore{})
-	service.SetFields(fields)
+	service := identify.NewService(engine, demoBundles(spec), &fakeStore{fields: fields})
 
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
 		t.Fatal(err)
@@ -686,8 +681,7 @@ func TestApplySkipsUnparseableMediaField(t *testing.T) {
 	spec := plugin.ScraperSpec{ID: "lookup", FieldMap: map[string]string{
 		"title": "name", "media.rating": "score", "media.code": "code",
 	}}
-	service := identify.NewService(engine, demoBundles(spec), &fakeStore{})
-	service.SetFields(fields)
+	service := identify.NewService(engine, demoBundles(spec), &fakeStore{fields: fields})
 
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
 		t.Fatalf("unparseable field failed the lookup: %v", err)
@@ -976,7 +970,7 @@ func (f *fakeEntityStore) UpsertEntity(_ context.Context, entity store.Entity) e
 	return nil
 }
 
-func (f *fakeEntityStore) UpsertEntityRelation(_ context.Context, relation store.EntityRelation) error {
+func (f *fakeEntityStore) UpsertHydratedEntityRelation(_ context.Context, relation store.EntityRelation) error {
 	if f.relationErr != nil {
 		return f.relationErr
 	}
@@ -1713,7 +1707,6 @@ func TestApplyIdentifiedMediaTitleSource(t *testing.T) {
 			st := &fakeStore{}
 			spec := plugin.ScraperSpec{ID: "lookup", ImpliedMediaFields: map[string]string{"media.phase": "flight"}}
 			service := identify.NewService(&fakeEngine{lookupResult: scrape.Result{Fields: tc.fields}}, demoBundles(spec), st)
-			service.SetFields(&fakeFields{})
 			service.SetMediaTitles(tc.titles)
 			if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
 				t.Fatal(err)
@@ -1731,7 +1724,7 @@ func TestApplyIdentifiedMediaTitleSource(t *testing.T) {
 			if !reflect.DeepEqual(tc.titles.gotFields, tc.wantFields) {
 				t.Errorf("hook fields = %#v, want %#v", tc.titles.gotFields, tc.wantFields)
 			}
-			_, previewTitle, err := service.PreviewLookup(context.Background(), "demo", "lookup", "42", "media-alpha")
+			_, previewTitle, err := service.PreviewLookup(context.Background(), "demo", "lookup", "42", "media-alpha", nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

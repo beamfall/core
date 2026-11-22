@@ -221,10 +221,10 @@ func TestNestedSchemaSourceItemOptionalFields(t *testing.T) {
 // TestNestedSchemaFlattensEmbedded asserts embedded result structs are promoted
 // inline the way encoding/json serializes them: RelatedEntityInfo embeds
 // EntityInfo, so entitiesForMedia must expose EntityInfo's fields plus its own
-// attributes — not a nested "entityInfo" object.
+// attributes and relation fields (CORE-3131) — not a nested "entityInfo" object.
 func TestNestedSchemaFlattensEmbedded(t *testing.T) {
 	e := topLevel(t, "entitiesformedia")
-	want := []string{"archetype", "attributes", "fields", "id", "kind", "kindDisplayName", "title"}
+	want := []string{"archetype", "attributes", "fields", "id", "kind", "kindDisplayName", "operatorLocked", "relation", "sortOrder", "title", "undeclared"}
 	if got := childNames(e.Children); !slices.Equal(got, want) {
 		t.Fatalf("entitiesForMedia fields = %v, want %v (embedded EntityInfo flattened)", got, want)
 	}

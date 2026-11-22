@@ -383,6 +383,90 @@ export async function fetchMediaRelations(
   return data.mediaRelations ?? [];
 }
 
+export interface MediaEntityRelation {
+  id: string;
+  title: string;
+  kind: string;
+  relation: string;
+  attributes: Record<string, string>;
+  sortOrder?: number | null;
+  operatorLocked: boolean;
+  undeclared: boolean;
+}
+
+export interface EntitySearchMatch {
+  id: string;
+  title: string;
+  kind: string;
+  libraryID: string;
+}
+
+const MEDIA_ENTITY_RELATIONS_QUERY =
+  "query MediaEntityRelations($mediaID: String!, $relation: String) { entitiesForMedia(mediaID: $mediaID, relation: $relation) { id title kind relation attributes sortOrder operatorLocked undeclared } }";
+
+export async function fetchMediaEntityRelations(
+  mediaID: string,
+  relation?: string,
+): Promise<MediaEntityRelation[]> {
+  const data = await graphql<{ entitiesForMedia: MediaEntityRelation[] | null }>(
+    MEDIA_ENTITY_RELATIONS_QUERY,
+    { mediaID, relation },
+  );
+  return data.entitiesForMedia ?? [];
+}
+
+const ENTITY_SEARCH_QUERY =
+  "query EntitySearch($kind: String!, $query: String!, $limit: Int) { entitySearch(kind: $kind, query: $query, limit: $limit) { id title kind libraryID } }";
+
+export async function entitySearch(vars: {
+  kind: string;
+  query: string;
+  limit?: number;
+}): Promise<EntitySearchMatch[]> {
+  const data = await graphql<{ entitySearch: EntitySearchMatch[] | null }>(
+    ENTITY_SEARCH_QUERY,
+    vars,
+  );
+  return data.entitySearch ?? [];
+}
+
+type MediaRelationEntityInput =
+  | { entityID: string; newEntity?: never }
+  | { entityID?: never; newEntity: { kind: string; name: string } };
+
+const SET_MEDIA_RELATION_MUTATION =
+  "mutation SetMediaRelation($mediaID: String!, $relation: String!, $entityID: String, $newEntity: JSON, $attributes: JSON, $sortOrder: Int) { setMediaRelation(mediaID: $mediaID, relation: $relation, entityID: $entityID, newEntity: $newEntity, attributes: $attributes, sortOrder: $sortOrder) { relation sourceID targetID } }";
+
+export async function setMediaRelation(
+  vars: MediaRelationEntityInput & {
+    mediaID: string;
+    relation: string;
+    attributes?: Record<string, string>;
+    sortOrder?: number;
+  },
+): Promise<RelationWriteResult> {
+  const data = await graphql<{ setMediaRelation: RelationWriteResult }>(
+    SET_MEDIA_RELATION_MUTATION,
+    vars,
+  );
+  return data.setMediaRelation;
+}
+
+const REMOVE_MEDIA_RELATION_MUTATION =
+  "mutation RemoveMediaRelation($mediaID: String!, $relation: String!, $entityID: String!) { removeMediaRelation(mediaID: $mediaID, relation: $relation, entityID: $entityID) { relation sourceID targetID } }";
+
+export async function removeMediaRelation(vars: {
+  mediaID: string;
+  relation: string;
+  entityID: string;
+}): Promise<RelationWriteResult> {
+  const data = await graphql<{ removeMediaRelation: RelationWriteResult }>(
+    REMOVE_MEDIA_RELATION_MUTATION,
+    vars,
+  );
+  return data.removeMediaRelation;
+}
+
 const UPSERT_ENTITY_RELATION_MUTATION =
   "mutation UpsertEntityRelation($fromEntityID: String!, $relation: String!, $toEntityID: String, $toMediaID: String, $sortOrder: Int, $position: Int) { upsertEntityRelation(fromEntityID: $fromEntityID, relation: $relation, toEntityID: $toEntityID, toMediaID: $toMediaID, sortOrder: $sortOrder, position: $position) { relation sourceID targetID } }";
 
@@ -690,7 +774,7 @@ export async function acknowledgeBackupKey(
 }
 
 const METADATA_EXPORT_QUERY =
-  "query MetadataExport { metadataExport { schema exportedAt libraries { id pluginID restricted title } media { artworkPins { pluginID scraperID slot sourceURL } class codec container durationSeconds fields { label name type value } id libraryID markers { endSeconds id segmentKind startSeconds tags title } mutatedBy summary title year } entities { fields { label name type value } id kind libraryID title } relations { attributes fromEntityID relation toEntityID toMediaID } mediaLinks { attributes fromMediaID relation toMediaID } collections { createdAt id libraryID name sourceExpr } } }";
+  "query MetadataExport { metadataExport { schema exportedAt libraries { id pluginID restricted title } media { artworkPins { pluginID scraperID slot sourceURL } class codec container durationSeconds fields { label name type value } id libraryID markers { endSeconds id segmentKind startSeconds tags title } mutatedBy operatorOrdinal { sequence index } summary title year } entities { fields { label name type value } id kind libraryID title } relations { attributes fromEntityID relation toEntityID toMediaID } mediaLinks { attributes fromMediaID relation toMediaID } collections { createdAt id libraryID name sourceExpr } } }";
 
 /** MetadataExport — the full reveal-filtered portability export (ADR-0005 §5). */
 export async function fetchMetadataExport(signal?: AbortSignal): Promise<MetadataExportInfo> {
@@ -1532,7 +1616,7 @@ export async function setMediaFieldLock(
 // --- Per-item metadata editor (CORE-1715) ---------------------------------
 
 const MEDIA_METADATA_SELECTION =
-  "{ mediaID title sortTitle summary year refreshable locks { field locked } }";
+  "{ mediaID title sortTitle summary year refreshable locks { field locked } operatorOrdinal { sequence index } }";
 
 const MEDIA_METADATA_QUERY = `query MediaMetadata($mediaID: String!) { mediaMetadata(mediaID: $mediaID) ${MEDIA_METADATA_SELECTION} }`;
 
@@ -1697,20 +1781,104 @@ export async function identifySearch(vars: {
 }
 
 const FIX_MATCH_MUTATION =
-  "mutation FixMatch($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!) { fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID) { id title summary year favorited } }";
+  "mutation FixMatch($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $clearLocks: [String!], $sequence: String, $index: Int) { fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, clearLocks: $clearLocks, sequence: $sequence, index: $index) { id title summary year favorited } }";
 
 /** FixMatch — apply a selected candidate and clear the unmatched row. */
-export async function fixMatch(vars: {
-  mediaID: string;
-  pluginID: string;
-  scraperID: string;
-  candidateID: string;
-}): Promise<GenericMediaInfo> {
-  const data = await graphql<{ fixMatch: GenericMediaInfo }>(FIX_MATCH_MUTATION, vars);
+export async function fixMatch(
+  vars: {
+    mediaID: string;
+    pluginID: string;
+    scraperID: string;
+    candidateID: string;
+    clearLocks?: string[];
+    sequence?: string;
+    index?: number;
+  },
+  signal?: AbortSignal,
+): Promise<GenericMediaInfo> {
+  const data = await graphql<{ fixMatch: GenericMediaInfo }>(FIX_MATCH_MUTATION, vars, signal);
   return data.fixMatch;
 }
 
+const CLEAR_MEDIA_ORDINAL_MUTATION =
+  "mutation ClearMediaOrdinal($mediaID: String!) { clearMediaOrdinal(mediaID: $mediaID) }";
+
+export async function clearMediaOrdinal(mediaID: string): Promise<boolean> {
+  const data = await graphql<{ clearMediaOrdinal: boolean }>(CLEAR_MEDIA_ORDINAL_MUTATION, {
+    mediaID,
+  });
+  return data.clearMediaOrdinal;
+}
+
 // --- Fix Match full contract (METAPARITY-4, ADR-0068 §A) -------------------
+
+export interface FixMatchSourceInfo {
+  pluginID: string;
+  scraperID: string;
+  label: string;
+  supportsChildren: boolean;
+  childLevels: string[];
+  acceptsPastedID: boolean;
+  isDefault: boolean;
+}
+
+export interface FixMatchChildInfo {
+  key: string;
+  label: string;
+  sequence?: string | null;
+  index?: number | null;
+  year?: number | null;
+  artworkURL?: string | null;
+}
+
+export interface FixMatchCurrentInfo {
+  pluginID: string;
+  scraperID: string;
+  candidateID: string;
+  title: string;
+  year: number;
+}
+
+export interface FixMatchLockedFieldInfo {
+  field: string;
+  value: string;
+}
+
+export const FIX_MATCH_SOURCES_QUERY =
+  "query FixMatchSources($mediaID: String!) { fixMatchSources(mediaID: $mediaID) { pluginID scraperID label supportsChildren childLevels acceptsPastedID isDefault } }";
+
+export const FIX_MATCH_CURRENT_QUERY =
+  "query FixMatchCurrent($mediaID: String!) { fixMatchCurrent(mediaID: $mediaID) { pluginID scraperID candidateID title year } }";
+
+export const FIX_MATCH_LOCKED_FIELDS_QUERY =
+  "query FixMatchLockedFields($mediaID: String!) { fixMatchLockedFields(mediaID: $mediaID) { field value } }";
+
+/** The searchable sources for a visible item's library. */
+export async function fixMatchSources(mediaID: string): Promise<FixMatchSourceInfo[]> {
+  const data = await graphql<{ fixMatchSources: FixMatchSourceInfo[] | null }>(
+    FIX_MATCH_SOURCES_QUERY,
+    { mediaID },
+  );
+  return data.fixMatchSources ?? [];
+}
+
+/** The item's recorded match, if any. */
+export async function fixMatchCurrent(mediaID: string): Promise<FixMatchCurrentInfo | null> {
+  const data = await graphql<{ fixMatchCurrent: FixMatchCurrentInfo | null }>(
+    FIX_MATCH_CURRENT_QUERY,
+    { mediaID },
+  );
+  return data.fixMatchCurrent ?? null;
+}
+
+/** The manually locked values shown alongside a candidate's preview. */
+export async function fixMatchLockedFields(mediaID: string): Promise<FixMatchLockedFieldInfo[]> {
+  const data = await graphql<{ fixMatchLockedFields: FixMatchLockedFieldInfo[] | null }>(
+    FIX_MATCH_LOCKED_FIELDS_QUERY,
+    { mediaID },
+  );
+  return data.fixMatchLockedFields ?? [];
+}
 
 const FIX_MATCH_CANDIDATES_QUERY =
   "query FixMatchCandidates($mediaID: String!, $pluginID: String!, $scraperID: String!, $query: String!, $year: Int) { fixMatchCandidates(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, query: $query, year: $year) { id title summary year pluginID scraperID confidence threshold scored reason } }";
@@ -1733,6 +1901,24 @@ export async function fixMatchCandidates(vars: {
   return data.fixMatchCandidates ?? [];
 }
 
+const FIX_MATCH_CHILDREN_QUERY =
+  "query FixMatchChildren($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $level: Int!, $parentKey: String) { fixMatchChildren(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, level: $level, parentKey: $parentKey) { key label sequence index year artworkURL } }";
+
+export async function fixMatchChildren(vars: {
+  mediaID: string;
+  pluginID: string;
+  scraperID: string;
+  candidateID: string;
+  level: number;
+  parentKey?: string | null;
+}): Promise<FixMatchChildInfo[]> {
+  const data = await graphql<{ fixMatchChildren: FixMatchChildInfo[] | null }>(
+    FIX_MATCH_CHILDREN_QUERY,
+    vars,
+  );
+  return data.fixMatchChildren ?? [];
+}
+
 const IDENTIFY_LOOKUP_QUERY =
   "query IdentifyLookup($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!) { identifyLookup(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID) { id title summary year } }";
 
@@ -1748,7 +1934,7 @@ export async function identifyLookup(vars: {
 }
 
 const FIX_MATCH_PREVIEW_QUERY =
-  "query FixMatchPreview($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!) { fixMatchPreview(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID) { field current proposed changed } }";
+  "query FixMatchPreview($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $sequence: String, $index: Int, $clearLocks: [String!]) { fixMatchPreview(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, sequence: $sequence, index: $index, clearLocks: $clearLocks) { field current proposed changed } }";
 
 /** FixMatchPreview — what applying a candidate would change, before any write. */
 export async function fixMatchPreview(vars: {
@@ -1756,6 +1942,10 @@ export async function fixMatchPreview(vars: {
   pluginID: string;
   scraperID: string;
   candidateID: string;
+  sequence?: string;
+  index?: number;
+  /** Locks Apply would clear, so the preview resolves the ordinal as Apply will. */
+  clearLocks?: string[];
 }): Promise<FixMatchFieldDiff[]> {
   const data = await graphql<{ fixMatchPreview: FixMatchFieldDiff[] | null }>(
     FIX_MATCH_PREVIEW_QUERY,

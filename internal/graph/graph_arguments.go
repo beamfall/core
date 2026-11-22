@@ -346,8 +346,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "kind", Kind: "string"},
 		{Name: "mediaID", Kind: "string", Optional: true},
 	},
-	"entitiesformedia": fieldArguments["entitiesformedia"],
-	"entity":           fieldArguments["entity"],
+	"entitiesformedia":    fieldArguments["entitiesformedia"],
+	"entitysearch":        fieldArguments["entitysearch"],
+	"setmediarelation":    fieldArguments["setmediarelation"],
+	"removemediarelation": fieldArguments["removemediarelation"],
+	"entity":              fieldArguments["entity"],
 	"entityrelations": slices.Concat(fieldArguments["entityrelations"], []NestedArgument{
 		{Name: "limit", Kind: "int", Optional: true},
 		{Name: "offset", Kind: "int", Optional: true},
@@ -356,7 +359,8 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"extensionrequest": {
 		{Name: "id", Kind: "string"},
 	},
-	"fixmatch": fieldArguments["fixmatch"],
+	"clearmediaordinal": fieldArguments["clearmediaordinal"],
+	"fixmatch":          fieldArguments["fixmatch"],
 	"fixmatchcandidates": {
 		{Name: "mediaID", Kind: "string", Optional: true},
 		{Name: "pluginID", Kind: "string"},
@@ -364,12 +368,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "scraperID", Kind: "string"},
 		{Name: "year", Kind: "number", Optional: true},
 	},
-	"fixmatchpreview": {
-		{Name: "candidateID", Kind: "string"},
-		{Name: "mediaID", Kind: "string"},
-		{Name: "pluginID", Kind: "string"},
-		{Name: "scraperID", Kind: "string"},
-	},
+	"fixmatchchildren":     fieldArguments["fixmatchchildren"],
+	"fixmatchcurrent":      {{Name: "mediaID", Kind: "string"}},
+	"fixmatchlockedfields": {{Name: "mediaID", Kind: "string"}},
+	"fixmatchpreview":      fieldArguments["fixmatchpreview"],
+	"fixmatchsources":      {{Name: "mediaID", Kind: "string"}},
 	"foldertree": {
 		{Name: "depth", Kind: "number", Optional: true},
 		{Name: "libraryID", Kind: "string"},

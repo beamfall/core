@@ -219,6 +219,186 @@
         "optional": true
       },
       {
+        "name": "mediaRelationChange",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "after",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "attributes",
+                  "kind": "map",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "libraryID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockActivityID",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "lockOne",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockedAtMS",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "sortOrder",
+                  "kind": "scalar",
+                  "nullable": true
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "attributes",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "libraryID",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockActivityID",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "lockOne",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockedAtMS",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "sortOrder",
+                "kind": "scalar",
+                "nullable": true
+              }
+            ]
+          },
+          {
+            "name": "before",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "attributes",
+                  "kind": "map",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "libraryID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockActivityID",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "lockOne",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockedAtMS",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "sortOrder",
+                  "kind": "scalar",
+                  "nullable": true
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "attributes",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "libraryID",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockActivityID",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "lockOne",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockedAtMS",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "sortOrder",
+                "kind": "scalar",
+                "nullable": true
+              }
+            ]
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          },
+          {
+            "name": "relation",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "occurredAt",
         "kind": "scalar"
       },
@@ -281,6 +461,186 @@
         "name": "libraryID",
         "kind": "scalar",
         "optional": true
+      },
+      {
+        "name": "mediaRelationChange",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "after",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "attributes",
+                  "kind": "map",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "libraryID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockActivityID",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "lockOne",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockedAtMS",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "sortOrder",
+                  "kind": "scalar",
+                  "nullable": true
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "attributes",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "libraryID",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockActivityID",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "lockOne",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockedAtMS",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "sortOrder",
+                "kind": "scalar",
+                "nullable": true
+              }
+            ]
+          },
+          {
+            "name": "before",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "attributes",
+                  "kind": "map",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "libraryID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockActivityID",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "lockOne",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "lockedAtMS",
+                  "kind": "scalar",
+                  "nullable": true
+                },
+                {
+                  "name": "sortOrder",
+                  "kind": "scalar",
+                  "nullable": true
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "attributes",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "libraryID",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockActivityID",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "lockOne",
+                "kind": "scalar"
+              },
+              {
+                "name": "lockedAtMS",
+                "kind": "scalar",
+                "nullable": true
+              },
+              {
+                "name": "sortOrder",
+                "kind": "scalar",
+                "nullable": true
+              }
+            ]
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          },
+          {
+            "name": "relation",
+            "kind": "scalar"
+          }
+        ]
       },
       {
         "name": "occurredAt",
@@ -2111,6 +2471,16 @@
       {
         "name": "cleared",
         "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "clearmediaordinal",
+    "kind": "scalar",
+    "arguments": [
+      {
+        "name": "mediaID",
+        "kind": "string"
       }
     ]
   },
@@ -6062,6 +6432,21 @@
         "kind": "scalar"
       },
       {
+        "name": "operatorOrdinal",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "index",
+            "kind": "scalar"
+          },
+          {
+            "name": "sequence",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "refreshable",
         "kind": "scalar"
       },
@@ -6212,7 +6597,8 @@
       },
       {
         "name": "relation",
-        "kind": "string"
+        "kind": "string",
+        "optional": true
       }
     ],
     "children": [
@@ -6301,7 +6687,25 @@
         }
       },
       {
+        "name": "operatorLocked",
+        "kind": "scalar"
+      },
+      {
+        "name": "relation",
+        "kind": "scalar"
+      },
+      {
+        "name": "sortOrder",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      },
+      {
         "name": "title",
+        "kind": "scalar"
+      },
+      {
+        "name": "undeclared",
         "kind": "scalar"
       }
     ]
@@ -7671,6 +8075,43 @@
     ]
   },
   {
+    "field": "entitysearch",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "kind",
+        "kind": "string"
+      },
+      {
+        "name": "limit",
+        "kind": "int",
+        "optional": true
+      },
+      {
+        "name": "query",
+        "kind": "string"
+      }
+    ],
+    "children": [
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "libraryID",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "evictplaybackrenditioncache",
     "kind": "object",
     "children": [
@@ -7728,8 +8169,21 @@
         "optional": true
       },
       {
+        "name": "clearLocks",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
         "name": "importRunID",
         "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "index",
+        "kind": "int",
         "optional": true
       },
       {
@@ -7748,6 +8202,11 @@
       },
       {
         "name": "scraperID",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "sequence",
         "kind": "string",
         "optional": true
       }
@@ -8063,8 +8522,149 @@
     ]
   },
   {
+    "field": "fixmatchchildren",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "candidateID",
+        "kind": "string"
+      },
+      {
+        "name": "level",
+        "kind": "int"
+      },
+      {
+        "name": "mediaID",
+        "kind": "string"
+      },
+      {
+        "name": "parentKey",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "pluginID",
+        "kind": "string"
+      },
+      {
+        "name": "scraperID",
+        "kind": "string"
+      }
+    ],
+    "children": [
+      {
+        "name": "artworkURL",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      },
+      {
+        "name": "index",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      },
+      {
+        "name": "key",
+        "kind": "scalar"
+      },
+      {
+        "name": "label",
+        "kind": "scalar"
+      },
+      {
+        "name": "sequence",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      },
+      {
+        "name": "year",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      }
+    ]
+  },
+  {
+    "field": "fixmatchcurrent",
+    "kind": "object",
+    "children": [
+      {
+        "name": "candidateID",
+        "kind": "scalar"
+      },
+      {
+        "name": "pluginID",
+        "kind": "scalar"
+      },
+      {
+        "name": "scraperID",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      },
+      {
+        "name": "year",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "fixmatchlockedfields",
+    "kind": "object",
+    "children": [
+      {
+        "name": "field",
+        "kind": "scalar"
+      },
+      {
+        "name": "value",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "fixmatchpreview",
     "kind": "object",
+    "arguments": [
+      {
+        "name": "candidateID",
+        "kind": "string"
+      },
+      {
+        "name": "clearLocks",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
+        "name": "index",
+        "kind": "int",
+        "optional": true
+      },
+      {
+        "name": "mediaID",
+        "kind": "string"
+      },
+      {
+        "name": "pluginID",
+        "kind": "string"
+      },
+      {
+        "name": "scraperID",
+        "kind": "string"
+      },
+      {
+        "name": "sequence",
+        "kind": "string",
+        "optional": true
+      }
+    ],
     "children": [
       {
         "name": "changed",
@@ -8080,6 +8680,43 @@
       },
       {
         "name": "proposed",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "fixmatchsources",
+    "kind": "object",
+    "children": [
+      {
+        "name": "acceptsPastedID",
+        "kind": "scalar"
+      },
+      {
+        "name": "childLevels",
+        "kind": "list",
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "isDefault",
+        "kind": "scalar"
+      },
+      {
+        "name": "label",
+        "kind": "scalar"
+      },
+      {
+        "name": "pluginID",
+        "kind": "scalar"
+      },
+      {
+        "name": "scraperID",
+        "kind": "scalar"
+      },
+      {
+        "name": "supportsChildren",
         "kind": "scalar"
       }
     ]
@@ -13309,6 +13946,21 @@
         "kind": "scalar"
       },
       {
+        "name": "operatorOrdinal",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "index",
+            "kind": "scalar"
+          },
+          {
+            "name": "sequence",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "refreshable",
         "kind": "scalar"
       },
@@ -14620,6 +15272,22 @@
               "optional": true
             },
             {
+              "name": "operatorOrdinal",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "index",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "sequence",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
               "name": "summary",
               "kind": "scalar",
               "optional": true
@@ -14846,6 +15514,22 @@
             "optional": true
           },
           {
+            "name": "operatorOrdinal",
+            "kind": "object",
+            "optional": true,
+            "nullable": true,
+            "children": [
+              {
+                "name": "index",
+                "kind": "scalar"
+              },
+              {
+                "name": "sequence",
+                "kind": "scalar"
+              }
+            ]
+          },
+          {
             "name": "summary",
             "kind": "scalar",
             "optional": true
@@ -14936,6 +15620,11 @@
               "kind": "scalar"
             },
             {
+              "name": "operatorLocked",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "relation",
               "kind": "scalar"
             },
@@ -14964,6 +15653,11 @@
           {
             "name": "fromEntityID",
             "kind": "scalar"
+          },
+          {
+            "name": "operatorLocked",
+            "kind": "scalar",
+            "optional": true
           },
           {
             "name": "relation",
@@ -19940,6 +20634,21 @@
         "kind": "scalar"
       },
       {
+        "name": "operatorOrdinal",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "index",
+            "kind": "scalar"
+          },
+          {
+            "name": "sequence",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "refreshable",
         "kind": "scalar"
       },
@@ -20588,6 +21297,38 @@
         "name": "mediaID",
         "kind": "scalar",
         "optional": true
+      }
+    ]
+  },
+  {
+    "field": "removemediarelation",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "entityID",
+        "kind": "string"
+      },
+      {
+        "name": "mediaID",
+        "kind": "string"
+      },
+      {
+        "name": "relation",
+        "kind": "string"
+      }
+    ],
+    "children": [
+      {
+        "name": "relation",
+        "kind": "scalar"
+      },
+      {
+        "name": "sourceID",
+        "kind": "scalar"
+      },
+      {
+        "name": "targetID",
+        "kind": "scalar"
       }
     ]
   },
@@ -26733,6 +27474,67 @@
       },
       {
         "name": "locked",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "setmediarelation",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "attributes",
+        "kind": "map",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
+        "name": "entityID",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "mediaID",
+        "kind": "string"
+      },
+      {
+        "name": "newEntity",
+        "kind": "object",
+        "optional": true,
+        "fields": [
+          {
+            "name": "kind",
+            "kind": "string"
+          },
+          {
+            "name": "name",
+            "kind": "string"
+          }
+        ]
+      },
+      {
+        "name": "relation",
+        "kind": "string"
+      },
+      {
+        "name": "sortOrder",
+        "kind": "int",
+        "optional": true
+      }
+    ],
+    "children": [
+      {
+        "name": "relation",
+        "kind": "scalar"
+      },
+      {
+        "name": "sourceID",
+        "kind": "scalar"
+      },
+      {
+        "name": "targetID",
         "kind": "scalar"
       }
     ]

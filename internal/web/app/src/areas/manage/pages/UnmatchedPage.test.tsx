@@ -205,12 +205,15 @@ describe("UnmatchedPage", () => {
 
     await waitFor(() => expect(fixMatch).toHaveBeenCalledTimes(3));
     for (const n of [1, 2, 3]) {
-      expect(fixMatch).toHaveBeenCalledWith({
-        mediaID: `media-part-${n}`,
-        pluginID: "filmtv",
-        scraperID: "tmdb",
-        candidateID: "outsider-2020",
-      });
+      expect(fixMatch).toHaveBeenCalledWith(
+        {
+          mediaID: `media-part-${n}`,
+          pluginID: "filmtv",
+          scraperID: "tmdb",
+          candidateID: "outsider-2020",
+        },
+        undefined,
+      );
     }
     expect(await screen.findByText("Matched 2 of 3. Could not match: Part 2.")).toBeVisible();
     expect(fetchUnmatchedQueuePages).toHaveBeenCalledTimes(2);
@@ -268,12 +271,15 @@ describe("UnmatchedPage", () => {
     await screen.findByText("The Thing (1982)");
     await user.click(apply);
     await waitFor(() =>
-      expect(fixMatch).toHaveBeenCalledWith({
-        mediaID: "media-thing",
-        pluginID: "filmtv",
-        scraperID: "tmdb",
-        candidateID: "thing-1982",
-      }),
+      expect(fixMatch).toHaveBeenCalledWith(
+        {
+          mediaID: "media-thing",
+          pluginID: "filmtv",
+          scraperID: "tmdb",
+          candidateID: "thing-1982",
+        },
+        undefined,
+      ),
     );
     expect(fixMatch).toHaveBeenCalledTimes(1);
   });

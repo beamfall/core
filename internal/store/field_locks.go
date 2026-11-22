@@ -113,21 +113,39 @@ func (s *Store) SetMediaFieldLock(ctx context.Context, id MediaID, field string,
 	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, id, filter); err != nil {
 		return nil, err
 	}
-	mirror, fixed := lockMirror(field)
 	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
+	if err := setMediaFieldLockTx(ctx, tx, id, field, locked, false); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return mediaFieldLocksFrom(ctx, plane.reader, id)
+}
+
+func setMediaFieldLockTx(ctx context.Context, tx *sql.Tx, id MediaID, field string, locked, onlyManual bool) error {
+	mirror, fixed := lockMirror(field)
 	if !fixed {
 		held, err := mediaFieldHeldTx(ctx, tx, id, field)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if !held {
-			return nil, ValidationError("unknown lockable field")
+			return ValidationError("unknown lockable field")
 		}
 	}
+	if onlyManual {
+		// A stale clearLocks selection must preserve an already unlocked field's provenance.
+		source, err := fieldProvenanceTx(ctx, tx, id, field)
+		if err != nil || source != MutationSourceManual {
+			return err
+		}
+	}
+	var err error
 	if locked {
 		err = recordFieldProvenanceTx(ctx, tx, id, field, MutationSourceManual)
 	} else {
@@ -135,17 +153,12 @@ func (s *Store) SetMediaFieldLock(ctx context.Context, id MediaID, field string,
 			"DELETE FROM media_field_provenance WHERE media_id = ? AND field = ?", id, field)
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if mirror != "" {
-		if _, err := tx.ExecContext(ctx, mirror, boolInt(locked), id); err != nil {
-			return nil, err
-		}
+		_, err = tx.ExecContext(ctx, mirror, boolInt(locked), id)
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return mediaFieldLocksFrom(ctx, plane.reader, id)
+	return err
 }
 
 // mediaFieldHeldTx reports whether a plugin-declared field holds a value or a

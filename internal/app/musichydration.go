@@ -31,7 +31,7 @@ type hydrationStore interface {
 	MediaFields(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaField, error)
 	MediaFieldLocks(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFieldLock, error)
 	UpsertEntity(ctx context.Context, entity store.Entity) error
-	UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error
+	UpsertHydratedEntityRelation(ctx context.Context, relation store.EntityRelation) error
 	ReplaceMediaRelations(ctx context.Context, mediaID store.MediaID, relations []store.EntityRelation) error
 	AddMediaExternalID(ctx context.Context, mediaID store.MediaID, scheme string, value string) error
 	EntityRelationTargets(ctx context.Context, libraryID store.LibraryID, id store.EntityID, relation string) ([]store.EntityID, bool, error)
@@ -467,28 +467,17 @@ func hydrationRelationCardinality(cardinality string) string {
 }
 
 func validateRelationAttributes(relation HydrationRelation, declared plugin.RelationSpec) error {
-	untyped := make(map[string]bool, len(declared.Attributes))
-	for _, name := range declared.Attributes {
-		untyped[name] = true
-	}
-	typed := make(map[string]string, len(declared.TypedAttributes))
-	for _, attribute := range declared.TypedAttributes {
-		typed[attribute.Name] = attribute.Type
-	}
 	names := make([]string, 0, len(relation.Attributes))
 	for name := range relation.Attributes {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if untyped[name] {
-			continue
-		}
-		fieldType, ok := typed[name]
+		fieldType, ok := plugin.RelationAttributeType(declared, name)
 		if !ok {
 			return fmt.Errorf("hydration relation %q from entity kind %q uses undeclared attribute %q", relation.Name, relation.From.Kind, name)
 		}
-		if !validTypedRelationAttribute(fieldType, relation.Attributes[name]) {
+		if fieldType != "" && !validTypedRelationAttribute(fieldType, relation.Attributes[name]) {
 			return fmt.Errorf("hydration relation %q from entity kind %q attribute %q has value that is not valid %q", relation.Name, relation.From.Kind, name, fieldType)
 		}
 	}
@@ -667,7 +656,7 @@ func (a *hydrationAdapter) writeRelations(ctx context.Context, mediaID store.Med
 			mediaRelations = append(mediaRelations, relation)
 			continue
 		}
-		if err := a.store.UpsertEntityRelation(ctx, relation); err != nil {
+		if err := a.store.UpsertHydratedEntityRelation(ctx, relation); err != nil {
 			return err
 		}
 	}

@@ -424,7 +424,7 @@ const titleFoldCatchUpSQL = `SELECT id, title FROM entity WHERE rowid > ? AND ro
 
 // foldEqualRows runs a query selecting (rowid, id, title) and keeps the rows
 // whose titles fold to folded, in the query's order.
-func foldEqualRows(ctx context.Context, reader *sql.DB, folded string, libraryID LibraryID, kind, query string, args ...any) ([]Entity, error) {
+func foldEqualRows(ctx context.Context, reader rowsQueryer, folded string, libraryID LibraryID, kind, query string, args ...any) ([]Entity, error) {
 	rows, err := reader.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

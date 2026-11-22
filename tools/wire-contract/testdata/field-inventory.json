@@ -84,6 +84,7 @@
         "deviceID",
         "id",
         "libraryID",
+        "mediaRelationChange",
         "occurredAt",
         "profileID",
         "reversible",
@@ -104,6 +105,7 @@
         "deviceID",
         "id",
         "libraryID",
+        "mediaRelationChange",
         "occurredAt",
         "profileID",
         "reversible",
@@ -541,6 +543,11 @@
       "children": [
         "cleared"
       ]
+    },
+    {
+      "field": "clearmediaordinal",
+      "effect": "write",
+      "tier": "session"
     },
     {
       "field": "clearmute",
@@ -1105,6 +1112,7 @@
       "children": [
         "locks",
         "mediaID",
+        "operatorOrdinal",
         "refreshable",
         "sortTitle",
         "summary",
@@ -1159,7 +1167,11 @@
         "id",
         "kind",
         "kindDisplayName",
-        "title"
+        "operatorLocked",
+        "relation",
+        "sortOrder",
+        "title",
+        "undeclared"
       ]
     },
     {
@@ -1188,6 +1200,17 @@
         "relation",
         "sortOrder",
         "targetKind"
+      ]
+    },
+    {
+      "field": "entitysearch",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "libraryID",
+        "title"
       ]
     },
     {
@@ -1260,6 +1283,40 @@
       ]
     },
     {
+      "field": "fixmatchchildren",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artworkURL",
+        "index",
+        "key",
+        "label",
+        "sequence",
+        "year"
+      ]
+    },
+    {
+      "field": "fixmatchcurrent",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "candidateID",
+        "pluginID",
+        "scraperID",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "fixmatchlockedfields",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "field",
+        "value"
+      ]
+    },
+    {
       "field": "fixmatchpreview",
       "effect": "read",
       "tier": "session",
@@ -1268,6 +1325,20 @@
         "current",
         "field",
         "proposed"
+      ]
+    },
+    {
+      "field": "fixmatchsources",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "acceptsPastedID",
+        "childLevels",
+        "isDefault",
+        "label",
+        "pluginID",
+        "scraperID",
+        "supportsChildren"
       ]
     },
     {
@@ -1892,6 +1963,7 @@
       "children": [
         "locks",
         "mediaID",
+        "operatorOrdinal",
         "refreshable",
         "sortTitle",
         "summary",
@@ -2706,6 +2778,7 @@
       "children": [
         "locks",
         "mediaID",
+        "operatorOrdinal",
         "refreshable",
         "sortTitle",
         "summary",
@@ -2834,6 +2907,16 @@
         "kind",
         "lastOccurredAt",
         "mediaID"
+      ]
+    },
+    {
+      "field": "removemediarelation",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "relation",
+        "sourceID",
+        "targetID"
       ]
     },
     {
@@ -3863,6 +3946,16 @@
       "children": [
         "field",
         "locked"
+      ]
+    },
+    {
+      "field": "setmediarelation",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "relation",
+        "sourceID",
+        "targetID"
       ]
     },
     {

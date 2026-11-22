@@ -317,11 +317,8 @@ func (s *Store) UpsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 	}
 	defer tx.Rollback()
 	wrote, err := upsertMediaFieldsTx(ctx, tx, id, fields, source)
-	if err != nil {
+	if err != nil || !wrote {
 		return err
-	}
-	if wrote == 0 {
-		return nil
 	}
 	if err := tx.Commit(); err != nil {
 		return err
@@ -333,14 +330,14 @@ func (s *Store) UpsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 }
 
 // upsertMediaFieldsTx is UpsertMediaFieldsWithSource inside the caller's
-// transaction; it returns how many fields landed.
-func upsertMediaFieldsTx(ctx context.Context, tx *sql.Tx, id MediaID, fields []MediaField, source MutationSource) (int, error) {
-	wrote := 0
+// transaction; it reports whether any field landed.
+func upsertMediaFieldsTx(ctx context.Context, tx *sql.Tx, id MediaID, fields []MediaField, source MutationSource) (bool, error) {
+	wrote := false
 	for _, field := range fields {
 		if source != MutationSourceManual {
 			tombstoned, err := mediaFieldTombstonedTx(ctx, tx, id, field)
 			if err != nil {
-				return 0, err
+				return false, err
 			}
 			if tombstoned {
 				continue
@@ -348,18 +345,18 @@ func upsertMediaFieldsTx(ctx context.Context, tx *sql.Tx, id MediaID, fields []M
 		}
 		allowed, err := canWriteFieldTx(ctx, tx, id, field.Name, source)
 		if err != nil {
-			return 0, err
+			return false, err
 		}
 		if !allowed {
 			continue // a higher-precedence source owns this field — preserve it
 		}
 		if err := replaceMediaFieldValueTx(ctx, tx, id, field); err != nil {
-			return 0, err
+			return false, err
 		}
 		if err := recordFieldProvenanceTx(ctx, tx, id, field.Name, source); err != nil {
-			return 0, err
+			return false, err
 		}
-		wrote++
+		wrote = true
 	}
 	return wrote, nil
 }

@@ -26,6 +26,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -39,6 +40,9 @@ func resolveJSONPath(root any, path string) (string, bool) {
 }
 
 func resolveJSONScalar(root any, path string) (any, bool) {
+	if strings.TrimSpace(path) == "$" {
+		return nil, false
+	}
 	node, ok := resolveJSONNode(root, path)
 	if !ok {
 		return nil, false
@@ -49,43 +53,67 @@ func resolveJSONScalar(root any, path string) (any, bool) {
 	return node, true
 }
 
-// resolveJSONNode walks path and returns whatever node it lands on — object,
-// array, or scalar. The empty path is the root (a search CandidatesPath may
-// be the whole response).
+// resolveJSONNode walks the scraper path to an object, array or scalar.
+// List paths can name the root with $ and filter all matches at the end.
 func resolveJSONNode(root any, path string) (any, bool) {
-	if path == "" {
+	trimmed := strings.TrimSpace(path)
+	if path == "" || trimmed == "$" {
 		return root, true
 	}
+	if strings.HasPrefix(trimmed, "$[") {
+		path = trimmed
+	}
+	segments, ok := splitJSONPath(path)
+	if !ok {
+		return nil, false
+	}
 	current := root
-	for _, segment := range splitJSONPath(path) {
-		switch node := current.(type) {
-		case map[string]any:
-			name, conditions, predicate := jsonPathPredicate(segment)
-			value, ok := node[name]
+	for i, segment := range segments {
+		name, conditions, filterAll, ok := jsonPathPredicate(segment)
+		if !ok || filterAll && i != len(segments)-1 {
+			return nil, false
+		}
+		if strings.TrimSpace(name) == "$" {
+			if name != "$" || !filterAll || len(segments) != 1 {
+				return nil, false
+			}
+		} else {
+			if _, array := current.([]any); array && len(conditions) != 0 {
+				return nil, false
+			}
+			current, ok = jsonPathValue(current, name)
 			if !ok {
 				return nil, false
 			}
-			if predicate {
-				value, ok = selectJSONPredicate(value, conditions)
-				if !ok {
-					return nil, false
-				}
-			}
-			current = value
-		case []any:
-			index, err := strconv.Atoi(segment)
-			if err != nil || index < 0 || index >= len(node) {
+		}
+		if len(conditions) != 0 {
+			current, ok = selectJSONPredicate(current, conditions, filterAll)
+			if !ok {
 				return nil, false
 			}
-			current = node[index]
-		default:
-			return nil, false
 		}
 	}
 	return current, true
 }
 
-func splitJSONPath(path string) []string {
+func jsonPathValue(node any, name string) (any, bool) {
+	switch node := node.(type) {
+	case map[string]any:
+		value, ok := node[name]
+		return value, ok
+	case []any:
+		index, err := strconv.Atoi(name)
+		if err == nil && index >= 0 && index < len(node) {
+			return node[index], true
+		}
+	}
+	return nil, false
+}
+
+func splitJSONPath(path string) ([]string, bool) {
+	if strings.TrimSpace(path) == "" {
+		return nil, false
+	}
 	var segments []string
 	start, brackets := 0, 0
 	for i, r := range path {
@@ -93,6 +121,9 @@ func splitJSONPath(path string) []string {
 		case '[':
 			brackets++
 		case ']':
+			if brackets == 0 {
+				return nil, false
+			}
 			brackets--
 		case '.':
 			if brackets == 0 {
@@ -101,43 +132,82 @@ func splitJSONPath(path string) []string {
 			}
 		}
 	}
-	return append(segments, path[start:])
+	return append(segments, path[start:]), brackets == 0
 }
 
-func jsonPathPredicate(segment string) (name string, conditions [][2]string, ok bool) {
+func jsonPathPredicate(segment string) (name string, conditions [][2]string, filterAll, ok bool) {
 	name, predicate, found := strings.Cut(segment, "[")
-	if !found || name == "" || !strings.HasSuffix(predicate, "]") {
-		return segment, nil, false
+	if !found {
+		return name, nil, false, name != ""
 	}
-	predicate = strings.TrimSuffix(predicate, "]")
+	predicate, closed := strings.CutSuffix(predicate, "]")
+	if name == "" || !closed {
+		return "", nil, false, false
+	}
+	predicate, filterAll = strings.CutPrefix(predicate, "?")
+	if filterAll {
+		if _, balanced := splitJSONPath(predicate); !balanced {
+			return "", nil, false, false
+		}
+	}
 	for _, condition := range strings.Split(predicate, ",") {
 		key, value, found := strings.Cut(condition, "=")
 		if !found || key == "" {
-			return segment, nil, false
+			return "", nil, false, false
 		}
 		conditions = append(conditions, [2]string{key, value})
 	}
-	return name, conditions, true
+	return name, conditions, filterAll, true
 }
 
-func selectJSONPredicate(node any, conditions [][2]string) (any, bool) {
+func selectJSONPredicate(node any, conditions [][2]string, filterAll bool) (any, bool) {
 	elements, ok := node.([]any)
 	if !ok {
 		return nil, false
 	}
+	var matches []any
 	for _, element := range elements {
 		object, ok := element.(map[string]any)
-		if ok && matchesConditions(object, conditions) {
+		if !ok || !matchesConditions(object, conditions) {
+			continue
+		}
+		if !filterAll {
 			return element, true
 		}
+		matches = append(matches, element)
+	}
+	if filterAll {
+		return matches, true
 	}
 	return nil, false
 }
 
 func matchesConditions(object map[string]any, conditions [][2]string) bool {
 	for _, condition := range conditions {
-		got, ok := scalarString(object[condition[0]])
-		if !ok || got != condition[1] {
+		name, want := condition[0], condition[1]
+		value, ok := object[name]
+		if !ok {
+			value = object
+			for key := range strings.SplitSeq(name, ".") {
+				value, ok = jsonPathValue(value, key)
+				if !ok {
+					return false
+				}
+			}
+		}
+		got, ok := scalarString(value)
+		if number, numeric := value.(json.Number); numeric {
+			// Compare the numeric value using the SDK's scalar spelling.
+			n, err := number.Float64()
+			if err == nil {
+				if n == math.Trunc(n) && n >= math.MinInt64 && n < -float64(math.MinInt64) {
+					got = strconv.FormatInt(int64(n), 10)
+				} else {
+					got = strconv.FormatFloat(n, 'g', -1, 64)
+				}
+			}
+		}
+		if !ok || got != want {
 			return false
 		}
 	}

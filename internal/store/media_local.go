@@ -95,11 +95,12 @@ func (s *Store) ApplyLocalMetadata(ctx context.Context, id MediaID, local LocalM
 		return err
 	}
 	metadata := local.Metadata
+	metadata.Source = MutationSourceLocal
 	if plane.encrypted {
 		metadata.SortTitle = nil
 	}
 	if metadata.Title != nil || metadata.Summary != nil || metadata.Year != nil || metadata.SortTitle != nil {
-		if err := updateMediaMetadataTx(ctx, tx, id, metadata, MutationSourceLocal); err != nil {
+		if err := updateMediaMetadataTx(ctx, tx, id, metadata); err != nil {
 			return err
 		}
 	}

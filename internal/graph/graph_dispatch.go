@@ -434,6 +434,8 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	153: dispatchFieldBlock153,
 	154: dispatchFieldBlock154,
 	155: dispatchFieldBlock155,
+	156: dispatchFieldBlock156,
+	157: dispatchFieldBlock157,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -517,12 +519,18 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"engagementcounter":                  newFieldHandler("engagementCounter", "engagementCounter", fieldRead, roleSession, 126),
 	"entitiesformedia":                   newFieldHandler("entitiesForMedia", "entitiesForMedia", fieldRead, roleSession, 6),
 	"entity":                             newFieldHandler("entity", "entity", fieldRead, roleSession, 11),
+	"entitysearch":                       newFieldHandler("entitySearch", "entitySearch", fieldRead, roleSession|roleManager, 156),
 	"entityrelations":                    newFieldHandler("entityRelations", "entityRelations", fieldRead, roleSession, 7),
 	"evictplaybackrenditioncache":        newFieldHandler("evictPlaybackRenditionCache", "evictPlaybackRenditionCache", fieldMutation, roleSession|roleAdmin, 75),
 	"extensionrequest":                   newFieldHandler("extensionRequest", "extensionRequest", fieldRead, roleSession, 95),
+	"clearmediaordinal":                  newFieldHandler("clearMediaOrdinal", "clearMediaOrdinal", fieldMutation, roleSession|roleManager, 60),
 	"fixmatch":                           newFieldHandler("fixMatch", "fixMatch", fieldMutation, roleSession|roleManager, 60),
 	"fixmatchcandidates":                 newFieldHandler("fixMatchCandidates", "fixMatchCandidates", fieldRead, roleSession|roleManager, 60),
+	"fixmatchchildren":                   newFieldHandler("fixMatchChildren", "fixMatchChildren", fieldRead, roleSession|roleManager, 60),
+	"fixmatchcurrent":                    newFieldHandler("fixMatchCurrent", "fixMatchCurrent", fieldRead, roleSession|roleManager, 60),
+	"fixmatchlockedfields":               newFieldHandler("fixMatchLockedFields", "fixMatchLockedFields", fieldRead, roleSession|roleManager, 60),
 	"fixmatchpreview":                    newFieldHandler("fixMatchPreview", "fixMatchPreview", fieldRead, roleSession|roleManager, 60),
+	"fixmatchsources":                    newFieldHandler("fixMatchSources", "fixMatchSources", fieldRead, roleSession|roleManager, 60),
 	"foldertree":                         newFieldHandler("folderTree", "folderTree", fieldRead, roleSession|roleManager, 110),
 	"formgroup":                          newFieldHandler("formGroup", "formGroup", fieldMutation, roleSession, 131),
 	"identifyapply":                      newFieldHandler("identifyApply", "identifyApply", fieldMutation, roleSession|roleManager, 60),
@@ -631,6 +639,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"removecollectionmedia":              newFieldHandler("removeCollectionMedia", "removeCollectionMedia", fieldMutation, roleSession|roleManager, 57),
 	"removelastengagement":               newFieldHandler("removeLastEngagement", "removeLastEngagement", fieldMutation, roleSession, 128),
 	"removesubscription":                 newFieldHandler("removeSubscription", "removeSubscription", fieldMutation, roleSession|roleManager, 54),
+	"removemediarelation":                newFieldHandler("removeMediaRelation", "removeMediaRelation", fieldMutation, roleSession|roleManager, 157),
 	"renamemanagedpath":                  newFieldHandler("renameManagedPath", "renameManagedPath", fieldMutation, roleSession|roleManager, 110),
 	"reordercollectionmedia":             newFieldHandler("reorderCollectionMedia", "reorderCollectionMedia", fieldMutation, roleSession|roleManager, 57),
 	"reportdrift":                        newFieldHandler("reportDrift", "reportDrift", fieldMutation, roleSession, 135),
@@ -699,6 +708,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setlibraryshowonhome":               newFieldHandler("setLibraryShowOnHome", "setLibraryShowOnHome", fieldMutation, roleSession|roleAdmin, 47),
 	"setlibraryrestricted":               newFieldHandler("setLibraryRestricted", "setLibraryRestricted", fieldMutation, roleSession|roleAdmin, 49),
 	"setlibraryroots":                    newFieldHandler("setLibraryRoots", "setLibraryRoots", fieldMutation, roleSession|roleAdmin, 46),
+	"setmediarelation":                   newFieldHandler("setMediaRelation", "setMediaRelation", fieldMutation, roleSession|roleManager, 157),
 	"setmediafieldlock":                  newFieldHandler("setMediaFieldLock", "setMediaFieldLock", fieldMutation, roleSession|roleManager, 108),
 	"editmediametadata":                  newFieldHandler("editMediaMetadata", "editMediaMetadata", fieldMutation, roleSession|roleManager, 108),
 	"refreshmediametadata":               newFieldHandler("refreshMediaMetadata", "refreshMediaMetadata", fieldMutation, roleSession|roleManager, 108),
@@ -2148,8 +2158,26 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
+	if fields["fixmatchsources"] {
+		sources, err := h.fixMatchSources(ctx, scope, req)
+		if resp := resolveField(dispatch, "fixmatchsources", sources, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["fixmatchcurrent"] {
+		current, err := h.fixMatchCurrent(ctx, scope, req)
+		if resp := resolveField(dispatch, "fixmatchcurrent", current, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["fixmatchlockedfields"] {
+		locks, err := h.fixMatchLockedFields(ctx, scope, req)
+		if resp := resolveField(dispatch, "fixmatchlockedfields", locks, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	if fields["identifysearch"] || fields["identifyapply"] || fields["fixmatch"] ||
-		fields["identifylookup"] || fields["fixmatchcandidates"] || fields["fixmatchpreview"] {
+		fields["identifylookup"] || fields["fixmatchcandidates"] || fields["fixmatchchildren"] || fields["fixmatchpreview"] || fields["clearmediaordinal"] {
 		if h.identify == nil {
 			return response{Errors: []graphError{newGraphError(ErrorCodeInternal, "identification unavailable")}}
 		}
@@ -2174,6 +2202,12 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 				return resp
 			}
 		}
+		if fields["fixmatchchildren"] {
+			children, err := h.fixMatchChildren(ctx, scope, req)
+			if resp := resolveField(dispatch, "fixmatchchildren", children, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
 		if fields["identifylookup"] {
 			candidate, err := h.identifyLookup(ctx, scope, req)
 			if resp := resolveField(dispatch, "identifylookup", candidate, err); len(resp.Errors) > 0 {
@@ -2183,6 +2217,12 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 		if fields["fixmatchpreview"] {
 			diff, err := h.fixMatchPreview(ctx, scope, req)
 			if resp := resolveField(dispatch, "fixmatchpreview", diff, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["clearmediaordinal"] {
+			cleared, err := h.clearMediaOrdinal(ctx, scope, req)
+			if resp := resolveField(dispatch, "clearmediaordinal", cleared, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}
@@ -4553,6 +4593,42 @@ func dispatchFieldBlock155(dispatch *fieldDispatchContext) response {
 	if fields["jellyfincompatkeys"] {
 		keys, err := h.jellyfinCompatKeys(ctx)
 		if resp := resolveField(dispatch, "jellyfincompatkeys", keys, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+func dispatchFieldBlock156(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["entitysearch"] {
+		items, err := h.entitySearch(ctx, scope, req)
+		if resp := resolveField(dispatch, "entitysearch", items, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+func dispatchFieldBlock157(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["setmediarelation"] {
+		result, err := h.setMediaRelation(ctx, scope, req)
+		if resp := resolveField(dispatch, "setmediarelation", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["removemediarelation"] {
+		result, err := h.removeMediaRelation(ctx, scope, req)
+		if resp := resolveField(dispatch, "removemediarelation", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

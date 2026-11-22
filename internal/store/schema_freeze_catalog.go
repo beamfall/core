@@ -131,4 +131,6 @@ package store
 // column with no index: entity queries never select or filter on it, and only
 // the identify cleanup reads it, by target Media through the existing
 // to_media index.
-const schemaFreezeCatalogMigrations = 127
+// CORE-3128 adds 0132_media_operator_ordinal, keyed by Media ID and read off the entity-query hot path.
+// CORE-3131 adds 0133_media_relation_operator_lock, with relation locks and catalog-local recovery history.
+const schemaFreezeCatalogMigrations = 129

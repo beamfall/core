@@ -1,6 +1,7 @@
 import { ArrowLeft, ChevronRight, ImageUp, Play, RotateCcw } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
+import { AssignDialog } from "@/components/assign/AssignDialog";
 import { AppShell } from "@/components/chrome/AppShell";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -545,6 +546,21 @@ export function MediaDetailPage() {
                   )}
                   {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} />}
                 </div>
+                {canEditArtwork && media && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      className={buttonVariants({ variant: "outline", size: "sm" })}
+                      to={`/manage/items/${encodeURIComponent(mediaId)}`}
+                    >
+                      {t("assignEditMetadata")}
+                    </Link>
+                    <AssignDialog
+                      key={mediaId}
+                      selection={[{ mediaID: mediaId, title, year: media.year }]}
+                      onChanged={() => setAttempt((n) => n + 1)}
+                    />
+                  </div>
+                )}
                 {media && (
                   <MediaTrackPickers
                     mediaID={mediaId}

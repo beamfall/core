@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/beamfall/core/internal/graphshape"
+	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -48,6 +49,7 @@ var resultTypes = map[string]any{
 	"plugins":                       PluginInfo{},
 	"entity":                        EntityDetailInfo{},
 	"entitiesformedia":              RelatedEntityInfo{},
+	"entitysearch":                  EntitySearchInfo{},
 	"entityrelations":               EntityRelationInfo{},
 	"mediaforentity":                SourceItem{},
 	"mediafiles":                    MediaFileInfo{},
@@ -84,7 +86,11 @@ var resultTypes = map[string]any{
 	"identifysearch":                IdentifyCandidate{},
 	"identifylookup":                IdentifyCandidate{},
 	"fixmatchcandidates":            FixMatchCandidateInfo{},
+	"fixmatchchildren":              scrape.ChildRow{},
+	"fixmatchcurrent":               FixMatchCurrentInfo{},
+	"fixmatchlockedfields":          FixMatchLockedFieldInfo{},
 	"fixmatchpreview":               FixMatchFieldDiff{},
+	"fixmatchsources":               FixMatchSourceInfo{},
 	"unmatchedqueue":                UnmatchedItemInfo{},
 	"unmatchedrecords":              UnmatchedRecordInfo{},
 	"unmatchedsuppressions":         UnmatchedSuppressionInfo{},
@@ -270,10 +276,13 @@ var resultTypes = map[string]any{
 	"mergemedia":                         BatchResultInfo{},
 	"mergeentities":                      BatchResultInfo{},
 	"upsertentityrelation":               RelationWriteResult{},
+	"setmediarelation":                   RelationWriteResult{},
+	"removemediarelation":                RelationWriteResult{},
 	"linkmediarelation":                  RelationWriteResult{},
 	"undobatch":                          BatchResultInfo{},
 	"identifyapply":                      MediaInfo{},
 	"fixmatch":                           MediaInfo{},
+	"clearmediaordinal":                  false,
 	"addmediaexternalid":                 MediaInfo{},
 	"dismissunmatched":                   deleteLibraryResult{},
 	"createmediafromunmatched":           MediaInfo{},
@@ -399,17 +408,58 @@ var resultTypes = map[string]any{
 }
 
 var fieldArguments = map[string][]NestedArgument{
-	"ambientqueue":     sourceArguments(),
-	"entitiesformedia": {{Name: "mediaID", Kind: "string"}, {Name: "relation", Kind: "string"}},
-	"entity":           {{Name: "id", Kind: "string"}},
-	"entityrelations":  {{Name: "entityID", Kind: "string"}, {Name: "relation", Kind: "string", Optional: true}},
+	"clearmediaordinal": {{Name: "mediaID", Kind: "string"}},
+	"ambientqueue":      sourceArguments(),
+	"entitiesformedia":  {{Name: "mediaID", Kind: "string"}, {Name: "relation", Kind: "string", Optional: true}},
+	"entitysearch": {
+		{Name: "kind", Kind: "string"},
+		{Name: "limit", Kind: "int", Optional: true},
+		{Name: "query", Kind: "string"},
+	},
+	"setmediarelation": {
+		{Name: "attributes", Kind: "map", Optional: true, Elem: &NestedArgument{Kind: "string"}},
+		{Name: "entityID", Kind: "string", Optional: true},
+		{Name: "mediaID", Kind: "string"},
+		{Name: "newEntity", Kind: "object", Optional: true, Fields: []NestedArgument{
+			{Name: "kind", Kind: "string"}, {Name: "name", Kind: "string"},
+		}},
+		{Name: "relation", Kind: "string"},
+		{Name: "sortOrder", Kind: "int", Optional: true},
+	},
+	"removemediarelation": {
+		{Name: "entityID", Kind: "string"},
+		{Name: "mediaID", Kind: "string"},
+		{Name: "relation", Kind: "string"},
+	},
+	"entity":          {{Name: "id", Kind: "string"}},
+	"entityrelations": {{Name: "entityID", Kind: "string"}, {Name: "relation", Kind: "string", Optional: true}},
+	"fixmatchchildren": {
+		{Name: "candidateID", Kind: "string"},
+		{Name: "level", Kind: "int"},
+		{Name: "mediaID", Kind: "string"},
+		{Name: "parentKey", Kind: "string", Optional: true},
+		{Name: "pluginID", Kind: "string"},
+		{Name: "scraperID", Kind: "string"},
+	},
 	"fixmatch": {
 		{Name: "candidateID", Kind: "string", Optional: true},
+		{Name: "clearLocks", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string"}},
 		{Name: "importRunID", Kind: "string", Optional: true},
+		{Name: "index", Kind: "int", Optional: true},
 		{Name: "mediaID", Kind: "string"},
 		{Name: "pluginID", Kind: "string", Optional: true},
 		{Name: "recordID", Kind: "string", Optional: true},
 		{Name: "scraperID", Kind: "string", Optional: true},
+		{Name: "sequence", Kind: "string", Optional: true},
+	},
+	"fixmatchpreview": {
+		{Name: "candidateID", Kind: "string"},
+		{Name: "clearLocks", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string"}},
+		{Name: "index", Kind: "int", Optional: true},
+		{Name: "mediaID", Kind: "string"},
+		{Name: "pluginID", Kind: "string"},
+		{Name: "scraperID", Kind: "string"},
+		{Name: "sequence", Kind: "string", Optional: true},
 	},
 	"diagnosticsbundle": diagnosticsBundleArguments(),
 	"importstatus":      {{Name: "jobID", Kind: "string"}},
