@@ -27,11 +27,13 @@ const READ_FRAMEBUFFER = 0x8ca8;
 
 // A WebGL2 context that accepts every call: enough to drive the host's state, not to draw.
 // `blocks` collects each SlideshowBlock uploaded and `blits` the framebuffer each canvas blit
-// read. A program links unless `refuse` refuses one of its shader sources.
+// read. A program links unless `refuse` refuses one of its shader sources; getError reports
+// `errors` first.
 function fakeGL(
   blocks: Float32Array[] = [],
   blits: unknown[] = [],
   refuse: (source: string) => boolean = () => false,
+  errors: number[] = [],
 ): WebGL2RenderingContext {
   let lost = false;
   let read: unknown = null;
@@ -65,7 +67,9 @@ function fakeGL(
     getParameter: () => 4096,
     checkFramebufferStatus: () => 0x8cd5,
     FRAMEBUFFER_COMPLETE: 0x8cd5,
-    getError: () => 0,
+    getError: () => errors.shift() ?? 0,
+    OUT_OF_MEMORY: 0x0505,
+    CONTEXT_LOST_WEBGL: 0x9242,
     NO_ERROR: 0,
   };
   return new Proxy({} as WebGL2RenderingContext, {
@@ -239,9 +243,9 @@ describe("createSlideshowDriver", () => {
 });
 
 describe("SlideshowDriver flash limiter (CORE-2980)", () => {
-  const mount = (blits: unknown[], refuse?: (source: string) => boolean) => {
+  const mount = (blits: unknown[], refuse?: (source: string) => boolean, errors?: number[]) => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
-      fakeGL([], blits, refuse) as unknown as RenderingContext,
+      fakeGL([], blits, refuse, errors) as unknown as RenderingContext,
     );
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
       new DOMRect(0, 0, 160, 90),
@@ -287,10 +291,12 @@ describe("SlideshowDriver flash limiter (CORE-2980)", () => {
   it("fades through the limiter when the stage changes size, then starts after black", async () => {
     const blits: unknown[] = [];
     const spend = vi.spyOn(FrameLimiter.prototype, "spend");
-    const { driver, run, tick } = mount(blits);
+    const { driver, canvas, run, tick } = mount(blits);
     await new Promise((resolve) => setTimeout(resolve));
     run(1600);
     const starts = spend.mock.calls.length;
+    // The canvas keeps the screen pixels its frame started on.
+    expect(canvas?.style.width).toBe("160px");
     vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue(
       new DOMRect(0, 0, 320, 180),
     );
@@ -302,6 +308,21 @@ describe("SlideshowDriver flash limiter (CORE-2980)", () => {
     const shown = blits.length;
     run(1000);
     expect(blits.length).toBeGreaterThan(shown);
+    expect(blits.at(-1)).toBe(L.fOut[L.cur]);
+    expect(canvas?.style.width).toBe("160px");
+
+    // FADE_S of credited time, then BLACK_S of black, then a frame at the new size.
+    run(1200);
+    const faded = blits.length;
+    run(1000);
+    expect(blits.length).toBe(faded);
+    expect(canvas?.style.width).toBe("");
+    run(1500);
+    const [next] = spend.mock.calls.at(-1) as [Limiter];
+    expect(next).not.toBe(L);
+    expect(next.window.limit).toBeGreaterThan(0);
+    expect(blits.at(-1)).toBe(next.fOut[next.cur]);
+    expect(canvas?.style.width).toBe("320px");
     driver.dispose();
   });
 
@@ -315,6 +336,15 @@ describe("SlideshowDriver flash limiter (CORE-2980)", () => {
     driver.advance(slide, next);
     run(2000);
     expect(canvas?.hidden).toBe(true);
+    expect(blits).toEqual([]);
+    driver.dispose();
+  });
+
+  it("hard-cuts when the limiter's uniform buffer runs out of memory", async () => {
+    const blits: unknown[] = [];
+    const { driver, canvas, run } = mount(blits, undefined, [0x0505]);
+    await vi.waitFor(() => expect(canvas?.hidden).toBe(true));
+    run(2000);
     expect(blits).toEqual([]);
     driver.dispose();
   });

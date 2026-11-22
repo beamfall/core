@@ -94,6 +94,9 @@ interface Want {
   width: number;
   height: number;
   texel: number;
+  /** The stage's size in CSS pixels, which the canvas keeps while this frame size stands. */
+  cssWidth: number;
+  cssHeight: number;
 }
 
 export interface SlideshowDriverOptions {
@@ -282,6 +285,9 @@ export class SlideshowDriver {
     gl.uniformBlockBinding(present, gl.getUniformBlockIndex(present, "PresentBlock"), 0);
     const limiterPrograms = linkLimiter(gl, limiterSource, (v, f) => this.program(v, f, []));
     const flash = new FrameLimiter(gl, limiterPrograms);
+    // Out of memory is reported through the error state, not thrown: a limiter without its
+    // uniform buffer would judge nothing.
+    if (outOfMemory(gl)) throw new Error("slideshow: out of memory for the flash limiter");
     const quad = must(gl.createBuffer());
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
@@ -493,13 +499,19 @@ export class SlideshowDriver {
       t.limiter.window = { ...t.limiter.window, limit: 0 };
     }
     if (!t || !gpu) {
+      // A stage with no pixels shows no black: the hold counts from the first black frame seen.
+      if (!want) {
+        this.resetBlack();
+        this.presentBlack();
+        return;
+      }
       if (this.blackShown && !this.blackOver) {
         const ms = Math.min(shownMs * scale, BLACK_CREDIT_MS);
         this.blackMs += ms;
         this.blackLongestMs = Math.max(this.blackLongestMs, ms);
       }
       this.blackShown = true;
-      if (!gpu || !want || !this.current || !this.blackOver) {
+      if (!gpu || !this.current || !this.blackOver) {
         this.presentBlack();
         return;
       }
@@ -656,10 +668,11 @@ export class SlideshowDriver {
   }
 
   // The frame size for the stage's size in device pixels: within the limiter's frame sizes
-  // (frameSize) and the texture limit, keeping aspect. Null while the stage has no pixels.
+  // (frameSize) and the texture limit, keeping aspect. Null while the stage has no pixels. The
+  // stage's, not the canvas's: the canvas keeps the size its frame started at (start).
   private measure(): Want | null {
     const gl = this.gl;
-    const r = this.canvas.getBoundingClientRect();
+    const r = (this.canvas.parentElement ?? this.canvas).getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     const pw = Math.round(r.width * dpr);
     const ph = Math.round(r.height * dpr);
@@ -669,7 +682,13 @@ export class SlideshowDriver {
       Math.max(1, Math.round(pw * k)),
       Math.max(1, Math.round(ph * k)),
     );
-    return { width, height, texel: Math.max(1, pw / width) };
+    return {
+      width,
+      height,
+      texel: Math.max(1, pw / width),
+      cssWidth: r.width,
+      cssHeight: r.height,
+    };
   }
 
   // Allocates a frame size's targets, the limiter's black with every budget spent. Whatever was
@@ -689,6 +708,10 @@ export class SlideshowDriver {
     try {
       this.canvas.width = width;
       this.canvas.height = height;
+      // The frame keeps the screen pixels it starts on until it has faded to black: a stage that
+      // changes size never stretches a frame the limiter judged at another (renderer.ts shown).
+      this.canvas.style.width = `${want.cssWidth}px`;
+      this.canvas.style.height = `${want.cssHeight}px`;
       const scene = tex(internal, type, gl.LINEAR);
       const frame = tex(gl.RGBA8, gl.UNSIGNED_BYTE, gl.NEAREST);
       const history = [0, 1].map(() => {
@@ -705,6 +728,8 @@ export class SlideshowDriver {
         gpu.flash.free(limiter);
         throw new Error("slideshow: flash limiter targets incomplete");
       }
+      // Out of memory is reported through the error state, not thrown.
+      if (outOfMemory(gl)) throw new Error("slideshow: out of memory for the frame's targets");
       const next = { width, height, scene, sceneFbo, frame, history, limiter };
       this.targets = next;
       return next;
@@ -719,6 +744,8 @@ export class SlideshowDriver {
     const gl = this.gl;
     this.gpu?.flash.free(t.limiter);
     this.fadeLeft = 0;
+    this.canvas.style.width = "";
+    this.canvas.style.height = "";
     gl.deleteFramebuffer(t.sceneFbo);
     gl.deleteTexture(t.scene);
     gl.deleteTexture(t.frame);
@@ -786,6 +813,15 @@ export class SlideshowDriver {
 function decoded(image: HTMLImageElement): Promise<HTMLImageElement> {
   if (image.complete && image.naturalWidth > 0) return Promise.resolve(image);
   return image.decode().then(() => image);
+}
+
+// Whether any error the context holds is OUT_OF_MEMORY, clearing them all.
+function outOfMemory(gl: WebGL2RenderingContext): boolean {
+  let oom = false;
+  for (let e = gl.getError(); e !== gl.NO_ERROR && e !== gl.CONTEXT_LOST_WEBGL; e = gl.getError()) {
+    if (e === gl.OUT_OF_MEMORY) oom = true;
+  }
+  return oom;
 }
 
 function must<T>(value: T | null): T {
