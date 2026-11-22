@@ -42,6 +42,9 @@ import {
 } from "../lib/playback";
 import { previousInPlayQueue } from "../lib/playQueue";
 import {
+  containerSpeedKey,
+  encodeBool,
+  PREF_KEYS,
   resolvePreferences,
   type SkipInterval,
   skipIntervalOverrideKey,
@@ -54,6 +57,7 @@ import {
   SUBTITLE_APPEARANCE_KEYS,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
+import { chapterSeekTarget, chapterStartTimes } from "../lib/transport";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
@@ -66,6 +70,8 @@ import {
 import { readWatchPartyIntent } from "../lib/watchTogether";
 import { AudioStage } from "../player/AudioStage";
 import { KaraokeControls } from "../player/KaraokeControls";
+import { ListeningControls, type SleepChoice } from "../player/ListeningControls";
+import { clampSpeed, resolveSpeed, speedValue } from "../player/listening";
 import { MiniPlayer } from "../player/MiniPlayer";
 import { NowPlayingDetails, type UpNextItem } from "../player/NowPlayingDetails";
 import {
@@ -88,6 +94,7 @@ import { type PartySeekAutoSkip, useAutoSkip } from "../player/useAutoSkip";
 import { useCaptionLoad } from "../player/useCaptionLoad";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
 import { decodableStream, handBack, useGaplessAudio } from "../player/useGaplessAudio";
+import { useLongPauseSkip, usePlaybackSpeed, useSleepTimer } from "../player/useListening";
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
@@ -611,6 +618,19 @@ function FeaturePlayer({
   const partyLeadsRef = useRef(partyLeads);
   partyLeadsRef.current = partyLeads;
 
+  // Listening controls on the audio stage (CORE-2960). The persisted speed and
+  // pause removal stand down for a karaoke song (its tempo is the server's) and
+  // while a Watch Party owns the rate and the timeline.
+  const partyActive = watchParty.party.status === "active";
+  const listening = showAudioStage && !karaokeSong && songScale === 1 && !partyActive;
+  const savedSpeed = resolveSpeed(clientPrefs, collectionID);
+  const [speedDraft, setSpeedDraft] = useState<number | null>(null);
+  const speed = speedDraft ?? savedSpeed.speed;
+  usePlaybackSpeed(videoRef, speed, listening, partyActive);
+  const silenceMapURL = infoIsCurrent ? state.info?.assets?.silenceMap : undefined;
+  const pauses = useLongPauseSkip(videoRef, silenceMapURL, listening && resolvedPrefs.trimSilence);
+  const sleep = useSleepTimer(videoRef, mediaId || "");
+
   // Up Next auto-advance: the server-issued next Media (a queue's next item
   // when one was declared, else the server's own next-item pick).
   const advanceToNext = useCallback(
@@ -901,6 +921,7 @@ function FeaturePlayer({
     onNextTrack: playNext,
     onPreviousTrack: playPrevious,
     songScale,
+    skipSeconds: Number(resolvedPrefs.skipInterval),
   });
 
   // A relock during playback drops restricted content from every view at once
@@ -1033,6 +1054,50 @@ function FeaturePlayer({
   const resetSubtitleAppearance = useCallback(
     () => storePrefs(Object.values(SUBTITLE_APPEARANCE_KEYS).map((key) => ({ key, value: "" }))),
     [storePrefs],
+  );
+
+  // A chosen speed goes to the container's own key while its override is on,
+  // else to the Profile's default (CORE-2960).
+  const speedKey = containerSpeedKey(collectionID);
+  const forContainer = savedSpeed.fromContainer && speedKey !== "";
+  const setSpeed = useCallback(
+    (next: number) => {
+      setSpeedDraft(null);
+      storePrefs([
+        {
+          key: forContainer ? speedKey : PREF_KEYS.playbackSpeedDefault,
+          value: speedValue(next),
+        },
+      ]);
+    },
+    [storePrefs, forContainer, speedKey],
+  );
+  const previewSpeed = useCallback((next: number) => setSpeedDraft(clampSpeed(next)), []);
+  const setSpeedForContainer = useCallback(
+    (on: boolean) => {
+      if (!speedKey) return;
+      storePrefs([{ key: speedKey, value: on ? speedValue(speed) : "" }]);
+    },
+    [storePrefs, speedKey, speed],
+  );
+  const setRemovePauses = useCallback(
+    (on: boolean) => storePrefs([{ key: PREF_KEYS.trimSilence, value: encodeBool(on) }]),
+    [storePrefs],
+  );
+  const { setTimer: setSleepTimer } = sleep;
+  const chooseSleep = useCallback(
+    (choice: SleepChoice) => {
+      const video = videoRef.current;
+      if (choice === "off" || !video) return setSleepTimer(null);
+      if (choice === "item") return setSleepTimer({ kind: "item" });
+      if (choice === "chapter") {
+        const end = chapterSeekTarget(state.markers, video.currentTime, 1);
+        return setSleepTimer(end === null ? { kind: "item" } : { kind: "chapter", end });
+      }
+      const minutes = Number(choice);
+      setSleepTimer({ kind: "minutes", minutes, until: Date.now() + minutes * 60_000 });
+    },
+    [setSleepTimer, state.markers],
   );
 
   const shareAt = useCallback(
@@ -1178,6 +1243,25 @@ function FeaturePlayer({
                 }
                 mediaID={mediaId || ""}
               >
+                {listening && (
+                  <ListeningControls
+                    container={stageRef}
+                    speed={speed}
+                    onSpeedPreview={previewSpeed}
+                    onSpeed={setSpeed}
+                    containerTitle={speedKey ? collectionTitle : ""}
+                    forContainer={forContainer}
+                    onForContainer={setSpeedForContainer}
+                    removePauses={resolvedPrefs.trimSilence}
+                    onRemovePauses={setRemovePauses}
+                    pausesMapped={pauses.mapped}
+                    savedSeconds={pauses.saved}
+                    sleep={sleep.timer}
+                    sleepRemaining={sleep.remaining}
+                    canSleepAtChapter={chapterStartTimes(state.markers).length > 0}
+                    onSleep={chooseSleep}
+                  />
+                )}
                 <NowPlayingDetails
                   quality={infoIsCurrent ? activeQuality(state.info, state.stream) : null}
                   upNext={upNextItems}

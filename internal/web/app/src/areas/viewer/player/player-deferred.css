@@ -1358,6 +1358,178 @@
   outline-offset: 1px;
 }
 
+/* Listening controls (CORE-2960): Speed, Remove long pauses and the sleep
+   timer in one row under the words. */
+.bf-listen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  pointer-events: auto;
+}
+
+.bf-listen-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 22%, transparent);
+  border-radius: 999px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--on-scrim) 90%, var(--on-scrim-muted));
+  background: color-mix(in oklab, var(--scrim) 55%, transparent);
+  cursor: pointer;
+}
+
+.bf-listen-chip:hover,
+.bf-listen-chip[data-popup-open] {
+  background: color-mix(in oklab, var(--on-scrim) 14%, var(--scrim));
+}
+
+.bf-listen-chip[data-active] {
+  border-color: var(--accent);
+  color: var(--on-scrim);
+}
+
+.bf-listen-chip:focus-visible,
+.bf-listen-preset:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-listen-pauses {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 36px;
+  font-size: 13px;
+  color: color-mix(in oklab, var(--on-scrim) 90%, var(--on-scrim-muted));
+}
+
+.bf-listen-pauses label {
+  cursor: pointer;
+}
+
+.bf-listen-note {
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--on-scrim) 65%, var(--on-scrim-muted));
+}
+
+/* The popover and menu portal into the stage, above the words and transport. */
+.bf-listen-positioner {
+  z-index: 7;
+}
+
+.bf-listen-popup {
+  gap: 14px;
+  width: min(300px, calc(100vw - 24px));
+  padding: 14px 16px 16px;
+}
+
+.bf-listen-popup-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.bf-listen-popup-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bf-listen-speed {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.bf-listen-popup .bf-slider-control {
+  position: relative;
+  width: 100%;
+}
+
+.bf-listen-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.bf-listen-preset {
+  min-height: 36px;
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 18%, transparent);
+  border-radius: 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.bf-listen-preset:hover {
+  background: color-mix(in oklab, var(--on-scrim) 9%, transparent);
+}
+
+.bf-listen-preset[aria-pressed="true"] {
+  border-color: var(--accent);
+  font-weight: 600;
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+}
+
+.bf-listen-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.bf-listen-toggle label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.bf-listen-menu .bf-menu-option[data-checked] {
+  font-weight: 600;
+}
+
+.bf-listen-menu .bf-menu-option[data-checked]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 13px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  transform: translateY(-50%);
+}
+
+@media (hover: none) {
+  .bf-listen-chip,
+  .bf-listen-preset {
+    min-height: 44px;
+  }
+}
+
+/* Over a live visual the row gets the same plate as the words. */
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-listen-chip,
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-listen-pauses {
+  background: color-mix(in oklab, var(--scrim) 78%, transparent);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-listen-pauses {
+  padding: 0 12px;
+  border-radius: 999px;
+}
+
 /* Shuffle and repeat show their state in the accent colour. */
 .bf-transport .bf-control[aria-pressed="true"],
 .bf-transport .bf-control[data-repeat="all"],
@@ -1484,6 +1656,10 @@
 
   .bf-audio-quality {
     align-self: center;
+  }
+
+  .bf-listen {
+    justify-content: center;
   }
 
   /* A phone keeps the artwork large: Up Next names only the next item. */

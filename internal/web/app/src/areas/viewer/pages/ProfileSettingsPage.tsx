@@ -37,7 +37,6 @@ import {
   type DownstreamAudioMode,
   encodeBool,
   PLAYBACK_SPEEDS,
-  type PlaybackSpeed,
   PRE_PLAY_EXTRAS,
   PREF_KEYS,
   type PrePlayExtras,
@@ -317,7 +316,7 @@ export function ProfileSettingsPage() {
                 value={prefs.playbackSpeed}
                 onValueChange={(v) =>
                   persist(PREF_KEYS.playbackSpeedDefault, v, {
-                    playbackSpeed: v as PlaybackSpeed,
+                    playbackSpeed: v,
                   })
                 }
               >
@@ -325,11 +324,14 @@ export function ProfileSettingsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PLAYBACK_SPEEDS.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}×
-                    </SelectItem>
-                  ))}
+                  {/* A speed set on the audio stage's slider shows as its own choice. */}
+                  {[...new Set<string>([...PLAYBACK_SPEEDS, prefs.playbackSpeed])]
+                    .sort((a, b) => Number(a) - Number(b))
+                    .map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}×
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

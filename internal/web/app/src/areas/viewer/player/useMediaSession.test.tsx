@@ -149,6 +149,17 @@ describe("useMediaSession", () => {
     expect(video.currentTime).toBe(100);
   });
 
+  it("steps by the listener's skip interval when the OS names no offset", () => {
+    const { video } = setup({ skipSeconds: 30 });
+    video.currentTime = 50;
+    handlers.get("seekforward")?.({});
+    expect(video.currentTime).toBe(80);
+    handlers.get("seekbackward")?.();
+    expect(video.currentTime).toBe(50);
+    handlers.get("seekbackward")?.({ seekOffset: 5 });
+    expect(video.currentTime).toBe(45);
+  });
+
   it("mirrors playbackState and position from video events", () => {
     const { video } = setup();
     video.paused = false;

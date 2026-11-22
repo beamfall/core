@@ -1139,28 +1139,31 @@ export function PlayerTransport({
                 <p aria-hidden="true" className="bf-settings-title">
                   {t("playbackSettings")}
                 </p>
-                <label className="bf-settings-row">
-                  <span aria-hidden="true" className="bf-settings-tile">
-                    <Gauge />
-                  </span>
-                  <span className="bf-settings-label">{t("playbackSpeed")}</span>
-                  <NativeSelect
-                    aria-label={t("playbackSpeed")}
-                    className="bf-settings-select"
-                    value={String(playbackRate)}
-                    onValueChange={(value) => {
-                      const next = Number(value);
-                      if (videoRef.current) videoRef.current.playbackRate = next;
-                      setPlaybackRate(next);
-                    }}
-                  >
-                    {SPEEDS.map((speed) => (
-                      <option key={speed} value={speed}>
-                        {speed}×
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </label>
+                {/* The audio stage has its own persisted Speed control (CORE-2960). */}
+                {!audioStage && (
+                  <label className="bf-settings-row">
+                    <span aria-hidden="true" className="bf-settings-tile">
+                      <Gauge />
+                    </span>
+                    <span className="bf-settings-label">{t("playbackSpeed")}</span>
+                    <NativeSelect
+                      aria-label={t("playbackSpeed")}
+                      className="bf-settings-select"
+                      value={String(playbackRate)}
+                      onValueChange={(value) => {
+                        const next = Number(value);
+                        if (videoRef.current) videoRef.current.playbackRate = next;
+                        setPlaybackRate(next);
+                      }}
+                    >
+                      {SPEEDS.map((speed) => (
+                        <option key={speed} value={speed}>
+                          {speed}×
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                )}
                 <TransportMenu
                   label={t("audio")}
                   ariaLabel={t("audio")}
