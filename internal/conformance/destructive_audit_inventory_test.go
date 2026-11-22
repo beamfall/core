@@ -173,6 +173,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"PlayHistory":                             {},
 	"PlayQueue":                               {},
 	"PlayStats":                               {},
+	"PlayedMedia":                             {}, // CORE-2959: read-only played set
 	"PlaybackProgressFor":                     {},
 	"PlaybackRenditionCacheHealth":            {},
 	"PluginActivations":                       {},

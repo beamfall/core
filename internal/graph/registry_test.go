@@ -45,6 +45,7 @@ var originalScopedFields = []string{
 	"refreshsubscription",
 	"setsubscriptiondownloadpolicy",
 	"subscriptionentries",
+	"subscriptionfollow", // CORE-2959: viewer-safe follow state and route
 	"apikeys",
 	"apitokens",
 	"artworkcandidates",
