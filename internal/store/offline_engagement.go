@@ -102,10 +102,9 @@ func (s *Store) ApplyOfflineEngagementEvent(ctx context.Context, ev OfflineEngag
 	}
 	var priorWatched int
 	var priorEventTime sql.NullInt64
-	var priorUpdatedAt int64
 	err = tx.QueryRowContext(ctx, `
-		SELECT watched, event_time_ms, updated_at_ms FROM playback_progress WHERE profile_id = ? AND media_id = ?
-	`, progress.ProfileID, progress.MediaID).Scan(&priorWatched, &priorEventTime, &priorUpdatedAt)
+		SELECT watched, event_time_ms FROM playback_progress WHERE profile_id = ? AND media_id = ?
+	`, progress.ProfileID, progress.MediaID).Scan(&priorWatched, &priorEventTime)
 	hasPrior := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return OfflineEngagementOutcome{}, err
@@ -118,7 +117,7 @@ func (s *Store) ApplyOfflineEngagementEvent(ctx context.Context, ev OfflineEngag
 	}
 	priorTime := int64(0)
 	if hasPrior {
-		priorTime, err = priorPositionTimeMS(ctx, tx, progress.ProfileID, progress.MediaID, priorEventTime, priorUpdatedAt)
+		priorTime, err = priorPositionTimeMS(ctx, tx, progress.ProfileID, progress.MediaID, priorEventTime)
 		if err != nil {
 			return OfflineEngagementOutcome{}, err
 		}
@@ -148,10 +147,12 @@ func (s *Store) ApplyOfflineEngagementEvent(ctx context.Context, ev OfflineEngag
 }
 
 // priorPositionTimeMS is when the stored position was set: its event time, or,
-// for a report that carried none, when the server received the latest report
-// that moved the position. updated_at_ms is the last resort only, because an
-// import moves it without moving the position.
-func priorPositionTimeMS(ctx context.Context, tx *sql.Tx, profileID ProfileID, mediaID MediaID, eventTime sql.NullInt64, updatedAt int64) (int64, error) {
+// for a report that carried none, when the server received the latest native
+// report that set it. Imports and version merges are not counted: they log a
+// time without setting the position from a play here. With no such report the
+// position is undated and the offline event wins, as a timed online report
+// beats an untimed row (positionAdvancedPredicate).
+func priorPositionTimeMS(ctx context.Context, tx *sql.Tx, profileID ProfileID, mediaID MediaID, eventTime sql.NullInt64) (int64, error) {
 	if eventTime.Valid {
 		return eventTime.Int64, nil
 	}
@@ -159,14 +160,11 @@ func priorPositionTimeMS(ctx context.Context, tx *sql.Tx, profileID ProfileID, m
 	err := tx.QueryRowContext(ctx, `
 		SELECT MAX(created_at_ms) FROM engagement_event
 		WHERE profile_id = ? AND media_id = ? AND kind = ?
-		  AND json_extract(payload, '$.operation') IN (?, ?, ?)
+		  AND json_extract(payload, '$.operation') IN (?, ?)
 	`, profileID, mediaID, playbackProjectionEventKind,
-		playbackProjectionOperationProgress, playbackProjectionOperationMark, playbackProjectionOperationVersionMerge).Scan(&positioned)
+		playbackProjectionOperationProgress, playbackProjectionOperationMark).Scan(&positioned)
 	if err != nil {
 		return 0, err
 	}
-	if positioned.Valid {
-		return positioned.Int64, nil
-	}
-	return updatedAt, nil
+	return positioned.Int64, nil
 }

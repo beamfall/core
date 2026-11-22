@@ -271,6 +271,25 @@ func TestOfflineEngagementImportDoesNotHideNewerPlay(t *testing.T) {
 	}
 }
 
+// A position only an import or merge has dated is undated: a later import
+// timestamp must not make an offline play look stale and lose it for good.
+func TestOfflineEngagementImportOnlyRowTakesOfflinePlay(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	later := time.Now().Add(2 * time.Hour).UnixMilli()
+	if _, err := st.eventsW.ExecContext(ctx, `INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, watched, updated_at_ms, play_count)
+		VALUES ('profile-default', 'media-alpha', 0, 0, 0, ?, 3)`, later); err != nil {
+		t.Fatal(err)
+	}
+	ev := offlineEvent("profile-default", "evt-import-only", 300, false, time.Now().Add(-time.Hour))
+	if _, err := st.ApplyOfflineEngagementEvent(ctx, ev); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustProgress(t, st, "profile-default"); got.PositionSeconds != 300 {
+		t.Fatalf("position = %d, want 300 from the offline play", got.PositionSeconds)
+	}
+}
+
 // An older offline completion over newer untimed state still completes, but
 // never moves the stored event time backward.
 func TestOfflineEngagementOldCompletionKeepsEventTime(t *testing.T) {
