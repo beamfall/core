@@ -192,8 +192,11 @@ func containerKindNames(bundle plugin.Bundle) map[string]bool {
 // its display title (its ID unchanged), its poster and other artwork slots are
 // applied like any hydrated Entity poster, and its links relate it to the
 // Entities sibling maps hydrated. A result whose kind holds no Entity for this
-// Media is skipped; nothing is created.
-func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.MediaID, library store.LibraryID, bundle plugin.Bundle, results []scrape.EntityResult) error {
+// Media is skipped; nothing is created. holderLinks keys each kind the scraper
+// links the Media to through a holder link map, with the holders this lookup
+// linked: a result of such a kind applies only to one of those, never to a
+// holder an operator or another writer linked (CORE-3152).
+func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.MediaID, library store.LibraryID, bundle plugin.Bundle, results []scrape.EntityResult, holderLinks map[string][]store.EntityID) error {
 	if len(results) == 0 {
 		return nil
 	}
@@ -210,6 +213,9 @@ func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.Medi
 		target, ok := containerOfKind(chain, result.Kind)
 		if !ok {
 			slog.Debug("identify: no container entity of kind holds the media", "media", mediaID, "kind", result.Kind)
+			continue
+		}
+		if linked, owned := holderLinks[result.Kind]; owned && !slices.Contains(linked, target) {
 			continue
 		}
 		if fields := entityFields(bundle, result); len(fields) > 0 || result.Title != "" || len(result.Links) > 0 {

@@ -26,7 +26,8 @@ const opKindMergeEntity = "merge-entity"
 
 // entityRelationRow is one entity_relation row captured for the merge journal:
 // every column, so undo re-inserts it verbatim. Exactly one of ToEntityID /
-// ToMediaID is non-empty (the table's CHECK); SortOrder is nil when unordered.
+// ToMediaID is non-empty (the table's CHECK); SortOrder is nil when unordered
+// and Writer is nil for an operator's or unattributed row (CORE-3152).
 type entityRelationRow struct {
 	FromEntityID EntityID `json:"from"`
 	Relation     string   `json:"rel"`
@@ -34,6 +35,7 @@ type entityRelationRow struct {
 	ToMediaID    MediaID  `json:"toMedia,omitempty"`
 	Attributes   *string  `json:"attrs,omitempty"`
 	SortOrder    *int64   `json:"sort,omitempty"`
+	Writer       *string  `json:"writer,omitempty"`
 }
 
 // entityMergeItemState is the per-loser merge journal snapshot: the winner's id,
@@ -318,7 +320,7 @@ func entityLibraryVisibleTx(ctx context.Context, tx *sql.Tx, id EntityID, filter
 // in either role (from or to), inside a transaction, for the merge journal.
 func entityRelationRowsTx(ctx context.Context, tx *sql.Tx, id EntityID) ([]entityRelationRow, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT from_entity_id, relation, to_entity_id, to_media_id, attributes, sort_order
+		SELECT from_entity_id, relation, to_entity_id, to_media_id, attributes, sort_order, writer
 		FROM entity_relation
 		WHERE from_entity_id = ? OR to_entity_id = ?
 	`, id, id)
@@ -332,7 +334,8 @@ func entityRelationRowsTx(ctx context.Context, tx *sql.Tx, id EntityID) ([]entit
 		var toEntity, attrs sql.NullString
 		var toMedia sql.NullString
 		var sortOrder sql.NullInt64
-		if err := rows.Scan(&row.FromEntityID, &row.Relation, &toEntity, &toMedia, &attrs, &sortOrder); err != nil {
+		var writer sql.NullString
+		if err := rows.Scan(&row.FromEntityID, &row.Relation, &toEntity, &toMedia, &attrs, &sortOrder, &writer); err != nil {
 			return nil, err
 		}
 		if toEntity.Valid {
@@ -348,6 +351,10 @@ func entityRelationRowsTx(ctx context.Context, tx *sql.Tx, id EntityID) ([]entit
 		if sortOrder.Valid {
 			value := sortOrder.Int64
 			row.SortOrder = &value
+		}
+		if writer.Valid {
+			value := writer.String
+			row.Writer = &value
 		}
 		out = append(out, row)
 	}
@@ -431,10 +438,14 @@ func undoMergeEntityItemTx(ctx context.Context, tx *sql.Tx, s *Store, item opBat
 		if row.SortOrder != nil {
 			sortArg = *row.SortOrder
 		}
+		var writerArg any
+		if row.Writer != nil {
+			writerArg = *row.Writer
+		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT OR IGNORE INTO entity_relation(from_entity_id, relation, to_entity_id, to_media_id, attributes, sort_order)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`, row.FromEntityID, row.Relation, toEntityArg, toMediaArg, attrsArg, sortArg); err != nil {
+			INSERT OR IGNORE INTO entity_relation(from_entity_id, relation, to_entity_id, to_media_id, attributes, sort_order, writer)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, row.FromEntityID, row.Relation, toEntityArg, toMediaArg, attrsArg, sortArg, writerArg); err != nil {
 			return err
 		}
 	}

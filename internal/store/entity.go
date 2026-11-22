@@ -97,6 +97,19 @@ type EntityRelation struct {
 	// upsert: only a new row takes Attributes. For writers that re-order or
 	// re-link a row without carrying its attributes (CORE-2913).
 	KeepAttributes bool
+	// Writer is the automated writer that owns a Media-target row, for
+	// example a scraper's key; empty means an operator or an unattributed
+	// writer. Every upsert records its own Writer, so an operator re-linking a
+	// scraper's row takes it over. Automated cleanup
+	// (RemoveWrittenMediaRelations) removes only rows its own Writer owns.
+	Writer string
+}
+
+// WrittenRelation names the Media-target rows one automated cleanup may
+// remove: rows under relation Name from a source Entity of Kind.
+type WrittenRelation struct {
+	Kind string
+	Name string
 }
 
 // RelatedEntity pairs an Entity with the attributes of the relation row that
@@ -120,6 +133,18 @@ type EntityRelationRow struct {
 // values. Like ImportMediaFile this is a server-internal write path (scan,
 // scraper, identification) — reads are reveal-filtered, writes are not.
 func (s *Store) UpsertEntity(ctx context.Context, entity Entity) error {
+	return s.upsertEntity(ctx, entity, false)
+}
+
+// UpsertEntityKeepTitle is UpsertEntity for a writer that does not own the
+// title: entity.Title only titles a new row, and an existing row, trashed or
+// not, keeps its stored title inside the same write transaction, so a
+// concurrent rename is never overwritten. Field values are replaced.
+func (s *Store) UpsertEntityKeepTitle(ctx context.Context, entity Entity) error {
+	return s.upsertEntity(ctx, entity, true)
+}
+
+func (s *Store) upsertEntity(ctx context.Context, entity Entity, keepTitle bool) error {
 	// Authority face: an Entity is a catalog-identity row. An
 	// Attached node identifies locally (probe/parse — byte-local), but the
 	// row-authoring side-effect of Identification is main-only; it index-pushes.
@@ -173,14 +198,24 @@ func (s *Store) UpsertEntity(ctx context.Context, entity Entity) error {
 		return err
 	}
 	defer tx.Rollback()
+	titleUpdate := "excluded.title"
+	if keepTitle {
+		titleUpdate = "entity.title"
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO entity(id, library_id, kind, title) VALUES (?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 		  library_id = excluded.library_id,
 		  kind = excluded.kind,
-		  title = excluded.title
+		  title = `+titleUpdate+`
 	`, entity.ID, entity.LibraryID, entity.Kind, entity.Title); err != nil {
 		return err
+	}
+	if keepTitle {
+		// The search document and title fold below index the stored title.
+		if err := tx.QueryRowContext(ctx, `SELECT title FROM entity WHERE id = ?`, entity.ID).Scan(&entity.Title); err != nil {
+			return err
+		}
 	}
 	for _, table := range entityFieldTables {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE entity_id = ?`, entity.ID); err != nil {
@@ -532,6 +567,51 @@ func (s *Store) ReplaceMediaRelations(ctx context.Context, mediaID MediaID, rela
 	return tx.Commit()
 }
 
+// RemoveWrittenMediaRelations deletes one Media's Media-target rows that
+// writer owns, under each relation from a source Entity of that relation's
+// Kind, in one transaction. Rows an operator or another writer owns, other
+// relation names, other source kinds and other Media are left as they are; no
+// relations removes nothing.
+func (s *Store) RemoveWrittenMediaRelations(ctx context.Context, mediaID MediaID, writer string, relations []WrittenRelation) error {
+	// Authority face: Entity-relation catalog rows are main-only.
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	if mediaID == "" {
+		return errors.New("relation target media is required")
+	}
+	if writer == "" {
+		return errors.New("relation writer is required")
+	}
+	if len(relations) == 0 {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
+		return err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, relation := range relations {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM entity_relation
+			WHERE to_media_id = ? AND relation = ? AND writer = ?
+			  AND from_entity_id IN (SELECT id FROM entity WHERE kind = ?)
+		`, mediaID, relation.Name, writer, relation.Kind); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // ReplaceEntityRelations rewrites the Entity-target relations of one source
 // Entity under each of names: the source's previous Entity-target rows under
 // those names are deleted and the given rows inserted, in one transaction, so
@@ -644,12 +724,12 @@ func entityRelationRowValues(relation EntityRelation) (attributes, sortOrder any
 
 func insertMediaRelationTx(ctx context.Context, tx *sql.Tx, relation EntityRelation, attributes, sortOrder any) error {
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO entity_relation(from_entity_id, relation, to_media_id, attributes, sort_order)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO entity_relation(from_entity_id, relation, to_media_id, attributes, sort_order, writer)
+		VALUES (?, ?, ?, ?, ?, NULLIF(?, ''))
 		ON CONFLICT(from_entity_id, relation, to_media_id) WHERE to_media_id IS NOT NULL
 		DO UPDATE SET attributes = CASE WHEN ? THEN entity_relation.attributes ELSE excluded.attributes END,
-			sort_order = excluded.sort_order
-	`, relation.FromEntityID, relation.Name, relation.ToMediaID, attributes, sortOrder, relation.KeepAttributes)
+			sort_order = excluded.sort_order, writer = excluded.writer
+	`, relation.FromEntityID, relation.Name, relation.ToMediaID, attributes, sortOrder, relation.Writer, relation.KeepAttributes)
 	return err
 }
 

@@ -94,6 +94,9 @@ package store
 //     owning Library plane. The same 2026-11-18 benchmark recorded beside the
 //     catalog marker passed; source fingerprints never enter the shared DB.
 //
+//   - encrypted-library 0012 (CORE-3152) mirrors catalog 0131's nullable
+//     entity_relation.writer column, read only by the identify cleanup.
+//
 // Every entry above rode the `make bench` gate at the migration that introduced
 // it, and each sits off the entity-query hot path.
 //
@@ -111,5 +114,5 @@ package store
 // Profile playback state without changing entity queries.
 const (
 	schemaFreezeEventsMigrations           = 26
-	schemaFreezeEncryptedLibraryMigrations = 11
+	schemaFreezeEncryptedLibraryMigrations = 12
 )
