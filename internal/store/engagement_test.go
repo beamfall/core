@@ -127,6 +127,41 @@ func TestPlaybackEventTimeGuardsPositionAgainstStaleReplay(t *testing.T) {
 	}
 }
 
+// TestOfflineAudiobookProgressKeepsNewerPosition is CORE-3016: an audiobook
+// listened to from an offline pack syncs its progress back late, and that
+// replay must not clobber a newer position another device already reported.
+func TestOfflineAudiobookProgressKeepsNewerPosition(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	resume := true
+	policy := ResumePolicy{Class: MediaClassAudio, Override: &resume}
+	report := func(position, eventTimeMS int) {
+		t.Helper()
+		if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+			ProfileID: "profile-default", MediaID: "media-alpha",
+			PositionSeconds: position, DurationSeconds: 36000, EventTimeMS: int64(eventTimeMS),
+		}, false, policy); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := func(position int, eventTimeMS int64) {
+		t.Helper()
+		stored, ok, err := st.PlaybackProgressFor(ctx, "profile-default", "media-alpha")
+		if err != nil || !ok {
+			t.Fatalf("progress read: ok=%v err=%v", ok, err)
+		}
+		if stored.PositionSeconds != position || stored.EventTimeMS != eventTimeMS {
+			t.Fatalf("progress = %ds at %d, want %ds at %d", stored.PositionSeconds, stored.EventTimeMS, position, eventTimeMS)
+		}
+	}
+
+	report(7200, 5000) // online device, newest
+	report(3600, 3000) // offline pack replay listened earlier
+	want(7200, 5000)
+	report(9000, 6000) // offline pack replay listened later
+	want(9000, 6000)
+}
+
 func TestResumeOverrideMakesAudioResumable(t *testing.T) {
 	st := openSeeded(t)
 	progress := PlaybackProgress{

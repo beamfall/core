@@ -137,6 +137,9 @@ func TestFirstPartyOfflinePackHooksHaveExactPluginAndResolverIdentities(t *testi
 	for kind, resolver := range filmtv.PackResolvers() {
 		want[kind] = wantHook{plugin: filmtv.PluginID, inner: resolver}
 	}
+	for kind, resolver := range books.PackResolvers() {
+		want[kind] = wantHook{plugin: books.PluginID, inner: resolver}
+	}
 	hooks := firstPartyHooks()
 	if len(hooks.OfflinePackResolvers) != len(want) {
 		t.Fatalf("offline-pack hooks = %d, want exactly %d", len(hooks.OfflinePackResolvers), len(want))
@@ -165,6 +168,8 @@ func TestFirstPartyOfflinePackHooksHaveExactPluginAndResolverIdentities(t *testi
 		case musicPackResolver:
 			inner = resolver.inner
 		case filmtvPackResolver:
+			inner = resolver.inner
+		case audiobookPackResolver:
 			inner = resolver.inner
 		default:
 			t.Errorf("offline-pack hook %q factory returned %T, want a plugin pack resolver adapter", hook.Kind, resolver)

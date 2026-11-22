@@ -127,4 +127,7 @@ package store
 // background enrichment job, off the entity-query hot path.
 // CORE-2955 adds 0129_subscription_feed_health for polling and Console reads.
 // CORE-2953 adds 0130_subscription_catalogue_health for download policy, the feed catalogue and scan binding.
-const schemaFreezeCatalogMigrations = 126
+// CORE-3016 adds 0131_offline_pack_item_parts, keying offline pack items by
+// Media Part; read only by offline pack builds and grants, off the
+// entity-query hot path.
+const schemaFreezeCatalogMigrations = 127
