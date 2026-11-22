@@ -55,7 +55,7 @@ func firstPartyHooksForBundles(bundles []plugin.Bundle) app.Hooks {
 		hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: books.PluginID, ImporterID: books.ImporterID}] = func(_ []string, path string) migrate.Source {
 			return books.NewImportSource(path)
 		}
-		addAudiobookPackResolvers(&hooks)
+		addBookPackResolvers(&hooks)
 	}
 	if active[familyarchive.PluginID] {
 		hooks.Parsers[familyarchive.PluginID] = familyarchive.New()

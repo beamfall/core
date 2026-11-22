@@ -88,7 +88,7 @@ func TestAudiobookPackResolverPacksEveryPartAndItsChapters(t *testing.T) {
 	if !ok {
 		t.Fatalf("audiobook plugin has no %q resolver", books.PackKindBook)
 	}
-	service.RegisterResolver(books.PackKindBook, audiobookPackResolver{store: st, inner: inner})
+	service.RegisterResolver(books.PackKindBook, bookPackResolver{store: st, inner: inner})
 
 	// A client that has not declared manifest Parts support (ADR-0157
 	// Amendment A) is refused at admission and at build, so its strict decoder
@@ -152,7 +152,7 @@ func TestAudiobookPackResolverPacksEveryPartAndItsChapters(t *testing.T) {
 		t.Fatalf("BuildPack with a missing Part = %v, want a missing Part refusal", err)
 	}
 
-	resolver := audiobookPackResolver{store: st, inner: inner}
+	resolver := bookPackResolver{store: st, inner: inner}
 	localOnly := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}}
 	if _, err := resolver.Resolve(context.Background(), "media-archive", localOnly); err == nil {
 		t.Fatal("resolver packed a book outside the caller's Libraries")

@@ -140,7 +140,7 @@ func (s *Service) packDir(id store.OfflinePackID) (string, error) {
 }
 
 // selectedVersionParts returns every Part of the selected Version in Part
-// order (CORE-3016): a multi-file audiobook is one Media whose audio files are
+// order (CORE-3016): a multi-file book is one Media whose audio files are
 // Parts. A Version whose Parts are not contiguous from 0, including one with a
 // missing or unavailable Part, is refused so a pack never holds half a book.
 func (s *Service) selectedVersionParts(ctx context.Context, id store.MediaID, filter store.LibraryFilter, selected string) ([]store.MediaFile, error) {
