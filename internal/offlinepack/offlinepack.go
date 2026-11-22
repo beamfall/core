@@ -70,6 +70,12 @@ const (
 // its output instead, so it is the way to pack such an item.
 var ErrOriginalItemTooLarge = errors.New("offline pack: a video item is larger than the 4 GiB limit for original quality; choose high, medium or low quality")
 
+// ErrManifestPartsUnsupported refuses a multi-Part Media for a client that did
+// not declare manifest Parts support (ADR-0157 Amendment A): the kits shipped
+// before CORE-3016 reject a manifest with part_ordinal, markers or a repeated
+// media_id, so such a client gets a clear refusal instead of a corrupt pack.
+var ErrManifestPartsUnsupported = errors.New("offline pack: this Media has several files; update the app to download it")
+
 // ErrUnknownQuality is returned for a quality outside the four named values.
 var ErrUnknownQuality = errors.New("offline pack: unknown download quality")
 
@@ -265,6 +271,11 @@ type BuildPackRequest struct {
 	// PackID, when set, is the ID the caller already handed out for a
 	// background build. A retried job with an existing pack returns that pack.
 	PackID store.OfflinePackID
+	// ManifestParts reports that the client accepts manifest items with
+	// part_ordinal and chapter markers (ADR-0157 Amendment A). Without it the
+	// manifest keeps the original item shape: chapter Markers are left out and
+	// a multi-Part Media is refused with ErrManifestPartsUnsupported.
+	ManifestParts bool
 }
 
 // BuildJobPayload is the durable payload for BuildJobKind. It carries the
@@ -287,6 +298,7 @@ type BuildJobPayload struct {
 	SelectedVersions  map[store.MediaID]string        `json:"selectedVersions,omitempty"`
 	Quality           string                          `json:"quality,omitempty"`
 	PackID            store.OfflinePackID             `json:"packID,omitempty"`
+	ManifestParts     bool                            `json:"manifestParts,omitempty"`
 }
 
 // BuildJobPayloadFor snapshots the caller's pack authority into a job payload.
@@ -309,6 +321,7 @@ func BuildJobPayloadFor(scope auth.Scope, req BuildPackRequest) ([]byte, error) 
 		SelectedVersions:  req.SelectedVersions,
 		Quality:           req.Quality,
 		PackID:            req.PackID,
+		ManifestParts:     req.ManifestParts,
 	})
 }
 
@@ -343,6 +356,7 @@ func (s *Service) HandleBuildJob(ctx context.Context, payload []byte) (store.Off
 		SelectedVersions:  job.SelectedVersions,
 		Quality:           job.Quality,
 		PackID:            job.PackID,
+		ManifestParts:     job.ManifestParts,
 	})
 	if err != nil {
 		if failErr := s.recordBuildFailure(ctx, job.PackID, err); failErr != nil {
@@ -355,18 +369,22 @@ func (s *Service) HandleBuildJob(ctx context.Context, payload []byte) (store.Off
 // AdmitBuild runs the bound checks a build request can pass or fail before any
 // job is queued or any byte is read. It refuses an Original-quality request
 // with ErrOriginalItemTooLarge when a video item exceeds the BFOP per-item
-// bound. Transcoded qualities return nil without resolving the target: their
-// items are bounded after the transcode. Any other error is the same failure
-// BuildPack would report for the request.
+// bound. Transcoded qualities are bounded after the transcode, so they fail
+// admission only with ErrManifestPartsUnsupported, for a client that did not
+// set ManifestParts. Any other error is the same failure BuildPack would
+// report for the request.
 func (s *Service) AdmitBuild(ctx context.Context, scope auth.Scope, req BuildPackRequest) error {
 	quality, err := NormalizeQuality(req.Quality)
 	if err != nil {
 		return err
 	}
-	if quality != QualityOriginal {
+	if quality != QualityOriginal && req.ManifestParts {
 		return nil
 	}
 	_, err = s.resolveBuildSources(ctx, scope, req, quality)
+	if quality != QualityOriginal && !errors.Is(err, ErrManifestPartsUnsupported) {
+		return nil
+	}
 	return err
 }
 
@@ -404,7 +422,7 @@ func (s *Service) resolveBuildSources(ctx context.Context, scope auth.Scope, req
 	if err != nil {
 		return nil, err
 	}
-	sources, err := s.preflightBuildSources(ctx, resolved.MediaIDs, visible, filter, req.SelectedVersions, quality)
+	sources, err := s.preflightBuildSources(ctx, resolved.MediaIDs, visible, filter, req, quality)
 	if err != nil {
 		return nil, err
 	}

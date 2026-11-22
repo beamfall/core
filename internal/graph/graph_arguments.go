@@ -237,6 +237,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"createofflinepack": {
 		{Name: "deviceAttestation", Kind: "string", Optional: true},
 		{Name: "devicePublicKey", Kind: "string", Optional: true},
+		{Name: "manifestParts", Kind: "boolean", Optional: true},
 		{Name: "quality", Kind: "string", Optional: true},
 		{Name: "selectedVersions", Kind: "object", Optional: true},
 		{Name: "targetKind", Kind: "string"},

@@ -212,7 +212,7 @@ type packBuildSource struct {
 	markers []ManifestMarker
 }
 
-func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID, visible map[store.MediaID]store.Media, filter store.LibraryFilter, selectedVersions map[store.MediaID]string, quality string) ([]packBuildSource, error) {
+func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID, visible map[store.MediaID]store.Media, filter store.LibraryFilter, req BuildPackRequest, quality string) ([]packBuildSource, error) {
 	sources := make([]packBuildSource, 0, len(ids))
 	var total uint64
 	markerTotal, markerTitleBytes := 0, 0
@@ -235,16 +235,22 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 		if encryptedTranscode && s.reauthorize == nil {
 			return nil, fmt.Errorf("%w: encrypted-library re-authorization is not configured", ErrTranscode)
 		}
-		parts, err := s.selectedVersionParts(ctx, id, filter, selectedVersions[id])
+		parts, err := s.selectedVersionParts(ctx, id, filter, req.SelectedVersions[id])
 		if err != nil {
 			return nil, err
+		}
+		if len(parts) > 1 && !req.ManifestParts {
+			return nil, ErrManifestPartsUnsupported
 		}
 		if len(sources)+len(parts) > MaxManifestItems {
 			return nil, errors.New("offline pack exceeds item bound")
 		}
-		markers, err := s.chapterMarkers(ctx, id, filter)
-		if err != nil {
-			return nil, err
+		var markers []ManifestMarker
+		if req.ManifestParts {
+			markers, err = s.chapterMarkers(ctx, id, filter)
+			if err != nil {
+				return nil, err
+			}
 		}
 		markerTotal += len(markers)
 		for _, marker := range markers {
