@@ -22,6 +22,10 @@ func TestActiveEntityBrowseRulesKeepsOnlyDeclaredRules(t *testing.T) {
 		{PluginID: testHydrationPluginID, Kind: "artist", Sources: []EntityBrowseSource{
 			{Relation: "appears-on", ExcludeMediaRelation: "album-artist"},
 		}},
+		// An attribute filter must name an attribute the relation declares.
+		{PluginID: testHydrationPluginID, Kind: "artist", Sources: []EntityBrowseSource{
+			{Relation: "appears-on", Attribute: "role", Value: "author"},
+		}},
 		{PluginID: testHydrationPluginID, Kind: "album", Sources: []EntityBrowseSource{
 			{Relation: "album-artist", FromKind: "album"},
 		}},

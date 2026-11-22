@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/beamfall/core/internal/app"
+	books "github.com/beamfall/plugin-audiobook"
 	enrichment "github.com/beamfall/plugin-enrichment"
 	filmtv "github.com/beamfall/plugin-filmtv"
 	music "github.com/beamfall/plugin-music"
@@ -282,14 +284,26 @@ func TestMusicDeclaresEntityPosterInheritance(t *testing.T) {
 	}
 }
 
-func TestMusicDeclaresEntityBrowseRule(t *testing.T) {
-	want := []app.EntityBrowseRule{{
+func TestFirstPartyEntityBrowseRules(t *testing.T) {
+	want := []app.EntityBrowseRule{bookAuthorBrowseRule(), {
 		PluginID: music.PluginID, Kind: "artist", Sources: []app.EntityBrowseSource{
 			{Relation: "album-artist", FromKind: "album"},
 			{Relation: "appears-on", ExcludeMediaRelation: "album-track"},
 		},
 	}}
 	if got := firstPartyHooks().EntityBrowseRules; !reflect.DeepEqual(got, want) {
-		t.Fatalf("music browse rules = %+v, want %+v", got, want)
+		t.Fatalf("browse rules = %+v, want %+v", got, want)
+	}
+	// Core drops a rule whose attribute the relation does not declare.
+	declared := false
+	for _, kind := range books.Bundle().EntityKinds {
+		for _, relation := range kind.Relations {
+			if kind.Name == books.KindPerson && relation.Name == books.RelationCreditedOn {
+				declared = slices.Contains(relation.Attributes, books.AttributeRole)
+			}
+		}
+	}
+	if !declared {
+		t.Fatalf("audiobook person %s does not declare attribute %q", books.RelationCreditedOn, books.AttributeRole)
 	}
 }
