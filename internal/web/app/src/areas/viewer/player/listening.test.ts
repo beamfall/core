@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { containerSpeedKey, PREF_KEYS, resolvePreferences } from "../lib/preferences";
 import {
+  chapterEndAt,
   clampSpeed,
+  hasChapters,
   minutesAndSeconds,
   nextPauseStart,
   parseSilenceMap,
@@ -41,6 +43,7 @@ describe("speed", () => {
       resolvePreferences([{ key: PREF_KEYS.playbackSpeedDefault, value }]).playbackSpeed;
     expect(speed("1.2")).toBe("1.2");
     expect(speed("2.50")).toBe("2.5");
+    expect(speed("1.23")).toBe("1.23");
     expect(speed("0.2")).toBe("1");
     expect(speed("fast")).toBe("1");
   });
@@ -55,11 +58,14 @@ describe("long pauses", () => {
       { startSeconds: 12, endSeconds: 14 },
       { startSeconds: 13.5, endSeconds: 15 },
       { startSeconds: "x", endSeconds: 2 },
+      { startSeconds: 40, endSeconds: 40.7 },
+      { startSeconds: 2, endSeconds: 2.8 },
     ],
   };
 
   it("keeps pauses of 0.8 s or more, sorted and merged", () => {
     expect(parseSilenceMap(map)).toEqual([
+      { start: 2, end: 2.8 },
       { start: 12, end: 15 },
       { start: 30, end: 31.5 },
     ]);
@@ -79,6 +85,23 @@ describe("long pauses", () => {
 });
 
 describe("sleep timer", () => {
+  const markers = [
+    { startSeconds: 0, segmentKind: "", title: "One" },
+    { startSeconds: 5, endSeconds: 20, segmentKind: "intro", title: "" },
+    { startSeconds: 60, endSeconds: 90, segmentKind: "", title: "Two" },
+    { startSeconds: 120, segmentKind: "", title: "Three" },
+  ];
+
+  it("ends a chapter at its own end or the next chapter, ignoring skip segments", () => {
+    expect(hasChapters(markers)).toBe(true);
+    expect(hasChapters([markers[1]!])).toBe(false);
+    expect(chapterEndAt(markers, 4)).toBe(60);
+    expect(chapterEndAt(markers, 59.6)).toBe(60);
+    expect(chapterEndAt(markers, 70)).toBe(90);
+    expect(chapterEndAt(markers, 95)).toBe(120);
+    expect(chapterEndAt(markers, 130)).toBeNull();
+  });
+
   const media = { currentTime: 100, duration: 160, playbackRate: 2 };
 
   it("counts wall time for minutes and media time for the item or chapter", () => {

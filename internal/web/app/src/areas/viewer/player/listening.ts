@@ -1,4 +1,4 @@
-import type { ClientPref } from "@/lib/graphql/types";
+import type { ClientPref, PlaybackMarker } from "@/lib/graphql/types";
 import {
   containerSpeedKey,
   PLAYBACK_SPEED_MAX,
@@ -54,6 +54,8 @@ export interface SilentSpan {
 export const LONG_PAUSE_SECONDS = 0.8;
 // Landing this close to a span's end plays it out rather than seeking.
 const SPAN_END_SLACK = 0.05;
+// Spans are stored in decimal seconds; 2.8 - 2 is 0.7999999999999998.
+const SPAN_LENGTH_TOLERANCE = 1e-6;
 
 /**
  * The long pauses of a silence map (`{version: 1, spans: [{startSeconds,
@@ -69,7 +71,7 @@ export function parseSilenceMap(body: unknown): SilentSpan[] {
     const end = (span as { endSeconds?: unknown })?.endSeconds;
     if (typeof start !== "number" || typeof end !== "number") continue;
     if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0) continue;
-    if (end - start >= LONG_PAUSE_SECONDS) parsed.push({ start, end });
+    if (end - start >= LONG_PAUSE_SECONDS - SPAN_LENGTH_TOLERANCE) parsed.push({ start, end });
   }
   parsed.sort((a, b) => a.start - b.start);
   const merged: SilentSpan[] = [];
@@ -81,10 +83,14 @@ export function parseSilenceMap(body: unknown): SilentSpan[] {
   return merged;
 }
 
+/** The long pause `time` is inside, with more than a moment of it left. */
+export function longPauseAt(spans: readonly SilentSpan[], time: number): SilentSpan | undefined {
+  return spans.find((s) => time >= s.start && time < s.end - SPAN_END_SLACK);
+}
+
 /** Where to jump when `time` is inside a long pause; undefined otherwise. */
 export function pauseSkipTarget(spans: readonly SilentSpan[], time: number): number | undefined {
-  const span = spans.find((s) => time >= s.start && time < s.end - SPAN_END_SLACK);
-  return span?.end;
+  return longPauseAt(spans, time)?.end;
 }
 
 /** The start of the next long pause after `time`, for scheduling the jump. */
@@ -96,6 +102,33 @@ export function nextPauseStart(spans: readonly SilentSpan[], time: number): numb
 export function minutesAndSeconds(total: number): { minutes: number; seconds: number } {
   const whole = Math.max(0, Math.floor(total));
   return { minutes: Math.floor(whole / 60), seconds: whole % 60 };
+}
+
+// Chapters are the Markers outside the skip-segment kinds (intro, credits…).
+function chapters(markers: readonly PlaybackMarker[] | undefined): PlaybackMarker[] {
+  return (markers ?? [])
+    .filter((m) => !m.segmentKind && Number.isFinite(m.startSeconds) && m.startSeconds >= 0)
+    .sort((a, b) => a.startSeconds - b.startSeconds);
+}
+
+/** Whether the item has chapters, so "When this chapter ends" applies. */
+export function hasChapters(markers: readonly PlaybackMarker[] | undefined): boolean {
+  return chapters(markers).length > 0;
+}
+
+/**
+ * Where the chapter playing at `time` ends: its own end when the Marker has
+ * one, else the next chapter's start. null when it runs to the item's end.
+ */
+export function chapterEndAt(
+  markers: readonly PlaybackMarker[] | undefined,
+  time: number,
+): number | null {
+  const list = chapters(markers);
+  const current = list.findLast((m) => m.startSeconds <= time);
+  const ownEnd = current?.endSeconds;
+  if (typeof ownEnd === "number" && Number.isFinite(ownEnd) && ownEnd > time) return ownEnd;
+  return list.find((m) => m.startSeconds > time)?.startSeconds ?? null;
 }
 
 export const SLEEP_MINUTES = [15, 30, 45, 60] as const;

@@ -72,12 +72,12 @@ export const PLAYBACK_SPEED_DEFAULT: PlaybackSpeed = "1";
 export const PLAYBACK_SPEED_MIN = 0.5;
 export const PLAYBACK_SPEED_MAX = 3;
 
-/** A stored speed in canonical form ("1.25"), or "" when malformed or out of range. */
+/** A stored speed in canonical form ("1.25", "2.5"), or "" when malformed or out of range. */
 export function parsePlaybackSpeed(raw: string | undefined): PlaybackSpeed | "" {
   if (!raw || !/^\d+(\.\d+)?$/.test(raw)) return "";
   const value = Number(raw);
   if (!(value >= PLAYBACK_SPEED_MIN && value <= PLAYBACK_SPEED_MAX)) return "";
-  return String(Math.round(value * 20) / 20);
+  return String(value);
 }
 
 /**

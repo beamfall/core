@@ -144,6 +144,7 @@ export function PlayerTransport({
   serverQueueNextID,
   audioStage = false,
   shuffle,
+  onSpeed,
   repeat,
   onStop,
   onRemoteStop,
@@ -198,6 +199,8 @@ export function PlayerTransport({
   audioStage?: boolean;
   /** Shuffle over the playing queue (CORE-1637); the button is hidden when absent. */
   shuffle?: { on: boolean; onToggle: () => void };
+  /** The listening controls' speed setter (CORE-2960): the speed shortcuts store through it. */
+  onSpeed?: (speed: number) => void;
   /** Repeat off, all or one (CORE-1637); the button is hidden when absent. */
   repeat?: { mode: RepeatMode; onCycle: () => void };
   /** Leaves the player when another device sends stop; without it stop only pauses. */
@@ -616,6 +619,7 @@ export function PlayerTransport({
     videoRef,
     skipInterval,
     speeds: SPEEDS,
+    setSpeed: onSpeed,
     markers: state.markers,
     togglePlay,
     // The audio stage has no fullscreen (CORE-1637): the shortcut does nothing there.

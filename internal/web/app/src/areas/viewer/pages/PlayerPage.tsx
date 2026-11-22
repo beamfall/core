@@ -57,7 +57,6 @@ import {
   SUBTITLE_APPEARANCE_KEYS,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
-import { chapterSeekTarget, chapterStartTimes } from "../lib/transport";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
@@ -71,7 +70,13 @@ import { readWatchPartyIntent } from "../lib/watchTogether";
 import { AudioStage } from "../player/AudioStage";
 import { KaraokeControls } from "../player/KaraokeControls";
 import { ListeningControls, type SleepChoice } from "../player/ListeningControls";
-import { clampSpeed, resolveSpeed, speedValue } from "../player/listening";
+import {
+  chapterEndAt,
+  clampSpeed,
+  hasChapters,
+  resolveSpeed,
+  speedValue,
+} from "../player/listening";
 import { MiniPlayer } from "../player/MiniPlayer";
 import { NowPlayingDetails, type UpNextItem } from "../player/NowPlayingDetails";
 import {
@@ -622,14 +627,29 @@ function FeaturePlayer({
   // pause removal stand down for a karaoke song (its tempo is the server's) and
   // while a Watch Party owns the rate and the timeline.
   const partyActive = watchParty.party.status === "active";
-  const listening = showAudioStage && !karaokeSong && songScale === 1 && !partyActive;
+  const listeningHeld = !!karaokeSong || songScale !== 1 || partyActive;
+  const listening = showAudioStage && !listeningHeld;
   const savedSpeed = resolveSpeed(clientPrefs, collectionID);
   const [speedDraft, setSpeedDraft] = useState<number | null>(null);
   const speed = speedDraft ?? savedSpeed.speed;
-  usePlaybackSpeed(videoRef, speed, listening, partyActive);
+  usePlaybackSpeed(videoRef, speed, listening);
   const silenceMapURL = infoIsCurrent ? state.info?.assets?.silenceMap : undefined;
   const pauses = useLongPauseSkip(videoRef, silenceMapURL, listening && resolvedPrefs.trimSilence);
-  const sleep = useSleepTimer(videoRef, mediaId || "");
+  const sleep = useSleepTimer(
+    videoRef,
+    mediaId || "",
+    listening,
+    infoIsCurrent ? state.info?.timeline?.durationSeconds : undefined,
+  );
+  const { setTimer: setSleepTimer } = sleep;
+  // A party or karaoke song takes the controls away, and the timer with them.
+  useEffect(() => {
+    if (listeningHeld) setSleepTimer(null);
+  }, [listeningHeld, setSleepTimer]);
+  // End of item stops here: the queue neither advances nor joins the next track.
+  const sleepEndsItem = sleep.timer?.kind === "item";
+  const sleepEndsItemRef = useRef(sleepEndsItem);
+  sleepEndsItemRef.current = sleepEndsItem;
 
   // Up Next auto-advance: the server-issued next Media (a queue's next item
   // when one was declared, else the server's own next-item pick).
@@ -693,6 +713,7 @@ function FeaturePlayer({
       showAudioStage &&
       !karaokeSong &&
       !partyLeads &&
+      !sleepEndsItem &&
       playModes.repeat !== "one" &&
       state.mediaID === (mediaId || "") &&
       (serverQueueRun ? !!issuedNext : !!(nextInQueue || issuedNext?.streams)),
@@ -859,6 +880,10 @@ function FeaturePlayer({
     if (!isAudio || !playing || !video || partyLeads) return;
     if (!serverQueueRun && !playNext && !loopItem) return;
     const advance = () => {
+      if (sleepEndsItemRef.current) {
+        setSleepTimer(null);
+        return;
+      }
       // Let an explicit start or Up Next pick finish its read before changing tracks.
       const pending = pendingQueueAction.current?.action;
       if (pending === "start" || pending === "pick") {
@@ -881,6 +906,7 @@ function FeaturePlayer({
     videoRef,
     loopItem,
     restart,
+    setSleepTimer,
   ]);
   // The card's appearance reveals chrome once; the card itself stays visible
   // and clickable regardless of auto-hide (player-deferred.css).
@@ -1084,14 +1110,13 @@ function FeaturePlayer({
     (on: boolean) => storePrefs([{ key: PREF_KEYS.trimSilence, value: encodeBool(on) }]),
     [storePrefs],
   );
-  const { setTimer: setSleepTimer } = sleep;
   const chooseSleep = useCallback(
     (choice: SleepChoice) => {
       const video = videoRef.current;
       if (choice === "off" || !video) return setSleepTimer(null);
       if (choice === "item") return setSleepTimer({ kind: "item" });
       if (choice === "chapter") {
-        const end = chapterSeekTarget(state.markers, video.currentTime, 1);
+        const end = chapterEndAt(state.markers, video.currentTime);
         return setSleepTimer(end === null ? { kind: "item" } : { kind: "chapter", end });
       }
       const minutes = Number(choice);
@@ -1258,7 +1283,7 @@ function FeaturePlayer({
                     savedSeconds={pauses.saved}
                     sleep={sleep.timer}
                     sleepRemaining={sleep.remaining}
-                    canSleepAtChapter={chapterStartTimes(state.markers).length > 0}
+                    canSleepAtChapter={hasChapters(state.markers)}
                     onSleep={chooseSleep}
                   />
                 )}
@@ -1365,6 +1390,7 @@ function FeaturePlayer({
                 onMusicQueueOpenChange={setMusicQueueOpen}
                 serverQueueNextID={serverQueueRun ? (issuedNext?.mediaID ?? "") : undefined}
                 audioStage={showAudioStage}
+                onSpeed={listening ? setSpeed : undefined}
                 shuffle={
                   showAudioStage && (queue?.length ?? 0) >= 2
                     ? {
