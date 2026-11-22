@@ -109,3 +109,27 @@ func TestSonicAnalysisCandidatesHonourToggleClassAndExistingVectors(t *testing.T
 		t.Fatalf("cursor %s returned itself: %v", min(first, second), after)
 	}
 }
+
+func TestStoreSonicEmbeddingOnlyWhileToggleOn(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	id, fp := importClassed(t, st, "guarded", store.MediaClassAudio)
+	stored, err := st.StoreSonicEmbedding(ctx, "library-local", fp, store.SonicEmbeddingKind, []float32{1, 0})
+	if err != nil || stored {
+		t.Fatalf("toggle off: stored = %v, %v; want dropped", stored, err)
+	}
+	if err := st.SetSonicAnalysisEnabled(ctx, "library-local", true, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if stored, err = st.StoreSonicEmbedding(ctx, "library-local", fp, store.SonicEmbeddingKind, []float32{1, 0}); err != nil || !stored {
+		t.Fatalf("toggle on: stored = %v, %v; want written", stored, err)
+	}
+	ids, err := st.SonicAnalysisCandidatesAfter(ctx, store.SonicEmbeddingKind, "", 10)
+	if err != nil || slices.Contains(ids, id) {
+		t.Fatalf("candidates = %v, %v; want %s analysed", ids, err, id)
+	}
+	// A vector of another width never replaces the stored one.
+	if stored, err = st.StoreSonicEmbedding(ctx, "library-local", fp, store.SonicEmbeddingKind, []float32{1, 0, 0}); err != nil || stored {
+		t.Fatalf("width change: stored = %v, %v; want refused", stored, err)
+	}
+}

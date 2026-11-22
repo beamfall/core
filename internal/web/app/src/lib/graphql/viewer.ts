@@ -271,7 +271,7 @@ export async function fetchMediaForEntity(
 }
 
 const RELATED_MEDIA_QUERY =
-  "query RelatedMedia($mediaID: String!, $limit: Int) { relatedMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query RelatedMedia($mediaID: String!, $limit: Int) { relatedMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification locked audienceScore audienceScoreVotes byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /**
  * RelatedMedia — Media sharing a Media item's credits, ranked and bounded on the
@@ -291,7 +291,7 @@ export async function fetchRelatedMedia(
 }
 
 const SIMILAR_MEDIA_QUERY =
-  "query SimilarMedia($mediaID: String!, $limit: Int) { similarMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query SimilarMedia($mediaID: String!, $limit: Int) { similarMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification locked audienceScore audienceScoreVotes byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /**
  * SimilarMedia — Media whose locally computed sonic features are nearest a

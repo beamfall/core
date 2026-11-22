@@ -44,8 +44,9 @@ var stationSeedKinds = map[string]bool{
 }
 
 // stationSonicPool is how many similar Media a sonic seed reads before the
-// hard filter, so filtering still leaves a full window.
-const stationSonicPool = 2 * stationWindowSize
+// hard filter: the store's whole window, so year and duration rules still
+// leave a full Station unless they reject most of the nearest 200.
+const stationSonicPool = store.MaxSimilarMediaLimit
 
 // stationSeed is the parsed seed for a generation request.
 type stationSeed struct {
@@ -121,8 +122,13 @@ func (h *Handler) generateStation(ctx context.Context, scope auth.Scope, seed st
 	//    items are gone from `candidates` before tuning ever sees them).
 	if seed.kind == "sonic" {
 		// A sonic Station keeps similarity order (the seed first, then nearest
-		// first); tuning still biases it, but there is no shuffle.
-		biasStationCandidates(candidates, tuning)
+		// first); tuning biases the neighbours but never displaces the seed,
+		// and there is no shuffle.
+		rest := candidates
+		if len(rest) > 0 && string(rest[0].ID) == seed.id {
+			rest = rest[1:]
+		}
+		biasStationCandidates(rest, tuning)
 	} else {
 		rankStationCandidates(candidates, tuning, rankSeed)
 	}
@@ -171,12 +177,13 @@ func (h *Handler) sealedFreeStationFilter(ctx context.Context, scope auth.Scope)
 	}
 	// AllLibraries is deliberately false: the Station only ever sees the explicit
 	// sealed-free music set, never the AllLibraries sentinel. Certification bounds
-	// from the caller's scope are preserved.
+	// and per-Media access grants from the caller's scope are preserved.
 	return store.LibraryFilter{
-		AllowedIDs:    allowed,
-		AllLibraries:  false,
-		Revealed:      scope.Revealed,
-		Certification: scope.Certification,
+		AllowedIDs:      allowed,
+		AllLibraries:    false,
+		Revealed:        scope.Revealed,
+		Certification:   scope.Certification,
+		GrantedMediaIDs: scope.GrantedMediaIDs,
 	}, nil
 }
 

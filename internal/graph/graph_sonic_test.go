@@ -205,3 +205,55 @@ func TestStationSonicSeedKeepsSimilarityOrder(t *testing.T) {
 		t.Fatalf("sonic station without vectors = %v, want the seed alone", ids)
 	}
 }
+
+func TestSimilarMediaLimitAppliesAfterMuteSuppression(t *testing.T) {
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedSonicFixture(t, st)
+	if err := st.SetMute(context.Background(), "profile-default", store.MuteKindMedia, string(fx.trackB), false, true); err != nil {
+		t.Fatal(err)
+	}
+	items := graphData[[]SourceItem](t, h,
+		`query($mediaID:String!) { similarMedia(mediaID:$mediaID, limit:1) { id locked } }`,
+		map[string]any{"mediaID": string(fx.trackA)}, "similarMedia")
+	if got := itemIDs(items); !equalStringSlices(got, []string{string(fx.trackC)}) {
+		t.Fatalf("similarMedia(limit:1) with the nearest hit muted = %v, want [%s]", got, fx.trackC)
+	}
+}
+
+func TestSonicAnalysisToggleRejectsNonBoolean(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	openManagerAdminSession(t, st)
+	h := newTestHandlerWithStore(st)
+	h.sonicAnalysisAvailable = func() bool { return true }
+	h.sonicAnalysisSweep = func(context.Context) {}
+	body, err := json.Marshal(map[string]any{
+		"query":     `mutation($libraryID:String!, $enabled:Boolean!) { setSonicAnalysisEnabled(libraryID:$libraryID, enabled:$enabled) { enabled } }`,
+		"variables": map[string]any{"libraryID": "library-local", "enabled": "true"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, errs := post(t, h, string(body), authorizeManager); len(errs) == 0 {
+		t.Fatal("string enabled was accepted")
+	}
+	if enabled, _ := st.SonicAnalysisEnabled(ctx, "library-local"); enabled {
+		t.Fatal("rejected toggle changed the stored state")
+	}
+}
+
+func TestStationSonicSeedStaysFirstUnderTuning(t *testing.T) {
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedSonicFixture(t, st)
+	// preferRecent would rank trackB (2020) above the older seed; the seed
+	// still leads and only its neighbours are biased.
+	got, _, err := h.generateStation(context.Background(), defaultScope(), stationSeed{kind: "sonic", id: string(fx.trackA)}, stationRules{}, stationTuning{PreferRecent: true}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids := candidateIDs(got); len(ids) == 0 || ids[0] != string(fx.trackA) {
+		t.Fatalf("sonic station under preferRecent = %v, want the seed %s first", ids, fx.trackA)
+	}
+}

@@ -68,11 +68,15 @@ func (s *Service) SonicAnalysisActive() bool {
 }
 
 type sonicSweepCheckpoint struct {
-	Version  int    `json:"version"`
-	LastID   string `json:"last_id,omitempty"`
-	Analysed int    `json:"analysed"`
-	Skipped  int    `json:"skipped"`
-	Failed   int    `json:"failed"`
+	Version int    `json:"version"`
+	LastID  string `json:"last_id,omitempty"`
+	// Wrapped is set once the sweep restarts from the lowest Media ID to pick
+	// up candidates that became eligible behind the cursor (a Library enabled
+	// or Media added while this deduped sweep was already running).
+	Wrapped  bool `json:"wrapped,omitempty"`
+	Analysed int  `json:"analysed"`
+	Skipped  int  `json:"skipped"`
+	Failed   int  `json:"failed"`
 }
 
 // NewSonicSweepJob builds the deduped background sonic analysis job. At most
@@ -93,8 +97,10 @@ func NewSonicSweepJob(createdAt time.Time) (store.Job, error) {
 
 // SonicSweepHandler returns the handler that analyses the next batch of
 // candidates, checkpointing by Media ID so a preempted sweep resumes where it
-// stopped. Each candidate is tried once per sweep: a failure is counted and
-// skipped, and a later sweep retries it because it still has no vector.
+// stopped. A sweep that started past the lowest ID makes one more pass from
+// the start, because a re-arm while it ran was deduped into it. A failure is
+// counted and skipped, and a later sweep retries it because it still has no
+// vector.
 func SonicSweepHandler(service *Service) jobs.Handler {
 	return func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		if !service.SonicAnalysisActive() {
@@ -147,15 +153,30 @@ func SonicSweepHandler(service *Service) jobs.Handler {
 		if len(ids) > processed || ctx.Err() != nil {
 			return jobs.Result{Checkpoint: data}, jobs.ErrYielded
 		}
+		if !checkpoint.Wrapped && checkpoint.LastID != "" {
+			// One pass from the start picks up candidates behind the cursor.
+			checkpoint.Wrapped = true
+			checkpoint.LastID = ""
+			data, err := json.Marshal(checkpoint)
+			if err != nil {
+				return jobs.Result{}, err
+			}
+			if err := service.store.UpdateJobCheckpoint(context.WithoutCancel(ctx), job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
+				return jobs.Result{Checkpoint: data}, err
+			}
+			return jobs.Result{Checkpoint: data}, jobs.ErrYielded
+		}
 		return jobs.Result{Checkpoint: data}, nil
 	}
 }
 
 // AnalyzeSonic analyses one Media item's primary file and stores its vector.
 // It reports false with no error when the item is not eligible: not audio, in
-// a Sealed or Encrypted Library, or without a readable file. Encrypted
-// Libraries are skipped outright because the vector store is on the shared
-// plane.
+// a Sealed or Encrypted Library, in a Library whose toggle is off, or without
+// a readable file. Encrypted Libraries are skipped outright because the vector
+// store is on the shared plane. The toggle is checked again before decoding
+// and the write is conditional on it, so turning analysis off stops a batch
+// already selected.
 func (s *Service) AnalyzeSonic(ctx context.Context, id store.MediaID) (bool, error) {
 	if !s.SonicAnalysisActive() {
 		return false, nil
@@ -166,6 +187,10 @@ func (s *Service) AnalyzeSonic(ctx context.Context, id store.MediaID) (bool, err
 	}
 	if s.isEncrypted(media.LibraryID) {
 		return false, nil
+	}
+	enabled, err := s.store.SonicAnalysisEnabled(ctx, media.LibraryID)
+	if err != nil || !enabled {
+		return false, err
 	}
 	start := sonicExcerptStart(media.DurationSeconds)
 	samples, err := s.sonicDecoder.AudioExcerpt(ctx, file.Path, start, sonicExcerptSeconds, sonicExcerptSampleRate, sonicExcerptChannels)
@@ -179,10 +204,7 @@ func (s *Service) AnalyzeSonic(ctx context.Context, id store.MediaID) (bool, err
 	if err := validSonicVector(vector); err != nil {
 		return false, fmt.Errorf("sonic analysis of %s: %w", id, err)
 	}
-	if err := s.store.UpsertEmbedding(ctx, file.ContentFingerprint, s.sonicAnalyzer.Kind(), vector); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.store.StoreSonicEmbedding(ctx, media.LibraryID, file.ContentFingerprint, s.sonicAnalyzer.Kind(), vector)
 }
 
 // sonicExcerptStart centres the excerpt window in the file. A file shorter

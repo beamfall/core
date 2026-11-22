@@ -62,10 +62,14 @@ func (h *Handler) setSonicAnalysisEnabled(ctx context.Context, scope auth.Scope,
 	if libraryID == "" {
 		return SonicAnalysisInfo{}, clientError("libraryID is required")
 	}
-	if _, ok := req.Variables["enabled"]; !ok {
+	v := newVars(req)
+	enabled, ok := v.Bool("enabled")
+	if err := v.Err(); err != nil {
+		return SonicAnalysisInfo{}, err
+	}
+	if !ok {
 		return SonicAnalysisInfo{}, clientError("enabled is required")
 	}
-	enabled := boolVar(req, "enabled")
 	visible, err := h.visibleLibrary(ctx, scope, store.LibraryID(libraryID))
 	if err != nil {
 		return SonicAnalysisInfo{}, err
@@ -101,7 +105,9 @@ func (h *Handler) similarMedia(ctx context.Context, scope auth.Scope, req reques
 		return nil, clientError("unknown media")
 	}
 	limit := boundedIntVar(req, "limit", similarDefaultLimit, similarMaxLimit)
-	results, err := h.store.SimilarMedia(ctx, filter, store.SonicEmbeddingKind, []store.MediaID{mediaID}, limit)
+	// Read the store's full window so Mute suppression trims after ranking
+	// rather than leaving a short row; scoring is in memory either way.
+	results, err := h.store.SimilarMedia(ctx, filter, store.SonicEmbeddingKind, []store.MediaID{mediaID}, store.MaxSimilarMediaLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +116,10 @@ func (h *Handler) similarMedia(ctx context.Context, scope auth.Scope, req reques
 		return nil, err
 	}
 	if items, err = h.store.SuppressMuted(ctx, scope.ProfileID, filter, items); err != nil {
+		return nil, err
+	}
+	items = items[:min(limit, len(items))]
+	if err := h.store.AnnotateLocked(ctx, filter, items); err != nil {
 		return nil, err
 	}
 	// Survivors may be broad-muted but protected by a positive signal (§2.7).

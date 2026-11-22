@@ -77,6 +77,12 @@ func sonicCandidates(t *testing.T, st *store.Store) []store.MediaID {
 
 func runSonicSweep(t *testing.T, svc *Service, st *store.Store) int {
 	t.Helper()
+	return runSonicSweepFrom(t, svc, st, nil)
+}
+
+// runSonicSweepFrom runs one sweep to completion starting from checkpoint.
+func runSonicSweepFrom(t *testing.T, svc *Service, st *store.Store, checkpoint []byte) int {
+	t.Helper()
 	ctx := context.Background()
 	job, err := NewSonicSweepJob(time.Now().UTC())
 	if err != nil {
@@ -90,6 +96,9 @@ func runSonicSweep(t *testing.T, svc *Service, st *store.Store) int {
 		t.Fatal(err)
 	}
 	handler := SonicSweepHandler(svc)
+	if checkpoint != nil {
+		claimed.Checkpoint = checkpoint
+	}
 	invocations := 0
 	for {
 		invocations++
@@ -138,8 +147,9 @@ func TestSonicSweepAnalysesOnlyEnabledLibrariesAndResumes(t *testing.T) {
 	if err := st.SetSonicAnalysisEnabled(context.Background(), "library-local", true, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	if invocations := runSonicSweep(t, svc, st); invocations != 2 {
-		t.Fatalf("handler invocations = %d, want 2 (one yield)", invocations)
+	// One yield after the first batch, one to wrap to the start, then done.
+	if invocations := runSonicSweep(t, svc, st); invocations != 3 {
+		t.Fatalf("handler invocations = %d, want 3", invocations)
 	}
 	if analyzer.calls != sweepJobBatchSize+2 {
 		t.Fatalf("analysed %d, want %d", analyzer.calls, sweepJobBatchSize+2)
@@ -220,5 +230,65 @@ func TestSonicExcerptStartCentresWindow(t *testing.T) {
 		if got := sonicExcerptStart(duration); got != want {
 			t.Fatalf("sonicExcerptStart(%d) = %v, want %v", duration, got, want)
 		}
+	}
+}
+
+// toggleOffAnalyzer turns the Library's toggle off while analysing, as an
+// Admin would between the sweep selecting a batch and storing a vector.
+type toggleOffAnalyzer struct {
+	fakeAnalyzer
+	st *store.Store
+}
+
+func (a *toggleOffAnalyzer) Analyze(ctx context.Context, samples []float32, rate, channels int) ([]float32, error) {
+	if err := a.st.SetSonicAnalysisEnabled(ctx, "library-local", false, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	return a.fakeAnalyzer.Analyze(ctx, samples, rate, channels)
+}
+
+func TestAnalyzeSonicHonoursToggleTurnedOffMidBatch(t *testing.T) {
+	ctx := context.Background()
+	svc, st, _ := newTestService(t, &fakeGen{})
+	decoder := &fakeExcerpt{}
+	svc.SetSonicAnalysis(decoder, &fakeAnalyzer{vector: []float32{1}})
+	ids := seedSonicTracks(t, st, 1)
+
+	// Selected while on, but off by the time the item is analysed: no decode.
+	if analysed, err := svc.AnalyzeSonic(ctx, ids[0]); err != nil || analysed || decoder.calls != 0 {
+		t.Fatalf("toggle off: analysed = %v, err = %v, decodes = %d", analysed, err, decoder.calls)
+	}
+
+	// Turned off during analysis: the vector is dropped, not stored.
+	if err := st.SetSonicAnalysisEnabled(ctx, "library-local", true, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	svc.SetSonicAnalysis(decoder, &toggleOffAnalyzer{fakeAnalyzer: fakeAnalyzer{vector: []float32{1}}, st: st})
+	if analysed, err := svc.AnalyzeSonic(ctx, ids[0]); err != nil || analysed {
+		t.Fatalf("toggled off mid-analysis: analysed = %v, %v; want dropped", analysed, err)
+	}
+	if err := st.SetSonicAnalysisEnabled(ctx, "library-local", true, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if got := sonicCandidates(t, st); len(got) != 1 {
+		t.Fatalf("candidates = %v, want the item still unanalysed", got)
+	}
+}
+
+func TestSonicSweepWrapsToCandidatesBehindCursor(t *testing.T) {
+	svc, st, _ := newTestService(t, &fakeGen{})
+	analyzer := &fakeAnalyzer{vector: []float32{1, 2}}
+	svc.SetSonicAnalysis(&fakeExcerpt{}, analyzer)
+	seedSonicTracks(t, st, 2)
+	if err := st.SetSonicAnalysisEnabled(context.Background(), "library-local", true, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	// A deduped sweep whose cursor is already past every candidate.
+	runSonicSweepFrom(t, svc, st, []byte(`{"version":1,"last_id":"~"}`))
+	if analyzer.calls != 2 {
+		t.Fatalf("analysed %d, want 2 after wrapping", analyzer.calls)
+	}
+	if got := sonicCandidates(t, st); len(got) != 0 {
+		t.Fatalf("candidates = %v, want none", got)
 	}
 }

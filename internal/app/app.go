@@ -683,6 +683,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		}
 		if err == nil {
 			enqueueArtworkSweep(ctx, st, logger, jobWake)
+			// New audio Media in sonic-enabled Libraries need a vector
+			// (CORE-3073); the sweep dedupes and stays idle-only.
+			if assetService.SonicAnalysisActive() {
+				enqueueSonicSweep(ctx, st, logger, jobWake)
+			}
 			enqueueEntityEnrichment(ctx, st, logger, jobWake, entityEnrichments)
 			skipDetection.enqueue(ctx, string(job.ID))
 			// Populate the vector store for any newly scanned/identified Media

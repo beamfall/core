@@ -29,12 +29,14 @@ const defaultSimilarMediaLimit = 50
 const similarMediaScanValues = 4_000_000
 
 // similarMediaCandidateLimit is the candidate row budget for vectors of dims
-// values, at least 1,000 rows (SemanticSearch's window) whatever the width.
+// values. The value budget always holds: up to 4,000 dimensions it admits at
+// least SemanticSearch's 1,000-row window, and a wider kind admits fewer rows
+// (at least one).
 func similarMediaCandidateLimit(dims int) int {
 	if dims <= 0 {
 		return maxSemanticSearchCandidates
 	}
-	return max(maxSemanticSearchCandidates, similarMediaScanValues/dims)
+	return max(1, similarMediaScanValues/dims)
 }
 
 // SimilarMedia returns at most limit Media whose embeddings of kind are nearest
@@ -109,20 +111,20 @@ func similarMediaCentroid(seeds []MediaID, vectors map[MediaID][]float32) ([]flo
 		}
 		seedSet[id] = true
 		vec, ok := vectors[id]
-		if !ok || len(vec) == 0 {
+		if !ok || len(vec) == 0 || (sum != nil && len(vec) != len(sum)) {
 			continue
 		}
-		if sum == nil {
-			sum = make([]float64, len(vec))
-		} else if len(vec) != len(sum) {
-			continue
-		}
+		// Validate before the first usable seed fixes the width, so a zero
+		// or non-finite vector never decides it.
 		var norm float64
 		for _, v := range vec {
 			norm += float64(v) * float64(v)
 		}
 		if norm == 0 || math.IsNaN(norm) || math.IsInf(norm, 0) {
 			continue
+		}
+		if sum == nil {
+			sum = make([]float64, len(vec))
 		}
 		scale := 1 / math.Sqrt(norm)
 		for i, v := range vec {

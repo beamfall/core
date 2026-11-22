@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -148,6 +149,12 @@ func TestSimilarMediaCentroidSkipsMismatchedAndCancelling(t *testing.T) {
 	if !seeds["missing"] || !seeds["a"] || !seeds["b"] {
 		t.Fatalf("seed set %v must name every seed", seeds)
 	}
+	// An unusable first seed must not fix the width (Codex review).
+	vectors["zero"] = []float32{0, 0, 0}
+	vectors["nan"] = []float32{float32(math.NaN()), 0, 0}
+	if query, _ := similarMediaCentroid([]MediaID{"zero", "nan", "a"}, vectors); !reflect.DeepEqual(query, []float32{1, 0}) {
+		t.Fatalf("unusable leading seeds: query = %v, want [1 0]", query)
+	}
 	if query, _ := similarMediaCentroid([]MediaID{"a", "c"}, vectors); query != nil {
 		t.Fatalf("cancelling seeds: query = %v, want nil", query)
 	}
@@ -157,7 +164,10 @@ func TestSimilarMediaCandidateLimit(t *testing.T) {
 	for _, tc := range []struct{ dims, want int }{
 		{0, maxSemanticSearchCandidates},
 		{32, 125_000},
-		{1_000_000, maxSemanticSearchCandidates},
+		{4_000, maxSemanticSearchCandidates},
+		{8_192, 488},
+		{1_000_000, 4},
+		{8_000_000, 1},
 	} {
 		if got := similarMediaCandidateLimit(tc.dims); got != tc.want {
 			t.Errorf("dims %d: got %d, want %d", tc.dims, got, tc.want)
