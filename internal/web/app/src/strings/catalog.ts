@@ -41,9 +41,7 @@ import { migrationFixmatchStrings } from "./migration-fixmatch";
 import { migrationUnmatchedStrings } from "./migration-unmatched";
 import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
-import { partyGuestStrings } from "./party-guest";
-import { partyHostStrings } from "./party-host";
-import { partyHostLiveStrings } from "./party-host-live";
+import { partyStrings } from "./party";
 import { pickerStrings } from "./pickers";
 import { playbackStrings } from "./playback";
 import { playbackChapterStrings } from "./playback-chapters";
@@ -163,7 +161,6 @@ export const en = {
   ...watchPartyStrings.en,
   ...libraryTrashStrings.en,
   ...mediaPageStrings.en,
-  ...partyGuestStrings.en,
   ...restrictionsSetupStrings.en,
   ...remoteControlStrings.en,
   ...webhookStrings.en,
@@ -184,8 +181,7 @@ export const en = {
   ...activityPluginStrings.en,
   ...workbenchPageStrings.en,
   ...appearanceStrings.en,
-  ...partyHostStrings.en,
-  ...partyHostLiveStrings.en,
+  ...partyStrings.en,
 } as const;
 
 export const fr = {
@@ -259,7 +255,6 @@ export const fr = {
   ...watchPartyStrings.fr,
   ...libraryTrashStrings.fr,
   ...mediaPageStrings.fr,
-  ...partyGuestStrings.fr,
   ...restrictionsSetupStrings.fr,
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
@@ -280,8 +275,7 @@ export const fr = {
   ...activityPluginStrings.fr,
   ...workbenchPageStrings.fr,
   ...appearanceStrings.fr,
-  ...partyHostStrings.fr,
-  ...partyHostLiveStrings.fr,
+  ...partyStrings.fr,
 } as const;
 
 export const de = {
@@ -355,7 +349,6 @@ export const de = {
   ...watchPartyStrings.de,
   ...libraryTrashStrings.de,
   ...mediaPageStrings.de,
-  ...partyGuestStrings.de,
   ...restrictionsSetupStrings.de,
   ...remoteControlStrings.de,
   ...webhookStrings.de,
@@ -376,8 +369,7 @@ export const de = {
   ...activityPluginStrings.de,
   ...workbenchPageStrings.de,
   ...appearanceStrings.de,
-  ...partyHostStrings.de,
-  ...partyHostLiveStrings.de,
+  ...partyStrings.de,
 } as const;
 
 export const es = {
@@ -451,7 +443,6 @@ export const es = {
   ...watchPartyStrings.es,
   ...libraryTrashStrings.es,
   ...mediaPageStrings.es,
-  ...partyGuestStrings.es,
   ...restrictionsSetupStrings.es,
   ...remoteControlStrings.es,
   ...webhookStrings.es,
@@ -472,8 +463,7 @@ export const es = {
   ...activityPluginStrings.es,
   ...workbenchPageStrings.es,
   ...appearanceStrings.es,
-  ...partyHostStrings.es,
-  ...partyHostLiveStrings.es,
+  ...partyStrings.es,
 } as const;
 
 export const pt = {
@@ -547,7 +537,6 @@ export const pt = {
   ...watchPartyStrings.pt,
   ...libraryTrashStrings.pt,
   ...mediaPageStrings.pt,
-  ...partyGuestStrings.pt,
   ...restrictionsSetupStrings.pt,
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,
@@ -568,6 +557,5 @@ export const pt = {
   ...activityPluginStrings.pt,
   ...workbenchPageStrings.pt,
   ...appearanceStrings.pt,
-  ...partyHostStrings.pt,
-  ...partyHostLiveStrings.pt,
+  ...partyStrings.pt,
 } as const;

@@ -98,5 +98,5 @@ Guest token: 32 random bytes, base64url, prefix `bfg_`, stored as SHA-256.
 
 ## Storage
 
-Events migration `0026_party_session.sql`: `party_session`, `party_participant`, `party_entry`,
+Events migration `0027_party_session.sql`: `party_session`, `party_participant`, `party_entry`,
 `party_screen`. Rotation order is computed on read from entries, pins and turn history.

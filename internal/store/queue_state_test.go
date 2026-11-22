@@ -95,9 +95,9 @@ func TestPlayQueueMigrationPreservesExistingRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Stop at 0025 so later migrations' new tables do not read as
-	// restore drift in a check that covers 0025 alone.
-	through := migrationsBefore(t, eventsMigrations, dir, "0026")
+	// Stop at 0026 so later migrations' new tables do not read as
+	// restore drift in a check that covers the play queue migration alone.
+	through := migrationsBefore(t, eventsMigrations, dir, "0027")
 	if err := migrate(ctx, slog.Default(), db, dbPath, "events", through, dir, backupDir); err != nil {
 		t.Fatal(err)
 	}
