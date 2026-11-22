@@ -15,8 +15,8 @@
 
 ## 3. Requested key (CORE-3143)
 
-- [ ] 3.1 Store the requested key on the entry, validate it and start the turn at it.
-- [ ] 3.2 Guest key picker, key shown on guest and host entries; tests.
+- [x] 3.1 Store the requested key on the entry, validate it and start the turn at it.
+- [x] 3.2 Guest key picker, key shown on guest and host entries; tests.
 
 ## 4. Verification
 

@@ -26,6 +26,8 @@ export interface PartyGuestEntry {
   /** 1-based among waiting entries, 0 otherwise. */
   position: number;
   etaSeconds: number;
+  /** The key the singer asked for, in semitones (-12 to 12). */
+  pitchSemitones: number;
   /** Present on the guest's own entries (`mine`), so search can mark songs already asked for. */
   mediaID?: string;
 }
@@ -199,12 +201,16 @@ export async function searchPartyMedia(
   return items ?? [];
 }
 
-export async function requestPartyMedia(token: string, mediaID: string): Promise<PartyGuestEntry> {
+export async function requestPartyMedia(
+  token: string,
+  mediaID: string,
+  pitchSemitones = 0,
+): Promise<PartyGuestEntry> {
   const { entry } = await call<{ entry: PartyGuestEntry }>(
     "POST",
     "/api/party/guest/request",
     token,
-    { mediaID },
+    { mediaID, pitchSemitones },
   );
   return entry;
 }

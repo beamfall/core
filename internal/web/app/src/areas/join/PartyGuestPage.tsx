@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Minus, Plus, Search } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
@@ -320,11 +320,11 @@ function JoinedView({
     }
   }
 
-  async function onRequest(item: PartySearchItem): Promise<boolean> {
+  async function onRequest(item: PartySearchItem, pitchSemitones: number): Promise<boolean> {
     setActionError(null);
     setStatus(null);
     try {
-      const entry = await requestPartyMedia(joined.token, item.mediaID);
+      const entry = await requestPartyMedia(joined.token, item.mediaID, pitchSemitones);
       setStatus({
         text: t(
           entry.state === "pending"
@@ -462,6 +462,12 @@ function MyEntry({ entry, onCancel }: { entry: PartyGuestEntry; onCancel: () => 
           ) : entry.state === "declined" ? (
             <span className="text-muted-foreground">{t("partyGuestDeclined")}</span>
           ) : null}
+          {entry.pitchSemitones && (
+            <span className="text-muted-foreground">
+              <span aria-hidden> · </span>
+              {t("partyGuestEntryKey", { key: signedSemitones(entry.pitchSemitones) })}
+            </span>
+          )}
         </p>
       </div>
       {cancellable && (
@@ -489,6 +495,52 @@ function formatDuration(seconds: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+const KEY_RANGE = 12;
+
+function signedSemitones(semitones: number): string {
+  if (semitones > 0) return `+${semitones}`;
+  if (semitones < 0) return `−${Math.abs(semitones)}`;
+  return "0";
+}
+
+function KeyPicker({ value, onChange }: { value: number; onChange: (key: number) => void }) {
+  const t = useT();
+  const labelID = useId();
+  return (
+    <div className="mt-3 flex items-center gap-3" role="group" aria-labelledby={labelID}>
+      <div className="min-w-0 flex-1">
+        <p id={labelID} className="m-0 text-sm font-medium">
+          {t("partyGuestKeyLabel")}
+        </p>
+        <p className="m-0 text-xs text-muted-foreground">{t("partyGuestKeyHint")}</p>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        className="size-11 shrink-0 p-0"
+        aria-label={t("partyGuestKeyDown")}
+        disabled={value <= -KEY_RANGE}
+        onClick={() => onChange(value - 1)}
+      >
+        <Minus aria-hidden className="size-5" />
+      </Button>
+      <output aria-live="polite" className="w-10 text-center font-medium tabular-nums">
+        {signedSemitones(value)}
+      </output>
+      <Button
+        type="button"
+        variant="outline"
+        className="size-11 shrink-0 p-0"
+        aria-label={t("partyGuestKeyUp")}
+        disabled={value >= KEY_RANGE}
+        onClick={() => onChange(value + 1)}
+      >
+        <Plus aria-hidden className="size-5" />
+      </Button>
+    </div>
+  );
+}
+
 function SearchPanel({
   token,
   requestedIDs,
@@ -499,7 +551,7 @@ function SearchPanel({
   token: string;
   requestedIDs: Set<string>;
   limitReason: string | null;
-  onRequest: (item: PartySearchItem) => Promise<boolean>;
+  onRequest: (item: PartySearchItem, pitchSemitones: number) => Promise<boolean>;
   onEnded: () => void;
 }) {
   const t = useT();
@@ -511,6 +563,7 @@ function SearchPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const [key, setKey] = useState(0);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -575,6 +628,7 @@ function SearchPanel({
           {limitReason}
         </p>
       )}
+      {items.length > 0 && <KeyPicker value={key} onChange={setKey} />}
       {items.length > 0 && (
         <HairlineList className="mt-3">
           {items.map((item) => {
@@ -603,7 +657,7 @@ function SearchPanel({
                   aria-describedby={limitReason && !done ? limitID : undefined}
                   onClick={async () => {
                     setPending(item.mediaID);
-                    await onRequest(item);
+                    await onRequest(item, key);
                     setPending(null);
                   }}
                 >

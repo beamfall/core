@@ -33,6 +33,8 @@ export interface PartyEntry {
   /** 1-based among waiting entries, 0 otherwise. */
   position: number;
   etaSeconds: number;
+  /** The key the singer asked for, in semitones; the turn starts at it. */
+  pitchSemitones: number;
   addedAt: string;
   /** When this Media was last current earlier in the session, else "". */
   lastPlayedAt: string;
@@ -107,7 +109,7 @@ export interface PartyStage {
 }
 
 const ENTRY =
-  "id mediaID title subtitle durationSeconds artworkURL participantID participantName state pinned position etaSeconds addedAt lastPlayedAt";
+  "id mediaID title subtitle durationSeconds artworkURL participantID participantName state pinned position etaSeconds pitchSemitones addedAt lastPlayedAt";
 const PLAYBACK = "entryID state positionMS anchorAtMS tempo pitchSemitones";
 const SCREEN = "id name kind carrier lead ticker offsetMS rttMS reportedAt";
 const SESSION = `id joinCode joinPath fairness autoAdd joinOpen libraryIDs startedAt expiresAt changeoverSeconds current { ${ENTRY} } playback { ${PLAYBACK} } entries { ${ENTRY} } requests { ${ENTRY} } recent { ${ENTRY} } removed { ${ENTRY} } participants { id name guest waiting lastTurnAt } screens { ${SCREEN} } skipped { ${ENTRY} }`;

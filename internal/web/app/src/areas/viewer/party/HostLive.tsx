@@ -575,7 +575,14 @@ export function PartyRotation({ session, run }: PanelProps) {
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate font-medium">{entry.title}</span>
                   <span className="bf-party-muted text-sm">
-                    {t("partyHostRequestedBy", { name: entry.participantName })}
+                    {[
+                      t("partyHostRequestedBy", { name: entry.participantName }),
+                      entry.pitchSemitones
+                        ? t("partyHostEntryKey", { key: signedSemitones(entry.pitchSemitones) })
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 </div>
                 <Button
@@ -654,6 +661,9 @@ export function PartyRotation({ session, run }: PanelProps) {
                       entry.etaSeconds > 0
                         ? t("partyHostEta", { minutes: minutes(entry.etaSeconds) })
                         : t("partyHostEtaNext"),
+                      entry.pitchSemitones
+                        ? t("partyHostEntryKey", { key: signedSemitones(entry.pitchSemitones) })
+                        : "",
                       entry.lastPlayedAt !== "" ? t("partyHostSungEarlier") : "",
                     ]
                       .filter(Boolean)

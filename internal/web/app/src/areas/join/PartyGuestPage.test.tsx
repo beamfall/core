@@ -228,6 +228,7 @@ describe("PartyGuestPage joined", () => {
       state: "pending",
       position: 0,
       etaSeconds: 0,
+      pitchSemitones: -2,
     };
     routes["POST /api/party/guest/request"] = () => {
       const base = guestState();
@@ -245,11 +246,16 @@ describe("PartyGuestPage joined", () => {
     expect(String(calls("GET /api/party/guest/search")[0][0])).toContain("q=copper");
     await expectNoAxeViolations(container);
 
+    const keyDown = screen.getByRole("button", { name: "Lower the key" });
+    await userEvent.click(keyDown);
+    await userEvent.click(keyDown);
+    expect(screen.getByRole("group", { name: "Your key" })).toHaveTextContent("−2");
     await userEvent.click(screen.getByRole("button", { name: "Request Copper Skyline" }));
     expect(await screen.findByText("Sent to the host for approval.")).toBeInTheDocument();
+    expect(await screen.findByText("Key −2")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Requested" })).toBeDisabled();
     const [, init] = calls("POST /api/party/guest/request")[0];
-    expect(JSON.parse(String(init?.body))).toEqual({ mediaID: "m1" });
+    expect(JSON.parse(String(init?.body))).toEqual({ mediaID: "m1", pitchSemitones: -2 });
   });
 
   it("disables Request at the waiting limit and says why", async () => {
