@@ -824,6 +824,8 @@ func startServeSignalTestProcess(t *testing.T, binary, addr string) *exec.Cmd {
 // the host relay and then reset (CORE-1005), so a dial probe would declare
 // serve ready while it is still starting and the signal would land before its
 // handler exists. Only a complete HTTP response proves serve is listening.
+// The body must also report "live":true (200 when ready, 503 when not), so
+// another process answering on the port cannot satisfy the readiness check.
 func waitForServeSignalTestListener(t *testing.T, addr string) {
 	t.Helper()
 	client := &http.Client{Timeout: time.Second}
@@ -831,8 +833,14 @@ func waitForServeSignalTestListener(t *testing.T, addr string) {
 	for time.Now().Before(deadline) {
 		resp, err := client.Get("http://" + addr + "/health")
 		if err == nil {
+			var body struct {
+				Live bool `json:"live"`
+			}
+			live := json.NewDecoder(resp.Body).Decode(&body) == nil && body.Live
 			_ = resp.Body.Close()
-			return
+			if live {
+				return
+			}
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
