@@ -92,6 +92,35 @@ func TestLookupOverlaysItemDocumentAndHydratesContainers(t *testing.T) {
 	if !part.Container || part.Kind != "part" || part.ArtworkURL != "https://img.example.test/s2.jpg" || part.Fields["overview"] != "Second." {
 		t.Fatalf("part = %#v, want the element selected by the sequence", part)
 	}
+	if series.SequenceScoped || !part.SequenceScoped {
+		t.Fatalf("sequence scoped: series %t, part %t; want only the map whose Path names {sequence}", series.SequenceScoped, part.SequenceScoped)
+	}
+}
+
+// TestLookupTemplateNamingSequenceScopesEveryContainerResult (CORE-3128): a
+// container result read from a document the item's {sequence} selected
+// describes that sequence, whatever its map Path.
+func TestLookupTemplateNamingSequenceScopesEveryContainerResult(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/tv/42/season/2" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprint(w, `{"name":"Season 2","overview":"Second."}`)
+	}))
+	t.Cleanup(server.Close)
+	spec := plugin.ScraperSpec{
+		ID: "tv", Kind: "http-json", Endpoint: server.URL, LookupTemplate: "/tv/{id}/season/{sequence}",
+		FieldMap:   map[string]string{"title": "name"},
+		EntityMaps: []plugin.EntityMap{{Kind: "part", Container: true, FieldMap: map[string]string{"overview": "overview"}}},
+	}
+	result, err := New(WithInsecureLoopback()).Lookup(context.Background(), spec, "42", Variables{Sequence: "2", Index: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entities) != 1 || !result.Entities[0].SequenceScoped {
+		t.Fatalf("entities = %#v, want one sequence-scoped container result", result.Entities)
+	}
 }
 
 func TestLookupSkipsItemDocumentAndOrdinalPathsWhenOrdinalUnknown(t *testing.T) {

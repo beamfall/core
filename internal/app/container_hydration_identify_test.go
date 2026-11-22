@@ -171,16 +171,18 @@ func TestIdentifyHydratesContainersFromItemLookup(t *testing.T) {
 // Fix Match ordinal looks up the operator's sequence, so the season holding
 // the Media takes that sequence's fields only when its own ordinal is that
 // sequence. A sibling season, whose fields every one of its Media shares, is
-// left alone on the Fix Match and on a later Refresh, while the show is still
+// left alone on the Fix Match and on a later Refresh, and so is a season with
+// no ordinal, while the show, whose map names no {sequence}, is still
 // hydrated.
 func TestOperatorOrdinalHydratesOnlyTheMatchingSeasonContainer(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
-		holderOrdinal int
+		holderOrdinal *int
 		wantOverview  string
 	}{
-		{name: "sibling season", holderOrdinal: 1, wantOverview: ""},
-		{name: "matching season", holderOrdinal: 2, wantOverview: "Second."},
+		{name: "sibling season", holderOrdinal: intPtr(1), wantOverview: ""},
+		{name: "matching season", holderOrdinal: intPtr(2), wantOverview: "Second."},
+		{name: "unordered season", holderOrdinal: nil, wantOverview: ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -205,8 +207,7 @@ func TestOperatorOrdinalHydratesOnlyTheMatchingSeasonContainer(t *testing.T) {
 			if err := (showSeasonHydrator{st: st}).HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{MediaID: media.ID, LibraryID: library.ID}); err != nil {
 				t.Fatal(err)
 			}
-			ordinal := tc.holderOrdinal
-			if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: "entity-season-1", Name: "season-of", ToEntityID: "entity-show", SortOrder: &ordinal}); err != nil {
+			if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: "entity-season-1", Name: "season-of", ToEntityID: "entity-show", SortOrder: tc.holderOrdinal}); err != nil {
 				t.Fatal(err)
 			}
 			art := artwork.NewService(st, copyArtworkTools{}, t.TempDir())
@@ -250,3 +251,5 @@ func TestOperatorOrdinalHydratesOnlyTheMatchingSeasonContainer(t *testing.T) {
 		})
 	}
 }
+
+func intPtr(n int) *int { return &n }

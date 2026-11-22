@@ -194,8 +194,8 @@ func containerKindNames(bundle plugin.Bundle) map[string]bool {
 // applied like any hydrated Entity poster, and its links relate it to the
 // Entities sibling maps hydrated. A result whose kind holds no Entity for this
 // Media is skipped; nothing is created. Under an operator ordinal (manual
-// non-nil) the lookup described the operator's sequence, so the container
-// directly holding the Media is written only when its own ordinal is that
+// non-nil) a sequence-scoped result describes the operator's sequence, so its
+// container is written only when that container's own ordinal is that
 // sequence; otherwise it may be a sibling sequence shared by other Media.
 func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.MediaID, library store.LibraryID, bundle plugin.Bundle, results []scrape.EntityResult, manual *store.MediaOrdinal) error {
 	if len(results) == 0 {
@@ -211,12 +211,13 @@ func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.Medi
 		return err
 	}
 	for _, result := range results {
-		target, ok := containerOfKind(chain, result.Kind)
+		container, ok := containerOfKind(chain, result.Kind)
 		if !ok {
 			slog.Debug("identify: no container entity of kind holds the media", "media", mediaID, "kind", result.Kind)
 			continue
 		}
-		if manual != nil && target == chain[0].ID && !containerMatchesSequence(chain[0], manual.Sequence) {
+		target := container.ID
+		if manual != nil && result.SequenceScoped && !containerMatchesSequence(container, manual.Sequence) {
 			slog.Debug("identify: container hydration skipped, holder does not match the operator sequence",
 				"media", mediaID, "kind", result.Kind, "sequence", manual.Sequence)
 			continue
@@ -371,13 +372,13 @@ func containerMatchesSequence(container ContainerEntity, sequence string) bool {
 	return err == nil && n == float64(container.Ordinal)
 }
 
-func containerOfKind(chain []ContainerEntity, kind string) (store.EntityID, bool) {
+func containerOfKind(chain []ContainerEntity, kind string) (ContainerEntity, bool) {
 	for _, entity := range chain {
 		if strings.EqualFold(entity.Kind, kind) {
-			return entity.ID, true
+			return entity, true
 		}
 	}
-	return "", false
+	return ContainerEntity{}, false
 }
 
 // mergeEntityFields overlays fields onto existing by name, keeping every

@@ -105,6 +105,10 @@ type EntityResult struct {
 	// Links holds every link under them this lookup resolved, so a relation
 	// with no Links resolved to none.
 	LinkRelations []string
+	// SequenceScoped marks a container result the item's {sequence} selected:
+	// its map Path or the lookup template names {sequence}, so it describes
+	// that sequence's container, not necessarily the one holding the Media.
+	SequenceScoped bool
 	// containerRelations is the container map's ContainerRelations, which
 	// linkContainerResults resolves into Links once every map has resolved.
 	containerRelations map[string]string
@@ -523,6 +527,13 @@ func (e *Engine) lookupDocument(ctx context.Context, spec plugin.ScraperSpec, te
 		return Result{}, err
 	}
 	linkContainerResults(result.Entities)
+	if strings.Contains(template, "{sequence}") {
+		for i := range result.Entities {
+			if result.Entities[i].Container {
+				result.Entities[i].SequenceScoped = true
+			}
+		}
+	}
 	if template == spec.LookupTemplate {
 		if err := e.overlayItemLookup(ctx, spec, id, v, config, &result); err != nil {
 			return Result{}, err
@@ -871,6 +882,7 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 		}
 		if entityMap.Container {
 			if entity, ok := containerEntityResult(spec, entityMap, node, config); ok {
+				entity.SequenceScoped = strings.Contains(entityMap.Path, "{sequence}")
 				entities = append(entities, entity)
 			}
 			continue
