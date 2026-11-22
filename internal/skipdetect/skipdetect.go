@@ -134,10 +134,11 @@ const (
 	// different noises, sit a few bits apart. Such frames match only when
 	// identical; any difference counts as chance distance.
 	spectralDetailBits = 4
-	// spectralMinDetailedFrames is the fewest detailed frames a window needs on
-	// both sides to compare at all, so a window of identical hum or a held tone
-	// alone is not evidence of shared audio.
-	spectralMinDetailedFrames = 2
+	// spectralMinEvidenceFrames is the fewest informative frame pairs (both
+	// detailed, or silent on one side only) a window needs to compare at all,
+	// so a window of identical hum or a held tone alone is not evidence of
+	// shared audio.
+	spectralMinEvidenceFrames = 2
 )
 
 // Detector is skipdetect's slice of the FFmpeg seam (interface at the consumer,
@@ -870,9 +871,11 @@ func sharedTrailingRun(self, sibling []float64) sharedRun {
 // frames aligned to self's frame 0, so startWindow is a window of self's
 // analysed region; the sibling side may sit at any frame. A window matches when
 // its frames' mean distance (spectralWindowDistance) is at most
-// spectralWindowMatchBits; it diverges when the distance is larger. An offset where no window diverges yields nothing:
-// the two signatures never differ there, so they are the same file (or the same
-// stretch of it) broken only by silence, not a segment with a known end.
+// spectralWindowMatchBits; it diverges when the distance is larger. An offset
+// where windows match but none diverges means the two signatures are the same
+// recording (broken at most by shared silence), so the whole pair yields
+// nothing: a near-identical shift of the same file must not pass for a shared
+// segment.
 // compared is the number of windows the two signatures overlap at the run's
 // offset. Only maximal runs are judged against limits, so a run too long to be
 // a segment is never cut down to one; among those, beats picks.
@@ -915,6 +918,9 @@ func spectralSharedRun(self, sibling []uint32, limits runLimits) sharedRun {
 			runStart, diffBits = w+1, 0
 		}
 		if !diverged {
+			if len(runs) > 0 {
+				return sharedRun{}
+			}
 			continue
 		}
 		for _, cand := range runs {
@@ -926,27 +932,36 @@ func spectralSharedRun(self, sibling []uint32, limits runLimits) sharedRun {
 	return best
 }
 
-// spectralWindowDistance sums the distance over one window's frames. Detailed
-// frame pairs add their Hamming distance. A pair with a low-detail frame adds
-// nothing when the hashes are identical and spectralChanceBits otherwise: two
-// tones a few bits apart are different sounds, not a near match. ok is false
-// when either side holds a silent frame (shared silence is not shared audio)
-// or the window has fewer than spectralMinDetailedFrames detailed pairs.
+// spectralWindowDistance returns one window's distance, scaled to the full
+// window over the frame pairs that carry audio. Pairs silent on both sides are
+// skipped: shared silence is not shared audio. A pair silent on one side only
+// adds spectralChanceBits, as sound against silence is a difference. Detailed
+// pairs add their Hamming distance. A pair with a low-detail frame adds nothing
+// when the hashes are identical and spectralChanceBits otherwise: two tones a
+// few bits apart are different sounds, not a near match. ok is false when the
+// window has fewer than spectralMinEvidenceFrames informative pairs.
 func spectralWindowDistance(a, b []uint32) (int, bool) {
-	var total, detailed int
+	var total, audible, evidence int
 	for i := range a {
-		if a[i] == ffmpeg.SpectralSilentFrame || b[i] == ffmpeg.SpectralSilentFrame {
-			return 0, false
-		}
+		silentA, silentB := a[i] == ffmpeg.SpectralSilentFrame, b[i] == ffmpeg.SpectralSilentFrame
 		switch {
+		case silentA && silentB:
+			continue
+		case silentA || silentB:
+			evidence++
+			total += spectralChanceBits
 		case spectralFrameDetailed(a[i]) && spectralFrameDetailed(b[i]):
-			detailed++
+			evidence++
 			total += bits.OnesCount32(a[i] ^ b[i])
 		case a[i] != b[i]:
 			total += spectralChanceBits
 		}
+		audible++
 	}
-	return total, detailed >= spectralMinDetailedFrames
+	if evidence < spectralMinEvidenceFrames {
+		return 0, false
+	}
+	return total * len(a) / audible, true
 }
 
 // spectralFrameDetailed reports whether a sub-fingerprint describes a sound

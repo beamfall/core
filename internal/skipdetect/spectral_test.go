@@ -316,3 +316,30 @@ func TestSpectralSharedTonesMatchExactly(t *testing.T) {
 		t.Error("a window with no detailed frames compared")
 	}
 }
+
+// CORE-3111 review r1: a slowly changing opening still matches itself one
+// frame off; the aligned offset never diverges, so the pair is one recording.
+func TestSpectralIdenticalSlowOpeningYieldsNoIntro(t *testing.T) {
+	var opening []uint32
+	for _, hash := range noise(8, 4) { // 32 one-second steps
+		opening = append(opening, constFrames(hash, 1)...)
+	}
+	frames := join(opening, constFrames(ffmpeg.SpectralSilentFrame, 2), noise(9, 146))
+	limits := runLimits{maxWindows: maxIntroWindows, durationSeconds: 1800}
+	if run := spectralSharedRun(frames, frames, limits); run.windows != 0 {
+		t.Fatalf("identical pair matched %+v", run)
+	}
+}
+
+// CORE-3111 review r1: silence on one side after a shared intro is a
+// difference, so the intro keeps its end.
+func TestSpectralOneSidedSilenceEndsIntro(t *testing.T) {
+	theme := noise(10, 24)
+	self := join(theme, constFrames(ffmpeg.SpectralSilentFrame, 60))
+	sibling := join(jitter(11, theme), noise(12, 60))
+	limits := runLimits{maxWindows: maxIntroWindows, durationSeconds: 1800}
+	run := spectralSharedRun(self, sibling, limits)
+	if run.startWindow != 0 || run.windows != 24 || !run.trusted() {
+		t.Fatalf("got %+v, want a trusted 24-window intro at 0", run)
+	}
+}
