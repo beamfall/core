@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -28,9 +29,9 @@ func writeSidecarFixture(t *testing.T, path, content string) {
 	}
 }
 
-// CORE-0361: a film's sidecar fills the plan's local part with values the
-// bundle declares, and the mapper reports the sidecar signature that tells a
-// rescan to read it again.
+// CORE-0361: a film's sidecar parses to values the bundle declares, signed
+// with the signature the mapper reports for it, and states every relation the
+// format owns.
 func TestFilmTVHydrationCarriesFilmSidecar(t *testing.T) {
 	mapper := firstPartyHooks().HydrationMappers[filmtv.PluginID]
 	sidecars, ok := mapper.(app.HydrationSidecarMapper)
@@ -40,7 +41,7 @@ func TestFilmTVHydrationCarriesFilmSidecar(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "Lantern (2019)")
 	path := filepath.Join(dir, "Lantern (2019).mkv")
 	writeSidecarFixture(t, path, "")
-	if sidecars.SidecarSignature(path) != "" || mapper.MapHydration(nil, path).Local != nil {
+	if sidecars.SidecarSignature(path) != "" || sidecars.MapSidecar(path) != nil {
 		t.Fatal("film without a sidecar carries local values")
 	}
 	writeSidecarFixture(t, filepath.Join(dir, "Lantern (2019).nfo"), `<?xml version="1.0" encoding="UTF-8"?>
@@ -48,14 +49,20 @@ func TestFilmTVHydrationCarriesFilmSidecar(t *testing.T) {
 <tagline>Light stays.</tagline><year>2019</year><genre>Drama</genre><studio>North Pier</studio>
 <set><name>Lantern Collection</name></set><director>Mara Ellison</director>
 <actor><name>Iris Calder</name><role>Wren</role><order>0</order></actor><playcount>1</playcount></movie>`)
-	if sidecars.SidecarSignature(path) == "" {
+	signature := sidecars.SidecarSignature(path)
+	if signature == "" {
 		t.Fatal("sidecar signature empty with a sidecar present")
 	}
-	plan := mapper.MapHydration(nil, path)
-	if !plan.MarkComplete || plan.Local == nil {
-		t.Fatalf("film plan = %+v, want marked complete with local values", plan)
+	if plan := mapper.MapHydration(nil, path); !plan.MarkComplete {
+		t.Fatalf("film plan = %+v, want marked complete", plan)
 	}
-	local := plan.Local
+	local := sidecars.MapSidecar(path)
+	if local == nil || local.Unreadable || local.Signature != signature {
+		t.Fatalf("film sidecar = %+v, want signed %q", local, signature)
+	}
+	if len(local.OwnedRelations) != len(filmtv.NFOOwnedRelations()) {
+		t.Fatalf("owned relations = %+v, want every NFO relation", local.OwnedRelations)
+	}
 	if local.Title != "The Lantern" || local.SortTitle != "Lantern, The" || local.Summary != "A keeper stays." || local.Year != 2019 {
 		t.Fatalf("local built-ins = %+v", local)
 	}
@@ -83,31 +90,60 @@ func TestFilmTVHydrationCarriesFilmSidecar(t *testing.T) {
 	}
 }
 
-// An episode's season and show sidecars land on its container Entities.
-func TestFilmTVHydrationCarriesContainerSidecars(t *testing.T) {
+// CORE-0361: container sidecars are not imported. An episode's own sidecar
+// still parses, while its show and season sidecars put no field on the
+// container Entities the plan writes.
+func TestFilmTVHydrationIgnoresContainerSidecars(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "Tidewater")
 	path := filepath.Join(root, "Season 1", "Tidewater S01E01.mkv")
 	writeSidecarFixture(t, path, "")
 	writeSidecarFixture(t, filepath.Join(root, "tvshow.nfo"), `<tvshow><title>Tidewater</title><plot>A harbour town.</plot><studio>Coast TV</studio></tvshow>`)
 	writeSidecarFixture(t, filepath.Join(root, "Season 1", "season.nfo"), `<season><plot>The first tide.</plot></season>`)
-	writeSidecarFixture(t, filepath.Join(root, "Season 1", "Tidewater S01E01.nfo"), `<episodedetails><title>Flood</title><season>1</season><episode>1</episode></episodedetails>`)
+	writeSidecarFixture(t, filepath.Join(root, "Season 1", "Tidewater S01E01.nfo"), `<episodedetails><title>Flood</title><plot>Water rises.</plot><season>1</season><episode>1</episode></episodedetails>`)
 
-	plan := firstPartyHooks().HydrationMappers[filmtv.PluginID].MapHydration(nil, path)
+	mapper := firstPartyHooks().HydrationMappers[filmtv.PluginID]
+	plan := mapper.MapHydration(nil, path)
 	assertFilmTVPlanDeclared(t, plan)
-	if plan.Local == nil || plan.Local.Title != "" {
-		t.Fatalf("episode local = %+v, want local values without a Media title", plan.Local)
-	}
 	var season, show []store.EntityField
 	for _, relation := range plan.Relations {
 		if relation.Name == filmtv.SeasonOfRelation {
 			season, show = relation.From.Fields, relation.ToEntity.Fields
 		}
 	}
-	if !hasNumberField(season, "number", 1) || !hasTextField(season, "overview", "The first tide.") {
-		t.Fatalf("season fields = %+v", season)
+	if !hasNumberField(season, "number", 1) || hasTextField(season, "overview", "The first tide.") {
+		t.Fatalf("season fields = %+v, want the number and no sidecar value", season)
 	}
-	if !hasTextField(show, "summary", "A harbour town.") || !hasTextField(show, "network", "Coast TV") {
-		t.Fatalf("show fields = %+v", show)
+	if len(show) != 0 {
+		t.Fatalf("show fields = %+v, want none", show)
+	}
+	local := mapper.(app.HydrationSidecarMapper).MapSidecar(path)
+	if local == nil || local.Summary != "Water rises." {
+		t.Fatalf("episode sidecar = %+v, want its own plot", local)
+	}
+}
+
+// CORE-0361: a sidecar that exists but cannot be read parses as Unreadable,
+// not as no sidecar, so Core keeps what it imported before.
+func TestFilmTVSidecarUnreadableIsNotRemoval(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Lantern (2019).mkv")
+	nfo := filepath.Join(dir, "Lantern (2019).nfo")
+	writeSidecarFixture(t, path, "")
+	writeSidecarFixture(t, nfo, `<movie><title>The Lantern</title></movie>`)
+	if err := os.Chmod(nfo, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(nfo, 0o600) })
+	if f, err := os.Open(nfo); err == nil { // #nosec G304 -- nfo is under this test's t.TempDir()
+		_ = f.Close()
+		t.Skip("permissions do not stop this user reading the sidecar")
+	}
+	sidecars := firstPartyHooks().HydrationMappers[filmtv.PluginID].(app.HydrationSidecarMapper)
+	if sidecars.SidecarSignature(path) == "" {
+		t.Fatal("unreadable sidecar has no signature, so it reads as removed")
+	}
+	if local := sidecars.MapSidecar(path); local == nil || !local.Unreadable {
+		t.Fatalf("unreadable sidecar = %+v, want Unreadable", local)
 	}
 }
 
@@ -177,5 +213,21 @@ func TestFilmTVNFOImportMarksWatchedForTheImportingProfileOnly(t *testing.T) {
 	}
 	if progress, ok, err := st.PlaybackProgressFor(ctx, other.ID, media.ID); err != nil || (ok && progress.Watched) {
 		t.Fatalf("other profile progress = %+v ok=%v err=%v, want untouched", progress, ok, err)
+	}
+}
+
+// CORE-0361: the NFO importer honours the run's categories, so a run that
+// does not select watch state writes none.
+func TestFilmTVNFOImporterHonoursCategories(t *testing.T) {
+	factory := firstPartyHooks().MigrationSourceFactories[app.MigrationSourceKey{PluginID: filmtv.PluginID, ImporterID: "nfo"}]
+	if factory == nil {
+		t.Fatal("nfo importer factory missing")
+	}
+	root := t.TempDir()
+	if got := factory([]string{migrate.CategoryRatings}, root).Categories(); slices.Contains(got, migrate.CategoryWatchState) {
+		t.Fatalf("categories without watch state selected = %v, want no watch state", got)
+	}
+	if got := factory([]string{migrate.CategoryWatchState}, root).Categories(); !slices.Contains(got, migrate.CategoryWatchState) {
+		t.Fatalf("categories with watch state selected = %v, want watch state", got)
 	}
 }

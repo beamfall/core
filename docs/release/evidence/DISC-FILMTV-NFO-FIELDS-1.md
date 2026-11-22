@@ -1,46 +1,73 @@
 # DISC-FILMTV-NFO-FIELDS-1 (CORE-0361) evidence
 
-Kodi-family NFO sidecars (`movie.nfo`, `<stem>.nfo`, `tvshow.nfo`, `season.nfo`,
-multi-root and multi-episode files) now hydrate Media at a new `local` metadata
-tier. That tier ranks above operator and scan writes and below manual edits, and
-its fields read as locked. Core stays generic: the hydration seam gains an
-optional local part (`HydrationPlan.Local`) and an optional sidecar-signature
-mapper (`HydrationSidecarMapper`). The plugin parses the NFO and supplies values
-and the signature (each sidecar's size and mtime).
+Kodi-family NFO sidecars beside a film or an episode file (`movie.nfo`, `<stem>.nfo`,
+multi-root files) now hydrate the Media at a new `local` metadata tier. That tier ranks
+above operator and scan writes and below manual edits, and its fields read as locked.
+Core stays generic: a mapper may implement `HydrationSidecarMapper`, which signs a path's
+sidecar without reading it and maps it to a local part (built-in values, declared Media
+fields, Media relations, the relations the format owns, the signature of the parsed bytes,
+or an unreadable flag). The store applies a local part in one transaction on the Media's
+own catalog plane (`ApplyLocalMetadata`) and releases a removed sidecar the same way
+(`ReleaseLocalMetadata`). Sidecar relation rows carry the CORE-3152 writer `local`.
 
-- Base: `ec99681ca` plus OpenSpec `core-0361-local-sidecar-tier` (`8979352cf`) and this change
-- Plugin: beamfall-plugin-filmtv `4fa96ca` (branch `cl/CORE-0361-nfo-import`). Core
+- Base: `1b9b000c3` (CORE-3152) plus OpenSpec `core-0361-local-sidecar-tier`
+  (`b6b265d33`, `0d1b524b8`, `e79ccfa03`) and this change
+- Plugin: beamfall-plugin-filmtv `887ee54` (branch `cl/CORE-0361-nfo-import`). Core
   needs a filmtv tag from that commit; the `go.mod` pin moves up from v0.1.25.
 - Run: 2026-11-21, go1.27.4 darwin/arm64
 
 | Command | rc | Result |
 |---|---|---|
-| `GOWORK=off go test -count=1 ./internal/identify/... ./internal/app/... ./internal/store/... ./internal/scan/... ./internal/migrate/... ./internal/conformance/...` | 0 | ok |
+| `GOWORK=off go test -count=1 ./internal/identify/... ./internal/app/... ./internal/store/... ./internal/scan/... ./internal/migrate/... ./internal/conformance/...` | 0 | ok (TestVocab rerun after a comment fix) |
 | `go test -count=1 ./cmd/beamfall/...` (uncommitted go.work with the filmtv worktree) | 0 | ok |
 | `gofmt -l internal cmd/beamfall` | 0 | no output |
-| `golangci-lint run` on the changed packages | 0 | 0 issues |
-| `openspec validate --all --strict` | 0 | 203 passed |
+| `golangci-lint run ./internal/store/... ./internal/app/... ./internal/scan/... ./cmd/beamfall/...` | 0 | 0 issues |
+| `openspec validate --all --strict` | 0 | 204 passed |
 | filmtv `go test ./...`, gofmt, golangci-lint | 0 | ok, 0 issues |
 
-When the scan's sidecar re-hydration branch is mutated out,
-`TestScanWritesSidecarValuesAtLocalTier` fails. That test pins the refresh.
+## Mutation checks
+
+Each mutant below was applied alone and made the named test fail.
+
+| Mutant | Killed by |
+|---|---|
+| Local relation DELETE drops its `writer = 'local'` filter | `TestApplyLocalMetadataOwnsOnlyLocalRelationRows` |
+| Owned relations skipped when the parse lists no rows | `TestApplyLocalMetadataOwnsOnlyLocalRelationRows`, `TestScanWritesSidecarValuesAtLocalTier` |
+| Commit between the release and the new writes | `TestApplyLocalMetadataFailureKeepsPreviousState` |
+| Write through the shared catalog instead of the Media's plane | `TestEncryptedApplyLocalMetadataStaysInProtectedPlane` |
+| An unreadable sidecar treated as removed | `TestSidecarUnreadableIsNotRemoval` |
+| Record the stat signature instead of the parsed one | `TestSidecarRecordsParsedSignature` |
+| Scan fast path skips the sidecar refresh | `TestScanRefreshesSidecarsWithoutAProbe` |
+| Scraper upsert may take a `local` row over (entity.go guard removed) | `TestApplyLocalMetadataOwnsOnlyLocalRelationRows` |
+| Field-less Entity written with an upsert instead of an ensure | `TestHydrationFieldlessEntityKeepsStoredFields` |
 
 ## Acceptance
 
 | Item | Test |
 |---|---|
-| Golden fixtures (film, folder film, episode, multi-episode, show-only, Latin-1, truncated, none) produce the expected fields, and every field is declared in the bundle | filmtv `TestLocalNFOHydrationGolden`, `TestLocalNFOHydrationFieldsAreDeclared`, `TestFilmTVHydrationCarriesFilmSidecar`, `TestFilmTVHydrationCarriesContainerSidecars`, `internal/mediaimport` `TestParseNFODocument*` |
-| A later identify/TMDB write changes no local value | `TestScanWritesSidecarValuesAtLocalTier`, `TestLocalTierLocksUntilReleased` |
-| An NFO edit (size or mtime) re-extracts on an unchanged media file | `TestScanWritesSidecarValuesAtLocalTier`, filmtv `TestNFOSignatureTracksSidecars` |
-| Removing the NFO unlocks the fields but keeps their values | `TestScanWritesSidecarValuesAtLocalTier`, `TestLocalTierLocksUntilReleased` |
-| `playcount=1` marks the item watched for the importing profile only | `TestFilmTVNFOImportMarksWatchedForTheImportingProfileOnly` (cmd/beamfall), filmtv `TestNFOSourceCarriesPlayRecord` |
+| Golden fixtures (film, folder film, episode, multi-root, Latin-1, truncated, none) produce the expected fields, all declared in the bundle | filmtv `TestLocalNFOHydrationGolden`, `TestLocalNFOHydrationFieldsAreDeclared`, `TestFilmTVHydrationCarriesFilmSidecar` |
+| A later identify/TMDB write changes no local value; a manual edit outranks it | `TestScanWritesSidecarValuesAtLocalTier`, `TestLocalTierLocksUntilReleased` |
+| An NFO edit re-extracts on an unchanged media file, without a probe, beside any version | `TestScanRefreshesSidecarsWithoutAProbe`, filmtv `TestNFOSignatureTracksSidecars`, `TestNFOSignatureNamesTheSidecar` |
+| Removing the NFO unlocks the fields but keeps their values | `TestScanWritesSidecarValuesAtLocalTier`, `TestLocalTierLocksUntilReleased`, `TestScanRefreshesSidecarsWithoutAProbe` |
+| A sidecar edit replaces only local rows; manual and other-writer rows stay; an emptied relation is emptied | `TestApplyLocalMetadataOwnsOnlyLocalRelationRows`, `TestApplyLocalMetadataDropsFieldsTheSidecarNoLongerStates` |
+| A failed apply keeps the previous values, locks and signature | `TestApplyLocalMetadataFailureKeepsPreviousState` |
+| Encrypted libraries take the values in their own plane | `TestEncryptedApplyLocalMetadataStaysInProtectedPlane` |
+| Unreadable is not removal | `TestSidecarUnreadableIsNotRemoval`, `TestFilmTVSidecarUnreadableIsNotRemoval`, filmtv `TestLocalNFOHydrationUnreadableIsNotRemoval`, `TestLocalNFOHydrationSyntaxErrorIsUnreadable`, `TestLocalNFOHydrationRefusesAnEditDuringTheRead` |
+| The signature is the parsed bytes' and ignores field locks | `TestSidecarRecordsParsedSignature`, `TestApplyLocalMetadataSignatureIgnoresLocks` |
+| Container sidecars are not imported | `TestFilmTVHydrationIgnoresContainerSidecars` |
+| Watched import honours the selected categories and the importing profile; a folder `movie.nfo` describes only the main feature | `TestFilmTVNFOImporterHonoursCategories`, `TestFilmTVNFOImportMarksWatchedForTheImportingProfileOnly`, filmtv `TestNFOSourceHonoursCategorySelection`, `TestNFOSourceCarriesPlayRecord`, `TestFolderFilmNFODescribesOnlyTheMainFeature` |
+| Certification uses the US entry; a foreign-only rating never sets the ceiling | filmtv `TestSelectCertification`, `TestForeignRatingNeverSetsTheCeiling` |
 | The SQL rank table matches the Go precedence | `TestSourceRankValuesMatchGo` |
-| Local values outside the bundle are rejected, and an undeclared signature field errors | `TestValidateLocalRejectsOutOfBundleValues`, `TestSidecarHydrationNeedsDeclaredSupport` |
-| A container Entity write keeps stored fields | `TestHydrationEntityWritesKeepStoredFields` |
+| Local values outside the bundle are rejected; an undeclared signature field errors | `TestValidateLocalRejectsOutOfBundleValues`, `TestSidecarHydrationNeedsDeclaredSupport` |
+| A field-less Entity keeps stored fields | `TestHydrationFieldlessEntityKeepsStoredFields` |
 
 ## Known gaps
 
-- Container (season/show) Entity fields carry no tier, so a later identify Entity upsert can replace NFO values.
-- Local relations replace same-name relations, which drops scraper rows of that name until the next identify.
-- user-rating is stored per Media, not per profile. Actor thumbs are not imported.
+- Show and season NFO import is cut: CORE-3165.
+- `playcount` collapses to watched; the SDK WatchState has no count: CORE-3166.
+- Actor thumbnails are not imported: CORE-3167.
+- `ReplaceMediaRelations` and single-cardinality `UpsertEntityRelation` ignore the writer, so an
+  enrichment replace can drop local rows until the sidecar changes: CORE-3168.
+- An encrypted library's plane has no sort title, so a local sort title is skipped there: CORE-1868.
+- user-rating is stored per Media, not per profile.
 - An unchanged file costs one sidecar stat plus one field read per rescan.

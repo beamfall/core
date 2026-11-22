@@ -85,7 +85,9 @@ func addFilmTVMigrationSources(hooks *app.Hooks) {
 	add("plex", func(_ []string, path string) migrate.Source { return filmtv.NewPlexSource(path) })
 	add("emby", func(_ []string, path string) migrate.Source { return filmtv.NewEmbySource(path) })
 	add("jellyfin", func(_ []string, path string) migrate.Source { return filmtv.NewJellyfinSource(path) })
-	add("nfo", func(_ []string, path string) migrate.Source { return filmtv.NewNFOSource(path) })
+	add("nfo", func(categories []string, path string) migrate.Source {
+		return filmtv.NewNFOSourceForCategories(path, categories)
+	})
 	add(filmtv.TraktImporterID, func(_ []string, path string) migrate.Source { return filmtv.NewTraktSource(path) })
 }
 

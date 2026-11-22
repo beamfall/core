@@ -1,0 +1,87 @@
+package scan
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"slices"
+	"testing"
+
+	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
+)
+
+// sidecarHydrator reports every Media's sidecar as changed and records each
+// sidecar-only hydration, as a hydrator that reads files beside the media
+// does when one is edited.
+type sidecarHydrator struct {
+	fakeMetadataHydrator
+	sidecarCalls []MetadataHydrationInput
+}
+
+func (*sidecarHydrator) SidecarsChanged(context.Context, store.MediaID, string) (bool, error) {
+	return true, nil
+}
+
+func (h *sidecarHydrator) HydrateSidecars(_ context.Context, input MetadataHydrationInput) error {
+	h.sidecarCalls = append(h.sidecarCalls, input)
+	return nil
+}
+
+func (h *sidecarHydrator) sidecarPaths() []string {
+	var paths []string
+	for _, call := range h.sidecarCalls {
+		paths = append(paths, filepath.Base(call.Path))
+	}
+	slices.Sort(paths)
+	return paths
+}
+
+type failingProber struct{}
+
+func (failingProber) Probe(context.Context, string) (ffmpeg.Probe, error) {
+	return ffmpeg.Probe{}, errors.New("probe failed")
+}
+
+// TestScanRefreshesSidecarsWithoutAProbe (CORE-0361): a version attached to
+// an existing Media refreshes that Media's sidecar, and a rescan of unchanged
+// files refreshes theirs whether the probe is missing or fails, so an edited
+// or removed sidecar never waits on a probe.
+func TestScanRefreshesSidecarsWithoutAProbe(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, root, "Night Harbor (2004)/Night Harbor (2004) - 1080p.mkv", []byte("night harbor 1080p"))
+	writeScanFile(t, root, "Night Harbor (2004)/Night Harbor (2004) - 4K.mkv", []byte("night harbor 4k"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(context.Background(), "Titles", false, "titled", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scan := func(prober Prober) *sidecarHydrator {
+		t.Helper()
+		hydrator := &sidecarHydrator{fakeMetadataHydrator: fakeMetadataHydrator{capability: MetadataHydrationCapability{MediaClasses: []store.MediaClass{store.MediaClassVideo}}}}
+		result, err := ScanWithMetadataHydration(context.Background(), st, prober, nil, map[string]FilenameParser{"titled": labelledTitleParser{}}, nil, nil, nil,
+			map[string]MetadataHydrator{"titled": hydrator}, Request{LibraryID: library.ID, Root: root})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.FilesSeen != 2 {
+			t.Fatalf("result = %+v", result)
+		}
+		return hydrator
+	}
+
+	first := scan(videoProber{})
+	if len(first.calls) != 1 || !slices.Equal(first.sidecarPaths(), []string{"Night Harbor (2004) - 4K.mkv"}) {
+		t.Fatalf("first scan: %d hydrations, sidecar refreshes %v; want one hydration and the attached version's refresh", len(first.calls), first.sidecarPaths())
+	}
+	if first.sidecarCalls[0].MediaID != first.calls[0].MediaID {
+		t.Fatalf("attached version refreshed Media %q, want the anchor %q", first.sidecarCalls[0].MediaID, first.calls[0].MediaID)
+	}
+	want := []string{"Night Harbor (2004) - 1080p.mkv", "Night Harbor (2004) - 4K.mkv"}
+	for name, prober := range map[string]Prober{"no prober": nil, "failing prober": failingProber{}} {
+		if got := scan(prober).sidecarPaths(); !slices.Equal(got, want) {
+			t.Fatalf("%s: sidecar refreshes %v, want %v", name, got, want)
+		}
+	}
+}

@@ -21,9 +21,11 @@ const (
 )
 
 // sidecarTestMapper reads "key=value" lines from the file beside the media
-// named <path>.side: title and note land in the plan's local part, credit as a
-// credit relation.
-type sidecarTestMapper struct{}
+// named <path>.side: title, year and note are local values, credit a credit
+// relation, and an "unreadable" line makes the read fail. It owns the credit
+// relation. parsedSignature, when set, replaces the signature of the bytes it
+// read, as when the sidecar changed between the scan's check and its read.
+type sidecarTestMapper struct{ parsedSignature string }
 
 func sidecarPath(path string) string { return path + ".side" }
 
@@ -38,16 +40,27 @@ func (sidecarTestMapper) SidecarSignature(path string) string {
 	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
 }
 
-func (sidecarTestMapper) MapHydration(_ map[string]string, path string) HydrationPlan {
-	plan := HydrationPlan{MarkComplete: true}
+func (sidecarTestMapper) MapHydration(map[string]string, string) HydrationPlan {
+	return HydrationPlan{MarkComplete: true}
+}
+
+func (m sidecarTestMapper) MapSidecar(path string) *HydrationLocal {
 	data, err := os.ReadFile(sidecarPath(path))
 	if err != nil {
-		return plan
+		return nil
 	}
-	local := &HydrationLocal{}
+	local := &HydrationLocal{
+		Signature:      m.SidecarSignature(path),
+		OwnedRelations: []store.WrittenRelation{{Kind: "artist", Name: "appears-on"}},
+	}
+	if m.parsedSignature != "" {
+		local.Signature = m.parsedSignature
+	}
 	for _, line := range strings.Split(string(data), "\n") {
 		key, value, _ := strings.Cut(line, "=")
 		switch key {
+		case "unreadable":
+			return &HydrationLocal{Unreadable: true}
 		case "title":
 			local.Title = value
 		case "year":
@@ -61,8 +74,7 @@ func (sidecarTestMapper) MapHydration(_ map[string]string, path string) Hydratio
 			})
 		}
 	}
-	plan.Local = local
-	return plan
+	return local
 }
 
 func sidecarTestBundle() plugin.Bundle {
@@ -76,11 +88,16 @@ func sidecarTestBundle() plugin.Bundle {
 
 func newSidecarAdapter(t *testing.T, st hydrationStore) *hydrationAdapter {
 	t.Helper()
+	return newSidecarAdapterFor(t, st, sidecarTestMapper{})
+}
+
+func newSidecarAdapterFor(t *testing.T, st hydrationStore, mapper sidecarTestMapper) *hydrationAdapter {
+	t.Helper()
 	registry, err := plugin.NewRegistry([]plugin.Bundle{sidecarTestBundle()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newHydrationAdapters(registry, st, map[string]HydrationMapper{testHydrationPluginID: sidecarTestMapper{}})[testHydrationPluginID].(*hydrationAdapter)
+	return newHydrationAdapters(registry, st, map[string]HydrationMapper{testHydrationPluginID: mapper})[testHydrationPluginID].(*hydrationAdapter)
 }
 
 func (r *rehydrationScan) writeSidecar(content string) {
@@ -196,13 +213,16 @@ func TestValidateLocalRejectsOutOfBundleValues(t *testing.T) {
 		return store.MediaField{Name: name, Type: store.EntityFieldText, Text: "x"}
 	}
 	cases := map[string]*HydrationLocal{
-		"marker":      {MediaFields: []store.MediaField{{Name: testHydrationMarkerField, Type: store.EntityFieldFlag, Flag: true}}},
-		"signature":   {MediaFields: []store.MediaField{text(testSidecarSignatureField)}},
-		"undeclared":  {MediaFields: []store.MediaField{text("undeclared")}},
-		"type":        {MediaFields: []store.MediaField{{Name: testSidecarNoteField, Type: store.EntityFieldNumber, Number: 1}}},
-		"relation":    {Relations: []HydrationRelation{{From: HydrationEntity{Kind: "artist", Title: "A"}, Name: "undeclared"}}},
-		"to-entity":   {Relations: []HydrationRelation{{From: HydrationEntity{Kind: "album", Title: "A"}, Name: "album-artist", ToEntity: &HydrationEntity{Kind: "artist", Title: "B"}}}},
-		"bad-pointer": {Relations: []HydrationRelation{{From: HydrationEntity{Kind: "missing", Title: "A"}, Name: "appears-on"}}},
+		"marker":              {MediaFields: []store.MediaField{{Name: testHydrationMarkerField, Type: store.EntityFieldFlag, Flag: true}}},
+		"signature":           {MediaFields: []store.MediaField{text(testSidecarSignatureField)}},
+		"undeclared":          {MediaFields: []store.MediaField{text("undeclared")}},
+		"type":                {MediaFields: []store.MediaField{{Name: testSidecarNoteField, Type: store.EntityFieldNumber, Number: 1}}},
+		"relation":            {Relations: []HydrationRelation{{From: HydrationEntity{Kind: "artist", Title: "A"}, Name: "undeclared"}}},
+		"to-entity":           {Relations: []HydrationRelation{{From: HydrationEntity{Kind: "album", Title: "A"}, Name: "album-artist", ToEntity: &HydrationEntity{Kind: "artist", Title: "B"}}}},
+		"bad-pointer":         {Relations: []HydrationRelation{{From: HydrationEntity{Kind: "missing", Title: "A"}, Name: "appears-on"}}},
+		"unowned":             {Relations: []HydrationRelation{{From: HydrationEntity{Kind: "artist", Title: "A"}, Name: "appears-on"}}},
+		"owned-undeclared":    {OwnedRelations: []store.WrittenRelation{{Kind: "artist", Name: "undeclared"}}},
+		"owned-entity-target": {OwnedRelations: []store.WrittenRelation{{Kind: "album", Name: "album-artist"}}},
 	}
 	for name, local := range cases {
 		if _, err := adapter.validateLocal(local, testHydrationMarkerField); err == nil {
@@ -216,8 +236,10 @@ func TestValidateLocalRejectsOutOfBundleValues(t *testing.T) {
 	if got.Title != "Spaced" || got.Year != 0 || len(got.MediaFields) != 1 {
 		t.Fatalf("validated = %+v", got)
 	}
-	if got, err := adapter.validateLocal(&HydrationLocal{}, testHydrationMarkerField); err != nil || got != nil {
-		t.Fatalf("empty local = %+v, %v; want nil", got, err)
+	// A sidecar that states nothing still applies: it releases what an
+	// earlier parse stated.
+	if got, err := adapter.validateLocal(&HydrationLocal{}, testHydrationMarkerField); err != nil || got == nil {
+		t.Fatalf("empty local = %+v, %v; want an empty parse", got, err)
 	}
 }
 
@@ -249,9 +271,72 @@ func TestSidecarHydrationNeedsDeclaredSupport(t *testing.T) {
 	}
 }
 
-// An Entity write keeps the fields an earlier writer stored: a field-less
-// Entity changes none of them, and planned fields overlay them by name.
-func TestHydrationEntityWritesKeepStoredFields(t *testing.T) {
+func (r *rehydrationScan) credits() []string {
+	r.t.Helper()
+	related, err := r.st.EntitiesForMedia(context.Background(), r.mediaID, "appears-on", store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	var titles []string
+	for _, entry := range related {
+		titles = append(titles, entry.Entity.Title)
+	}
+	return titles
+}
+
+// TestSidecarUnreadableIsNotRemoval (CORE-0361): a sidecar that cannot be
+// read changes nothing, keeps its old signature so the next scan retries, and
+// a later readable sidecar that drops the last credit removes it.
+func TestSidecarUnreadableIsNotRemoval(t *testing.T) {
+	r := newRehydrationScan(t)
+	r.adapter = newSidecarAdapter(t, r.counted)
+	r.write("sidecar audio bytes padding padding", 3*time.Hour, map[string]string{})
+	r.writeSidecar("note=First note\ncredit=Person A")
+	r.scan()
+	signature := r.field(testSidecarSignatureField)
+	if signature == "" || len(r.credits()) != 1 {
+		t.Fatalf("signature %q credits %v after the first scan", signature, r.credits())
+	}
+
+	r.writeSidecar("unreadable\nnote=Lost note")
+	r.scan()
+	if r.field(testSidecarNoteField) != "First note" || !r.locked(testSidecarNoteField) || len(r.credits()) != 1 {
+		t.Fatalf("unreadable sidecar changed state: note %q locked %v credits %v", r.field(testSidecarNoteField), r.locked(testSidecarNoteField), r.credits())
+	}
+	if r.field(testSidecarSignatureField) != signature {
+		t.Fatalf("unreadable sidecar signature = %q, want the old %q", r.field(testSidecarSignatureField), signature)
+	}
+	if changed, err := r.adapter.SidecarsChanged(context.Background(), r.mediaID, r.path); err != nil || !changed {
+		t.Fatalf("SidecarsChanged after an unreadable sidecar = %v, %v; want a retry", changed, err)
+	}
+
+	r.writeSidecar("note=Second note, longer")
+	r.scan()
+	if r.field(testSidecarNoteField) != "Second note, longer" || len(r.credits()) != 0 {
+		t.Fatalf("readable sidecar: note %q credits %v, want the new note and no credit", r.field(testSidecarNoteField), r.credits())
+	}
+}
+
+// TestSidecarRecordsParsedSignature (CORE-0361): the recorded signature is
+// the one the parse read, not the one the scan's check saw, so a sidecar that
+// changed between the two is read again on the next scan.
+func TestSidecarRecordsParsedSignature(t *testing.T) {
+	r := newRehydrationScan(t)
+	r.adapter = newSidecarAdapterFor(t, r.counted, sidecarTestMapper{parsedSignature: "parsed-bytes"})
+	r.write("sidecar audio bytes padding padding", 3*time.Hour, map[string]string{})
+	r.writeSidecar("note=First note")
+	r.scan()
+	if got := r.field(testSidecarSignatureField); got != "parsed-bytes" {
+		t.Fatalf("recorded signature = %q, want the parse's", got)
+	}
+	if changed, err := r.adapter.SidecarsChanged(context.Background(), r.mediaID, r.path); err != nil || !changed {
+		t.Fatalf("SidecarsChanged = %v, %v; want the newer sidecar read again", changed, err)
+	}
+}
+
+// CORE-0361: a plan that only names an Entity (a name-only credit, a parent)
+// must not erase the fields an earlier write stored on it.
+func TestHydrationFieldlessEntityKeepsStoredFields(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.Open(t)
 	library, err := st.CreateLibrary(ctx, "Library", false, testHydrationPluginID, "profile-default")
@@ -259,37 +344,20 @@ func TestHydrationEntityWritesKeepStoredFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := newSidecarAdapter(t, st)
-	date := func(year int) store.EntityField {
-		return store.EntityField{Name: "release-date", Type: store.EntityFieldDate, Date: time.Date(year, 1, 2, 0, 0, 0, 0, time.UTC)}
-	}
+	date := store.EntityField{Name: "release-date", Type: store.EntityFieldDate, Date: time.Date(2001, 1, 2, 0, 0, 0, 0, time.UTC)}
 	release := store.EntityField{Name: "musicbrainz-release-id", Type: store.EntityFieldText, Text: "release-1"}
-	id, err := adapter.upsertEntity(ctx, library.ID, HydrationEntity{Kind: "album", Title: "Record", Fields: []store.EntityField{date(2001), release}}, map[string]store.EntityID{})
+	id, err := adapter.upsertEntity(ctx, library.ID, HydrationEntity{Kind: "album", Title: "Record", Fields: []store.EntityField{date, release}}, map[string]store.EntityID{})
 	if err != nil {
 		t.Fatal(err)
-	}
-	read := func() map[string]store.EntityField {
-		t.Helper()
-		entity, err := st.Entity(ctx, id, store.LibraryFilter{Revealed: true, AllLibraries: true})
-		if err != nil {
-			t.Fatal(err)
-		}
-		out := map[string]store.EntityField{}
-		for _, field := range entity.Fields {
-			out[field.Name] = field
-		}
-		return out
 	}
 	if _, err := adapter.upsertEntity(ctx, library.ID, HydrationEntity{Kind: "album", Title: "Record"}, map[string]store.EntityID{}); err != nil {
 		t.Fatal(err)
 	}
-	if fields := read(); len(fields) != 2 {
-		t.Fatalf("field-less write left %+v, want both stored fields", fields)
-	}
-	if _, err := adapter.upsertEntity(ctx, library.ID, HydrationEntity{Kind: "album", Title: "Record", Fields: []store.EntityField{date(2005)}}, map[string]store.EntityID{}); err != nil {
+	entity, err := st.Entity(ctx, id, store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
 		t.Fatal(err)
 	}
-	fields := read()
-	if fields["release-date"].Date.Year() != 2005 || fields["musicbrainz-release-id"].Text != "release-1" {
-		t.Fatalf("partial write left %+v, want the new date over the kept release ID", fields)
+	if len(entity.Fields) != 2 {
+		t.Fatalf("field-less write left %+v, want both stored fields", entity.Fields)
 	}
 }

@@ -3555,6 +3555,15 @@ func (s *Store) updateMediaMetadataSQL(ctx context.Context, id MediaID, metadata
 		return err
 	}
 	defer tx.Rollback()
+	if err := updateMediaMetadataTx(ctx, tx, id, metadata, source); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// updateMediaMetadataTx applies the non-nil MediaMetadata fields at source
+// inside the caller's transaction, which runs on the Media's catalog plane.
+func updateMediaMetadataTx(ctx context.Context, tx *sql.Tx, id MediaID, metadata MediaMetadata, source MutationSource) error {
 	var exists int
 	if err := tx.QueryRowContext(ctx, "SELECT 1 FROM media WHERE id = ?", id).Scan(&exists); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -3603,16 +3612,14 @@ func (s *Store) updateMediaMetadataSQL(ctx context.Context, id MediaID, metadata
 		}
 	}
 	if len(sets) == 0 {
-		return tx.Commit() // nothing outranked the stored values; media exists
+		return nil // nothing outranked the stored values; media exists
 	}
 	sets = append(sets, "mutated_by = ?")
 	args = append(args, string(source))
 	args = append(args, id)
-	if _, err := tx.ExecContext(ctx,
-		"UPDATE media SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
-		return err
-	}
-	return tx.Commit()
+	_, err := tx.ExecContext(ctx,
+		"UPDATE media SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...) // #nosec G202 -- sets are fixed column names; values are bound
+	return err
 }
 
 func derefString(p *string) string {

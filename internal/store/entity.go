@@ -722,6 +722,9 @@ func entityRelationRowValues(relation EntityRelation) (attributes, sortOrder any
 	return attributes, sortOrder, nil
 }
 
+// insertMediaRelationTx upserts one Media-target row. A row a local sidecar
+// owns (LocalRelationWriter) is left as it is by an automated writer; only an
+// operator write (no Writer) takes it over.
 func insertMediaRelationTx(ctx context.Context, tx *sql.Tx, relation EntityRelation, attributes, sortOrder any) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO entity_relation(from_entity_id, relation, to_media_id, attributes, sort_order, writer)
@@ -729,6 +732,7 @@ func insertMediaRelationTx(ctx context.Context, tx *sql.Tx, relation EntityRelat
 		ON CONFLICT(from_entity_id, relation, to_media_id) WHERE to_media_id IS NOT NULL
 		DO UPDATE SET attributes = CASE WHEN ? THEN entity_relation.attributes ELSE excluded.attributes END,
 			sort_order = excluded.sort_order, writer = excluded.writer
+		WHERE entity_relation.writer IS NOT '`+LocalRelationWriter+`' OR excluded.writer IS NULL
 	`, relation.FromEntityID, relation.Name, relation.ToMediaID, attributes, sortOrder, relation.Writer, relation.KeepAttributes)
 	return err
 }

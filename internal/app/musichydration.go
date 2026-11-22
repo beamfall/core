@@ -248,24 +248,14 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if err != nil {
 		return err
 	}
-	sidecars, err := a.sidecarState(ctx, input.MediaID, input.Path)
-	if err != nil {
-		return err
-	}
-	local, err := a.validateLocal(plan.Local, a.capability.MarkerField)
-	if err != nil {
-		return err
-	}
-	if err := a.writeLocal(ctx, input.MediaID, input.LibraryID, local, sidecars); err != nil {
-		return err
-	}
-	plan.Local = nil
 	if write != HydrationWriteSkip {
 		if err := a.writePlan(ctx, input, plan, write, key); err != nil {
 			return err
 		}
 	}
-	return a.recordSidecarSignature(ctx, input.MediaID, sidecars)
+	// The sidecar applies after the plan, so a plan's relation replace cannot
+	// drop the local rows it writes.
+	return a.applySidecars(ctx, input)
 }
 
 // writePlan lands the plan's scan-tier part under the write decision.
@@ -742,9 +732,7 @@ func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.Lib
 	if ensurer, ok := a.store.(identify.EntityEnsurer); ok && len(mapped.Fields) == 0 {
 		return id, ensurer.EnsureEntity(ctx, entity)
 	}
-	if entity.Fields, err = a.mergedEntityFields(ctx, id, mapped.Fields); err != nil {
-		return "", err
-	}
+	entity.Fields = mapped.Fields
 	return id, a.store.UpsertEntity(ctx, entity)
 }
 

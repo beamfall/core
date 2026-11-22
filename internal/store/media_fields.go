@@ -316,38 +316,9 @@ func (s *Store) UpsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 		return err
 	}
 	defer tx.Rollback()
-	wrote := 0
-	for _, field := range fields {
-		if source != MutationSourceManual {
-			tombstoned, err := mediaFieldTombstonedTx(ctx, tx, id, field)
-			if err != nil {
-				return err
-			}
-			if tombstoned {
-				continue
-			}
-		}
-		allowed, err := canWriteFieldTx(ctx, tx, id, field.Name, source)
-		if err != nil {
-			return err
-		}
-		if !allowed {
-			continue // a higher-precedence source owns this field — preserve it
-		}
-		// A field's type may change across writes, so the old value is
-		// cleared from every side table, not just the new type's.
-		for _, table := range mediaFieldTables {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE media_id = ? AND field = ?`, id, field.Name); err != nil {
-				return err
-			}
-		}
-		if err := insertMediaFields(ctx, tx, id, []MediaField{field}); err != nil {
-			return err
-		}
-		if err := recordFieldProvenanceTx(ctx, tx, id, field.Name, source); err != nil {
-			return err
-		}
-		wrote++
+	wrote, err := upsertMediaFieldsTx(ctx, tx, id, fields, source)
+	if err != nil {
+		return err
 	}
 	if wrote == 0 {
 		return nil
@@ -359,6 +330,50 @@ func (s *Store) UpsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 		s.emitMediaUpdated(ctx, id)
 	}
 	return nil
+}
+
+// upsertMediaFieldsTx is UpsertMediaFieldsWithSource inside the caller's
+// transaction; it returns how many fields landed.
+func upsertMediaFieldsTx(ctx context.Context, tx *sql.Tx, id MediaID, fields []MediaField, source MutationSource) (int, error) {
+	wrote := 0
+	for _, field := range fields {
+		if source != MutationSourceManual {
+			tombstoned, err := mediaFieldTombstonedTx(ctx, tx, id, field)
+			if err != nil {
+				return 0, err
+			}
+			if tombstoned {
+				continue
+			}
+		}
+		allowed, err := canWriteFieldTx(ctx, tx, id, field.Name, source)
+		if err != nil {
+			return 0, err
+		}
+		if !allowed {
+			continue // a higher-precedence source owns this field — preserve it
+		}
+		if err := replaceMediaFieldValueTx(ctx, tx, id, field); err != nil {
+			return 0, err
+		}
+		if err := recordFieldProvenanceTx(ctx, tx, id, field.Name, source); err != nil {
+			return 0, err
+		}
+		wrote++
+	}
+	return wrote, nil
+}
+
+// replaceMediaFieldValueTx stores one field's value. A field's type may
+// change across writes, so the old value is cleared from every side table,
+// not just the new type's.
+func replaceMediaFieldValueTx(ctx context.Context, tx *sql.Tx, id MediaID, field MediaField) error {
+	for _, table := range mediaFieldTables {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE media_id = ? AND field = ?`, id, field.Name); err != nil { // #nosec G202 -- fixed table list
+			return err
+		}
+	}
+	return insertMediaFields(ctx, tx, id, []MediaField{field})
 }
 
 // InsertMediaFieldsIfAbsent writes only fields with no existing (media_id,

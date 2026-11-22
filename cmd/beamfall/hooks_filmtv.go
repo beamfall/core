@@ -13,9 +13,8 @@ import (
 // filmtvHydrationMapper groups a local file into the Film & TV plugin's
 // container Entities from the path alone, so files with no provider match still
 // land in containers. Every file is marked complete, so a rescan does not map it
-// again unless its sidecars change. Values the plugin reads from the file's
-// sidecars land at the locked local tier, and the containers' sidecar fields on
-// those Entities.
+// again. MapSidecar reads the file's own sidecar, whose values
+// land at the locked local tier; container sidecars are not imported.
 //
 // The two container kinds are read from the plugin's bundle: groupKind is the
 // kind that declares filmtv.SeasonOfRelation and parentKind is that relation's
@@ -65,15 +64,13 @@ func (m filmtvHydrationMapper) TitleFoldKinds() []string {
 }
 
 // SidecarSignatureField and SidecarSignature let a rescan re-read a file's
-// sidecars when one appears, changes or goes away.
+// sidecar when one appears, changes or goes away.
 func (filmtvHydrationMapper) SidecarSignatureField() string { return filmtv.NFOSignatureField }
 
 func (filmtvHydrationMapper) SidecarSignature(path string) string { return filmtv.NFOSignature(path) }
 
 func (m filmtvHydrationMapper) MapHydration(_ map[string]string, path string) app.HydrationPlan {
 	plan := app.HydrationPlan{MarkComplete: true}
-	sidecar := filmtv.LocalNFOHydration(path)
-	plan.Local = sidecarLocal(sidecar)
 	local := filmtv.LocalHydration(path)
 	// LocalHydration leaves the titles empty for files it does not group.
 	if m.groupKind == "" || local.SeriesTitle == "" || local.SeasonTitle == "" {
@@ -91,7 +88,6 @@ func (m filmtvHydrationMapper) MapHydration(_ map[string]string, path string) ap
 	if local.SeasonNumber == 0 {
 		group.Fields = append(group.Fields, store.EntityField{Name: "specials", Type: store.EntityFieldFlag, Flag: true})
 	}
-	group.Fields = append(group.Fields, sidecarEntityFields(sidecar.GroupFields)...)
 	mediaOrder := local.EpisodeIndex
 	groupOrder := local.SeasonNumber
 	plan.Relations = append(plan.Relations,
@@ -105,17 +101,23 @@ func (m filmtvHydrationMapper) MapHydration(_ map[string]string, path string) ap
 			From:             group,
 			Name:             filmtv.SeasonOfRelation,
 			RequiresRelation: filmtv.SeasonEpisodeRelation,
-			ToEntity:         &app.HydrationEntity{Kind: m.parentKind, Title: parent, Fields: sidecarEntityFields(sidecar.ParentFields)},
+			ToEntity:         &app.HydrationEntity{Kind: m.parentKind, Title: parent},
 			SortOrder:        &groupOrder,
 		},
 	)
 	return plan
 }
 
-// sidecarLocal is the local part of a plan from the file's own sidecar, or nil
-// when it has none. Its relations target the Media.
-func sidecarLocal(sidecar filmtv.NFOHydration) *app.HydrationLocal {
-	if !sidecar.Found {
+// MapSidecar parses the file's own sidecar: nil when it has none, Unreadable
+// when it cannot be read now. Its relations target the Media, and the
+// relations the format owns are stated even when the sidecar lists none of
+// them, so a credit removed from it is removed from the Media.
+func (filmtvHydrationMapper) MapSidecar(path string) *app.HydrationLocal {
+	sidecar := filmtv.LocalNFOHydration(path)
+	if sidecar.Unreadable {
+		return &app.HydrationLocal{Unreadable: true}
+	}
+	if !sidecar.Found || sidecar.Signature == "" {
 		return nil
 	}
 	local := &app.HydrationLocal{
@@ -123,6 +125,7 @@ func sidecarLocal(sidecar filmtv.NFOHydration) *app.HydrationLocal {
 		SortTitle: sidecar.SortTitle,
 		Summary:   sidecar.Summary,
 		Year:      sidecar.Year,
+		Signature: sidecar.Signature,
 	}
 	for _, field := range sidecar.MediaFields {
 		local.MediaFields = append(local.MediaFields, store.MediaField{
@@ -138,18 +141,10 @@ func sidecarLocal(sidecar filmtv.NFOHydration) *app.HydrationLocal {
 			SortOrder:   relation.SortOrder,
 		})
 	}
-	return local
-}
-
-// sidecarEntityFields converts container fields read from a sidecar.
-func sidecarEntityFields(fields []filmtv.SidecarField) []store.EntityField {
-	out := make([]store.EntityField, 0, len(fields))
-	for _, field := range fields {
-		out = append(out, store.EntityField{
-			Name: field.Name, Type: store.EntityFieldType(field.Type), Text: field.Text, Number: field.Number, Date: field.Date,
-		})
+	for _, owned := range filmtv.NFOOwnedRelations() {
+		local.OwnedRelations = append(local.OwnedRelations, store.WrittenRelation{Kind: owned.FromKind, Name: owned.Name})
 	}
-	return out
+	return local
 }
 
 // parentFolderDepth is how many enclosing folders parentTitle searches: the
