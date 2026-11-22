@@ -40,7 +40,7 @@ BEAMFALL_MEDIA_DIR=/srv/media \
   docker compose -f compose.cpu.yml up -d
 ```
 
-Then open `http://127.0.0.1:8800/` and finish setup in the Beamfall Console.
+Then open `http://127.0.0.1:2326/` and finish setup in the Beamfall Console.
 The first-run setup URLs, including the one-time setup token, are the last
 lines the server prints once it is listening: read them with
 `docker logs beamfall`. A browser on the server's local network needs no
@@ -69,7 +69,7 @@ attribute the relay to a declared proxy.
 | `BEAMFALL_IMAGE` | — | **Required.** Image reference; the template refuses to start without it but accepts any value. Use `ghcr.io/beamfall/core@sha256:…` from the release deployment bundle, or your own tag for a source build. |
 | `BEAMFALL_MEDIA_DIR` | `/srv/media` | Host media library, mounted read-only. |
 | `BEAMFALL_HTTP_BIND` | `127.0.0.1` | Host bind address for the HTTP port. |
-| `BEAMFALL_HTTP_PORT` | `8800` | Host HTTP port. |
+| `BEAMFALL_HTTP_PORT` | `2326` | Host HTTP port. |
 | `BEAMFALL_TRANSCODE_CAP` | `2` | Max concurrent transcode sessions. |
 | `BEAMFALL_RENDER_GID` | `109` | Render group id (Intel/VAAPI overlay). |
 | `BEAMFALL_PUBLIC_HOST` | — | HTTPS hostname (required by `compose.public.yml`). |

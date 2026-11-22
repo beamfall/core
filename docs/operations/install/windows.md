@@ -33,7 +33,7 @@ For the alternative without Docker, follow the [Linux source build](linux.md#ins
 WSL2, then start the built Linux binary from the repository root:
 
 ```sh
-./beamfall serve -data-dir "$HOME/beamfall-data" -addr 0.0.0.0:8800
+./beamfall serve -data-dir "$HOME/beamfall-data" -addr 0.0.0.0:2326
 ```
 
 Untested: Beamfall NVIDIA transcoding through Docker Desktop's WSL2 GPU support is unverified.
@@ -67,7 +67,7 @@ For volume ownership and scratch, see [container paths](linux.md#data-and-media-
 
 ## First sign-in and pairing
 
-Try `http://localhost:8800/` from Windows. Read the Linux process output or
+Try `http://localhost:2326/` from Windows. Read the Linux process output or
 `docker logs beamfall`: setup URLs and the one-time token are the last startup lines once
 listening. While setup is unfinished, restarting prints a new token. A browser the server
 classifies as on the local network needs no token; WSL2 and Docker Desktop relay requests
@@ -81,7 +81,7 @@ starting; a published port does not by itself establish reachability through eve
 Claim the server only on a trusted network.
 
 To recover browser sign-in, stop the Linux server, run
-`./beamfall pairing-code -data-dir "$HOME/beamfall-data" -addr 0.0.0.0:8800`, then restart before
+`./beamfall pairing-code -data-dir "$HOME/beamfall-data" -addr 0.0.0.0:2326`, then restart before
 the code expires. The default role is `manager`; `-role viewer` is available. Password reset
 also runs stopped: `./beamfall reset-admin-password -data-dir "$HOME/beamfall-data"`.
 For containers, use an offline container with the same data volume and user. See

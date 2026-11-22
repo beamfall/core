@@ -10,7 +10,7 @@ import (
 // The /metrics scrape credential (GCR-012-H).
 //
 // Locality cannot be proven from the peer address: the default bind is
-// 127.0.0.1:8800, so a reverse proxy is necessarily same-host and presents a
+// 127.0.0.1:2326, so a reverse proxy is necessarily same-host and presents a
 // loopback peer for traffic it relays from anywhere. The host-side signals in
 // proxy.go narrow that, but they read hop headers the relaying proxy chose to
 // add, and a bare `proxy_pass` adds none — so a same-host proxy that neither

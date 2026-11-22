@@ -360,7 +360,7 @@ const DefaultPlaybackCacheBudgetBytes int64 = 20 << 30
 // Default returns the local development configuration.
 func Default() Config {
 	return Config{
-		Addr:         "127.0.0.1:8800",
+		Addr:         "127.0.0.1:2326",
 		DataDir:      ".beamfall",
 		ServerName:   "Beamfall",
 		Discovery:    DiscoveryConfig{Enabled: true},

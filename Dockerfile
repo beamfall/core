@@ -142,12 +142,12 @@ LABEL org.opencontainers.image.title="Beamfall Core" \
 	org.opencontainers.image.version="${BEAMFALL_VERSION:-development}" \
 	org.opencontainers.image.revision="${BEAMFALL_COMMIT}"
 
-ENV BEAMFALL_ADDR=0.0.0.0:8800 \
+ENV BEAMFALL_ADDR=0.0.0.0:2326 \
 	BEAMFALL_DATA_DIR=/data \
 	BEAMFALL_BUILD_SHA=${BEAMFALL_COMMIT}
 
 VOLUME ["/data", "/media", "/transcode"]
-EXPOSE 8800
+EXPOSE 2326
 USER beamfall:beamfall
 
 # Until the first passing probe, probe every 2s for up to 5 minutes, so the
@@ -155,9 +155,10 @@ USER beamfall:beamfall
 # slow start (a long migration). Failures before that first pass do not count
 # while the start period lasts. After the first pass, or once the 5 minutes are
 # up, probe every 30s, and 3 failures in a row mark the container unhealthy.
-# --start-interval needs Docker Engine 25 or later (CORE-2164).
+# --start-interval needs Docker Engine 25 or later (CORE-2164). The probe uses
+# the port in BEAMFALL_ADDR, so an install that keeps 8800 stays healthy (ADR-0239).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5m --start-interval=2s --retries=3 \
-	CMD curl -fsS http://127.0.0.1:8800/health >/dev/null || exit 1
+	CMD curl -fsS "http://127.0.0.1:${BEAMFALL_ADDR##*:}/health" >/dev/null || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/beamfall"]
 CMD ["serve"]

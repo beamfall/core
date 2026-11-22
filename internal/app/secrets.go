@@ -146,7 +146,7 @@ func setupURLHost(listenAddr string) string {
 	host, port, err := net.SplitHostPort(listenAddr)
 	if err != nil {
 		host = "127.0.0.1"
-		port = "8800"
+		port = "2326"
 	}
 	switch host {
 	case "", "0.0.0.0", "::":

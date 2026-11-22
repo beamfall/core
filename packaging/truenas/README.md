@@ -25,8 +25,8 @@ Docker Compose spec:
 4. Optional overrides: `BEAMFALL_HTTP_PORT`, `BEAMFALL_HTTP_BIND`
    (default `127.0.0.1`), `BEAMFALL_TRANSCODE_CAP`, `BEAMFALL_KNOWN_PROXIES`
    (see [Network exposure](#network-exposure-beamfall_http_bind)).
-5. Open the Web UI at `http://127.0.0.1:8800/` from the TrueNAS host (or
-   through an SSH tunnel: `ssh -L 8800:127.0.0.1:8800 <truenas-host>`) and
+5. Open the Web UI at `http://127.0.0.1:2326/` from the TrueNAS host (or
+   through an SSH tunnel: `ssh -L 2326:127.0.0.1:2326 <truenas-host>`) and
    finish setup in the Beamfall Console. The first-run setup URLs, including
    the one-time setup token, are the last lines in the app's container
    logs once the server is listening; a browser on the local network needs
@@ -45,7 +45,7 @@ Exposing the port beyond loopback is an explicit operator decision, not a
 default. Set `BEAMFALL_HTTP_BIND` to a specific interface address only when an
 intentional TLS boundary fronts it — a reverse proxy (Caddy, nginx, Traefik,
 or the TrueNAS built-in certificates + proxy) that terminates TLS and forwards
-to `127.0.0.1:8800`. Binding to `0.0.0.0` on a shared or untrusted network
+to `127.0.0.1:2326`. Binding to `0.0.0.0` on a shared or untrusted network
 sends credentials and session tokens in the clear.
 
 When a reverse proxy fronts this container, also set `BEAMFALL_KNOWN_PROXIES`
