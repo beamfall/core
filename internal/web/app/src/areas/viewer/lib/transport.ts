@@ -760,7 +760,7 @@ export function buildRouteDetailModel({
   const decision = (info && info.decision) || (stream && stream.kind) || "";
   // Route.
   let routeLabel = labels.directPlay || "Direct play";
-  if (decision === "transcode") {
+  if (decision === "transcode" || decision === "precomputed-rendition") {
     routeLabel = labels.serverTranscode || "Server transcode";
   } else if (decision === "direct-stream") {
     routeLabel = labels.directStream || "Direct stream";
