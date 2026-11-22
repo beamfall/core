@@ -6,6 +6,7 @@
 - [ ] Web: Slideshow action on Collection and Library browse pages
 - [ ] Web: hidden, locked and other-identity items never shown; no playback decision requested
 - [ ] Web: `oscilluxSlideMotion` seam; Calm through the Oscillux v0.2.15 slideshow pass (CORE-2980), hard cuts without WebGL2 or on a context loss
+- [ ] Web: route the Calm output through Oscillux's frame flash limiter before the canvas (pass README: the limiter sees the whole slideshow)
 - [ ] Web: Dark Room schedule (on/off, start, end; default 22:00–07:00; crosses midnight), per-device storage, 85% black scrim
 - [ ] Web: portrait pairing on a landscape screen; a pair is one slide; lone portrait alone with dark bars
 - [ ] Vitest: pairing decision and Dark Room window (midnight crossing)

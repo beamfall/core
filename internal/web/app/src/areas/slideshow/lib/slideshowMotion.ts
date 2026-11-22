@@ -17,6 +17,8 @@ export const SLIDESHOW_MOTIONS: readonly SlideshowMotion[] = ["calm", "still", "
 export interface SlideMotionDriver {
   /** Moves from the outgoing slide element to the incoming one. */
   advance: (from: HTMLElement | null, to: HTMLElement) => void;
+  /** Whether the page is advancing: a paused page holds the slide still. */
+  setRunning: (running: boolean) => void;
   dispose: () => void;
 }
 

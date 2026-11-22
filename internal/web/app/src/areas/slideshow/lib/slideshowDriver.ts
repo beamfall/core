@@ -42,7 +42,7 @@ interface Slide {
   photos: Photo[];
   layout: SlideshowLayout;
   direction: number;
-  /** When its incoming transition started: k = 0. */
+  /** When its incoming transition started, on the slide clock (paused while the page is): k = 0. */
   enteredAt: number;
   /** Its time on screen, interval plus incoming transition: k runs 0..1 over it. */
   spanMs: number;
@@ -52,7 +52,10 @@ interface Change {
   slide: Slide;
   style: SlideshowStyle;
   durationMs: number;
+  /** In page time: a transition runs to its end while the page is paused. */
   startedAt: number;
+  /** Whether it started under Reduce Motion. */
+  reduced: boolean;
 }
 
 interface Targets {
@@ -126,6 +129,12 @@ export class SlideshowDriver {
   private lastFrame = 0;
   private presented = 0;
   private watch: MutationObserver | null = null;
+  // The slide element the canvas covers: once it leaves the page, so does the canvas.
+  private slideEl: HTMLElement | null = null;
+  // The slide clock: page time less the time spent paused, frozen while paused.
+  private pausedAt: number | null = null;
+  private pausedMs = 0;
+  private readonly ready: Promise<void>;
   private dead = false;
 
   constructor(
@@ -138,15 +147,27 @@ export class SlideshowDriver {
     canvas.hidden = true;
     canvas.addEventListener("webglcontextlost", this.lose);
     this.format = pickFeedbackFormat(gl);
-    void this.build().catch((error: unknown) => {
+    this.ready = this.build().catch((error: unknown) => {
       console.warn("slideshow: Oscillux pass unavailable", error);
       this.stop();
     });
   }
 
+  /** Holds the Ken Burns move while the page is paused; a running transition still ends. */
+  setRunning(running: boolean): void {
+    const now = performance.now();
+    if (running && this.pausedAt !== null) {
+      this.pausedMs += now - this.pausedAt;
+      this.pausedAt = null;
+    } else if (!running && this.pausedAt === null) {
+      this.pausedAt = now;
+    }
+  }
+
   advance(_from: HTMLElement | null, to: HTMLElement): void {
     if (this.dead) return;
     const generation = ++this.generation;
+    this.slideEl = to;
     const stage = to.parentElement;
     if (stage && this.canvas.parentElement !== stage) stage.append(this.canvas);
     this.watch?.disconnect();
@@ -162,14 +183,17 @@ export class SlideshowDriver {
     });
     this.watch.observe(to, { childList: true, subtree: true });
     const images = [...to.querySelectorAll<HTMLImageElement>("img.bf-slideshow-media")];
-    void Promise.all(images.map(decoded)).then(
-      (ready) => {
+    // The pass may still be building: a photo decoded first waits for it.
+    void Promise.all([this.ready, ...images.map(decoded)]).then(
+      () => {
         if (generation !== this.generation || this.dead || !this.gpu) return;
-        if (!this.photoSlide(to)) return;
-        this.enter(ready);
+        if (!to.isConnected || !this.photoSlide(to)) return;
+        this.enter(images);
       },
-      // A broken photo is skipped by the page; the shown slide stays until the next change.
-      () => undefined,
+      // A broken photo: the DOM slide shows until the page skips it.
+      () => {
+        if (generation === this.generation) this.clear();
+      },
     );
   }
 
@@ -244,6 +268,7 @@ export class SlideshowDriver {
   // The new slide's photos are decoded: upload them and start its transition (or cut it in).
   private enter(images: HTMLImageElement[]): void {
     const now = performance.now();
+    const clock = this.clock(now);
     const frame = this.frameAspect();
     let photos: Photo[];
     try {
@@ -263,7 +288,7 @@ export class SlideshowDriver {
         frame,
       ),
       direction: this.changes % 2,
-      enteredAt: now,
+      enteredAt: clock,
       spanMs: this.options.intervalMs() + transition.durationMs,
     };
     this.changes += 1;
@@ -272,7 +297,7 @@ export class SlideshowDriver {
       if (this.current) this.drop(this.current);
       this.current = slide;
     } else {
-      this.change = { slide, ...transition, startedAt: now };
+      this.change = { slide, ...transition, startedAt: now, reduced };
       this.lastStart = now;
     }
     this.canvas.hidden = false;
@@ -299,6 +324,9 @@ export class SlideshowDriver {
       ctx.drawImage(image, 0, 0, c.width, c.height);
       source = c;
     }
+    // Errors raised before this upload are not its own.
+    let stale = gl.getError();
+    while (stale !== gl.NO_ERROR && stale !== gl.CONTEXT_LOST_WEBGL) stale = gl.getError();
     const tex = must(gl.createTexture());
     gl.bindTexture(gl.TEXTURE_2D, tex);
     // Row 0 of the image is the top row: photo uv v = 0 (README, "uv").
@@ -311,6 +339,12 @@ export class SlideshowDriver {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    // Out of memory is reported through the error state, not thrown.
+    const error = gl.getError();
+    if (error !== gl.NO_ERROR) {
+      gl.deleteTexture(tex);
+      throw new Error(`slideshow: photo upload GL error ${error}`);
+    }
     return { tex, aspect: w / h };
   }
 
@@ -326,6 +360,11 @@ export class SlideshowDriver {
     this.frameId = 0;
     const gpu = this.gpu;
     if (this.dead || !gpu || !this.current || this.gl.isContextLost()) return;
+    // The slide left the page without a change (a revalidation, say): so does its photo.
+    if (!this.slideEl?.isConnected) {
+      this.clear();
+      return;
+    }
     const dt = Math.max(0, now - this.lastFrame);
     this.lastFrame = now;
     try {
@@ -346,16 +385,18 @@ export class SlideshowDriver {
     dt: number,
   ): void {
     const gl = this.gl;
+    const reduced = this.options.reducedMotion();
     let change = this.change;
-    if (change && now - change.startedAt >= change.durationMs) {
+    // Reduce Motion turned on mid-sweep or mid-iris: the change completes now.
+    if (change && (now - change.startedAt >= change.durationMs || (reduced && !change.reduced))) {
       this.finishChange();
       change = null;
     }
     const shown = this.current;
     if (!shown) return;
-    const reduced = this.options.reducedMotion();
+    const clock = this.clock(now);
     const words = (s: Slide): SlideFields => ({
-      k: slideProgress(now - s.enteredAt, s.spanMs),
+      k: slideProgress(clock - s.enteredAt, s.spanMs),
       layout: s.layout,
       direction: s.direction,
       aspect0: s.photos[0]?.aspect ?? 1,
@@ -440,6 +481,10 @@ export class SlideshowDriver {
       gl.NEAREST,
     );
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+  }
+
+  private clock(now: number): number {
+    return (this.pausedAt ?? now) - this.pausedMs;
   }
 
   private frameAspect(): number {

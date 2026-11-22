@@ -470,6 +470,9 @@ function Slideshow() {
       driverRef.current = null;
     };
   }, [prefs.motion]);
+  useEffect(() => {
+    driverRef.current?.setRunning(running);
+  }, [running, prefs.motion]);
   const slideRef = useCallback((element: HTMLElement | null) => {
     if (!element) return;
     driverRef.current?.advance(previousSlideRef.current, element);
