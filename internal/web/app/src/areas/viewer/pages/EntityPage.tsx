@@ -268,6 +268,9 @@ export function EntityPage() {
   const groups = { ...heroGrouped, containers: withoutItem(heroGrouped.containers, ancestor?.id) };
   // Whether the ancestor (and so the readable address) is settled.
   const ancestorKnown = !!entity && (entity.archetype !== "container" || fallback !== null);
+  // The spoiler guard keys a container's children on its outermost ancestor (CORE-3057).
+  const guardContainerID =
+    ancestorKnown && entity?.archetype === "container" ? (ancestor?.id ?? entity.id) : undefined;
   useCanonicalEntityAddress(entity, ancestor?.title, ancestorKnown);
   const [ancestorEntity, setAncestorEntity] = useState<EntityInfo | null>(null);
   const siblings = siblingContainers(
@@ -678,6 +681,8 @@ export function EntityPage() {
                 )}
                 <ContainerMediaRows
                   items={fallback}
+                  containerID={guardContainerID}
+                  containerArt={backdrop || photo || undefined}
                   label={
                     rowsTitle ||
                     t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })
@@ -712,6 +717,7 @@ export function EntityPage() {
                 )}
                 <EntityMediaBrowse
                   entity={entity}
+                  guardContainerID={guardContainerID}
                   items={fallback}
                   listing={listing}
                   label={t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })}

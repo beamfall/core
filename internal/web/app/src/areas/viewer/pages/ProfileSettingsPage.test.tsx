@@ -32,6 +32,7 @@ vi.mock("@/lib/graphql", () => ({
 
 vi.mock("@/lib/session", () => ({
   useSession: vi.fn(),
+  useViewerIdentity: () => "p1",
 }));
 
 Element.prototype.hasPointerCapture ??= () => false;
@@ -124,6 +125,16 @@ describe("ProfileSettingsPage", () => {
     await user.click(screen.getByRole("button", { name: "Unhide all" }));
     expect(clearAllMutes).toHaveBeenCalledOnce();
     expect(await screen.findByText("Hidden: 0")).toBeInTheDocument();
+  });
+
+  it("turns the spoiler guard off with its stored key, on by default (CORE-3057)", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const guard = await screen.findByRole("switch", { name: "Hide details of unwatched items" });
+    expect(guard).toBeChecked();
+    await user.click(guard);
+    expect(setClientPref).toHaveBeenCalledWith("profile.show-unplayed-details", "on");
   });
 
   it("clears a boolean preference with an empty value", async () => {

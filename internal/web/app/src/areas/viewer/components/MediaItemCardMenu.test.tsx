@@ -96,6 +96,7 @@ function renderMenu(
   locale: Locale = "en",
   credits?: readonly MediaCredit[],
   continueWatching = false,
+  onReveal?: () => void,
 ) {
   render(
     <I18nProvider initialLocale={locale}>
@@ -111,6 +112,7 @@ function renderMenu(
           onPrimary={() => {}}
           onDetails={onDetails}
           continueWatching={continueWatching}
+          onReveal={onReveal}
         />
         <CurrentPath />
       </MemoryRouter>
@@ -132,6 +134,17 @@ describe("MediaItemCardMenu wording", () => {
     renderMenu(false, details, locale);
     fireEvent.click(await screen.findByRole("menuitem", { name: label }));
     expect(details).toHaveBeenCalledOnce();
+  });
+
+  it("offers Reveal details only for a guarded item (CORE-3057)", async () => {
+    const reveal = vi.fn();
+    renderMenu(false, undefined, "en", undefined, false, reveal);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Reveal details" }));
+    expect(reveal).toHaveBeenCalledOnce();
+    cleanup();
+    renderMenu(false);
+    await screen.findByRole("menuitem", { name: "Mark watched" });
+    expect(screen.queryByRole("menuitem", { name: "Reveal details" })).toBeNull();
   });
 
   it("uses listening wording for audio Media", async () => {

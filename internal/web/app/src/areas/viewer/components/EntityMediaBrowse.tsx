@@ -36,9 +36,12 @@ export function EntityMediaBrowse({
   items,
   label,
   listing,
+  guardContainerID,
 }: {
   entity: EntityInfo | null;
   items: SourceItem[];
+  /** The outermost container the spoiler guard keys on (CORE-3057). */
+  guardContainerID?: string;
   /** Accessible name of the child list the non-audio layout renders. */
   label: string;
   /** The page's per-Media rows (useListingRows), shared with its Play action. */
@@ -59,7 +62,17 @@ export function EntityMediaBrowse({
   if (entity && rows && entity.archetype === "person" && isAudioListing(items, rows))
     return <PersonListening entity={entity} items={items} rows={rows} />;
   if (entity?.archetype === "person") return <PersonFilmography items={items} />;
-  return <ContainerChildren items={items} label={label} />;
+  const container = entity?.archetype === "container" ? entity : null;
+  return (
+    <ContainerChildren
+      items={items}
+      label={label}
+      containerID={guardContainerID}
+      containerArt={
+        container?.artworkSlots?.backdrop || container?.artworkSlots?.poster || undefined
+      }
+    />
+  );
 }
 
 function PersonFilmography({ items }: { items: SourceItem[] }) {

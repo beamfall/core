@@ -51,6 +51,10 @@ export const PREF_KEYS = {
   stillWatchingAfter: "stillwatching.after",
   // Hide finished Media from catalog shelves and library browse (CORE-2836, profile_hide_watched.go).
   hideWatched: "profile.hide-watched",
+  // Spoiler guard off (CORE-3057): "on" shows unplayed children's stills and
+  // summaries; absent keeps them hidden. Per-container reveals add
+  // ".container.<id>" (spoilerGuard.ts).
+  showUnplayedDetails: "profile.show-unplayed-details",
   // Theme preset and reserved accent (CORE-1179, ADR-0231 D10); the scheme stays on the device.
   themePreset: THEME_PREF_KEYS.preset,
   themeAccent: THEME_PREF_KEYS.accent,
@@ -96,6 +100,8 @@ export interface ViewerPreferences {
   reduceMotion: boolean;
   /** Leave finished Media out of catalog shelves and library browse (CORE-2836). */
   hideWatched: boolean;
+  /** Show unplayed children's stills and summaries: the spoiler guard is off (CORE-3057). */
+  showUnplayedDetails: boolean;
   playbackSpeed: PlaybackSpeed;
   trimSilence: boolean;
   skipInterval: SkipInterval;
@@ -176,6 +182,7 @@ export function resolvePreferences(prefs: ClientPref[], showID = ""): ViewerPref
     recommendOptIn: bool(map, PREF_KEYS.recommendOptIn),
     reduceMotion: bool(map, PREF_KEYS.reduceMotion),
     hideWatched: bool(map, PREF_KEYS.hideWatched),
+    showUnplayedDetails: bool(map, PREF_KEYS.showUnplayedDetails),
     playbackSpeed: speed(map),
     trimSilence: bool(map, PREF_KEYS.trimSilence),
     skipInterval: showID

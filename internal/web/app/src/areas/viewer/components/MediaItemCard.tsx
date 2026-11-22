@@ -1,5 +1,5 @@
 import { Check, Play } from "lucide-react";
-import type { PointerEvent } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useCardImageSizes } from "@/components/chrome/posterSize";
@@ -18,11 +18,13 @@ import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState } from "../lib/mediaDetail";
 import { fetchPreviewInfo } from "../lib/playback";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
+import { isSpoilerCandidate, revealItem, useSpoilerGuard } from "../lib/spoilerGuard";
 import { formatDuration } from "../lib/trackList";
 import { type PlayerNavState, type PlayQueueItem, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 import { PosterGlyph } from "./PosterGlyph";
+import { SpoilerRevealButton } from "./SpoilerGuard";
 
 export const PREVIEW_DWELL_MS = 400;
 const POINTER_PREVIEW_QUERY = "(hover: hover) and (pointer: fine)";
@@ -108,7 +110,18 @@ export function MediaItemCard({
   const rating = isMedia ? cardRating(item, displayLocale, t) : undefined;
   const isTable = display === "table";
   const { heading, lead } = cardHeading(item, nameContainer, displayLocale);
-  const subline = cardSubline(item, showYear || isTable, displayLocale, lead);
+  // An unplayed child draws its container's poster, or the glyph, instead of
+  // its own art, drops its summary and never plays a hover preview (spoiler
+  // guard, CORE-3057).
+  const spoiler = useSpoilerGuard(isSpoilerCandidate(item, item.container?.id));
+  const spoilerState = spoiler.state(item, item.container?.id);
+  const spoilerHidden = spoilerState === "hidden";
+  const subline = cardSubline(
+    spoilerHidden ? { ...item, summary: undefined } : item,
+    showYear || isTable,
+    displayLocale,
+    lead,
+  );
   const featureAudioDetails = showsAudioEntityDetails(item);
   const isRow = display === "list" || isTable;
   const wide = display === "thumbnail";
@@ -136,11 +149,15 @@ export function MediaItemCard({
   const primaryLabel = isMedia
     ? t(state.progressPercent === undefined ? "play" : "cardResume")
     : t("cardOpen");
-  const poster = wide
-    ? artworkSlotURL(item, "thumb") || artworkSlotURL(item, "poster")
-    : artworkSlotURL(item, "poster") ||
-      artworkSlotURL(item, "thumb") ||
-      (intrinsicArtwork ? artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "banner") : "");
+  const poster = spoilerHidden
+    ? (item.container?.artwork?.poster ?? "")
+    : wide
+      ? artworkSlotURL(item, "thumb") || artworkSlotURL(item, "poster")
+      : artworkSlotURL(item, "poster") ||
+        artworkSlotURL(item, "thumb") ||
+        (intrinsicArtwork
+          ? artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "banner")
+          : "");
   const frameClass = wide ? "bf-poster bf-poster-wide" : artFrameClass(item);
   const showArtwork = poster && failedPoster !== poster;
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -165,6 +182,11 @@ export function MediaItemCard({
       stopPreview();
     };
   }, [location.key, stopPreview]);
+
+  // A card that becomes guarded (its progress was cleared) drops any preview.
+  useEffect(() => {
+    if (spoilerHidden) stopPreview();
+  }, [spoilerHidden, stopPreview]);
 
   useEffect(() => {
     function stopOnVisibilityLoss() {
@@ -278,8 +300,22 @@ export function MediaItemCard({
     beginPreviewDwell();
   }
 
+  // A click on guarded art reveals the item instead of opening or playing it;
+  // the reveal button or the More menu is the keyboard path.
+  function revealFromArt(event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    revealItem(item.id);
+  }
+
+  // Cards whose actions sit beside them (child rows) get the reveal toggle
+  // there too, including a locked child that has no More menu.
+  const reveal = showPlayButton && isMedia && (
+    <SpoilerRevealButton itemID={item.id} title={item.title} state={spoilerState} />
+  );
+
   function canStartPreview(event?: PointerEvent<HTMLAnchorElement>) {
-    if (!isMedia) {
+    if (!isMedia || spoilerHidden) {
       return false;
     }
     if (event?.pointerType && event.pointerType !== "mouse") {
@@ -311,6 +347,7 @@ export function MediaItemCard({
               })
           : undefined
       }
+      onReveal={spoilerHidden ? () => revealItem(item.id) : undefined}
     />
   );
 
@@ -346,6 +383,7 @@ export function MediaItemCard({
             className={
               intrinsicArtwork && showArtwork ? `${frameClass} bf-poster-intrinsic` : frameClass
             }
+            onClick={spoilerHidden ? revealFromArt : undefined}
           >
             {showArtwork ? (
               <img
@@ -371,7 +409,7 @@ export function MediaItemCard({
                 {formatDuration(item.durationSeconds ?? 0)}
               </span>
             )}
-            {previewClip && (
+            {previewClip && !spoilerHidden && (
               <video
                 ref={previewVideoRef}
                 aria-hidden="true"
@@ -421,6 +459,7 @@ export function MediaItemCard({
       </Link>
       {hasPlayButton ? (
         <div className="bf-child-actions">
+          {reveal}
           <button
             type="button"
             className="bf-row-play"
@@ -435,6 +474,7 @@ export function MediaItemCard({
         </div>
       ) : (
         <>
+          {!menu && reveal && <div className="bf-child-actions">{reveal}</div>}
           {hasQuickPlay && (
             <button
               type="button"

@@ -11,6 +11,7 @@ import { STRINGS } from "@/strings";
 import { groupByContainer } from "../lib/containerGroups";
 import { readEntityPreview } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
+import { resetSpoilerGuardForTest } from "../lib/spoilerGuard";
 import { readPlayerNavState } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCard, PREVIEW_DWELL_MS } from "./MediaItemCard";
@@ -23,6 +24,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   clearMute: vi.fn(async () => undefined),
   clearAllMutes: vi.fn(async () => 0),
   fetchItemState: vi.fn(),
+  fetchClientPrefs: vi.fn(async () => []),
   setWatched: vi.fn(),
 }));
 
@@ -69,8 +71,67 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetSpoilerGuardForTest();
   vi.useRealTimers();
   vi.restoreAllMocks();
+});
+
+describe("MediaItemCard spoiler guard (CORE-3057)", () => {
+  const show = { id: "show-1", title: "Show", artwork: { poster: "/art/show.jpg" } };
+
+  it("draws an unplayed child with its container's poster and never previews it", async () => {
+    const { container } = renderCard({
+      mediaClass: "video",
+      container: show,
+      artworkSlots: { thumb: "/art/still.jpg" },
+    });
+    const image = container.querySelector("img");
+    expect(image?.getAttribute("src")).toContain("show.jpg");
+    expect(container.innerHTML).not.toContain("still.jpg");
+    fireEvent.pointerEnter(screen.getByRole("link", { name: /Alpha/ }), {
+      pointerType: "mouse",
+    });
+    await advancePreviewTimers(PREVIEW_DWELL_MS + 50);
+    expect(fetchPreviewInfo).not.toHaveBeenCalled();
+    expect(previewVideo(container)).toBeNull();
+  });
+
+  it("draws a played child with its own art", () => {
+    const { container } = renderCard({
+      mediaClass: "video",
+      container: show,
+      artworkSlots: { thumb: "/art/still.jpg" },
+      engagement: { positionSeconds: 60 },
+    });
+    expect(container.innerHTML).not.toContain("show.jpg");
+  });
+
+  it("hides an unplayed child's summary and keeps its title", () => {
+    renderCard({ mediaClass: "video", container: show, summary: "Everyone was a ghost." });
+    expect(screen.queryByText(/Everyone was a ghost/)).toBeNull();
+    expect(screen.getAllByText("Alpha").length).toBeGreaterThan(0);
+  });
+
+  it("reveals a child from its art only once the Profile's prefs load", async () => {
+    vi.useRealTimers();
+    const { container } = render(
+      <I18nProvider initialLocale="en">
+        <MemoryRouter>
+          <MediaItemCard item={baseItem({ mediaClass: "video", container: show })} showPlayButton />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    const reveal = screen.getByRole("button", { name: "Show details for Alpha" });
+    expect(reveal).toBeDisabled();
+    await waitFor(() => expect(reveal).toBeEnabled());
+    const art = container.querySelector("img")?.parentElement;
+    if (!art) throw new Error("card art missing");
+    fireEvent.click(art);
+    await waitFor(() => expect(container.innerHTML).toContain("poster-alpha.jpg"));
+    expect(container.innerHTML).not.toContain("show.jpg");
+    expect(screen.getByText(/First item/)).toBeInTheDocument();
+    expect(reveal).toHaveAttribute("aria-pressed", "true");
+  });
 });
 
 describe("MediaItemCard preview clip behavior", () => {
@@ -220,7 +281,7 @@ describe("MediaItemCard preview clip behavior", () => {
     installMatchMedia({ reducedMotion: true });
     const { container } = renderCard();
 
-    fireEvent.pointerEnter(screen.getByRole("link", { name: /^Alpha/ }), {
+    fireEvent.pointerEnter(screen.getByRole("link", { name: /Alpha/ }), {
       pointerType: "mouse",
     });
     await advancePreviewTimers(PREVIEW_DWELL_MS);
@@ -243,7 +304,7 @@ describe("MediaItemCard preview clip behavior", () => {
     installMatchMedia({ finePointer: false });
     const { container } = renderCard();
 
-    fireEvent.pointerEnter(screen.getByRole("link", { name: /^Alpha/ }), {
+    fireEvent.pointerEnter(screen.getByRole("link", { name: /Alpha/ }), {
       pointerType: "touch",
     });
     await advancePreviewTimers(PREVIEW_DWELL_MS);
@@ -256,7 +317,7 @@ describe("MediaItemCard preview clip behavior", () => {
   it("cleans up timers and media state on unmount", async () => {
     const pending = renderCard();
 
-    fireEvent.pointerEnter(screen.getByRole("link", { name: /^Alpha/ }), {
+    fireEvent.pointerEnter(screen.getByRole("link", { name: /Alpha/ }), {
       pointerType: "mouse",
     });
     pending.unmount();
@@ -265,7 +326,7 @@ describe("MediaItemCard preview clip behavior", () => {
     expect(playSpy).not.toHaveBeenCalled();
 
     const active = renderCard();
-    fireEvent.pointerEnter(screen.getByRole("link", { name: /^Alpha/ }), {
+    fireEvent.pointerEnter(screen.getByRole("link", { name: /Alpha/ }), {
       pointerType: "mouse",
     });
     await advancePreviewTimers(PREVIEW_DWELL_MS);

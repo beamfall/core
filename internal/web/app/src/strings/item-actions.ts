@@ -25,6 +25,13 @@ export const itemActionStrings = {
     hiddenItemsUnhideAll: "Unhide all",
     hiddenEmptyTitle: "Everything here is hidden on this profile.",
     hiddenEmptyShow: "Show hidden items",
+    spoilerGuardSetting: "Hide details of unwatched items",
+    spoilerGuardLead:
+      "Items you haven't watched hide their picture and description until you start them. Reveal one from the item itself, or a whole set from the page it belongs to.",
+    spoilerHiddenSummary: "Description hidden until you watch",
+    spoilerRevealItem: "Show details for {title}",
+    spoilerReveal: "Reveal details",
+    spoilerShowContainer: "Show spoilers",
   },
   fr: {
     itemMarkWatched: "Marquer comme vu",
@@ -52,6 +59,13 @@ export const itemActionStrings = {
     hiddenItemsUnhideAll: "Tout afficher",
     hiddenEmptyTitle: "Tout ce qui est ici est masqué sur ce profil.",
     hiddenEmptyShow: "Afficher les éléments masqués",
+    spoilerGuardSetting: "Masquer les détails des contenus non vus",
+    spoilerGuardLead:
+      "Les contenus que vous n'avez pas vus masquent leur image et leur description jusqu'à ce que vous les commenciez. Affichez-en un depuis le contenu lui-même, ou tout un ensemble depuis la page dont il fait partie.",
+    spoilerHiddenSummary: "Description masquée jusqu'au visionnage",
+    spoilerRevealItem: "Afficher les détails de {title}",
+    spoilerReveal: "Afficher les détails",
+    spoilerShowContainer: "Afficher tous les détails",
   },
   de: {
     itemMarkWatched: "Als gesehen markieren",
@@ -79,6 +93,13 @@ export const itemActionStrings = {
     hiddenItemsUnhideAll: "Alle einblenden",
     hiddenEmptyTitle: "Alles hier ist in diesem Profil ausgeblendet.",
     hiddenEmptyShow: "Ausgeblendete Titel anzeigen",
+    spoilerGuardSetting: "Details ungesehener Titel ausblenden",
+    spoilerGuardLead:
+      "Titel, die Sie noch nicht gesehen haben, zeigen Bild und Beschreibung erst, wenn Sie sie starten. Blenden Sie einen am Titel selbst ein oder alle auf der Seite, zu der sie gehören.",
+    spoilerHiddenSummary: "Beschreibung bis zum Ansehen ausgeblendet",
+    spoilerRevealItem: "Details zu {title} anzeigen",
+    spoilerReveal: "Details anzeigen",
+    spoilerShowContainer: "Spoiler anzeigen",
   },
   es: {
     itemMarkWatched: "Marcar como visto",
@@ -106,6 +127,13 @@ export const itemActionStrings = {
     hiddenItemsUnhideAll: "Mostrar todo",
     hiddenEmptyTitle: "Todo lo que hay aquí está oculto en este perfil.",
     hiddenEmptyShow: "Mostrar lo oculto",
+    spoilerGuardSetting: "Ocultar detalles de lo no visto",
+    spoilerGuardLead:
+      "Lo que aún no has visto oculta su imagen y su descripción hasta que lo empieces. Muestra uno desde el propio elemento, o todo un conjunto desde la página a la que pertenece.",
+    spoilerHiddenSummary: "Descripción oculta hasta que lo veas",
+    spoilerRevealItem: "Mostrar detalles de {title}",
+    spoilerReveal: "Mostrar detalles",
+    spoilerShowContainer: "Mostrar spoilers",
   },
   pt: {
     itemMarkWatched: "Marcar como visto",
@@ -133,5 +161,12 @@ export const itemActionStrings = {
     hiddenItemsUnhideAll: "Mostrar tudo",
     hiddenEmptyTitle: "Tudo aqui está oculto neste perfil.",
     hiddenEmptyShow: "Mostrar itens ocultos",
+    spoilerGuardSetting: "Ocultar detalhes do que não viu",
+    spoilerGuardLead:
+      "O que ainda não viu oculta a imagem e a descrição até começar a ver. Mostre um no próprio item, ou um conjunto inteiro na página a que pertence.",
+    spoilerHiddenSummary: "Descrição oculta até ver",
+    spoilerRevealItem: "Mostrar detalhes de {title}",
+    spoilerReveal: "Mostrar detalhes",
+    spoilerShowContainer: "Mostrar spoilers",
   },
 } as const;

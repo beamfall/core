@@ -9,6 +9,7 @@ import {
   ListPlus,
   MoreVertical,
   Play,
+  ScanEye,
   SquareArrowOutUpRight,
   UserRound,
   X,
@@ -49,6 +50,7 @@ export function MediaItemCardMenu({
   onPrimary,
   onDetails,
   continueWatching = false,
+  onReveal,
 }: {
   title: string;
   primaryLabel: string;
@@ -67,6 +69,8 @@ export function MediaItemCardMenu({
   onDetails?: () => void;
   /** The card is on the Continue Watching row, so it offers to leave it. */
   continueWatching?: boolean;
+  /** Reveals a spoiler-guarded item's still and summary (CORE-3057). */
+  onReveal?: () => void;
 }) {
   const t = useT();
   const identity = useViewerIdentity();
@@ -172,6 +176,12 @@ export function MediaItemCardMenu({
                 <Menu.Item className="bf-card-menu-item" onClick={onDetails}>
                   <SquareArrowOutUpRight aria-hidden="true" size={15} />
                   {t("mediaDetailDetails")}
+                </Menu.Item>
+              )}
+              {onReveal && (
+                <Menu.Item className="bf-card-menu-item" onClick={onReveal}>
+                  <ScanEye aria-hidden="true" size={15} />
+                  {t("spoilerReveal")}
                 </Menu.Item>
               )}
               {artistID && (
