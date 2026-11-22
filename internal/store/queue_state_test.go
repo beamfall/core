@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -12,12 +13,58 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/beamfall/core/internal/serverrole"
 )
 
 func testQueueWriteAuthorization(profile ProfileID, filter LibraryFilter) QueueWriteAuthorization {
 	return QueueWriteAuthorization{
 		ProfileID: profile, SessionID: "session-revealed", ExpectedProfileID: profile,
 		Filter: filter, Now: time.Now, ResolveCertification: testQueueCertification,
+	}
+}
+
+func TestAttachedRefusesPlayQueueStateAuthoring(t *testing.T) {
+	st := openAttached(t)
+	ctx := t.Context()
+	const profile = "profile-default"
+	filter := LibraryFilter{AllLibraries: true}
+	err := st.QueueSetRepeat(ctx, profile, QueueRepeatOne, filter)
+	if !errors.Is(err, serverrole.ErrAttachedAuthorityRefused) {
+		t.Errorf("queue repeat write = %v, want attached authority refusal", err)
+	}
+	_, err = st.EditPlayQueue(ctx, testQueueWriteAuthorization(profile, filter), SetQueueShuffle(true))
+	if !errors.Is(err, serverrole.ErrAttachedAuthorityRefused) {
+		t.Errorf("authorized queue edit = %v, want attached authority refusal", err)
+	}
+	var rows int
+	if err := st.eventsR.QueryRowContext(ctx, `SELECT count(*) FROM play_queue_state WHERE profile_id = ?`, profile).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Errorf("attached store authored %d play_queue_state rows", rows)
+	}
+}
+
+func TestPlayQueueEditReservesEncryptedVisibility(t *testing.T) {
+	st, library, _, _, media := openEncryptedPackLibrary(t)
+	ctx := t.Context()
+	auth := testQueueWriteAuthorization("profile-default", LibraryFilter{AllLibraries: true})
+	if _, err := st.QueueAddMany(ctx, auth, []MediaID{media}, QueueEnd); err != nil {
+		t.Fatalf("seed encrypted queue entry: %v", err)
+	}
+	writer := st.encryptedDBs[library].writer
+	state, err := st.EditPlayQueue(ctx, auth, func(q *queueSnapshot, visible map[MediaID]Media) error {
+		if _, ok := visible[media]; !ok {
+			t.Errorf("encrypted fixture Media %s is missing from the visible queue", media)
+		}
+		if writer.Stats().InUse != 1 {
+			t.Error("encrypted writer is available during the state edit")
+		}
+		return SetQueueRepeat(QueueRepeatOne)(q, visible)
+	})
+	if err != nil || len(state.Entries) != 1 || state.RepeatMode != QueueRepeatOne {
+		t.Fatalf("edit encrypted queue = %+v, %v", state, err)
 	}
 }
 

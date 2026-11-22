@@ -9,6 +9,8 @@ import (
 	randv2 "math/rand/v2"
 	"slices"
 	"time"
+
+	"github.com/beamfall/core/internal/serverrole"
 )
 
 // QueueRepeatMode is the Profile's Play Queue repeat setting.
@@ -131,6 +133,9 @@ type queueTarget struct {
 	mediaID MediaID
 }
 
+// QueueEdit applies a state change using the visibility resolved for the write.
+type QueueEdit func(*queueSnapshot, map[MediaID]Media) error
+
 func (t queueTarget) matches(entry queueEntry, visible map[MediaID]Media) bool {
 	_, ok := visible[entry.mediaID]
 	if t.entryID != "" {
@@ -140,18 +145,22 @@ func (t queueTarget) matches(entry queueEntry, visible map[MediaID]Media) bool {
 }
 
 func (s *Store) QueueRemove(ctx context.Context, profileID ProfileID, mediaID MediaID, filter LibraryFilter) error {
-	return s.queueRemove(ctx, profileID, queueTarget{mediaID: mediaID}, filter)
+	return s.updateQueue(ctx, profileID, filter, nil, removeQueueTarget(queueTarget{mediaID: mediaID}))
 }
 
 func (s *Store) QueueRemoveEntry(ctx context.Context, profileID ProfileID, entryID string, filter LibraryFilter) error {
-	return s.queueRemove(ctx, profileID, queueTarget{entryID: entryID}, filter)
+	return s.updateQueue(ctx, profileID, filter, nil, RemoveQueueEntry(entryID))
 }
 
-func (s *Store) queueRemove(ctx context.Context, profileID ProfileID, target queueTarget, filter LibraryFilter) error {
-	if target == (queueTarget{}) {
-		return ValidationError("queue entry is required")
-	}
-	return s.updateQueue(ctx, profileID, filter, nil, func(q *queueSnapshot, visible map[MediaID]Media) error {
+func RemoveQueueEntry(entryID string) QueueEdit {
+	return removeQueueTarget(queueTarget{entryID: entryID})
+}
+
+func removeQueueTarget(target queueTarget) QueueEdit {
+	return func(q *queueSnapshot, visible map[MediaID]Media) error {
+		if target == (queueTarget{}) {
+			return ValidationError("queue entry is required")
+		}
 		for _, entry := range *q.activeOrder() {
 			if target.matches(entry, visible) {
 				q.removeEntries(func(candidate queueEntry) bool { return candidate.id == entry.id })
@@ -159,7 +168,7 @@ func (s *Store) queueRemove(ctx context.Context, profileID ProfileID, target que
 			}
 		}
 		return nil
-	})
+	}
 }
 
 func (q *queueSnapshot) removeEntries(remove func(queueEntry) bool) {
@@ -171,17 +180,21 @@ func (q *queueSnapshot) removeEntries(remove func(queueEntry) bool) {
 }
 
 func (s *Store) QueueMove(ctx context.Context, profileID ProfileID, mediaID MediaID, position int, filter LibraryFilter) error {
-	return s.queueMoveEntry(ctx, profileID, queueTarget{mediaID: mediaID}, &position, filter)
+	return s.updateQueue(ctx, profileID, filter, nil, moveQueueTarget(queueTarget{mediaID: mediaID}, &position))
 }
 
 func (s *Store) QueueMoveEntry(ctx context.Context, profileID ProfileID, entryID string, position int, filter LibraryFilter) error {
-	return s.queueMoveEntry(ctx, profileID, queueTarget{entryID: entryID}, &position, filter)
+	return s.updateQueue(ctx, profileID, filter, nil, MoveQueueEntry(entryID, position))
 }
 
-func (s *Store) queueMoveEntry(ctx context.Context, profileID ProfileID, target queueTarget, position *int, filter LibraryFilter) error {
-	return s.updateQueue(ctx, profileID, filter, nil, func(q *queueSnapshot, visible map[MediaID]Media) error {
+func MoveQueueEntry(entryID string, position int) QueueEdit {
+	return moveQueueTarget(queueTarget{entryID: entryID}, &position)
+}
+
+func moveQueueTarget(target queueTarget, position *int) QueueEdit {
+	return func(q *queueSnapshot, visible map[MediaID]Media) error {
 		return q.moveEntry(target, position, visible)
-	})
+	}
 }
 
 func (q *queueSnapshot) moveEntry(target queueTarget, position *int, visible map[MediaID]Media) error {
@@ -209,10 +222,14 @@ func (q *queueSnapshot) moveEntry(target queueTarget, position *int, visible map
 }
 
 func (s *Store) QueueSetCurrent(ctx context.Context, profileID ProfileID, entryID string, positionMS int64, filter LibraryFilter) error {
-	if positionMS < 0 || (entryID == "" && positionMS != 0) {
-		return ValidationError("invalid queue position")
-	}
-	return s.updateQueue(ctx, profileID, filter, nil, func(q *queueSnapshot, visible map[MediaID]Media) error {
+	return s.updateQueue(ctx, profileID, filter, nil, SetQueueCurrent(entryID, positionMS))
+}
+
+func SetQueueCurrent(entryID string, positionMS int64) QueueEdit {
+	return func(q *queueSnapshot, visible map[MediaID]Media) error {
+		if positionMS < 0 || (entryID == "" && positionMS != 0) {
+			return ValidationError("invalid queue position")
+		}
 		if entryID == "" && q.currentID == "" {
 			return nil
 		}
@@ -231,11 +248,15 @@ func (s *Store) QueueSetCurrent(ctx context.Context, profileID ProfileID, entryI
 			return ValidationError("media is not queued")
 		}
 		return nil
-	})
+	}
 }
 
 func (s *Store) QueueSetShuffle(ctx context.Context, profileID ProfileID, enabled bool, filter LibraryFilter) error {
-	return s.updateQueue(ctx, profileID, filter, nil, func(q *queueSnapshot, _ map[MediaID]Media) error {
+	return s.updateQueue(ctx, profileID, filter, nil, SetQueueShuffle(enabled))
+}
+
+func SetQueueShuffle(enabled bool) QueueEdit {
+	return func(q *queueSnapshot, _ map[MediaID]Media) error {
 		if enabled == q.shuffle {
 			return nil
 		}
@@ -251,19 +272,23 @@ func (s *Store) QueueSetShuffle(ctx context.Context, profileID ProfileID, enable
 			}
 		}
 		return nil
-	})
+	}
 }
 
 func (s *Store) QueueSetRepeat(ctx context.Context, profileID ProfileID, mode QueueRepeatMode, filter LibraryFilter) error {
-	switch mode {
-	case QueueRepeatOff, QueueRepeatAll, QueueRepeatOne:
-	default:
-		return ValidationError("invalid queue repeat mode")
-	}
-	return s.updateQueue(ctx, profileID, filter, nil, func(q *queueSnapshot, _ map[MediaID]Media) error {
+	return s.updateQueue(ctx, profileID, filter, nil, SetQueueRepeat(mode))
+}
+
+func SetQueueRepeat(mode QueueRepeatMode) QueueEdit {
+	return func(q *queueSnapshot, _ map[MediaID]Media) error {
+		switch mode {
+		case QueueRepeatOff, QueueRepeatAll, QueueRepeatOne:
+		default:
+			return ValidationError("invalid queue repeat mode")
+		}
 		q.repeat = mode
 		return nil
-	})
+	}
 }
 
 // ErrQueueReplaceNeedsConfirm protects a visible, nonempty queue from an
@@ -308,7 +333,10 @@ func (s *Store) QueueClear(ctx context.Context, profileID ProfileID, filter Libr
 	})
 }
 
-func (s *Store) updateQueue(ctx context.Context, profileID ProfileID, filter LibraryFilter, extra []MediaID, mutate func(*queueSnapshot, map[MediaID]Media) error) error {
+func (s *Store) updateQueue(ctx context.Context, profileID ProfileID, filter LibraryFilter, extra []MediaID, mutate QueueEdit) error {
+	if err := s.guardAuthority(serverrole.FaceEngagement); err != nil {
+		return err
+	}
 	if profileID == "" {
 		return ValidationError("profile ID is required")
 	}

@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
+
+	"github.com/beamfall/core/internal/serverrole"
 )
 
 // ErrQueueMediaNotFound covers missing targets and targets hidden from the queue.
@@ -14,9 +17,13 @@ const ErrQueueMediaNotFound = ValidationError("media not found")
 // ErrQueueMediaLocked reports a visible target blocked by certification.
 var ErrQueueMediaLocked = errors.New("media is locked")
 
-// ErrQueueProfileOutsideSchedule reports a switched Profile that cannot use
-// the session at the current time.
+// ErrQueueProfileOutsideSchedule reports a Profile whose schedule disallows
+// the queue write at the current time.
 var ErrQueueProfileOutsideSchedule = errors.New("profile access not allowed at this time")
+
+// ErrQueueReboundProfileOutsideSchedule identifies a refusal for a Profile
+// other than the one the request authenticated for.
+var ErrQueueReboundProfileOutsideSchedule = fmt.Errorf("session changed profile: %w", ErrQueueProfileOutsideSchedule)
 
 // QueueAddResult captures the placement, visible first page, and scope at commit.
 type QueueAddResult struct {
@@ -48,7 +55,7 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 		Filter: filter, Now: authNow, ResolveCertification: resolveCertification,
 	}
 	var result QueueAddResult
-	_, err := s.writeAuthorizedQueue(ctx, auth, []MediaID{mediaID}, "", func(view queueWriteView) (PlayQueue, error) {
+	_, err := s.writeAuthorizedQueue(ctx, auth, []MediaID{mediaID}, "", false, func(view queueWriteView) (PlayQueue, error) {
 		view.queue.addLegacy(mediaID, position, view.visible, s.serverNow())
 		var err error
 		result, err = s.queueAddProjection(ctx, view, mediaID)
@@ -66,7 +73,7 @@ func (s *Store) QueueAddMany(ctx context.Context, auth QueueWriteAuthorization, 
 	if !validQueueBatch(mediaIDs, placement) {
 		return PlayQueue{}, ValidationError("invalid queue placement or empty media list")
 	}
-	return s.writeAuthorizedQueue(ctx, auth, mediaIDs, "", func(view queueWriteView) (PlayQueue, error) {
+	return s.writeAuthorizedQueue(ctx, auth, mediaIDs, "", false, func(view queueWriteView) (PlayQueue, error) {
 		view.queue.addMany(mediaIDs, placement, view.visible)
 		return view.queue.playQueue(view.visible), nil
 	})
@@ -78,8 +85,22 @@ func (s *Store) QueuePlayNext(ctx context.Context, auth QueueWriteAuthorization,
 	if entryID == "" {
 		return PlayQueue{}, ErrQueueMediaNotFound
 	}
-	return s.writeAuthorizedQueue(ctx, auth, nil, entryID, func(view queueWriteView) (PlayQueue, error) {
+	return s.writeAuthorizedQueue(ctx, auth, nil, entryID, false, func(view queueWriteView) (PlayQueue, error) {
 		if err := view.queue.moveEntry(queueTarget{entryID: entryID}, nil, view.visible); err != nil {
+			return PlayQueue{}, err
+		}
+		return view.queue.playQueue(view.visible), nil
+	})
+}
+
+// EditPlayQueue applies an edit and projects the resulting queue with the same
+// visibility, while the catalog writer reservation holds the session stable.
+func (s *Store) EditPlayQueue(ctx context.Context, auth QueueWriteAuthorization, edit QueueEdit) (PlayQueue, error) {
+	if auth.ProfileID == "" {
+		return PlayQueue{}, ValidationError("profile ID is required")
+	}
+	return s.writeAuthorizedQueue(ctx, auth, nil, "", true, func(view queueWriteView) (PlayQueue, error) {
+		if err := edit(view.queue, view.visible); err != nil {
 			return PlayQueue{}, err
 		}
 		return view.queue.playQueue(view.visible), nil
@@ -94,7 +115,10 @@ type queueWriteView struct {
 	profileID ProfileID
 }
 
-func (s *Store) writeAuthorizedQueue(ctx context.Context, auth QueueWriteAuthorization, targets []MediaID, entryID string, mutate func(queueWriteView) (PlayQueue, error)) (PlayQueue, error) {
+func (s *Store) writeAuthorizedQueue(ctx context.Context, auth QueueWriteAuthorization, targets []MediaID, entryID string, lockEntries bool, mutate func(queueWriteView) (PlayQueue, error)) (PlayQueue, error) {
+	if err := s.guardAuthority(serverrole.FaceEngagement); err != nil {
+		return PlayQueue{}, err
+	}
 	if auth.ProfileID == "" || auth.Now == nil || auth.ResolveCertification == nil {
 		return PlayQueue{}, errors.New("queue write requires a profile, clock and certification resolver")
 	}
@@ -131,13 +155,19 @@ func (s *Store) writeAuthorizedQueue(ctx context.Context, auth QueueWriteAuthori
 		}
 		targets = []MediaID{q.entries[i].mediaID}
 	}
+	mediaIDs := queueMediaIDs(q.entries, targets)
+	lockTargets := targets
+	if lockEntries {
+		// State edits act on, and return, the currently visible queue.
+		lockTargets = mediaIDs
+	}
 	private := map[LibraryID]*sql.Tx{}
-	readers, release, err := s.queueWriteReaders(ctx, catalog, policy.filter, targets, private)
+	readers, release, err := s.queueWriteReaders(ctx, catalog, policy.filter, lockTargets, private)
 	if err != nil {
 		return PlayQueue{}, err
 	}
 	defer release()
-	visible, err := visibleMediaBatch(ctx, readers, queueMediaIDs(q.entries, targets), policy.filter)
+	visible, err := visibleMediaBatch(ctx, readers, mediaIDs, policy.filter)
 	if err != nil {
 		return PlayQueue{}, err
 	}
@@ -290,6 +320,7 @@ type queueWritePolicy struct {
 	profileID ProfileID
 	windows   []ProfileAccessWindow
 	filter    LibraryFilter
+	rebound   bool
 }
 
 func readQueueWritePolicy(ctx context.Context, tx *sql.Tx, auth QueueWriteAuthorization) (queueWritePolicy, error) {
@@ -308,9 +339,9 @@ func readQueueWritePolicy(ctx context.Context, tx *sql.Tx, auth QueueWriteAuthor
 		}
 		policy.session = session
 	}
-	rebound := auth.SessionID != "" && policy.session.ProfileID != auth.ProfileID
+	policy.rebound = auth.SessionID != "" && policy.session.ProfileID != auth.ProfileID
 	policy.filter.Revealed = policy.filter.Revealed && policy.session.Revealed
-	if rebound {
+	if policy.rebound {
 		policy.profileID = policy.session.ProfileID
 		policy.filter.Revealed = policy.session.Revealed
 	}
@@ -339,7 +370,7 @@ func readQueueWritePolicy(ctx context.Context, tx *sql.Tx, auth QueueWriteAuthor
 	if err := policy.checkAccess(ctx, tx, auth.Now()); err != nil {
 		return queueWritePolicy{}, err
 	}
-	policy.filter = queueAddFilter(profile, rebound, policy.filter)
+	policy.filter = queueAddFilter(profile, policy.rebound, policy.filter)
 	policy.filter.Certification = auth.ResolveCertification(profile.CertificationCeilings)
 	return policy, nil
 }
@@ -376,6 +407,9 @@ func (p queueWritePolicy) checkAccess(ctx context.Context, tx *sql.Tx, now time.
 		return err
 	}
 	if !granted {
+		if p.rebound {
+			return ErrQueueReboundProfileOutsideSchedule
+		}
 		return ErrQueueProfileOutsideSchedule
 	}
 	return nil

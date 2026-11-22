@@ -1878,6 +1878,10 @@ func clientCanceled(ctx context.Context, err error) bool {
 // committed, execute keeps the data already produced. Read fields accumulate
 // per-field errors via readField and resolve the rest of the batch.
 func graphFail(ctx context.Context, field string, err error) response {
+	if auth.AccessScheduleEnded(err) {
+		status, refusal := scopeRefusal(err)
+		return response{Errors: []graphError{refusal}, authorizationRefused: true, refusalStatus: status}
+	}
 	return response{Errors: []graphError{fieldGraphError(ctx, field, err)}}
 }
 

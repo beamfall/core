@@ -1,16 +1,111 @@
 package graph
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
 
 const queueStateSelection = "{ entries { id mediaID } currentEntryID positionMS shuffle repeatMode }"
+
+func TestPlayQueueRemoveEntryUsesRevealAtWrite(t *testing.T) {
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	ctx := t.Context()
+	var before PlayQueueInfo
+	execGraph(t, h, authorizeRevealed, `mutation {
+		queueAddMany(mediaIDs: ["media-alpha", "media-archive", "media-archive"], placement: "end")
+	`+queueStateSelection+" }", nil, "queueAddMany", &before)
+	if len(before.Entries) != 3 || before.Entries[1].MediaID != "media-archive" || before.Entries[2].MediaID != "media-archive" {
+		t.Fatalf("seed queue = %+v", before.Entries)
+	}
+	scope, err := h.auth.Scope(ctx, "session-revealed")
+	if err != nil || !scope.Revealed {
+		t.Fatalf("resolve revealed scope: revealed = %v, err = %v", scope.Revealed, err)
+	}
+	if err := st.SetSessionRevealed(ctx, scope.SessionID, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.writePlayQueue(ctx, scope, map[string]bool{"queueremoveentry": true}, request{Variables: map[string]any{
+		"entryID": before.Entries[1].ID, "expectedProfileID": string(scope.ProfileID),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.Entries, before.Entries[:1]) {
+		t.Errorf("remove after relock returned %+v, want only %+v", got.Entries, before.Entries[:1])
+	}
+	stored, err := st.PlayQueue(ctx, scope.ProfileID, scope.LibraryFilter())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(playQueueInfo(stored).Entries, before.Entries) {
+		t.Errorf("remove after relock changed stored entries to %+v", playQueueInfo(stored).Entries)
+	}
+}
+
+func TestPlayQueueWriteMapsScheduleEndingBeforeCommit(t *testing.T) {
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	now := time.Date(2026, time.June, 15, 10, 0, 0, 0, time.Local)
+	deadline := now.Add(time.Minute)
+	ctx := t.Context()
+	var writeClockReads int
+	var writing bool
+	h.auth = auth.NewServiceWithClock(st, func() time.Time {
+		if writing {
+			writeClockReads++
+			if writeClockReads > 1 {
+				return deadline
+			}
+		}
+		return now
+	})
+	if err := st.SetProfileAccessWindows(ctx, pqManaged, []store.ProfileAccessWindow{
+		{Weekday: int(now.Weekday()), StartMinute: 600, EndMinute: 601},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h.mutationAuditAppend = func(ctx context.Context, entry store.ActivityEntry) error {
+		if entry.Action == store.ActivityMutationAttempt {
+			writing = true
+		}
+		return st.AppendActivity(ctx, entry)
+	}
+	const body = `{"query":"mutation { queueAddMany(mediaIDs: [\"media-alpha\"], placement: \"end\") { entries { id } } }"}`
+	status, resp := postGraphStatus(t, h, body, authorizeManaged)
+	if writeClockReads < 2 {
+		t.Fatalf("queue add did not reach the commit-time clock check: %+v", resp.Errors)
+	}
+	if status != http.StatusForbidden || len(resp.Errors) != 1 {
+		t.Fatalf("status = %d, errors = %+v, want 403 and one error", status, resp.Errors)
+	}
+	got := resp.Errors[0]
+	if got.Extensions.Code != ErrorCodeForbidden || got.Extensions.Reason != ErrorReasonAccessScheduleEnded || got.Message != accessScheduleEndedMessage {
+		t.Errorf("queue add error = %#v, want FORBIDDEN / ACCESS_SCHEDULE_ENDED", got)
+	}
+	if ids := pqQueue(t, st, pqManaged); len(ids) != 0 {
+		t.Errorf("queue add after deadline wrote %v", ids)
+	}
+}
+
+func TestPlayQueueStateWriteRequiresProfile(t *testing.T) {
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	const body = `{"query":"mutation { queueSetRepeat(mode: \"one\") { repeatMode } }"}`
+	_, errs := post(t, h, body, tokenAuthorizer(t, st, store.APITokenAccessCLI))
+	if len(errs) != 1 || errs[0].Extensions.Code != ErrorCodeInvalid || errs[0].Message != "profile ID is required" {
+		t.Fatalf("queue write without a Profile errors = %+v, want INVALID / profile ID is required", errs)
+	}
+}
 
 func TestPlayQueueEntryOperations(t *testing.T) {
 	// feature:play-queue

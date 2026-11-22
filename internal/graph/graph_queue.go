@@ -48,23 +48,14 @@ func playQueueInfo(queue store.PlayQueue) PlayQueueInfo {
 }
 
 func (h *Handler) writePlayQueue(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (PlayQueueInfo, error) {
-	if fields["queueaddmany"] || fields["queueplaynext"] {
-		queue, err := h.writeAuthorizedPlayQueue(ctx, scope, fields, req)
-		if fields["queueplaynext"] && errors.Is(err, store.ErrQueueMediaNotFound) {
-			return PlayQueueInfo{}, clientError("media is not queued")
-		}
-		if err != nil {
-			return PlayQueueInfo{}, queueWriteError(err)
-		}
-		return playQueueInfo(queue), nil
+	queue, err := h.writeAuthorizedPlayQueue(ctx, scope, fields, req)
+	if fields["queueplaynext"] && errors.Is(err, store.ErrQueueMediaNotFound) {
+		return PlayQueueInfo{}, clientError("media is not queued")
 	}
-	err := h.withExpectedProfile(ctx, scope, req, func() error {
-		return h.applyPlayQueueWrite(ctx, scope, fields, req)
-	})
 	if err != nil {
-		return PlayQueueInfo{}, err
+		return PlayQueueInfo{}, queueWriteError(err)
 	}
-	return h.playQueue(ctx, scope)
+	return playQueueInfo(queue), nil
 }
 
 func (h *Handler) writeAuthorizedPlayQueue(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (store.PlayQueue, error) {
@@ -92,7 +83,13 @@ func (h *Handler) writeAuthorizedPlayQueue(ctx context.Context, scope auth.Scope
 		}
 		return h.store.QueueAddMany(ctx, authorization, ids, store.QueuePlacement(trimmedVariable(req, "placement")))
 	}
-	return store.PlayQueue{}, clientError("invalid queue mutation")
+	edit, err := playQueueEdit(fields, req)
+	if err != nil {
+		return store.PlayQueue{}, err
+	}
+	// State edits apply to the Profile whose queue the caller was editing.
+	authorization.ExpectedProfileID = scope.ProfileID
+	return h.store.EditPlayQueue(ctx, authorization, edit)
 }
 
 func queueWriteError(err error) error {
@@ -106,60 +103,57 @@ func queueWriteError(err error) error {
 	case errors.Is(err, store.ErrProfileDisabled):
 		return clientError("profile is disabled")
 	case errors.Is(err, store.ErrDeviceRevoked), errors.Is(err, store.ErrSessionExpired),
-		errors.Is(err, store.ErrSessionNotFound), errors.Is(err, store.ErrQueueProfileOutsideSchedule):
+		errors.Is(err, store.ErrSessionNotFound), errors.Is(err, store.ErrQueueReboundProfileOutsideSchedule):
 		return clientError("invalid session")
+	case errors.Is(err, store.ErrQueueProfileOutsideSchedule):
+		return auth.ErrAccessOutsideSchedule
 	default:
 		return err
 	}
 }
 
-func (h *Handler) applyPlayQueueWrite(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) error {
-	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
-	if err != nil {
-		return err
-	}
-	profile := scope.ProfileID
+func playQueueEdit(fields map[string]bool, req request) (store.QueueEdit, error) {
 	if fields["queuemoveentry"] {
 		position, err := queueInteger(req, "position", math.MaxInt32)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return h.store.QueueMoveEntry(ctx, profile, trimmedVariable(req, "entryID"), int(position), filter)
+		return store.MoveQueueEntry(trimmedVariable(req, "entryID"), int(position)), nil
 	}
 	if fields["queueremoveentry"] {
-		return h.store.QueueRemoveEntry(ctx, profile, trimmedVariable(req, "entryID"), filter)
+		return store.RemoveQueueEntry(trimmedVariable(req, "entryID")), nil
 	}
 	if fields["queuesetcurrent"] {
 		positionMS, err := queueInteger(req, "positionMS", 1<<53-1)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		v := newVars(req)
 		entryID, supplied := v.String("entryID")
 		if err := v.Err(); err != nil {
-			return err
+			return nil, err
 		}
 		entryID = strings.TrimSpace(entryID)
 		if supplied && entryID == "" {
-			return clientError("entryID is required")
+			return nil, clientError("entryID is required")
 		}
-		return h.store.QueueSetCurrent(ctx, profile, entryID, positionMS, filter)
+		return store.SetQueueCurrent(entryID, positionMS), nil
 	}
 	if fields["queuesetshuffle"] {
 		v := newVars(req)
 		enabled, ok := v.Bool("enabled")
 		if err := v.Err(); err != nil {
-			return err
+			return nil, err
 		}
 		if !ok {
-			return clientError("enabled is required")
+			return nil, clientError("enabled is required")
 		}
-		return h.store.QueueSetShuffle(ctx, profile, enabled, filter)
+		return store.SetQueueShuffle(enabled), nil
 	}
 	if fields["queuesetrepeat"] {
-		return h.store.QueueSetRepeat(ctx, profile, store.QueueRepeatMode(trimmedVariable(req, "mode")), filter)
+		return store.SetQueueRepeat(store.QueueRepeatMode(trimmedVariable(req, "mode"))), nil
 	}
-	return clientError("invalid queue mutation")
+	return nil, clientError("invalid queue mutation")
 }
 
 func queueInteger(req request, name string, maximum float64) (int64, error) {
