@@ -548,13 +548,17 @@ function Slideshow() {
       close();
     };
     const move = (event: PointerEvent) => {
-      // Moves during the grace period only fix where the pointer rests, so the
-      // first deliberate move after it can close the screensaver on its own.
+      // Moves during the grace period only fix where the pointer rests.
       const resting = performance.now() - openedAt < SCREENSAVER_GRACE_MS;
-      if (!origin || resting) {
+      if (resting) {
         origin = { x: event.clientX, y: event.clientY };
-        if (resting) return;
+        return;
       }
+      // A pointer that rested through the grace period starts where this move began.
+      origin ??= {
+        x: event.clientX - (event.movementX || 0),
+        y: event.clientY - (event.movementY || 0),
+      };
       if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) >= SCREENSAVER_MOVE_PX) {
         dismiss(event);
       }

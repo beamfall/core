@@ -67,29 +67,37 @@ export function idleRoute(pathname: string): boolean {
   return !BUSY_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
 
-// Text fields the viewer has typed into since their form last submitted or
-// reset. React keeps a controlled field's defaultValue equal to its value, so
-// value against defaultValue cannot tell unsaved text on its own.
+// Text fields the viewer has typed into since their form last reset. React keeps
+// a controlled field's defaultValue equal to its value, so value against
+// defaultValue cannot tell unsaved text on its own. A submit does not clear the
+// mark: the save can fail and leave the text in place, so the text counts until
+// the page empties the field or unmounts it. Search fields filter as they are
+// typed and hold no unsaved work.
 const typed = new WeakSet<Element>();
+const SEARCH_FIELDS = "input[type='search'], [role='searchbox']";
 
 /** Follows typing in doc's text fields for pageBusy; returns the cleanup. */
 export function trackTyping(doc: Document): () => void {
   const onInput = (event: Event) => {
     const target = event.target;
-    if (target instanceof Element && target.matches(TEXT_FIELDS)) typed.add(target);
+    if (
+      target instanceof Element &&
+      target.matches(TEXT_FIELDS) &&
+      !target.matches(SEARCH_FIELDS)
+    ) {
+      typed.add(target);
+    }
   };
-  const onDone = (event: Event) => {
+  const onReset = (event: Event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
     for (const field of form.querySelectorAll(TEXT_FIELDS)) typed.delete(field);
   };
   doc.addEventListener("input", onInput, true);
-  doc.addEventListener("submit", onDone, true);
-  doc.addEventListener("reset", onDone, true);
+  doc.addEventListener("reset", onReset, true);
   return () => {
     doc.removeEventListener("input", onInput, true);
-    doc.removeEventListener("submit", onDone, true);
-    doc.removeEventListener("reset", onDone, true);
+    doc.removeEventListener("reset", onReset, true);
   };
 }
 
@@ -103,8 +111,11 @@ export function pageBusy(doc: Document): boolean {
   ) {
     return true;
   }
+  // Audible playback only: a muted, looping hover preview is not a viewer watching.
   for (const media of doc.querySelectorAll("video, audio")) {
-    if (media instanceof HTMLMediaElement && !media.paused && !media.ended) return true;
+    if (media instanceof HTMLMediaElement && !media.paused && !media.ended && !media.muted) {
+      return true;
+    }
   }
   const active = doc.activeElement;
   if (active instanceof HTMLElement && active.closest(TEXT_FIELDS)) return true;

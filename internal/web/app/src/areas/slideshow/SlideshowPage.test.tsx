@@ -389,6 +389,19 @@ describe("SlideshowPage", () => {
     expect(await screen.findByText("home")).toBeInTheDocument();
   });
 
+  it("closes the screensaver on a move from a pointer that rested through the grace period", async () => {
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    renderAt("/slideshow?source=favorites&screensaver=1");
+    await screen.findByRole("img", { name: "Title one" });
+    clock = 5000;
+    // jsdom drops movementX from the init dictionary.
+    const moved = new MouseEvent("pointermove", { clientX: 210, clientY: 10 });
+    Object.defineProperty(moved, "movementX", { value: 200 });
+    window.dispatchEvent(moved);
+    expect(await screen.findByText("home")).toBeInTheDocument();
+  });
+
   it("keeps the screensaver option per device from the setup sheet", async () => {
     renderAt("/slideshow");
     const option = await screen.findByRole("checkbox", { name: "Open this slideshow when idle" });
@@ -430,9 +443,10 @@ describe("screensaver helpers", () => {
     document.body.innerHTML = "";
   });
 
-  it("treats text typed into a controlled field as unsaved until its form submits", () => {
+  it("treats typed text as unsaved until the field empties, but not a search filter", () => {
     const untrack = trackTyping(document);
-    document.body.innerHTML = '<form><input id="name"><button id="go">Create</button></form>';
+    document.body.innerHTML =
+      '<form><input id="name"><button id="go">Create</button></form><input id="q" type="search">';
     const field = document.getElementById("name") as HTMLInputElement;
     field.focus();
     field.value = "New playlist";
@@ -441,7 +455,16 @@ describe("screensaver helpers", () => {
     field.dispatchEvent(new Event("input", { bubbles: true }));
     (document.getElementById("go") as HTMLElement).focus();
     expect(pageBusy(document)).toBe(true);
+    // A failed save leaves the text in place, so a submit alone does not clear it.
     field.form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(pageBusy(document)).toBe(true);
+    field.value = "";
+    field.defaultValue = "";
+    expect(pageBusy(document)).toBe(false);
+    const search = document.getElementById("q") as HTMLInputElement;
+    search.value = "beach";
+    search.defaultValue = "beach";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
     expect(pageBusy(document)).toBe(false);
     untrack();
     document.body.innerHTML = "";
@@ -452,6 +475,10 @@ describe("screensaver helpers", () => {
     const video = document.querySelector("video") as HTMLVideoElement;
     Object.defineProperty(video, "paused", { configurable: true, value: false });
     expect(pageBusy(document)).toBe(true);
+    // A muted hover preview loops with nobody watching.
+    video.muted = true;
+    expect(pageBusy(document)).toBe(false);
+    video.muted = false;
     Object.defineProperty(video, "paused", { configurable: true, value: true });
     expect(pageBusy(document)).toBe(false);
     document.body.innerHTML = "";

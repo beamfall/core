@@ -1508,6 +1508,35 @@ describe("PlayerPage class-narrowed queue (CORE-1490, CORE-1309)", () => {
     await waitFor(() => expect(lastPlayedID()).toBe("media-t2"));
   });
 
+  it("does not advance into an issued next once the media read says plays-alone (CORE-3147)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      id: "media-alpha",
+      title: "Alpha",
+      playsAlone: true,
+      credits: [],
+    } as never);
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: {
+          mediaClass: "audio",
+          next: {
+            mediaID: "media-t2",
+            mediaClass: "audio",
+            streams: [{ kind: "direct-play", url: "/api/media/t2" }],
+          },
+        } as PlayerState["info"],
+      }),
+      { title: "Alpha" },
+    );
+    await waitFor(() => expect(vi.mocked(fetchMedia)).toHaveBeenCalled());
+    await act(async () => {});
+    fireEvent.ended(stageVideo());
+    await act(async () => {});
+    expect(lastPlayedID()).not.toBe("media-t2");
+    vi.mocked(fetchMedia).mockResolvedValue(null);
+  });
+
   it("shows the audio stage while loading when the queue entry is a track", () => {
     renderPlayer(playerState({ phase: "loading" }), {
       title: "Alpha",

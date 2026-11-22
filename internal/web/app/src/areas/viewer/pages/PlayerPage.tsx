@@ -759,7 +759,9 @@ function FeaturePlayer({
   // An audio card queue's issuance counts only while it is still the queue's
   // successor: playback-info is not asked again when shuffle or repeat changes
   // that item.
-  const reportedNext = state.info?.next ?? undefined;
+  // Plays-alone Media continues into nothing (CORE-3147), even when playback-info
+  // issued a successor before the media read said so.
+  const reportedNext = playsAloneRead ? undefined : (state.info?.next ?? undefined);
   const issuedNext =
     serverQueueRun || (catalogQueue && playingClass === "audio")
       ? state.mediaID === mediaId && reportedNext?.mediaID === nextInQueue?.id
