@@ -49,13 +49,24 @@ under the existing segment guards.
 
 ### Requirement: Spectral held chords
 
-Windows that match only through a held chord SHALL extend a shared run but SHALL NOT count toward
-its 15-window minimum.
+An agreeing pair in which either frame repeats its predecessor SHALL be held. A window whose
+agreeing pairs are all held SHALL extend a shared run but SHALL NOT count toward its 15-window
+minimum; one fresh agreeing pair makes it count.
 
 #### Scenario: Steady near-match
 
 - **WHEN** two files open on different steady chords one bit apart, followed by unrelated audio
 - **THEN** no intro is detected
+
+#### Scenario: Steady chord against vibrato
+
+- **WHEN** one file holds a chord while the other plays a near chord that changes every frame
+- **THEN** no intro is detected
+
+#### Scenario: Theme on the beat
+
+- **WHEN** a shared theme changes its synth chord once a second and holds it in between
+- **THEN** the intro spans the theme
 
 #### Scenario: Held chord is evidence
 
@@ -66,7 +77,7 @@ its 15-window minimum.
 
 When an offset with no differing window shares at least 15 windows the candidate does not explain,
 the sibling SHALL yield no segment, because the two files are one recording. The candidate explains
-matches against one reprise of its audio on either side, but not reprises on both sides at once.
+only matches against a reprise of its audio on one file's side, not the candidate meeting itself.
 
 #### Scenario: Silence-padded copy
 
@@ -76,6 +87,11 @@ matches against one reprise of its audio on either side, but not reprises on bot
 #### Scenario: Copy that repeats a passage
 
 - **WHEN** a sibling is an exact copy of a clip that plays one 20 s passage twice
+- **THEN** that sibling yields no intro
+
+#### Scenario: Copy of a looped bumper
+
+- **WHEN** a sibling is an exact copy of a clip that loops a 4 s bumper six times
 - **THEN** that sibling yields no intro
 
 #### Scenario: Theme reprise

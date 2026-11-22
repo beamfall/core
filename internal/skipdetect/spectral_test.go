@@ -563,3 +563,56 @@ func TestSpectralSteadyNearMatchYieldsNoIntro(t *testing.T) {
 	)
 	wantNoSegment(t, markers, "intro")
 }
+
+// CORE-3111 review r6: a theme whose synth changes once per second. Each
+// window has one fresh agreeing frame and seven held ones; that is still the
+// shared theme moving, so the whole cue is the intro.
+func TestSpectralOnTheBeatThemeKeepsIntro(t *testing.T) {
+	notes := noise(95, 10)
+	var synth []uint32
+	for k := range 10 {
+		synth = append(synth, constFrames(notes[k], 1)...)
+	}
+	cue := join(noise(96, 10), synth)
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Beat 1", 100, join(noise(97, 5), cue, noise(98, 75))},
+		spectralSibling{"Beat 2", 100, join(noise(99, 5), cue, noise(100, 75))},
+	)
+	wantSegment(t, markers, "intro", 5, 25)
+}
+
+// CORE-3111 review r6: a steady chord against a near chord with vibrato. The
+// vibrato side changes every frame but the steady side never does, so the two
+// share no change and the near match is no intro.
+func TestSpectralSteadyChordAgainstVibratoYieldsNoIntro(t *testing.T) {
+	const chord uint32 = 0x0f0f0f0f
+	vibrato := make([]uint32, 24*spectralFramesPerWindow)
+	for i := range vibrato {
+		vibrato[i] = chord ^ 1<<(i%3) // one or two bits off, never the same twice running
+		if i%3 == 2 {
+			vibrato[i] ^= 1 << 8
+		}
+	}
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Steady", 100, join(constFrames(chord, 24), noise(101, 76))},
+		spectralSibling{"Vibrato", 100, join(vibrato, noise(102, 76))},
+	)
+	wantNoSegment(t, markers, "intro")
+}
+
+// CORE-3111 review r6: an exact copy of a clip that loops a 4 s bumper six
+// times. The loop matches itself at a 4 s shift; at the aligned offset the run
+// meets itself, which no reprise explains.
+func TestSpectralIdenticalLoopedBumperYieldsNoIntro(t *testing.T) {
+	loop := noise(103, 4)
+	var bumper []uint32
+	for range 6 {
+		bumper = append(bumper, loop...)
+	}
+	clip := join(bumper, noise(104, 4), constFrames(ffmpeg.SpectralSilentFrame, 14))
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Bumper", 42, clip},
+		spectralSibling{"Bumper copy", 42, append([]uint32(nil), clip...)},
+	)
+	wantNoSegment(t, markers, "intro")
+}
