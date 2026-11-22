@@ -4,6 +4,7 @@ import { usePrefersReducedMotion } from "../trackChangeMotion";
 import { decodable, heardTime } from "../useGaplessAudio";
 import { decodeTrack, easeFrame, silentFrame, TrackAnalysis } from "./analysis";
 import { loadArtwork } from "./artwork";
+import { lagBounds, lagHistory, recordLag } from "./limiter";
 import { loadOscillux } from "./oscillux";
 import { MAX_SIDE, Renderer, sameFrame, TRACKED_BLACK } from "./renderer";
 import { canVisualize, setShownVisual, type VisualChoice } from "./visualChoice";
@@ -31,67 +32,11 @@ const REPORT_FRAMES = 3;
 const STEP_MS = 1000 / 60;
 // How early a tick may come and still step: a display's intervals jitter around its rate.
 const STEP_SLACK_MS = 1.5;
-// The paint-lag bound: the largest animation-frame interval measured lately, plus LAG_MARGIN_MS
-// for a paint later than any interval measured (a maximum, not a median, so one late paint is
-// not underestimated). A frame's lag matters to the limiter for as long as the frames after it
-// can be compared with it: the 1 s flash budget for about a second after it, recency and the
-// stamps' clearing for the coverage interval. So the budget's bound holds an interval
-// LAG_HOLD_MS and recency's RECENT_HOLD_MS; a stall then slows the clock's recency share only
-// for the coverage interval after it (Codex rounds 2 and 3, CORE-2744). The intervals are kept
-// as maxima of LAG_BUCKET_MS buckets, so no rate of animation frames evicts one early. Before an
-// interval is measured, the bound is the slowest cadence a page is drawn at.
-const LAG_HOLD_MS = 1250;
-const RECENT_HOLD_MS = 1000 / 15 + 1000 / 60;
-const LAG_MARGIN_MS = 2;
-const LAG_BUCKET_MS = 50;
-const LAG_BUCKETS = 32;
-const DEFAULT_LAG_MS = 1000 / 15;
 // Render no more pixels than this: the visual sits behind the artwork card.
 const MAX_DPR = 2;
 
-/** Recent animation-frame intervals, as the largest in each LAG_BUCKET_MS of time. */
-export type LagHistory = { bucket: Float64Array; max: Float64Array; at: Float64Array };
-
-export function lagHistory(): LagHistory {
-  return {
-    bucket: new Float64Array(LAG_BUCKETS).fill(-1),
-    max: new Float64Array(LAG_BUCKETS),
-    at: new Float64Array(LAG_BUCKETS),
-  };
-}
-
-/** Records an animation-frame interval that ended at now. Allocates nothing. */
-export function recordLag(h: LagHistory, interval: number, now: number): void {
-  const b = Math.floor(now / LAG_BUCKET_MS);
-  const i = b % LAG_BUCKETS;
-  if (h.bucket[i] !== b) {
-    h.bucket[i] = b;
-    h.max[i] = interval;
-  } else {
-    h.max[i] = Math.max(h.max[i] ?? 0, interval);
-  }
-  h.at[i] = now;
-}
-
-/**
- * The paint-lag bound at now: the largest interval that ended within holdMs, plus LAG_MARGIN_MS,
- * or DEFAULT_LAG_MS when none did. A bucket counts from its last interval's end, so it is held
- * at least holdMs. Allocates nothing.
- */
-export function lagBound(h: LagHistory, now: number, holdMs: number): number {
-  let max = -1;
-  for (let i = 0; i < LAG_BUCKETS; i++) {
-    if ((h.bucket[i] ?? -1) >= 0 && now - (h.at[i] ?? 0) <= holdMs) {
-      max = Math.max(max, h.max[i] ?? 0);
-    }
-  }
-  return max < 0 ? DEFAULT_LAG_MS : max + LAG_MARGIN_MS;
-}
-
-/** The budget's and recency's paint-lag bounds at now. */
-export function lagBounds(h: LagHistory, now: number): [number, number] {
-  return [lagBound(h, now, LAG_HOLD_MS), lagBound(h, now, RECENT_HOLD_MS)];
-}
+// The paint-lag bounds the limiter is credited with are shared with the slideshow (limiter.ts).
+export { type LagHistory, lagBound, lagBounds, lagHistory, recordLag } from "./limiter";
 
 /**
  * The canvas's backing size in texels and the texel's side in physical pixels: a whole number,

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FrameLimiter, type Limiter } from "../../viewer/player/visualizer/limiter";
 import { createSlideshowDriver, MOTION_CANVAS_CLASS } from "./slideshowDriver";
 
 vi.mock("../../viewer/player/visualizer/oscillux", () => ({
@@ -18,22 +19,50 @@ vi.mock("../../viewer/player/visualizer/oscillux", () => ({
     statusString: () => "",
     wasmMemory: () => ({ buffer: new ArrayBuffer(4096) }),
   }),
-  shaderSource: async () => "",
+  // Each shader's source is its path, so the fake context can tell the passes apart.
+  shaderSource: async (path: string) => path,
 }));
 
+const READ_FRAMEBUFFER = 0x8ca8;
+
 // A WebGL2 context that accepts every call: enough to drive the host's state, not to draw.
-// `blocks` collects each SlideshowBlock uploaded.
-function fakeGL(blocks: Float32Array[] = []): WebGL2RenderingContext {
+// `blocks` collects each SlideshowBlock uploaded and `blits` the framebuffer each canvas blit
+// read. A program links unless `refuse` refuses one of its shader sources.
+function fakeGL(
+  blocks: Float32Array[] = [],
+  blits: unknown[] = [],
+  refuse: (source: string) => boolean = () => false,
+): WebGL2RenderingContext {
   let lost = false;
+  let read: unknown = null;
+  let lastClear = new Uint32Array(4);
+  const sources = new WeakMap<object, string>();
+  const linked = new WeakMap<object, string[]>();
   const overrides: Record<string, unknown> = {
     bufferSubData: (_: number, __: number, data: Float32Array) => {
       if (data.length === 44) blocks.push(data.slice());
     },
+    createShader: () => ({}),
+    createProgram: () => ({}),
+    createFramebuffer: () => ({}),
+    shaderSource: (shader: object, source: string) => sources.set(shader, source),
+    attachShader: (program: object, shader: object) =>
+      linked.set(program, [...(linked.get(program) ?? []), sources.get(shader) ?? ""]),
+    getProgramParameter: (program: object) => !(linked.get(program) ?? []).some(refuse),
+    bindFramebuffer: (target: number, f: unknown) => {
+      if (target === READ_FRAMEBUFFER) read = f;
+    },
+    blitFramebuffer: () => blits.push(read),
+    // The tracker format check reads back the bits it cleared: a 32-bit store keeps them.
+    clearBufferuiv: (_: number, __: number, v: Uint32Array) => (lastClear = v.slice()),
+    readPixels: (...args: unknown[]) => (args[6] as Uint32Array).set(lastClear),
+    READ_FRAMEBUFFER,
+    DRAW_FRAMEBUFFER: 0x8ca9,
+    FRAMEBUFFER: 0x8d40,
     isContextLost: () => lost,
     getExtension: (name: string) =>
       name === "WEBGL_lose_context" ? { loseContext: () => (lost = true) } : null,
     getParameter: () => 4096,
-    getProgramParameter: () => true,
     checkFramebufferStatus: () => 0x8cd5,
     FRAMEBUFFER_COMPLETE: 0x8cd5,
     getError: () => 0,
@@ -63,6 +92,28 @@ function photoSlide(): HTMLElement {
 }
 
 const options = { intervalMs: () => 12_000, reducedMotion: () => false };
+
+// Animation frames driven by hand on a mocked clock.
+function frames() {
+  let frame: FrameRequestCallback | null = null;
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+    frame = cb;
+    return 1;
+  });
+  let clock = 1000;
+  vi.spyOn(performance, "now").mockImplementation(() => clock);
+  const tick = (ms: number) => {
+    clock += ms;
+    const cb = frame;
+    frame = null;
+    cb?.(clock);
+  };
+  // Runs ms of 60 Hz frames: BLACK_S of black, credited a frame at a time, takes about 80.
+  const run = (ms: number) => {
+    for (let t = 0; t < ms; t += 16) tick(16);
+  };
+  return { tick, run };
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -126,19 +177,7 @@ describe("createSlideshowDriver", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
       new DOMRect(0, 0, 160, 90),
     );
-    let frame: FrameRequestCallback | null = null;
-    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
-      frame = cb;
-      return 1;
-    });
-    let clock = 1000;
-    vi.spyOn(performance, "now").mockImplementation(() => clock);
-    const tick = (ms: number) => {
-      clock += ms;
-      const cb = frame;
-      frame = null;
-      cb?.(clock);
-    };
+    const { tick, run } = frames();
     const driver = createSlideshowDriver(options);
     if (!driver) throw new Error("no driver");
     const stage = document.createElement("div");
@@ -150,6 +189,10 @@ describe("createSlideshowDriver", () => {
     driver.advance(null, slide);
     const canvas = stage.querySelector<HTMLCanvasElement>(`canvas.${MOTION_CANVAS_CLASS}`);
     await vi.waitFor(() => expect(canvas?.hidden).toBe(false));
+    // Black for BLACK_S before the first photo.
+    await new Promise((resolve) => setTimeout(resolve));
+    run(1600);
+    expect(blocks.length).toBeGreaterThan(0);
 
     tick(1200);
     const k = blocks.at(-1)?.[12] ?? -1;
@@ -191,6 +234,107 @@ describe("createSlideshowDriver", () => {
     stage.append(broken);
     driver.advance(first, broken);
     await vi.waitFor(() => expect(canvas?.hidden).toBe(true));
+    driver.dispose();
+  });
+});
+
+describe("SlideshowDriver flash limiter (CORE-2980)", () => {
+  const mount = (blits: unknown[], refuse?: (source: string) => boolean) => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      fakeGL([], blits, refuse) as unknown as RenderingContext,
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 160, 90),
+    );
+    const clock = frames();
+    const driver = createSlideshowDriver(options);
+    if (!driver) throw new Error("no driver");
+    const stage = document.createElement("div");
+    document.body.append(stage);
+    const slide = photoSlide();
+    stage.append(slide);
+    driver.advance(null, slide);
+    const canvas = stage.querySelector<HTMLCanvasElement>(`canvas.${MOTION_CANVAS_CLASS}`);
+    return { driver, canvas, stage, slide, ...clock };
+  };
+
+  it("shows black for BLACK_S, then only the limiter's output of each frame", async () => {
+    const blits: unknown[] = [];
+    const runs: [Limiter, WebGLTexture][] = [];
+    const run = FrameLimiter.prototype.run;
+    vi.spyOn(FrameLimiter.prototype, "run").mockImplementation(function (this: FrameLimiter, ...a) {
+      runs.push([a[0], a[1]]);
+      run.apply(this, a);
+    });
+    const { driver, canvas, run: play } = mount(blits);
+    // The canvas covers the DOM slide in black at once.
+    expect(canvas?.hidden).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve));
+    play(1000);
+    expect(runs).toEqual([]);
+    expect(blits).toEqual([]);
+
+    play(600);
+    expect(runs.length).toBeGreaterThan(0);
+    expect(blits).toHaveLength(runs.length);
+    // Every blit to the canvas reads the limiter's output of that frame.
+    const [L] = runs.at(-1) as [Limiter, WebGLTexture];
+    expect(blits.at(-1)).toBe(L.fOut[L.cur]);
+    expect(L.fOut).toContain(blits[0]);
+    driver.dispose();
+  });
+
+  it("fades through the limiter when the stage changes size, then starts after black", async () => {
+    const blits: unknown[] = [];
+    const spend = vi.spyOn(FrameLimiter.prototype, "spend");
+    const { driver, run, tick } = mount(blits);
+    await new Promise((resolve) => setTimeout(resolve));
+    run(1600);
+    const starts = spend.mock.calls.length;
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue(
+      new DOMRect(0, 0, 320, 180),
+    );
+    tick(16);
+    // The fade writes the budgets spent and feeds the limiter black, still blitting its output.
+    expect(spend.mock.calls.length).toBe(starts + 1);
+    const [L] = spend.mock.calls.at(-1) as [Limiter];
+    expect(L.window.limit).toBe(0);
+    const shown = blits.length;
+    run(1000);
+    expect(blits.length).toBeGreaterThan(shown);
+    driver.dispose();
+  });
+
+  it("hard-cuts for good, never showing a frame, when the limiter fails to build", async () => {
+    const blits: unknown[] = [];
+    const { driver, canvas, stage, slide, run } = mount(blits, (s) => s.startsWith("limiter/"));
+    await vi.waitFor(() => expect(canvas?.hidden).toBe(true));
+    run(2000);
+    const next = photoSlide();
+    stage.append(next);
+    driver.advance(slide, next);
+    run(2000);
+    expect(canvas?.hidden).toBe(true);
+    expect(blits).toEqual([]);
+    driver.dispose();
+  });
+
+  it("hard-cuts when the limiter's targets are incomplete", async () => {
+    const blits: unknown[] = [];
+    const allocate = FrameLimiter.prototype.allocate;
+    vi.spyOn(FrameLimiter.prototype, "allocate").mockImplementation(function (
+      this: FrameLimiter,
+      ...a
+    ) {
+      return { ...allocate.apply(this, a), complete: false };
+    });
+    const free = vi.spyOn(FrameLimiter.prototype, "free");
+    const { driver, canvas, run } = mount(blits);
+    await new Promise((resolve) => setTimeout(resolve));
+    run(1600);
+    expect(canvas?.hidden).toBe(true);
+    expect(free).toHaveBeenCalledTimes(1);
+    expect(blits).toEqual([]);
     driver.dispose();
   });
 });

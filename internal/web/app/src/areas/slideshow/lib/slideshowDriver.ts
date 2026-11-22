@@ -1,11 +1,32 @@
 // The WebGL2 host for Oscillux's calm photo-slideshow pass (CORE-2980). Host glue only: a canvas
 // over the slideshow stage, photo decoding and upload, the clock and the playlist's layout and
 // style choice. The picture is Oscillux's: the vendored slideshow pass draws the slides in linear
-// light and the vendored present pass tone maps and encodes them (ADR-0228). The DOM slide stays
-// underneath for its alt text and load events, so dropping the canvas is a hard cut.
+// light, the vendored present pass tone maps and encodes them, and the vendored frame flash
+// limiter judges every frame before the canvas shows it, from the first photo on (ADR-0228; the
+// slideshow pass README: the limiter sees the whole slideshow). The DOM slide stays underneath for
+// its alt text and load events, so dropping the canvas is a hard cut.
 
+import {
+  BLACK_CREDIT_MS,
+  BLACK_S,
+  CREDIT_MS,
+  creditScale,
+  FADE_S,
+  FrameLimiter,
+  type Limiter,
+  lagBounds,
+  lagHistory,
+  limiterSources,
+  limiterWindow,
+  linkLimiter,
+  recordLag,
+} from "../../viewer/player/visualizer/limiter";
 import { loadOscillux, type Oscillux, shaderSource } from "../../viewer/player/visualizer/oscillux";
-import { type FeedbackFormat, pickFeedbackFormat } from "../../viewer/player/visualizer/renderer";
+import {
+  type FeedbackFormat,
+  frameSize,
+  pickFeedbackFormat,
+} from "../../viewer/player/visualizer/renderer";
 import {
   chooseLayout,
   MIN_TRANSITION_GAP_MS,
@@ -31,7 +52,6 @@ const POST_FLOAT = 84;
 // The longest photo side uploaded: past this the photo is scaled down first (README: a photo
 // much larger than the frame aliases).
 const MAX_PHOTO_SIDE = 4096;
-const MAX_CANVAS_SIDE = 8192;
 
 interface Photo {
   tex: WebGLTexture;
@@ -58,6 +78,7 @@ interface Change {
   reduced: boolean;
 }
 
+/** One frame size's targets: the frame is the present pass's RGBA8 output, the limiter's input. */
 interface Targets {
   width: number;
   height: number;
@@ -65,6 +86,14 @@ interface Targets {
   sceneFbo: WebGLFramebuffer;
   frame: WebGLTexture;
   history: { tex: WebGLTexture; fbo: WebGLFramebuffer }[];
+  limiter: Limiter;
+}
+
+/** The frame size for the canvas's box: its size in texels and a texel's side in device pixels. */
+interface Want {
+  width: number;
+  height: number;
+  texel: number;
 }
 
 export interface SlideshowDriverOptions {
@@ -118,6 +147,8 @@ export class SlideshowDriver {
     quad: WebGLBuffer;
     blockUbo: WebGLBuffer;
     presentUbo: WebGLBuffer;
+    limiterPrograms: WebGLProgram[];
+    flash: FrameLimiter;
   } | null = null;
   private targets: Targets | null = null;
   private current: Slide | null = null;
@@ -136,6 +167,17 @@ export class SlideshowDriver {
   private pausedMs = 0;
   private readonly ready: Promise<void>;
   private dead = false;
+  // The flash limiter's timing, as the visualizer keeps it (Visualizer.tsx): the recent
+  // animation-frame intervals bound the paint lag, and the first frame after a start or a break
+  // in painting credits no time. A geometry change fades the frame on screen to black through the
+  // limiter for FADE_S; every start follows BLACK_S of black on the canvas.
+  private readonly lags = lagHistory();
+  private lastTick: number | null = null;
+  private lastShown: number | null = null;
+  private fadeLeft = 0;
+  private blackMs = 0;
+  private blackLongestMs = 0;
+  private blackShown = false;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -146,6 +188,7 @@ export class SlideshowDriver {
     canvas.setAttribute("aria-hidden", "true");
     canvas.hidden = true;
     canvas.addEventListener("webglcontextlost", this.lose);
+    document.addEventListener("visibilitychange", this.restartClocks);
     this.format = pickFeedbackFormat(gl);
     this.ready = this.build().catch((error: unknown) => {
       console.warn("slideshow: Oscillux pass unavailable", error);
@@ -177,6 +220,14 @@ export class SlideshowDriver {
       this.clear();
       return;
     }
+    // A photo after the DOM (the first, or one after a clip): the canvas covers the stage in black
+    // before the slide paints, and stays black for BLACK_S while the photo decodes, so the
+    // limiter's first frame rises from black that was on screen.
+    if (this.canvas.hidden) {
+      this.canvas.hidden = false;
+      this.presentBlack();
+      this.loop(performance.now());
+    }
     // A preview clip can replace the poster after the slide mounted.
     this.watch = new MutationObserver(() => {
       if (generation === this.generation && !this.photoSlide(to)) this.clear();
@@ -200,6 +251,7 @@ export class SlideshowDriver {
   dispose(): void {
     this.stop();
     this.canvas.removeEventListener("webglcontextlost", this.lose);
+    document.removeEventListener("visibilitychange", this.restartClocks);
     this.canvas.remove();
   }
 
@@ -207,12 +259,15 @@ export class SlideshowDriver {
     return !slide.querySelector("video") && !!slide.querySelector("img.bf-slideshow-media");
   }
 
+  // Builds the passes. Any failure, the limiter's included, gives up to hard cuts: no frame is
+  // ever shown without it.
   private async build(): Promise<void> {
-    const [osc, vertex, slideshowSource, presentSource] = await Promise.all([
+    const [osc, vertex, slideshowSource, presentSource, limiterSource] = await Promise.all([
       loadOscillux(),
       shaderSource("visuals/vertex.web.vert"),
       shaderSource("slideshow/slideshow.frag"),
       shaderSource("post/present.frag"),
+      limiterSources(),
     ]);
     if (this.dead) return;
     const gl = this.gl;
@@ -225,6 +280,8 @@ export class SlideshowDriver {
     gl.uniformBlockBinding(slideshow, gl.getUniformBlockIndex(slideshow, "SlideshowBlock"), 0);
     const present = this.program(vertex, presentSource, ["uA", "uB", "uH", "uBloom"]);
     gl.uniformBlockBinding(present, gl.getUniformBlockIndex(present, "PresentBlock"), 0);
+    const limiterPrograms = linkLimiter(gl, limiterSource, (v, f) => this.program(v, f, []));
+    const flash = new FrameLimiter(gl, limiterPrograms);
     const quad = must(gl.createBuffer());
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
@@ -239,7 +296,18 @@ export class SlideshowDriver {
     overlay.contrastRatio = 4.5;
     overlay.premultipliedAlpha = false;
     const regions = new osc.OverlayRegions();
-    this.gpu = { osc, overlay, regions, slideshow, present, quad, blockUbo, presentUbo };
+    this.gpu = {
+      osc,
+      overlay,
+      regions,
+      slideshow,
+      present,
+      quad,
+      blockUbo,
+      presentUbo,
+      limiterPrograms,
+      flash,
+    };
   }
 
   private program(vertex: string, fragment: string, samplers: string[]): WebGLProgram {
@@ -300,11 +368,14 @@ export class SlideshowDriver {
       this.change = { slide, ...transition, startedAt: now, reduced };
       this.lastStart = now;
     }
-    this.canvas.hidden = false;
-    if (!this.frameId) {
-      this.lastFrame = now;
-      this.frameId = requestAnimationFrame(this.frame);
-    }
+    this.loop(now);
+  }
+
+  // Keeps the animation frames running while the canvas is shown.
+  private loop(now: number): void {
+    if (this.frameId || this.canvas.hidden) return;
+    this.lastFrame = now;
+    this.frameId = requestAnimationFrame(this.frame);
   }
 
   private upload(image: HTMLImageElement): Photo {
@@ -358,31 +429,96 @@ export class SlideshowDriver {
 
   private readonly frame = (now: number): void => {
     this.frameId = 0;
-    const gpu = this.gpu;
-    if (this.dead || !gpu || !this.current || this.gl.isContextLost()) return;
+    if (this.dead || this.canvas.hidden || this.gl.isContextLost()) return;
     // The slide left the page without a change (a revalidation, say): so does its photo.
     if (!this.slideEl?.isConnected) {
       this.clear();
       return;
     }
+    this.frameId = requestAnimationFrame(this.frame);
     const dt = Math.max(0, now - this.lastFrame);
     this.lastFrame = now;
+    // No frame is painted while the page is hidden, so the time it is hidden is no interval.
+    if (document.hidden) {
+      this.restartClocks();
+      return;
+    }
+    // Every animation-frame interval bounds the lag of the paint before it (Visualizer.tsx).
+    if (this.lastTick !== null) recordLag(this.lags, now - this.lastTick, now);
+    this.lastTick = now;
+    const shownMs = this.lastShown === null ? 0 : Math.max(0, now - this.lastShown);
+    this.lastShown = now;
+    const [lagMs, recentLagMs] = lagBounds(this.lags, now);
     try {
-      const t = this.resize();
-      if (t) this.draw(gpu, t, now, dt);
+      this.render(now, dt, shownMs, lagMs, recentLagMs);
     } catch (error) {
       console.warn("slideshow: Oscillux pass failed", error);
       this.stop();
-      return;
     }
-    this.frameId = requestAnimationFrame(this.frame);
   };
+
+  // After a break in painting the next frame is timed as a first one: no interval spans the
+  // break, and the limiter is credited none of it.
+  private readonly restartClocks = (): void => {
+    this.lastTick = null;
+    this.lastShown = null;
+  };
+
+  // One frame on the canvas: black before a start, else the slideshow and present passes, then the
+  // limiter, whose output alone reaches the canvas. A change of frame size fades the frame on
+  // screen to black through the limiter first, as the visualizer does (renderer.ts draw).
+  private render(
+    now: number,
+    dt: number,
+    shownMs: number,
+    lagMs: number,
+    recentLagMs: number,
+  ): void {
+    const gpu = this.gpu;
+    const scale = creditScale(lagMs, recentLagMs);
+    const want = this.measure();
+    let t = this.targets;
+    if (t && gpu && this.fadeLeft > 0) {
+      this.fadeLeft = Math.max(0, this.fadeLeft - Math.min(shownMs * scale, CREDIT_MS) / 1000);
+      if (this.fadeLeft === 0) {
+        this.freeTargets(t);
+        this.resetBlack();
+        t = null;
+      }
+    } else if (t && gpu && !(want && want.width === t.width && want.height === t.height)) {
+      // From this frame the limiter is fed black, its budgets written spent and its area limit
+      // zero, so every fall to black waits for a grant.
+      this.fadeLeft = FADE_S;
+      gpu.flash.spend(t.limiter);
+      t.limiter.window = { ...t.limiter.window, limit: 0 };
+    }
+    if (!t || !gpu) {
+      if (this.blackShown && !this.blackOver) {
+        const ms = Math.min(shownMs * scale, BLACK_CREDIT_MS);
+        this.blackMs += ms;
+        this.blackLongestMs = Math.max(this.blackLongestMs, ms);
+      }
+      this.blackShown = true;
+      if (!gpu || !want || !this.current || !this.blackOver) {
+        this.presentBlack();
+        return;
+      }
+      t = this.start(gpu, want);
+      // The first frame of a start credits no time.
+      shownMs = 0;
+    }
+    const fading = this.fadeLeft > 0;
+    this.draw(gpu, t, now, dt, fading);
+    gpu.flash.run(t.limiter, t.frame, t.width, t.height, shownMs, lagMs, recentLagMs);
+    this.showLimited(t);
+  }
 
   private draw(
     gpu: NonNullable<SlideshowDriver["gpu"]>,
     t: Targets,
     now: number,
     dt: number,
+    fading: boolean,
   ): void {
     const gl = this.gl;
     const reduced = this.options.reducedMotion();
@@ -462,11 +598,18 @@ export class SlideshowDriver {
     bind(gl, 3, t.scene);
     gl.bindFramebuffer(gl.FRAMEBUFFER, next.fbo);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // While fading, the limiter is fed black, so its output falls to black through its grant.
+    if (fading) gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     t.history.reverse();
+  }
 
-    // 3. The frame to the canvas.
+  // The limiter's output to the canvas: never the frame it judged.
+  private showLimited(t: Targets): void {
+    const gl = this.gl;
+    const L = t.limiter;
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, next.fbo);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, L.fOut[L.cur] as WebGLFramebuffer);
     gl.readBuffer(gl.COLOR_ATTACHMENT0);
     gl.blitFramebuffer(
       0,
@@ -483,6 +626,26 @@ export class SlideshowDriver {
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
   }
 
+  // Black to the canvas: all it shows with no frame on it.
+  private presentBlack(): void {
+    if (this.gl.isContextLost()) return;
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+
+  // Whether the black before a start has been credited long enough (BLACK_S).
+  private get blackOver(): boolean {
+    return this.blackMs - this.blackLongestMs >= BLACK_S * 1000 - 1e-3;
+  }
+
+  private resetBlack(): void {
+    this.blackMs = 0;
+    this.blackLongestMs = 0;
+    this.blackShown = false;
+  }
+
   private clock(now: number): number {
     return (this.pausedAt ?? now) - this.pausedMs;
   }
@@ -492,37 +655,70 @@ export class SlideshowDriver {
     return r && r.width > 0 && r.height > 0 ? r.width / r.height : 16 / 9;
   }
 
-  // Keeps the canvas at the stage's size in device pixels, with targets to match.
-  private resize(): Targets | null {
+  // The frame size for the stage's size in device pixels: within the limiter's frame sizes
+  // (frameSize) and the texture limit, keeping aspect. Null while the stage has no pixels.
+  private measure(): Want | null {
     const gl = this.gl;
     const r = this.canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    const max = Math.min(MAX_CANVAS_SIDE, gl.getParameter(gl.MAX_TEXTURE_SIZE) as number);
-    const width = Math.min(max, Math.round(r.width * dpr));
-    const height = Math.min(max, Math.round(r.height * dpr));
-    if (width < 1 || height < 1) return null;
-    const t = this.targets;
-    if (t && t.width === width && t.height === height) return t;
-    if (t) this.freeTargets(t);
-    this.canvas.width = width;
-    this.canvas.height = height;
+    const pw = Math.round(r.width * dpr);
+    const ph = Math.round(r.height * dpr);
+    if (pw < 1 || ph < 1) return null;
+    const k = Math.min(1, (gl.getParameter(gl.MAX_TEXTURE_SIZE) as number) / Math.max(pw, ph));
+    const [width, height] = frameSize(
+      Math.max(1, Math.round(pw * k)),
+      Math.max(1, Math.round(ph * k)),
+    );
+    return { width, height, texel: Math.max(1, pw / width) };
+  }
+
+  // Allocates a frame size's targets, the limiter's black with every budget spent. Whatever was
+  // allocated is released if it throws or a target is incomplete, and the caller gives up.
+  private start(gpu: NonNullable<SlideshowDriver["gpu"]>, want: Want): Targets {
+    const gl = this.gl;
+    const { width, height } = want;
     const { internal, type } = this.format;
-    const scene = texture(gl, width, height, internal, type, gl.LINEAR);
-    const frame = texture(gl, width, height, gl.RGBA8, gl.UNSIGNED_BYTE, gl.NEAREST);
-    const history = [0, 1].map(() => {
-      const tex = texture(gl, width, height, internal, type, gl.NEAREST);
-      const fbo = framebuffer(gl, [frame, tex]);
-      // No history yet: the present pass reads w = 0 and damps nothing on the first frame.
-      gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]);
-      return { tex, fbo };
-    });
-    const next = { width, height, scene, sceneFbo: framebuffer(gl, [scene]), frame, history };
-    this.targets = next;
-    return next;
+    const textures: WebGLTexture[] = [];
+    const framebuffers: WebGLFramebuffer[] = [];
+    const tex = (internalFormat: number, t: number, mode: number) => {
+      const x = texture(gl, width, height, internalFormat, t, mode);
+      textures.push(x);
+      return x;
+    };
+    const fbo = (attachments: WebGLTexture[]) => framebuffer(gl, attachments, framebuffers);
+    try {
+      this.canvas.width = width;
+      this.canvas.height = height;
+      const scene = tex(internal, type, gl.LINEAR);
+      const frame = tex(gl.RGBA8, gl.UNSIGNED_BYTE, gl.NEAREST);
+      const history = [0, 1].map(() => {
+        const h = tex(internal, type, gl.NEAREST);
+        const f = fbo([frame, h]);
+        // No history yet: the present pass reads w = 0 and damps nothing on the first frame.
+        gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]);
+        return { tex: h, fbo: f };
+      });
+      const sceneFbo = fbo([scene]);
+      const field = limiterWindow(width, height, want.texel);
+      const { limiter, complete } = gpu.flash.allocate(width, height, field, true);
+      if (!complete) {
+        gpu.flash.free(limiter);
+        throw new Error("slideshow: flash limiter targets incomplete");
+      }
+      const next = { width, height, scene, sceneFbo, frame, history, limiter };
+      this.targets = next;
+      return next;
+    } catch (error) {
+      for (const f of framebuffers) gl.deleteFramebuffer(f);
+      for (const t of textures) gl.deleteTexture(t);
+      throw error;
+    }
   }
 
   private freeTargets(t: Targets): void {
     const gl = this.gl;
+    this.gpu?.flash.free(t.limiter);
+    this.fadeLeft = 0;
     gl.deleteFramebuffer(t.sceneFbo);
     gl.deleteTexture(t.scene);
     gl.deleteTexture(t.frame);
@@ -545,6 +741,12 @@ export class SlideshowDriver {
     if (this.current) this.drop(this.current);
     this.change = null;
     this.current = null;
+    // The frame and its trackers go with the canvas: the next photo starts after BLACK_S of black.
+    if (this.targets && !this.gl.isContextLost()) this.freeTargets(this.targets);
+    this.targets = null;
+    this.fadeLeft = 0;
+    this.resetBlack();
+    this.restartClocks();
     this.canvas.hidden = true;
     cancelAnimationFrame(this.frameId);
     this.frameId = 0;
@@ -567,9 +769,10 @@ export class SlideshowDriver {
     gpu?.overlay.free();
     gpu?.regions.free();
     if (this.gl.isContextLost()) return;
-    if (this.targets) this.freeTargets(this.targets);
     if (gpu) {
       const gl = this.gl;
+      for (const p of gpu.limiterPrograms) gl.deleteProgram(p);
+      gpu.flash.dispose();
       gl.deleteProgram(gpu.slideshow);
       gl.deleteProgram(gpu.present);
       gl.deleteBuffer(gpu.quad);
@@ -620,8 +823,13 @@ function texture(
   return t;
 }
 
-function framebuffer(gl: WebGL2RenderingContext, attachments: WebGLTexture[]): WebGLFramebuffer {
+function framebuffer(
+  gl: WebGL2RenderingContext,
+  attachments: WebGLTexture[],
+  made: WebGLFramebuffer[],
+): WebGLFramebuffer {
   const f = must(gl.createFramebuffer());
+  made.push(f);
   gl.bindFramebuffer(gl.FRAMEBUFFER, f);
   attachments.forEach((t, i) =>
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0),
