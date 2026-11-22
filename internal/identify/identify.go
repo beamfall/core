@@ -630,20 +630,20 @@ func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 	provenance := store.MediaMetadataProvenance{PluginID: pluginID, ScraperID: scraperID, CandidateID: candidateID}
 	// Entity hydration uses independent writes and can fail. Finish it before
 	// committing an ordinal edit so a failed Apply never publishes that edit.
+	// That early pass runs unsettled: it removes no stale holder link and reads
+	// the year from before the commit, so a settled pass follows the commit.
 	ordinalsChanged := edit.OperatorOrdinal != nil || edit.ClearOrdinal
 	manual := s.effectiveOperatorOrdinal(ctx, mediaID, edit)
 	if ordinalsChanged {
-		if err := s.applyEntities(ctx, mediaID, bundle, spec, result, manual); err != nil {
+		if err := s.applyEntities(ctx, mediaID, bundle, spec, result, manual, false); err != nil {
 			return err
 		}
 	}
 	if err := s.store.ApplyMediaIdentification(ctx, mediaID, metadata, provenance, identifiedMediaFields(bundle, spec, result)); err != nil {
 		return err
 	}
-	if !ordinalsChanged {
-		if err := s.applyEntities(ctx, mediaID, bundle, spec, result, manual); err != nil {
-			return err
-		}
+	if err := s.applyEntities(ctx, mediaID, bundle, spec, result, manual, true); err != nil {
+		return err
 	}
 	s.applyArtwork(ctx, mediaID, pluginID, scraperID, result)
 	return nil
@@ -805,12 +805,17 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 // and hydrated nothing removes the Media's earlier link, but only one this
 // scraper wrote (clearStaleHolderLinks). A holder link keeps an existing
 // holder's stored title (writeEntity), and a container map of a kind the scraper
-// links applies only to a holder it linked in this lookup.
-func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result, manual *store.MediaOrdinal) error {
+// links applies only to a holder it linked in this lookup: a link an operator's
+// lock kept from the scraper does not count. Every write is idempotent. An
+// unsettled pass, run before the Media's metadata commits, skips the stale
+// link removal so a failed commit leaves the old container in place.
+func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result, manual *store.MediaOrdinal, settled bool) error {
 	holders := ContainerRelations(bundle)
 	writer := relationWriter(bundle, spec)
-	if err := s.clearStaleHolderLinks(ctx, mediaID, spec, writer, holders, result); err != nil {
-		return err
+	if settled {
+		if err := s.clearStaleHolderLinks(ctx, mediaID, spec, writer, holders, result); err != nil {
+			return err
+		}
 	}
 	if len(result.Entities) == 0 {
 		return nil
@@ -853,9 +858,6 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 			Fields:    entityFields(bundle, hydrated),
 		}
 		holds := holders.Holds(hydrated.Kind, hydrated.Relation)
-		if holds {
-			holderLinks[hydrated.Kind] = append(holderLinks[hydrated.Kind], id)
-		}
 		if err := s.writeEntity(ctx, entity, holds); err != nil {
 			return err
 		}
@@ -863,7 +865,7 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 		if sortOrder == nil && year != nil && holds {
 			sortOrder = year
 		}
-		if err := s.entities.UpsertHydratedEntityRelation(ctx, store.EntityRelation{
+		written, err := s.upsertHydratedLink(ctx, store.EntityRelation{
 			FromEntityID: id,
 			Name:         hydrated.Relation,
 			ToMediaID:    mediaID,
@@ -871,8 +873,12 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 			Cardinality:  cardinality[hydrated.Kind+"\x00"+hydrated.Relation],
 			SortOrder:    sortOrder,
 			Writer:       writer,
-		}); err != nil {
+		})
+		if err != nil {
 			return err
+		}
+		if holds && written {
+			holderLinks[hydrated.Kind] = append(holderLinks[hydrated.Kind], id)
 		}
 		if err := s.applyEntityParent(ctx, library, id, hydrated); err != nil {
 			return err
@@ -880,6 +886,25 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 		s.applyEntityPoster(ctx, id, hydrated.ArtworkURL)
 	}
 	return s.applyContainerEntities(ctx, mediaID, library, bundle, containers, holderLinks, manual)
+}
+
+// writtenRelationUpserter is the optional EntityStore extension that reports
+// whether a hydrated link was written; *store.Store satisfies it.
+type writtenRelationUpserter interface {
+	UpsertHydratedEntityRelationWritten(ctx context.Context, relation store.EntityRelation) (bool, error)
+}
+
+// upsertHydratedLink writes one scraper link and reports whether it landed:
+// false when an operator's lock kept the scraper's link out. A store without
+// the reporting extension counts every successful write as landed.
+func (s *Service) upsertHydratedLink(ctx context.Context, relation store.EntityRelation) (bool, error) {
+	if upserter, ok := s.entities.(writtenRelationUpserter); ok {
+		return upserter.UpsertHydratedEntityRelationWritten(ctx, relation)
+	}
+	if err := s.entities.UpsertHydratedEntityRelation(ctx, relation); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // relationWriter is the writer key a scraper's Entity→Media links carry, so

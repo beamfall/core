@@ -295,3 +295,73 @@ func assertRelationRows(t *testing.T, st *Store, row EntityRelation, want int, l
 		}
 	}
 }
+
+// TestMergedRelationLeavesScraperCleanup (CORE-3131): a merge re-points the
+// loser's scraper link to the winner as the operator's row, so the scraper's
+// cleanup keeps it; undo restores the scraper's row and its cleanup.
+func TestMergedRelationLeavesScraperCleanup(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	filter := LibraryFilter{AllLibraries: true}
+	const scraper = "scraper:demo/item"
+	for _, id := range []EntityID{"merge-winner", "merge-loser"} {
+		if err := st.UpsertEntity(ctx, widgetEntity(id, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	row := EntityRelation{FromEntityID: "merge-loser", ToMediaID: "media-alpha", Name: "member", Writer: scraper}
+	if err := st.UpsertEntityRelation(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := st.MergeEntities(ctx, "merge-winner", "merge-loser", filter, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := []WrittenRelation{{Kind: "widget", Name: "member"}}
+	if err := st.RemoveWrittenMediaRelations(ctx, row.ToMediaID, scraper, member); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.EntitiesForMedia(ctx, row.ToMediaID, row.Name, filter)
+	if err != nil || len(rows) != 1 || rows[0].Entity.ID != "merge-winner" {
+		t.Fatalf("merged row after scraper cleanup = %+v, %v; want the winner kept", rows, err)
+	}
+	if _, err := st.UndoBatch(ctx, batch.ID, filter, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RemoveWrittenMediaRelations(ctx, row.ToMediaID, scraper, member); err != nil {
+		t.Fatal(err)
+	}
+	if rows, err = st.EntitiesForMedia(ctx, row.ToMediaID, row.Name, filter); err != nil || len(rows) != 0 {
+		t.Fatalf("restored row after scraper cleanup = %+v, %v; want the scraper's row removed", rows, err)
+	}
+}
+
+// TestHydratedRelationWrittenReportsLock (CORE-3131): the reporting upsert
+// says false when an operator's lock kept the derived link out and true for
+// a written Media or Entity link.
+func TestHydratedRelationWrittenReportsLock(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	filter := LibraryFilter{AllLibraries: true}
+	for _, id := range []EntityID{"operator", "derived"} {
+		if err := st.UpsertEntity(ctx, widgetEntity(id, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	derived := EntityRelation{FromEntityID: "derived", ToMediaID: "media-alpha", Name: "member", Cardinality: "one"}
+	if written, err := st.UpsertHydratedEntityRelationWritten(ctx, derived); err != nil || !written {
+		t.Fatalf("unlocked write = %t, %v; want written", written, err)
+	}
+	if _, err := st.SetOperatorMediaRelation(ctx, EntityRelation{
+		FromEntityID: "operator", ToMediaID: derived.ToMediaID, Name: derived.Name, Cardinality: "one",
+	}, Entity{}, filter, ActivityEntry{OperationID: "lock-written", ProfileID: "profile-default", OccurredAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if written, err := st.UpsertHydratedEntityRelationWritten(ctx, derived); err != nil || written {
+		t.Fatalf("locked write = %t, %v; want blocked", written, err)
+	}
+	parent := EntityRelation{FromEntityID: "derived", ToEntityID: "operator", Name: "parent"}
+	if written, err := st.UpsertHydratedEntityRelationWritten(ctx, parent); err != nil || !written {
+		t.Fatalf("entity write = %t, %v; want written", written, err)
+	}
+}

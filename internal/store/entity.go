@@ -425,46 +425,55 @@ func (s *Store) EntitiesByKind(ctx context.Context, library LibraryID, kind stri
 // Media target replaces any other source entity's row for the same relation
 // name on that Media.
 func (s *Store) UpsertEntityRelation(ctx context.Context, relation EntityRelation) error {
-	return s.upsertEntityRelation(ctx, relation, false)
+	_, err := s.upsertEntityRelation(ctx, relation, false)
+	return err
 }
 
 // UpsertHydratedEntityRelation adds a derived link while respecting operator locks.
 func (s *Store) UpsertHydratedEntityRelation(ctx context.Context, relation EntityRelation) error {
+	_, err := s.upsertEntityRelation(ctx, relation, true)
+	return err
+}
+
+// UpsertHydratedEntityRelationWritten is UpsertHydratedEntityRelation that
+// also reports whether it wrote the row: false when an operator lock blocked
+// the derived link, so the caller does not treat the link as its own.
+func (s *Store) UpsertHydratedEntityRelationWritten(ctx context.Context, relation EntityRelation) (bool, error) {
 	return s.upsertEntityRelation(ctx, relation, true)
 }
 
-func (s *Store) upsertEntityRelation(ctx context.Context, relation EntityRelation, hydrated bool) error {
+func (s *Store) upsertEntityRelation(ctx context.Context, relation EntityRelation, hydrated bool) (bool, error) {
 	// Authority face: Entity-relation catalog rows are main-only.
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
-		return err
+		return false, err
 	}
 	if relation.FromEntityID == "" {
-		return errors.New("relation source entity is required")
+		return false, errors.New("relation source entity is required")
 	}
 	if relation.Name == "" {
-		return errors.New("relation name is required")
+		return false, errors.New("relation name is required")
 	}
 	if (relation.ToEntityID == "") == (relation.ToMediaID == "") {
-		return errors.New("relation requires exactly one target")
+		return false, errors.New("relation requires exactly one target")
 	}
 	switch relation.Cardinality {
 	case "", "one", "many":
 	default:
-		return errors.New("unknown relation cardinality " + relation.Cardinality)
+		return false, errors.New("unknown relation cardinality " + relation.Cardinality)
 	}
 	attributes, sortOrder, err := entityRelationRowValues(relation)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return err
+		return false, err
 	}
 	fromPlane, err := s.relationWritePlaneLocked(ctx, relation)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if relation.ToEntityID != "" {
 		_, err = fromPlane.writer.ExecContext(ctx, `
@@ -474,17 +483,17 @@ func (s *Store) upsertEntityRelation(ctx context.Context, relation EntityRelatio
 			DO UPDATE SET attributes = CASE WHEN ? THEN entity_relation.attributes ELSE excluded.attributes END,
 				sort_order = excluded.sort_order
 		`, relation.FromEntityID, relation.Name, relation.ToEntityID, attributes, sortOrder, relation.KeepAttributes)
-		return err
+		return err == nil, err
 	}
 	tx, err := fromPlane.writer.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback()
 	if hydrated {
 		blocked, err := hydrationRelationBlocked(ctx, tx, relation)
 		if err != nil || blocked {
-			return err
+			return false, err
 		}
 	}
 	if relation.Cardinality == "one" {
@@ -495,13 +504,16 @@ func (s *Store) upsertEntityRelation(ctx context.Context, relation EntityRelatio
 			WHERE relation = ? AND to_media_id = ? AND from_entity_id <> ?
 			  AND (NOT ? OR operator_locked_at_ms IS NULL)
 		`, relation.Name, relation.ToMediaID, relation.FromEntityID, hydrated); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if err := insertMediaRelationTx(ctx, tx, relation, attributes, sortOrder); err != nil {
-		return err
+		return false, err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ReplaceMediaRelations rewrites the Media-target relations of one Media for

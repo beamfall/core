@@ -218,6 +218,9 @@ func (s *Store) mergeEntities(ctx context.Context, winnerID, loserID EntityID, f
 			continue
 		}
 		row.FromEntityID, row.ToEntityID = from, toEntity
+		// An operator's merge owns the re-pointed row: automated cleanup must
+		// not remove it as a scraper's link. Undo restores the original writer.
+		row.Writer = nil
 		if err := insertMergedEntityRelationTx(ctx, tx, row); err != nil {
 			return BulkOpBatch{}, err
 		}
