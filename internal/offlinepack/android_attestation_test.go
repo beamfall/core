@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"math/big"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -207,6 +208,40 @@ func TestAndroidAttestationAcceptsHardwareKeys(t *testing.T) {
 		if err := f.verifier(t, false).VerifyDeviceKey(context.Background(), testEnrollmentID, f.devicePublicKey(t), f.chain(t, spec)); err != nil {
 			t.Fatalf("security level %d refused: %v", level, err)
 		}
+	}
+}
+
+// Android sends CertPath.getEncoded(): a PkiPath SEQUENCE ordered root first.
+func TestAndroidAttestationAcceptsPkiPath(t *testing.T) {
+	f := newAttestationFixture(t)
+	certs, err := x509.ParseCertificates(f.chain(t, defaultLeaf()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Reverse(certs)
+	raws := make([]asn1.RawValue, len(certs))
+	for i, cert := range certs {
+		raws[i] = asn1.RawValue{FullBytes: cert.Raw}
+	}
+	pkiPath, err := asn1.Marshal(raws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.verifier(t, false).VerifyDeviceKey(context.Background(), testEnrollmentID, f.devicePublicKey(t), pkiPath); err != nil {
+		t.Fatalf("PkiPath chain refused: %v", err)
+	}
+}
+
+// Google keeps trusting factory intermediates past their expiry.
+func TestAndroidAttestationAcceptsExpiredFactoryIntermediate(t *testing.T) {
+	f := newAttestationFixture(t)
+	f.inter = signTestCert(t, &x509.Certificate{
+		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "test intermediate"},
+		NotBefore: testNow.Add(-time.Hour), NotAfter: testNow.Add(-30 * time.Minute),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+	}, f.root, &f.interKey.PublicKey, f.rootKey)
+	if err := f.verifier(t, false).VerifyDeviceKey(context.Background(), testEnrollmentID, f.devicePublicKey(t), f.chain(t, defaultLeaf())); err != nil {
+		t.Fatalf("expired factory intermediate refused: %v", err)
 	}
 }
 

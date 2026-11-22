@@ -119,7 +119,7 @@ func (v *AndroidKeyAttestationVerifier) VerifyDeviceKey(ctx context.Context, enr
 		// Not a DER chain. Apple Secure Enclave attestation is CORE-1926.
 		return errors.New("attestation is not an Android Key Attestation certificate chain")
 	}
-	chain, err := x509.ParseCertificates(attestation)
+	chain, err := parseAttestationChain(attestation)
 	if err != nil {
 		return fmt.Errorf("attestation chain is malformed: %w", err)
 	}
@@ -209,6 +209,30 @@ func (v *AndroidKeyAttestationVerifier) checkRevocation(ctx context.Context, cha
 	return nil
 }
 
+// parseAttestationChain reads the chain leaf first. Android sends
+// CertPath.getEncoded(), a PkiPath: one SEQUENCE of certificates ordered from
+// the trust anchor down (RFC 4158 / X.509 PkiPath), so it is reversed here.
+// A plain concatenation of DER certificates, leaf first, is also accepted.
+func parseAttestationChain(data []byte) ([]*x509.Certificate, error) {
+	var elems []asn1.RawValue
+	if rest, err := asn1.Unmarshal(data, &elems); err == nil && len(rest) == 0 && len(elems) > 0 {
+		chain := make([]*x509.Certificate, 0, len(elems))
+		for _, elem := range elems {
+			cert, err := x509.ParseCertificate(elem.FullBytes)
+			if err != nil {
+				chain = nil
+				break
+			}
+			chain = append(chain, cert)
+		}
+		if chain != nil {
+			slices.Reverse(chain)
+			return chain, nil
+		}
+	}
+	return x509.ParseCertificates(data)
+}
+
 func hasExtension(cert *x509.Certificate, oid asn1.ObjectIdentifier) bool {
 	for _, ext := range cert.Extensions {
 		if ext.Id.Equal(oid) {
@@ -236,7 +260,10 @@ func (v *AndroidKeyAttestationVerifier) verifyChain(chain []*x509.Certificate) e
 	}
 	for i, cert := range chain {
 		isRoot := i == len(chain)-1
-		checkValidity := !isRoot || !trusted
+		// Under a trusted root only the leaf's window is checked: Google keeps
+		// trusting factory-provisioned intermediates past their expiry, so an
+		// older device's expired, unrevoked intermediate is still valid.
+		checkValidity := i == 0 || !trusted
 		if checkValidity && (now.Before(cert.NotBefore) || now.After(cert.NotAfter)) {
 			return fmt.Errorf("attestation certificate %d is outside its validity period", i)
 		}
@@ -269,13 +296,44 @@ func (v *AndroidKeyAttestationVerifier) verifyChain(chain []*x509.Certificate) e
 	for _, cert := range chain[1:] {
 		intermediates.AddCert(cert)
 	}
+	// Verify checks every certificate's window at one instant. Expiry was
+	// settled above, so pick the instant nearest now inside the window all the
+	// chain's certificates share.
+	at, ok := sharedValidityInstant(chain, now)
+	if !ok {
+		return errors.New("attestation chain's certificates share no validity period")
+	}
 	if _, err := chain[0].Verify(x509.VerifyOptions{
-		Roots: pool, Intermediates: intermediates, CurrentTime: now,
+		Roots: pool, Intermediates: intermediates, CurrentTime: at,
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
 	}); err != nil {
 		return fmt.Errorf("attestation chain does not verify to a Google attestation root: %w", err)
 	}
 	return nil
+}
+
+// sharedValidityInstant clamps now into the intersection of the chain's
+// validity windows, reporting false when they do not overlap.
+func sharedValidityInstant(chain []*x509.Certificate, now time.Time) (time.Time, bool) {
+	from, until := chain[0].NotBefore, chain[0].NotAfter
+	for _, cert := range chain[1:] {
+		if cert.NotBefore.After(from) {
+			from = cert.NotBefore
+		}
+		if cert.NotAfter.Before(until) {
+			until = cert.NotAfter
+		}
+	}
+	if from.After(until) {
+		return time.Time{}, false
+	}
+	switch {
+	case now.Before(from):
+		return from, true
+	case now.After(until):
+		return until, true
+	}
+	return now, true
 }
 
 type keyDescription struct {
