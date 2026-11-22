@@ -30,7 +30,11 @@ import {
   slidesFrom,
   slideshowPath,
 } from "./lib/slideshow";
-import { oscilluxSlideMotion, slideshowMotionAvailable } from "./lib/slideshowMotion";
+import {
+  defaultSlideshowMotion,
+  oscilluxSlideMotion,
+  slideshowMotionAvailable,
+} from "./lib/slideshowMotion";
 import { SlideshowPage } from "./SlideshowPage";
 
 vi.mock("@/lib/graphql/viewer", async (importOriginal) => ({
@@ -183,10 +187,13 @@ describe("slideshow helpers", () => {
     expect(nextDarkRoomBoundary(at(1, 12), "12:00", "12:00")).toBeNull();
   });
 
-  it("hard-cuts until Oscillux ships a photo-slideshow mode", () => {
+  it("offers Calm by default and hard-cuts it without WebGL2", () => {
+    // jsdom has no WebGL2: Calm stays available and falls back to hard cuts.
+    expect(defaultSlideshowMotion()).toBe("calm");
     expect(oscilluxSlideMotion("calm")).toBeNull();
-    expect(slideshowMotionAvailable("calm")).toBe(false);
+    expect(slideshowMotionAvailable("calm")).toBe(true);
     expect(slideshowMotionAvailable("still")).toBe(true);
+    expect(slideshowMotionAvailable("visualiser")).toBe(false);
   });
 });
 
@@ -248,7 +255,8 @@ describe("SlideshowPage", () => {
   it("opens the setup sheet without a Source and closes on Escape", async () => {
     renderAt("/slideshow");
     expect(await screen.findByRole("dialog", { name: "Slideshow settings" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /Calm/ })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: /Calm/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /Visualiser/ })).toBeDisabled();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(await screen.findByText("home")).toBeInTheDocument();
   });

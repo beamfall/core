@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { silentFrame } from "./analysis";
 import { GPU_BUDGET_MS } from "./cadence";
+import { FrameLimiter } from "./limiter";
 import {
   BLACK_S,
   FADE_S,
@@ -135,6 +136,8 @@ function recordingGl() {
   let next = 0;
   const deleted = new Set<unknown>();
   const blits: number[][] = [];
+  // The framebuffer bound last before each blit: the one it reads.
+  const blitFrom: unknown[] = [];
   const bound: { f: unknown } = { f: null };
   const spent: [unknown, number[]][] = [];
   const clears: unknown[] = [];
@@ -183,6 +186,7 @@ function recordingGl() {
         return (...a: number[]) => {
           order.push("blit");
           blits.push(a.slice(0, 8));
+          blitFrom.push(bound.f);
         };
       if (key === "bindFramebuffer") return (_: unknown, f: unknown) => (bound.f = f);
       if (key === "clearBufferuiv")
@@ -232,6 +236,7 @@ function recordingGl() {
     gl,
     deleted,
     blits,
+    blitFrom,
     canvas,
     spent,
     clears,
@@ -274,26 +279,23 @@ describe("Renderer geometry (CORE-2516)", () => {
   const make = (held = false, fresh = held) => {
     const { gl, ...recorded } = recordingGl();
     const r = Object.create(Renderer.prototype) as Record<string, unknown>;
+    const flash = new FrameLimiter(gl as unknown as WebGL2RenderingContext, new Array(6));
     Object.assign(r, {
       gl,
       visual: {},
       time: 0,
-      clockMs: 0,
       switchProgress: () => null,
       cadence: { sample: () => null },
       governor: { level: QUALITY_LADDER.length - 1 },
       drawVisual: (_: unknown, feedback: unknown[]) => feedback[1],
       packPresent: () => undefined,
       presentBlock: new Float32Array(92),
-      limiterBlock: new Float32Array(8),
       grantWord: new Uint32Array(4),
       grantPbo: {},
       grantSync: null,
       grantSettled: true,
-      limiterSpent: false,
-      refillCarry: 0,
       undo: null,
-      limiter: new Array(6),
+      flash,
       level: QUALITY_LADDER.length - 1,
       size: null,
       feedbackFormat: { internal: 0, type: 0, label: "float" },
@@ -351,7 +353,7 @@ describe("Renderer geometry (CORE-2516)", () => {
       for (let i = 0; i < 17 + BLACK_FRAMES; i++) frame(125);
     };
     const limiter = () => (r.size as { limiter: Limiter }).limiter;
-    return { r, renderer, draw, drawIn, through, limiter, fadeGrant, ...recorded };
+    return { r, renderer, flash, draw, drawIn, through, limiter, fadeGrant, ...recorded };
   };
 
   // Codex round 24: the host cannot know what the canvas replaced on screen, so the first frame
@@ -368,6 +370,29 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(others.every(([, v]) => v.join() === "0,0,0,0")).toBe(true);
     // Codex round 17: the first draw earns no credit before a budget write it could repay.
     expect(blocks.at(-1)?.[3]).toBe(0);
+  });
+
+  // CORE-2980 moved the limiter's passes to limiter.ts, shared with the slideshow: the visualizer
+  // still runs the six of them in order over its frame and blits only their output.
+  it("runs each frame through the six limiter passes and shows only their output", () => {
+    const { draw, limiter, flash, blitFrom, r } = make();
+    const programs = Array.from({ length: 6 }, (_, pass) => ({ pass }));
+    Object.assign(flash, { programs });
+    const pass = vi.spyOn(flash as unknown as { pass: (...a: unknown[]) => void }, "pass");
+    draw(640, 360);
+    const L = limiter();
+    const size = r.size as { frame: unknown };
+    expect(pass.mock.calls.map((c) => c[0])).toEqual(programs);
+    expect(pass.mock.calls.map((c) => c[1])).toEqual([
+      L.fRows,
+      L.fS,
+      L.fC,
+      L.fW,
+      L.fG[L.cur],
+      L.fOut[L.cur],
+    ]);
+    expect((pass.mock.calls[0]?.[4] as unknown[])[0]).toBe(size.frame);
+    expect(blitFrom.at(-1)).toBe(L.fOut[L.cur]);
   });
 
   it("presents black before a start, timed from the first black frame shown", () => {
@@ -755,19 +780,19 @@ describe("Renderer geometry (CORE-2516)", () => {
   // Codex round 18: a slot resized between a draw and its paint withdraws the frame, so nothing
   // judged against the old area limit is shown in the new one.
   it("withdraws the last frame to the limiter's previous output and state", () => {
-    const { r, renderer, draw, limiter, blits, blocks } = make();
+    const { flash, r, renderer, draw, limiter, blits, blocks } = make();
     draw(64, 36);
     draw(64, 36, 1 / 60, 50);
     const L = limiter();
     const cur = L.cur;
-    const clock = r.clockMs;
-    const carry = r.refillCarry;
+    const clock = flash.clockMs;
+    const carry = flash.refillCarry;
     draw(64, 36, 1 / 60, 40);
     const shown = blits.length;
     renderer.withdraw();
     expect(L.cur).toBe(cur);
-    expect(r.clockMs).toBe(clock);
-    expect(r.refillCarry).toBe(carry);
+    expect(flash.clockMs).toBe(clock);
+    expect(flash.refillCarry).toBe(carry);
     expect(blits).toHaveLength(shown + 1);
     expect(blits.at(-1)).toEqual([0, 0, 64, 36, 0, 0, 64, 36]);
     renderer.withdraw();
@@ -781,16 +806,16 @@ describe("Renderer geometry (CORE-2516)", () => {
   // a withdrawn draw that had cancelled the fade resumed too short a one. A frame of the fade is
   // safe in any slot, so it stands, with its fade time and its credit.
   it("lets a frame of the fade stand when it is withdrawn", () => {
-    const { r, renderer, draw, limiter, blits } = make();
+    const { flash, r, renderer, draw, limiter, blits } = make();
     draw(64, 36);
     draw(80, 36, 0.125);
     draw(80, 36, 0.125);
     const cur = limiter().cur;
-    const clock = r.clockMs;
+    const clock = flash.clockMs;
     const shown = blits.length;
     renderer.withdraw();
     expect(limiter().cur).toBe(cur);
-    expect(r.clockMs).toBe(clock);
+    expect(flash.clockMs).toBe(clock);
     expect(r.fadeLeft).toBe(FADE_S - 0.125);
     expect(blits).toHaveLength(shown);
   });
@@ -937,7 +962,7 @@ describe("Renderer geometry (CORE-2516)", () => {
   // geometry with no second fade. Codex round 28: after BLACK_S more of black, once two draws
   // running ask for that geometry.
   it("starts at the new geometry when the frame that ended the black is withdrawn", () => {
-    const { r, renderer, draw, limiter, spent, clears, blits, canvas, deleted } = make();
+    const { flash, r, renderer, draw, limiter, spent, clears, blits, canvas, deleted } = make();
     draw(640, 360);
     draw(800, 450);
     for (let i = 0; i < 16; i++) draw(800, 450, 0.125);
@@ -945,7 +970,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     black((ms) => draw(800, 450, ms / 1000));
     const started = limiter();
     expect([canvas.width, canvas.height]).toEqual([800, 450]);
-    const clock = r.clockMs;
+    const clock = flash.clockMs;
     clears.length = 0;
     blits.length = 0;
 
@@ -954,7 +979,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(renderer.shown).toBe(null);
     expect(r.fadeLeft).toBe(0);
     expect(r.blackMs).toBe(0);
-    expect(r.clockMs).toBe((clock as number) - 125);
+    expect(flash.clockMs).toBe(clock - 125);
     expect(clears).toEqual([null]);
     expect(blits).toEqual([]);
     expect([...started.fOut, ...started.fG].every((f) => deleted.has(f))).toBe(true);
@@ -981,14 +1006,14 @@ describe("Renderer geometry (CORE-2516)", () => {
   // same 64 two-pixel texels. The host compares geometries, so it withdraws no frame and the
   // limiter's clock runs.
   it("advances the limiter's clock while the slot gains and loses an unfilled pixel", () => {
-    const { r, renderer, drawIn } = make();
+    const { flash, r, renderer, drawIn } = make();
     const slots: [number, number][] = [
       [128, 72],
       [129, 72],
     ];
     drawIn([64, 36, 2], slots[0]);
     const size = r.size;
-    const clock = r.clockMs as number;
+    const clock = flash.clockMs;
     for (let i = 1; i <= 120; i++) {
       drawIn([64, 36, 2], slots[(i - 1) % 2]);
       // The observer's callback: the slot it reports against the frame just drawn.
@@ -997,7 +1022,7 @@ describe("Renderer geometry (CORE-2516)", () => {
     }
     expect(r.size).toBe(size);
     expect(r.fadeLeft).toBe(0);
-    expect((r.clockMs as number) - clock).toBeCloseTo(120 * (1000 / 60));
+    expect(flash.clockMs - clock).toBeCloseTo(120 * (1000 / 60));
     // A slot that cuts a texel it showed is another geometry.
     expect(sameFrame([64, 36, 2, 127, 72], [64, 36, 2, 128, 72])).toBe(false);
     expect(sameFrame([64, 36, 2, 129, 72], [64, 36, 2, 128, 72])).toBe(true);
@@ -1280,10 +1305,9 @@ describe("Renderer geometry (CORE-2516)", () => {
   // CORE-2744 (Codex P2): the clock runs slower by the lag a second, so a span it counts as a
   // second (six refills) was a second on screen however late the first frame of it was painted.
   it("slows the limiter's clock by the paint lag a second", () => {
-    const { renderer, draw } = make();
+    const { flash, renderer, draw } = make();
     draw(640, 360);
-    const r = renderer as unknown as { clockMs: number };
-    const start = r.clockMs;
+    const start = flash.clockMs;
     const lag = 1000 / 59.94;
     for (let i = 0; i < 30; i++) {
       renderer.draw(
@@ -1301,16 +1325,15 @@ describe("Renderer geometry (CORE-2516)", () => {
       );
     }
     const drawnMs = 30 * (1000 / 29.97);
-    expect(r.clockMs - start).toBeCloseTo((drawnMs * 1000) / (1000 + lag), 6);
+    expect(flash.clockMs - start).toBeCloseTo((drawnMs * 1000) / (1000 + lag), 6);
   });
 
   // A lag over one recency unit slows the clock further, so a stamp under the coverage interval
   // old on screen is never more than the 5 units recency reaches on the clock.
   it("keeps a stamp the coverage interval old within reach at a slow refresh", () => {
-    const { renderer, draw } = make();
+    const { flash, renderer, draw } = make();
     draw(640, 360);
-    const r = renderer as unknown as { clockMs: number };
-    const start = r.clockMs;
+    const start = flash.clockMs;
     const lag = 1000 / 30;
     renderer.draw(
       640,
@@ -1325,7 +1348,7 @@ describe("Renderer geometry (CORE-2516)", () => {
       360,
       lag,
     );
-    expect(r.clockMs - start).toBeCloseTo(1000 / 15 + 1000 / 60, 6);
+    expect(flash.clockMs - start).toBeCloseTo(1000 / 15 + 1000 / 60, 6);
   });
 
   it("runs the fade on the time the limiter is credited with", () => {
@@ -1411,6 +1434,7 @@ describe("Renderer switch feedback (CORE-2724)", () => {
   const make = (reducedMotion: boolean) => {
     const { gl, ...recorded } = recordingGl();
     const r = Object.create(Renderer.prototype) as Record<string, unknown>;
+    const flash = new FrameLimiter(gl as unknown as WebGL2RenderingContext, new Array(6));
     const feedback = [
       { tex: { id: "a" }, fbo: { id: "fa" } },
       { tex: { id: "b" }, fbo: { id: "fb" } },
