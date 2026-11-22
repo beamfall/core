@@ -106,14 +106,14 @@
       "view": "ambient"
     },
     {
-      "id": "library-library-local",
+      "id": "library-local",
       "layoutID": "layout-home",
       "libraryID": "library-local",
       "title": "Local Library",
       "view": "layout"
     },
     {
-      "id": "library-library-archive",
+      "id": "library-archive",
       "layoutID": "layout-home",
       "libraryID": "library-archive",
       "title": "Archive",

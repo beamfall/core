@@ -65,7 +65,7 @@ export function SeeAllPage() {
           section,
           libraryID: state.libraryID,
           entityID: "",
-          returnTo: home === layoutNodes?.[0] ? "/" : nodePath(home.id),
+          returnTo: home === layoutNodes?.[0] ? "/" : nodePath(home.id, "", home.libraryID),
           home: true,
           homeLibraryShelf: true,
         }

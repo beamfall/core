@@ -38,7 +38,9 @@ export function ancestorOf(
   if (!entity || entity.archetype !== "container" || ownMediaCount <= 0) return null;
   const containers = (entity.relatedEntities ?? []).filter(
     // A related item's own kind is the generic "entity"; its group names the Kind.
-    (group) => group.archetype === "container" && group.kind !== entity.kind,
+    (group) =>
+      group.archetype === "container" &&
+      (group.direction === "parent" || group.kind !== entity.kind),
   );
   return ancestorItems(containers, entity, ownMediaCount)[0] ?? null;
 }
@@ -99,7 +101,11 @@ export interface RelatedSection {
 export function groupSections(group: RelatedEntityGroup, locale: string): RelatedSection[] {
   const heading = groupHeading(group, locale);
   const whole = [
-    { key: `${group.kind}:${group.items[0]?.id ?? ""}`, title: heading, items: group.items },
+    {
+      key: `${group.kind}:${group.direction ?? ""}:${group.items[0]?.id ?? ""}`,
+      title: heading,
+      items: group.items,
+    },
   ];
   const sections = group.sections ?? [];
   const covered = sections.reduce((sum, section) => sum + Math.max(0, section.count), 0);
@@ -109,7 +115,7 @@ export function groupSections(group: RelatedEntityGroup, locale: string): Relate
   for (const section of sections) {
     if (section.count <= 0) continue;
     out.push({
-      key: `${group.kind}:${group.items[start].id}`,
+      key: `${group.kind}:${group.direction ?? ""}:${group.items[start].id}`,
       title: section.value ? displayString(section.displayName, locale) || section.value : heading,
       count: section.count,
       items: group.items.slice(start, start + section.count),
@@ -127,7 +133,9 @@ export function siblingContainers(
   if (!ancestor || !entity) return null;
   const group = (ancestor.relatedEntities ?? []).find(
     (candidate) =>
-      candidate.kind === entity.kind && candidate.items.some((item) => item.id === entity.id),
+      candidate.direction !== "parent" &&
+      candidate.kind === entity.kind &&
+      candidate.items.some((item) => item.id === entity.id),
   );
   if (!group) return null;
   const seen = new Set<string>();

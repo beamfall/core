@@ -21,4 +21,15 @@ describe("node addresses (CORE-2322)", () => {
     expect(findNodeBySlug(nodes, "missing")).toBeUndefined();
     expect(findNodeBySlug(nodes, undefined)).toBeUndefined();
   });
+
+  it("resolves an old doubled ID once the server sends the prefix once (CORE-2343)", () => {
+    const nodes = [
+      { id: "library-films", libraryID: "library-films" },
+      { id: "library-library-shows", libraryID: "library-library-shows" },
+    ];
+    expect(findNodeBySlug(nodes, "library-library-films")).toBe(nodes[0]);
+    expect(nodePath("library-films")).toBe("/n/library-films");
+    // A live node whose own ID repeats the word still wins by exact match.
+    expect(findNodeBySlug(nodes, "library-library-shows")).toBe(nodes[1]);
+  });
 });

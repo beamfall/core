@@ -277,15 +277,23 @@ export interface EntityInfo {
   fields: EntityFieldInfo[];
   /** The kind's fixed archetype ("container", "person", …); drives generic page layout. */
   archetype?: string;
-  /** Entities related in either direction, grouped by kind; only entity(id) fills it. */
+  /** Entities grouped by kind and relation direction; only entity(id) fills it. */
   relatedEntities?: RelatedEntityGroup[];
   /** The Entity's own artwork slots; only entity(id) fills it (CORE-2406). */
   artworkSlots?: Record<string, string>;
 }
 
+export type RelatedEntityDirection = "child" | "parent";
+
 /** One kind's share of an Entity's related Entities (graph.RelatedEntityGroupInfo). */
 export interface RelatedEntityGroup {
   kind: string;
+  /**
+   * How the group relates to the Entity (CORE-2036): "child" Entities point at
+   * it, "parent" Entities are the ones it points at. One kind related both ways
+   * comes as one group per direction.
+   */
+  direction?: RelatedEntityDirection;
   kindDisplayName?: DisplayString;
   /** The plugin's plural of `kindDisplayName`, for the group heading; absent when it declares none. */
   kindPluralDisplayName?: DisplayString;

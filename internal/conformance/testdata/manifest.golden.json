@@ -121,14 +121,14 @@
       "view": "ambient"
     },
     {
-      "id": "library-library-local",
+      "id": "library-local",
       "layoutID": "layout-home",
       "libraryID": "library-local",
       "title": "Local Library",
       "view": "layout"
     },
     {
-      "id": "library-library-directory-discover",
+      "id": "library-directory-discover",
       "layoutID": "layout-starlog",
       "libraryID": "library-directory-discover",
       "title": "Directory Discover",

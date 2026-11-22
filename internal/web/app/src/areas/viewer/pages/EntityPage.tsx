@@ -791,7 +791,7 @@ export function EntityPage() {
 
           {groups.other.map((group) => (
             <RelatedGroup
-              key={`${group.kind}:${group.items[0]?.id ?? ""}`}
+              key={`${group.kind}:${group.direction ?? ""}:${group.items[0]?.id ?? ""}`}
               title={groupHeading(group, displayLocale)}
               items={group.items}
             />
@@ -813,7 +813,7 @@ const PLAY_THROUGH_READS = 12;
  * (a rolled-up card can stand several containers above its Media), in turn,
  * for the first with an unfinished item to play, else the first with anything
  * to play again. Visited containers and `from`, the page's own Entity, are
- * skipped, since related groups carry no direction and list the parent too. A
+ * skipped. A
  * failed read counts as an empty container; cancellation and authorization
  * failures end the search.
  */

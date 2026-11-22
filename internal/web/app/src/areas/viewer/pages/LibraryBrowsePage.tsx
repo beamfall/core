@@ -71,12 +71,15 @@ export function LibraryBrowsePage() {
     nodeId,
   );
   if (!node?.libraryID) {
-    return <Navigate to={node ? nodePath(node.id) : "/"} replace />;
+    return <Navigate to={node ? nodePath(node.id, "", node.libraryID) : "/"} replace />;
   }
   // An old link names the node by its raw ID (CORE-2322).
-  if (nodeId !== nodeSlug(node.id)) {
+  if (nodeId !== nodeSlug(node.id, node.libraryID)) {
     return (
-      <Navigate to={{ pathname: nodePath(node.id, "/all"), search: location.search }} replace />
+      <Navigate
+        to={{ pathname: nodePath(node.id, "/all", node.libraryID), search: location.search }}
+        replace
+      />
     );
   }
   const { libraryID } = node;

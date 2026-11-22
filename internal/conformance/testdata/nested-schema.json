@@ -7060,6 +7060,10 @@
               "optional": true
             },
             {
+              "name": "direction",
+              "kind": "scalar"
+            },
+            {
               "name": "items",
               "kind": "list",
               "nullable": true,
@@ -7551,6 +7555,10 @@
             "name": "archetype",
             "kind": "scalar",
             "optional": true
+          },
+          {
+            "name": "direction",
+            "kind": "scalar"
           },
           {
             "name": "items",

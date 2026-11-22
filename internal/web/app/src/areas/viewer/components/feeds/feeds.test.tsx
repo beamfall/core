@@ -236,7 +236,7 @@ describe("FeedList", () => {
   it("shows counts, policy and health for each followed feed", () => {
     wrap(
       <FeedList
-        nodeID="library-lib-1"
+        libraryPath="/n/library-lib-1"
         subscriptions={[subscription(failing())]}
         canChangePolicy={false}
         onChange={vi.fn()}
@@ -268,7 +268,7 @@ describe("FeedList", () => {
       .mockRejectedValueOnce(throttled());
     wrap(
       <FeedList
-        nodeID="library-lib-1"
+        libraryPath="/n/library-lib-1"
         subscriptions={[subscription()]}
         canChangePolicy={false}
         onChange={onChange}
@@ -295,7 +295,7 @@ describe("FeedList", () => {
     );
     wrap(
       <FeedList
-        nodeID="library-lib-1"
+        libraryPath="/n/library-lib-1"
         subscriptions={[subscription()]}
         canChangePolicy
         onChange={onChange}
@@ -332,7 +332,7 @@ describe("FeedList", () => {
     );
     wrap(
       <FeedList
-        nodeID="library-lib-1"
+        libraryPath="/n/library-lib-1"
         subscriptions={[subscription()]}
         canChangePolicy
         onChange={vi.fn()}

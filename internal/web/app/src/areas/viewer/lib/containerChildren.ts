@@ -1,4 +1,4 @@
-import type { SourceItem } from "@/lib/graphql/types";
+import type { RelatedEntityDirection, SourceItem } from "@/lib/graphql/types";
 import { artworkSlotURL } from "./artwork";
 import { resumeProgress } from "./mediaDetail";
 
@@ -51,21 +51,28 @@ export function childThumbURL(item: SourceItem): string {
   );
 }
 
+/** The related-group fields the child-container walk reads. */
+interface RelatedContainerGroup {
+  archetype?: string;
+  direction?: RelatedEntityDirection;
+  items: readonly SourceItem[];
+}
+
 /**
  * The child containers a container with no Media of its own plays through, in
- * the order to try them: the first related group whose archetype is a
+ * the order to try them: the first related child group whose archetype is a
  * container, its unlocked items with children left to finish first, then the
  * rest. Empty when there is no such group. Ids in `skip` (containers already
- * visited) are left out, so a group of only those does not count. Related
- * groups carry no relation direction, so in a tree three or more containers
- * deep a parent group sorting first could stand in for a child (CORE-2036).
+ * visited) are left out, so a group of only those does not count. Parent
+ * groups never count, so in a tree three or more containers deep a parent
+ * sorting first cannot stand in for a child (CORE-2036).
  */
 export function childContainerCandidates(
-  groups: readonly { archetype?: string; items: readonly SourceItem[] }[] | undefined,
+  groups: readonly RelatedContainerGroup[] | undefined,
   skip?: ReadonlySet<string>,
 ): SourceItem[] {
   for (const group of groups ?? []) {
-    if (group.archetype !== "container") continue;
+    if (group.direction !== "child" || group.archetype !== "container") continue;
     const items = skip ? group.items.filter((item) => !skip.has(item.id)) : group.items;
     const playable = playOrder(items);
     if (playable.length > 0) return playable;
@@ -78,7 +85,7 @@ export function childContainerCandidates(
  * first of childContainerCandidates. Null when there is none.
  */
 export function nextUpChildContainer(
-  groups: readonly { archetype?: string; items: readonly SourceItem[] }[] | undefined,
+  groups: readonly RelatedContainerGroup[] | undefined,
 ): SourceItem | null {
   return childContainerCandidates(groups)[0] ?? null;
 }
