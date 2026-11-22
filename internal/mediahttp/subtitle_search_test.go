@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -47,6 +48,13 @@ func newSubtitleSearchFixture(t *testing.T) (*subtitleWriteFixture, *fakeSubtitl
 	f := newSubtitleWriteFixture(t)
 	searcher := &fakeSubtitleSearcher{body: []byte(sampleDownloadedSRT)}
 	f.handler.SetSubtitleSearch(searcher)
+	file, err := f.store.PrimaryMediaFile(context.Background(), f.episodes[0], store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.SetLibraryRoots(context.Background(), "library-local", []string{filepath.Dir(file.Path)}); err != nil {
+		t.Fatal(err)
+	}
 	return f, searcher
 }
 
@@ -197,9 +205,33 @@ func TestSubtitleDownloadRejectsBadInputAndProviderRefusal(t *testing.T) {
 }
 
 func TestSidecarLanguageMatchesScanForm(t *testing.T) {
-	for in, want := range map[string]string{"en": "en", "PT_br": "pt-BR", "zh-hant": "", "e": "", "en.srt": ""} {
+	for in, want := range map[string]string{"en": "en", "PT_br": "pt-BR", "zh-hant": "zh", "es-419": "es", "e": "", "en.srt": ""} {
 		if got := sidecarLanguage(in); got != want {
 			t.Errorf("sidecarLanguage(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestWriteSidecarExclusiveStaysInsideTheLibraryRoot(t *testing.T) {
+	library, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(library, "show")); err != nil {
+		t.Fatal(err)
+	}
+	media := filepath.Join(library, "show", "item.mkv")
+	if _, _, err := writeSidecarExclusive([]string{library}, media, "en", false, false, []byte("x")); err == nil {
+		t.Fatal("write through a symlinked folder escaping the Library root succeeded")
+	}
+	if _, _, err := writeSidecarExclusive([]string{t.TempDir()}, filepath.Join(library, "item.mkv"), "en", false, false, []byte("x")); err == nil {
+		t.Fatal("write for a media file outside every Library root succeeded")
+	}
+	name, remove, err := writeSidecarExclusive([]string{library}, filepath.Join(library, "item.mkv"), "en", false, true, []byte("x"))
+	if err != nil || name != "item.en.forced.srt" {
+		t.Fatalf("write = %q, %v", name, err)
+	}
+	if err := remove(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(library, name)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("rollback left the file: %v", err)
 	}
 }

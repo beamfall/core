@@ -662,6 +662,9 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 			cfg.TranscodeCapExplicit = true
 		case "transcode-tmp":
 			cfg.TranscodeScratchDirExplicit = strings.TrimSpace(cfg.TranscodeScratchDir) != ""
+		case "subtitle-search-providers":
+			// An explicit empty flag turns off what the environment enabled.
+			cfg.SubtitleSearchProviders = parseList(subtitleSearchProvidersFlag)
 		}
 	})
 	if attached {
@@ -675,9 +678,6 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 			return Config{}, err
 		}
 		cfg.QBittorrentRouting = routing
-	}
-	if subtitleSearchProvidersFlag != "" {
-		cfg.SubtitleSearchProviders = parseList(subtitleSearchProvidersFlag)
 	}
 	if jellyfinCompatCIDRsFlag != "" {
 		cfg.JellyfinCompat.AllowedCIDRs = parseList(jellyfinCompatCIDRsFlag)

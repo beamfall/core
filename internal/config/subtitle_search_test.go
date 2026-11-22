@@ -27,6 +27,13 @@ func TestSubtitleSearchProvidersDefaultOffAndValidated(t *testing.T) {
 	if !slices.Equal(cfg.SubtitleSearchProviders, []string{"opensubtitles"}) {
 		t.Fatalf("env providers = %v", cfg.SubtitleSearchProviders)
 	}
+	cfg, err = Load([]string{"--data-dir", t.TempDir(), "--subtitle-search-providers="}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.SubtitleSearchProviders) != 0 {
+		t.Fatalf("explicit empty flag kept env providers %v", cfg.SubtitleSearchProviders)
+	}
 	if _, err := Load([]string{"--data-dir", t.TempDir(), "--subtitle-search-providers", "opensubtitles,elsewhere"}, none); err == nil {
 		t.Fatal("unknown provider accepted")
 	}

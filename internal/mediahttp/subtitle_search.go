@@ -176,7 +176,12 @@ func (h *Handler) DownloadSubtitle(w http.ResponseWriter, r *http.Request) {
 		writeSubtitleSearchError(w, err)
 		return
 	}
-	name, err := writeSidecarExclusive(target.file.Path, language, req.SDH, req.Forced, body)
+	roots, err := h.store.LibraryRoots(r.Context(), target.media.LibraryID)
+	if err != nil {
+		writeSubtitleWriteError(w, err, "subtitle download failed")
+		return
+	}
+	name, remove, err := writeSidecarExclusive(roots, target.file.Path, language, req.SDH, req.Forced, body)
 	if err != nil {
 		if errors.Is(err, fs.ErrPermission) || isReadOnlyFS(err) {
 			http.Error(w, "the media folder is not writable", http.StatusConflict)
@@ -191,7 +196,9 @@ func (h *Handler) DownloadSubtitle(w http.ResponseWriter, r *http.Request) {
 		Language: language, SDH: req.SDH, Forced: req.Forced,
 	}
 	if err := h.store.AddMediaFileSidecarCaption(r.Context(), target.file.ContentFingerprint, caption); err != nil {
-		// The file stays on disk: the next scan records it like any sidecar.
+		if rerr := remove(); rerr != nil {
+			slog.Error("subtitle download rollback failed", "media", target.media.ID, "file", name, "error", rerr)
+		}
 		writeSubtitleWriteError(w, err, "subtitle download failed")
 		return
 	}
@@ -319,8 +326,8 @@ func validSubtitleToken(s string) bool {
 }
 
 // sidecarLanguage normalizes a BCP 47-ish tag to the form a scan records for a
-// sidecar ("pt-br" becomes "pt-BR"), or "" when it is not a plain language tag
-// that can sit in a file name.
+// sidecar ("pt-br" becomes "pt-BR"; "zh-Hant" keeps only "zh"), or "" when it
+// has no plain language subtag that can sit in a file name.
 func sidecarLanguage(tag string) string {
 	tag = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(tag, "_", "-")))
 	primary, region, hasRegion := strings.Cut(tag, "-")
@@ -333,7 +340,8 @@ func sidecarLanguage(tag string) string {
 	if len(region) == 2 && lowerLetters(region) {
 		return primary + "-" + strings.ToUpper(region)
 	}
-	return ""
+	// Script or numeric-region tags (zh-Hant, es-419) keep their language.
+	return primary
 }
 
 func lowerLetters(s string) bool {
@@ -346,18 +354,27 @@ func lowerLetters(s string) bool {
 }
 
 // writeSidecarExclusive creates <stem>.<lang>[.sdh|.forced][.n].srt beside
-// mediaPath through a root held on the media file's directory, never replacing
-// an existing file, and returns the name it created.
-func writeSidecarExclusive(mediaPath, language string, sdh, forced bool, body []byte) (string, error) {
-	dir := filepath.Dir(mediaPath)
-	if dir == "" || dir == "." {
-		return "", errors.New("media path has no directory")
+// mediaPath, never replacing an existing file. It holds a root on the Library
+// root that contains the media file and descends to its folder through that
+// root, so a symlink swapped into the path cannot redirect the write outside
+// the Library. It returns the name it created and a func that removes it.
+func writeSidecarExclusive(libraryRoots []string, mediaPath, language string, sdh, forced bool, body []byte) (string, func() error, error) {
+	libraryRoot, rel, ok := containingRoot(libraryRoots, filepath.Dir(mediaPath))
+	if !ok {
+		return "", nil, errors.New("media file is not under a Library root")
 	}
-	root, err := os.OpenRoot(dir)
+	top, err := os.OpenRoot(libraryRoot)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	defer root.Close()
+	defer top.Close()
+	root := top
+	if rel != "." {
+		if root, err = top.OpenRoot(rel); err != nil {
+			return "", nil, err
+		}
+		defer root.Close()
+	}
 	base := filepath.Base(mediaPath)
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
 	suffix := strings.ToLower(language)
@@ -377,17 +394,41 @@ func writeSidecarExclusive(mediaPath, language string, sdh, forced bool, body []
 			continue
 		}
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		_, werr := f.Write(body)
 		cerr := f.Close()
 		if werr != nil || cerr != nil {
 			_ = root.Remove(name)
-			return "", errors.Join(werr, cerr)
+			return "", nil, errors.Join(werr, cerr)
 		}
-		return name, nil
+		removePath := filepath.Join(rel, name)
+		remove := func() error {
+			r, err := os.OpenRoot(libraryRoot)
+			if err != nil {
+				return err
+			}
+			defer r.Close()
+			return r.Remove(removePath)
+		}
+		return name, remove, nil
 	}
-	return "", errors.New("too many subtitle files for this language")
+	return "", nil, errors.New("too many subtitle files for this language")
+}
+
+// containingRoot picks the Library root that lexically contains dir and the
+// path of dir relative to it.
+func containingRoot(roots []string, dir string) (string, string, bool) {
+	dir = filepath.Clean(dir)
+	for _, root := range roots {
+		root = filepath.Clean(root)
+		rel, err := filepath.Rel(root, dir)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+			continue
+		}
+		return root, rel, true
+	}
+	return "", "", false
 }
 
 // isReadOnlyFS reports a write refused because the filesystem is mounted
