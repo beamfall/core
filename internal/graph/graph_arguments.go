@@ -710,6 +710,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "mediaID", Kind: "string"},
 		{Name: "paused", Kind: "boolean", Optional: true},
 		{Name: "playbackID", Kind: "string", Optional: true},
+		{Name: "playedMS", Kind: "int", Optional: true},
 		{Name: "positionSeconds", Kind: "int", Optional: true},
 	},
 	"requestaccess": {

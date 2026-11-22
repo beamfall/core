@@ -67,9 +67,11 @@ holds a delivery decision for that session and item, its play method.
 
 ### Requirement: Both report APIs accept the playback ID as sent
 
-GraphQL `reportPlayback` and `PUT /v1/media/{mediaID}/progress` SHALL accept the playback ID and
-paused state alike, and the `/v1` OpenAPI `ProgressRequest` schema SHALL document both. A playback ID SHALL be checked exactly as sent, never trimmed: one longer than
-64 characters (Unicode code points) or with leading or trailing whitespace SHALL be refused.
+GraphQL `reportPlayback` and `PUT /v1/media/{mediaID}/progress` SHALL accept the playback ID,
+paused state and played time (`playedMS`) alike, and the `/v1` OpenAPI `ProgressRequest` schema
+SHALL document all three. A negative played time SHALL be refused. A playback ID SHALL be checked
+exactly as sent, never trimmed: one longer than 64 characters (Unicode code points) or with leading
+or trailing whitespace SHALL be refused.
 
 #### Scenario: Long and padded IDs
 
@@ -79,8 +81,9 @@ paused state alike, and the `/v1` OpenAPI `ProgressRequest` schema SHALL documen
 
 #### Scenario: Playback ID through the device API
 
-- **WHEN** a device reports progress through `/v1` with a playback ID
-- **THEN** the progress event records that ID, and an ID with surrounding whitespace is refused
+- **WHEN** a device reports progress through `/v1` with a playback ID and played time
+- **THEN** the progress event records both, and an ID with surrounding whitespace or a negative
+  played time is refused
 
 ### Requirement: Clients name each play with a playback ID
 
@@ -124,17 +127,48 @@ queued reports and finish are sent.
 - **WHEN** the player moves to the next item while reports and the finish are queued
 - **THEN** the queued reports are sent in order and the finish last
 
-### Requirement: Client event times only move forward
+### Requirement: Clients never drop or resend a retired play's reports
 
-A client's event time SHALL be the wall clock, held strictly after the last event time it sent, so
-it never goes backward, and a fast clock that is corrected stops leading once the wall clock passes
-the last time sent.
+Moving to another item or play SHALL never drop a report a play has queued, even while that play
+still waits behind an earlier play's: its reports are sent once the earlier play is done. Only a
+change of signed-in identity SHALL discard them. A report that fails SHALL be dropped, never sent
+again, so a failed finish releases the replay and can never arrive after the replay's reports.
+
+#### Scenario: Leaving a replay that waits
+
+- **WHEN** a replay's first report waits behind the previous play's finish and the viewer moves to
+  another item
+- **THEN** the finish is sent, then the replay's report
+
+#### Scenario: Failed finish
+
+- **WHEN** the previous play's finish fails, for example with a 503
+- **THEN** the replay's reports are sent and the finish is never sent again
+
+### Requirement: Clients report a play's played time
+
+A client SHALL send `playedMS`, the milliseconds its player has actually played under the current
+playback ID, measured with a monotonic clock and counted only while media plays: not paused,
+seeking, ended or waiting for data. It SHALL start from zero for each new playback ID and carry on
+across reloads of the same play.
+
+#### Scenario: Pause, seek and stall
+
+- **WHEN** a player plays 10 seconds, pauses for a minute, plays 5, seeks far ahead, plays 4,
+  waits 20 seconds for data and plays 1 more
+- **THEN** its reports' played time grows to 20 seconds
+
+### Requirement: Client event times never go backward
+
+A client's event time SHALL be the wall clock, never before the last event time it sent, so a fast
+clock that is corrected stops leading once the wall clock passes the last time sent. Event time
+orders and dates reports; it SHALL NOT measure watched time.
 
 #### Scenario: Fast clock corrected mid-play
 
 - **WHEN** a play starts on a device clock two minutes fast, which is then corrected
-- **THEN** the next report's event time is one millisecond after the previous one, and reports ten
-  minutes later carry the wall clock
+- **THEN** the next report keeps the previous event time, and reports ten minutes later carry the
+  wall clock
 
 ### Requirement: A play is the reports sharing a playback ID
 
@@ -179,48 +213,53 @@ is.
 
 ### Requirement: Watched time counts playing time only
 
-Within a play, each step between consecutive reports SHALL credit the position advance capped at
-the time between them, and nothing when the earlier report said paused or the advance is negative.
-The time is the larger of the client's clock difference and the receipt difference when both
-reports carry a client time, else the receipt difference. A report that does not say whether it was paused SHALL count
-as playing. No cap of a minute applies.
+Within a play, a report carrying `playedMS` SHALL credit its growth over the largest earlier
+`playedMS` in the play, taken in receipt order, and never less than zero. A report with a playback
+ID but no `playedMS` SHALL credit the position advance capped at the receipt difference, and
+nothing after a paused report. Reports without a playback ID SHALL be credited as before. A report
+that does not say whether it was paused SHALL count as playing. No play SHALL exceed the item's
+known duration.
 
-#### Scenario: Client clock runs fast
+#### Scenario: Client clock runs backward
 
-- **WHEN** a client's event times run ahead of real time
-- **THEN** no step credits more than its position advance and no play more than the item's known
-  duration; crediting by the client's clock keeps the time of reports queued behind a slow request,
-  at the cost of trusting that clock within these bounds
+- **WHEN** a client's clock jumps backward between two minutes of playing reports that arrive
+  promptly
+- **THEN** the play gains the 120 seconds its played time grew by
+
+#### Scenario: Delayed seek
+
+- **WHEN** a player seeks 75 seconds ahead and the report arrives after a 75-second network delay
+- **THEN** the seek adds no watched time
+
+#### Scenario: Reports queued behind a stalled one
+
+- **WHEN** a pause, a resume and a heartbeat 14 seconds later queue behind a stalled report while
+  the client's clock is set back, and arrive together
+- **THEN** the play gains the 14 seconds; a paused seek to the end, play and finish queued the same
+  way gain only the last second
+
+#### Scenario: Repeated report
+
+- **WHEN** a report's played time is sent again, or a later one arrives with a smaller count
+- **THEN** that time is credited once
 
 #### Scenario: Paused seek
 
 - **WHEN** a player reports paused, seeks 45 seconds ahead while paused and resumes
 - **THEN** the seek adds no watched time
 
-#### Scenario: Delayed report
-
-- **WHEN** a TV's reports go from position 60 to 135 across a 75-second network stall
-- **THEN** the TV's play still gains 180 watched seconds over 180 seconds of playing
-
-#### Scenario: Reports queued behind a stalled one
-
-- **WHEN** a pause, a resume and a heartbeat 14 seconds later queue behind a stalled report and
-  arrive together
-- **THEN** the play gains the 14 seconds; a paused seek to the end, play and finish queued the same
-  way gain only the last second
-
-#### Scenario: Client clock runs backward
-
-- **WHEN** a client's clock jumps backward between two minutes of playing reports
-- **THEN** the play still gains 120 watched seconds
-
-#### Scenario: Client clock stands still
-
-- **WHEN** a client sends the same event time for a minute of playing reports that arrive and
-  advance normally
-- **THEN** each of those steps credits the receipt difference, and the play gains the full time
-
 #### Scenario: Upgraded history
 
 - **WHEN** reports without a playback ID show a 20-minute pause between two reports
 - **THEN** the pause adds no watched time, as before the upgrade
+
+### Requirement: A play with a playback ID counts by its played time
+
+Whether a play with a playback ID reaches the minimum span to count SHALL be decided by its
+credited watched time, not by the distance between its first and last reports. Event time SHALL
+only date the play.
+
+#### Scenario: Left paused
+
+- **WHEN** a play runs 10 seconds and is left paused, its paused reports running on for ten minutes
+- **THEN** it is not listed as a play

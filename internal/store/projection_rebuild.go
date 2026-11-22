@@ -46,10 +46,12 @@ type playbackProjectionEvent struct {
 	// history can tell a paused heartbeat from playback (CORE-1703).
 	ReportedPositionSeconds *int `json:"reportedPositionSeconds,omitempty"`
 	// PlaybackID is the client's ID for the play the report belongs to, and
-	// Paused is whether the player was paused when it reported (CORE-1703).
-	// Both absent on older events, imports and clients that do not send them.
+	// Paused is whether the player was paused when it reported, and PlayedMS
+	// is the time the client has actually played under that ID (CORE-1703).
+	// All absent on older events, imports and clients that do not send them.
 	PlaybackID string `json:"playbackId,omitempty"`
 	Paused     *bool  `json:"paused,omitempty"`
+	PlayedMS   *int64 `json:"playedMs,omitempty"`
 }
 
 func appendPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {

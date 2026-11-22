@@ -38937,6 +38937,13 @@
                   "type": "boolean"
                 },
                 "omitempty": true
+              },
+              {
+                "name": "playedMS",
+                "shape": {
+                  "type": "integer"
+                },
+                "omitempty": true
               }
             ]
           }

@@ -322,6 +322,7 @@ describe("usePlayer", () => {
       eventTimeMS: 1783432800123,
       paused: true,
       playbackID: expect.stringMatching(/^[0-9a-f]{32}$/),
+      playedMS: 0,
     });
     const playbackID = vi.mocked(graphql).mock.calls.at(-1)?.[1]?.playbackID;
 
@@ -528,6 +529,8 @@ describe("usePlayer", () => {
     expect(beat).toMatchObject({ positionSeconds: 15, finished: false });
     expect(replay.playbackID).not.toBe(finish.playbackID);
     expect(beat.playbackID).toBe(replay.playbackID);
+    // A new play's played count starts again from zero.
+    expect(replay.playedMS).toBe(0);
   });
 
   it("sends a replay's reports after the previous play's finish, from the start (CORE-1703)", async () => {
@@ -572,6 +575,140 @@ describe("usePlayer", () => {
     expect(finish.playbackID).toBe(playing.playbackID);
     expect(replay.playbackID).not.toBe(finish.playbackID);
     expect(progress.maxActive()).toBe(1);
+  });
+
+  it("sends a replay's reports after the finish when playback moves on while it waits (CORE-1703)", async () => {
+    // Codex CORE-1703 r6: leaving a replay whose queue still waits behind the
+    // previous play's finish must not drop the replay's reports.
+    const progress = capturePendingProgress();
+    const view = render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    const set = (currentTime: number, paused: boolean) => {
+      Object.defineProperty(video, "currentTime", { configurable: true, value: currentTime });
+      Object.defineProperty(video, "paused", { configurable: true, value: paused });
+    };
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    Object.defineProperty(video, "seeking", { configurable: true, value: false });
+    set(110, false);
+    fireEvent.play(video);
+    await waitFor(() => expect(progress.requests).toHaveLength(1));
+    set(120, true);
+    fireEvent.ended(video);
+    set(0, false);
+    fireEvent.play(video);
+
+    view.rerender(<Harness mediaID="media-beta" />);
+    progress.requests[0].resolve();
+    await waitFor(() => expect(progress.requests).toHaveLength(2));
+    progress.requests[1].resolve();
+    await waitFor(() => expect(progress.requests).toHaveLength(3));
+    progress.requests[2].resolve();
+    const [, finish, replay] = progress.requests.map(({ variables }) => variables);
+    expect(finish).toMatchObject({ mediaID: "media-alpha", positionSeconds: 120, finished: true });
+    expect(replay).toMatchObject({ mediaID: "media-alpha", positionSeconds: 0, finished: false });
+    expect(replay.playbackID).not.toBe(finish.playbackID);
+    expect(progress.maxActive()).toBe(1);
+  });
+
+  it("releases the replay after a failed finish and never sends that finish again (CORE-1703)", async () => {
+    // Codex CORE-1703 r6: a finish that fails is dropped, not retried, so it
+    // can never arrive after the replay's reports and end the replay.
+    const progress = capturePendingProgress();
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    const set = (currentTime: number, paused: boolean) => {
+      Object.defineProperty(video, "currentTime", { configurable: true, value: currentTime });
+      Object.defineProperty(video, "paused", { configurable: true, value: paused });
+    };
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    Object.defineProperty(video, "seeking", { configurable: true, value: false });
+    set(110, false);
+    fireEvent.play(video);
+    await waitFor(() => expect(progress.requests).toHaveLength(1));
+    set(120, true);
+    fireEvent.ended(video);
+    set(0, false);
+    fireEvent.play(video);
+
+    progress.requests[0].resolve();
+    await waitFor(() => expect(progress.requests).toHaveLength(2));
+    expect(progress.requests[1].variables).toMatchObject({ finished: true });
+    progress.requests[1].deadline();
+    await waitFor(() => expect(progress.requests).toHaveLength(3));
+    progress.requests[2].resolve();
+    set(5, true);
+    fireEvent.pause(video);
+    await waitFor(() => expect(progress.requests).toHaveLength(4));
+    progress.requests[3].resolve();
+    await waitFor(() => expect(progress.active()).toBe(0));
+
+    const [, finish, replay, pause] = progress.requests.map(({ variables }) => variables);
+    expect(replay).toMatchObject({ positionSeconds: 0, finished: false });
+    expect(pause).toMatchObject({ positionSeconds: 5, finished: false, paused: true });
+    expect(replay.playbackID).not.toBe(finish.playbackID);
+    expect(pause.playbackID).toBe(replay.playbackID);
+    expect(progress.requests.filter(({ variables }) => variables.finished)).toHaveLength(1);
+  });
+
+  it("reports played time counted only while the video actually plays (CORE-1703)", async () => {
+    // Codex CORE-1703 r6: play history credits the growth of playedMS, so a
+    // pause, a seek or a stall for data adds nothing, whatever the clocks do.
+    let perf = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => perf);
+    let readyState: number = HTMLMediaElement.HAVE_ENOUGH_DATA;
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockImplementation(() => readyState);
+    const progress = capturePendingProgress();
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    const set = (currentTime: number, paused: boolean, seeking = false) => {
+      Object.defineProperty(video, "currentTime", { configurable: true, value: currentTime });
+      Object.defineProperty(video, "paused", { configurable: true, value: paused });
+      Object.defineProperty(video, "seeking", { configurable: true, value: seeking });
+    };
+    const answer = async (count: number) => {
+      await waitFor(() => expect(progress.requests).toHaveLength(count));
+      progress.requests[count - 1].resolve();
+    };
+    Object.defineProperty(video, "duration", { configurable: true, value: 600 });
+
+    set(0, false);
+    fireEvent.play(video);
+    await answer(1);
+    perf += 10_000;
+    set(10, true);
+    fireEvent.pause(video);
+    await answer(2);
+    // A minute paused adds nothing.
+    perf += 60_000;
+    set(10, false);
+    fireEvent.play(video);
+    await answer(3);
+    // Five seconds played, then a seek far ahead: the seek itself adds nothing.
+    perf += 5_000;
+    set(15, false, true);
+    fireEvent.seeking(video);
+    perf += 3_000;
+    set(300, false);
+    fireEvent.seeked(video);
+    await answer(4);
+    // Four seconds played, then twenty waiting for data.
+    perf += 4_000;
+    readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
+    fireEvent.waiting(video);
+    perf += 20_000;
+    readyState = HTMLMediaElement.HAVE_ENOUGH_DATA;
+    fireEvent.playing(video);
+    perf += 1_000;
+    set(305, true);
+    fireEvent.pause(video);
+    await answer(5);
+
+    expect(progress.requests.map(({ variables }) => variables.playedMS)).toEqual([
+      0, 10_000, 10_000, 15_000, 20_000,
+    ]);
   });
 
   it("reports the probed duration, not a live transcode's growing video.duration (CORE-2314)", async () => {
@@ -649,11 +786,11 @@ describe("usePlayer", () => {
     expect(ended).toEqual([{ mediaId: "media-alpha" }]);
   });
 
-  it("keeps playback progress eventTimeMS strictly increasing and back on the wall clock once a fast clock is corrected (CORE-1703)", async () => {
+  it("keeps playback progress eventTimeMS from going back and on the wall clock once a fast clock is corrected (CORE-1703)", async () => {
     // Codex CORE-1703 r5: a play that starts on a clock two minutes fast,
     // which is then corrected, must not keep leading the wall clock ten
     // minutes later, or the server ignores another device's resume updates.
-    // Event time is the wall clock held strictly after the last time sent.
+    // Event time is the wall clock, never before the last time sent.
     // Earlier tests left the file-wide high-water mark near the real clock,
     // so this play starts an hour past it.
     const wall = Date.now() + 3_600_000;
@@ -687,7 +824,7 @@ describe("usePlayer", () => {
     perf += 600_000;
     fireEvent.pause(video);
     await waitFor(() => expect(graphql).toHaveBeenCalledTimes(3));
-    expect(sentTimes()).toEqual([wall + 120_000, wall + 120_001, wall + 600_000]);
+    expect(sentTimes()).toEqual([wall + 120_000, wall + 120_000, wall + 600_000]);
   });
 
   it("keeps playback progress eventTimeMS after the last event time across a remount", async () => {
@@ -726,12 +863,13 @@ describe("usePlayer", () => {
     fireEvent.pause(video);
 
     // The high-water mark survives the remount, so the new play's event
-    // times stay after the last report even though the wall clock went back.
+    // times never go before the last report even though the wall clock went
+    // back.
     await waitFor(() => expect(graphql).toHaveBeenCalled());
     const times = vi
       .mocked(graphql)
       .mock.calls.map((call) => (call[1] as { eventTimeMS: number }).eventTimeMS);
-    expect(times.every((t) => t > before)).toBe(true);
+    expect(times.every((t) => t >= before)).toBe(true);
   });
 
   it("reports the last presented position, not a pending seek target, while a seek stalls (CORE-0044)", async () => {
@@ -900,14 +1038,21 @@ describe("usePlayer", () => {
       if (teardown === "media change") view.rerender(<Harness mediaID="media-beta" />);
       if (teardown === "identity change") identity.abort();
 
+      // An identity change aborts the report in flight; any other teardown
+      // lets it finish, since a retired play's reports are never dropped.
+      if (teardown === "identity change") {
+        await waitFor(() => expect(pending.requests[1].signal.aborted).toBe(true));
+      } else {
+        expect(pending.requests[1].signal.aborted).toBe(false);
+        pending.requests[1].resolve();
+      }
       await waitFor(() => expect(pending.active()).toBe(0));
       expect(pending.requests).toHaveLength(2);
-      expect(pending.requests.every((request) => request.signal.aborted)).toBe(true);
       expect(pending.maxActive()).toBe(1);
     },
   );
 
-  it("aborts old-media progress without flushing its queued replacement", async () => {
+  it("delivers old-media progress across a media change, in order (CORE-1703)", async () => {
     const pending = capturePendingProgress();
     const view = render(<Harness mediaID="media-alpha" />);
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
@@ -919,10 +1064,19 @@ describe("usePlayer", () => {
     Object.defineProperty(video, "currentTime", { configurable: true, value: 20 });
     fireEvent.seeked(video);
 
+    // Moving on retires the play but drops none of its reports: the pause in
+    // flight is answered, then the seek queued behind it goes out.
     view.rerender(<Harness mediaID="media-beta" />);
-    await waitFor(() => expect(pending.requests[0].signal.aborted).toBe(true));
-    expect(pending.active()).toBe(0);
-    expect(pending.requests).toHaveLength(1);
+    expect(pending.requests[0].signal.aborted).toBe(false);
+    pending.requests[0].resolve();
+    await waitFor(() => expect(pending.requests).toHaveLength(2));
+    expect(pending.requests[1].variables).toMatchObject({
+      mediaID: "media-alpha",
+      positionSeconds: 20,
+    });
+    pending.requests[1].resolve();
+    await waitFor(() => expect(pending.active()).toBe(0));
+    expect(pending.maxActive()).toBe(1);
   });
 
   it.each(["media change", "unmount"])(
@@ -999,7 +1153,7 @@ describe("usePlayer", () => {
     expect(pending.requests).toHaveLength(1);
   });
 
-  it("aborts its only progress request and clears queued work on unmount", async () => {
+  it("delivers its progress requests one at a time after unmount (CORE-1703)", async () => {
     const pending = capturePendingProgress();
     const view = render(<Harness />);
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
@@ -1012,9 +1166,14 @@ describe("usePlayer", () => {
     fireEvent.seeked(video);
     view.unmount();
 
-    expect(pending.requests[0].signal.aborted).toBe(true);
-    expect(pending.active()).toBe(0);
+    expect(pending.requests[0].signal.aborted).toBe(false);
     expect(pending.requests).toHaveLength(1);
+    pending.requests[0].resolve();
+    await waitFor(() => expect(pending.requests).toHaveLength(2));
+    expect(pending.requests[1].variables).toMatchObject({ positionSeconds: 20 });
+    pending.requests[1].resolve();
+    await waitFor(() => expect(pending.active()).toBe(0));
+    expect(pending.maxActive()).toBe(1);
   });
 
   it("fails closed with an unsupported-codec message on native decode errors", async () => {
@@ -1294,13 +1453,19 @@ describe("usePlayer", () => {
     pending.requests[1].resolve();
   });
 
-  it("keeps the playback ID across Try again, which carries on the same play (CORE-1703)", async () => {
+  it("keeps the playback ID and played count across Try again, which carries on the same play (CORE-1703)", async () => {
+    let perf = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => perf);
     const pending = capturePendingProgress();
     render(<Harness />);
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
     let video = screen.getByTestId("player") as HTMLVideoElement;
     Object.defineProperty(video, "duration", { configurable: true, value: 120 });
     Object.defineProperty(video, "currentTime", { configurable: true, value: 30 });
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.playing(video);
+    perf += 7_000;
+    Object.defineProperty(video, "paused", { configurable: true, value: true });
     fireEvent.pause(video);
     await waitFor(() => expect(pending.requests).toHaveLength(1));
     pending.requests[0].resolve();
@@ -1311,9 +1476,14 @@ describe("usePlayer", () => {
     video = screen.getByTestId("player") as HTMLVideoElement;
     Object.defineProperty(video, "duration", { configurable: true, value: 120 });
     Object.defineProperty(video, "currentTime", { configurable: true, value: 31 });
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.playing(video);
+    perf += 2_000;
+    Object.defineProperty(video, "paused", { configurable: true, value: true });
     fireEvent.pause(video);
     await waitFor(() => expect(pending.requests).toHaveLength(2));
     expect(pending.requests[1].variables.playbackID).toBe(pending.requests[0].variables.playbackID);
+    expect(pending.requests.map(({ variables }) => variables.playedMS)).toEqual([7_000, 9_000]);
     pending.requests[1].resolve();
   });
 

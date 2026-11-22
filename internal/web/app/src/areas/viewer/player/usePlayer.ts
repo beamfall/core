@@ -169,7 +169,7 @@ const REPORT_INTERVAL_MS = 15000;
 /** The song as recorded: no pitch shift, the recorded tempo. */
 export const DEFAULT_ADJUSTMENT: PlaybackAdjustment = { pitchShiftSemitones: 0, tempo: 1 };
 const REPORT_PLAYBACK_MUTATION =
-  "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!, $paused: Boolean, $playbackID: String) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS, paused: $paused, playbackID: $playbackID) { mediaID } }";
+  "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!, $paused: Boolean, $playbackID: String, $playedMS: Int) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS, paused: $paused, playbackID: $playbackID, playedMS: $playedMS) { mediaID } }";
 let lastPlaybackEventTimeMS = 0;
 
 /** A random ID for one play of an item (CORE-1703): play history groups the
@@ -188,11 +188,15 @@ interface QueuedProgress {
 
 interface ProgressQueue {
   playbackID: string;
+  // How long this play has actually played, in milliseconds, and the
+  // performance.now() it last started playing (null: not playing now); see
+  // syncPlayedClock. Play history credits the growth of the count it sends.
+  playedMS: number;
+  playingSince: number | null;
   active: boolean;
   finalQueued: boolean;
-  // Set when the player moved on (track change, unmount) with a finish report
-  // still owed: no new reports are accepted, but the queued ones are sent, in
-  // order, the finish last.
+  // Set when the player moved on (another item or play, unmount): no new
+  // reports are accepted, but the ones it holds are still sent, in order.
   retiring: boolean;
   // A replay's queue waits behind the previous play's until that one has
   // delivered its finish, so the finish always arrives first (CORE-1703).
@@ -209,6 +213,8 @@ interface ProgressQueue {
 function createProgressQueue(playbackID: string): ProgressQueue {
   return {
     playbackID,
+    playedMS: 0,
+    playingSince: null,
     active: true,
     finalQueued: false,
     retiring: false,
@@ -283,7 +289,17 @@ function sendProgress(queue: ProgressQueue, progress: ReportPlaybackVars): void 
 function completeProgress(queue: ProgressQueue, controller: AbortController): void {
   if (queue.inFlight?.controller !== controller) return;
   queue.inFlight = null;
-  if (!queue.active) return;
+  advanceProgressQueue(queue);
+}
+
+// advanceProgressQueue sends a queue's next report once nothing is in flight
+// and no earlier play holds it back. A retired queue that has sent everything
+// stops, and the replay waiting behind it may send. A failed report is not
+// sent again, so a failed finish releases the replay too and can never arrive
+// after it. A queue stopped by an identity change releases nothing; the
+// replay's own queue stops for the same change.
+function advanceProgressQueue(queue: ProgressQueue): void {
+  if (!queue.active || queue.blocked || queue.inFlight) return;
   const next = queue.queued.shift();
   if (next) {
     sendProgress(queue, next.progress);
@@ -291,15 +307,11 @@ function completeProgress(queue: ProgressQueue, controller: AbortController): vo
   }
   if (!queue.retiring) return;
   stopProgressQueue(queue);
-  // Delivered in full: the replay waiting behind it may send now. A queue
-  // stopped by an identity change releases nothing; the replay's own queue
-  // stops for the same change.
   const after = queue.next;
   queue.next = null;
   if (!after) return;
   after.blocked = false;
-  const first = after.active ? after.queued.shift() : undefined;
-  if (first) sendProgress(after, first.progress);
+  advanceProgressQueue(after);
 }
 
 function stopProgressQueue(queue: ProgressQueue): void {
@@ -313,30 +325,37 @@ function stopProgressQueue(queue: ProgressQueue): void {
 }
 
 // retireProgressQueue ends a play's queue when playback moves to another
-// item or play. With a finish report owed (an auto-advance at `ended`, or a
-// replay started before the finish was answered), every queued report is
-// still delivered in order and the finish last, so a fully played track
-// counts as finished; otherwise everything is cancelled. An identity change
-// still stops the queue outright (CORE-1143).
+// item or play. It accepts no new reports but never drops one it holds: they
+// are sent in order, a finish last, even while the queue still waits behind an
+// earlier play's. An identity change still stops it outright (CORE-1143).
 function retireProgressQueue(queue: ProgressQueue): void {
   if (!queue.active || queue.retiring) return;
-  // Nothing is accepted after the finish, so it is still owed while any
-  // report is in flight or queued.
-  const finalOwed =
-    queue.active && queue.finalQueued && (queue.inFlight !== null || queue.queued.length > 0);
-  if (!finalOwed) {
-    stopProgressQueue(queue);
-    return;
-  }
   queue.retiring = true;
+  advanceProgressQueue(queue);
 }
 
-// nextPlaybackEventTimeMS is the wall clock, held strictly after the last
-// time sent, so the server's latest-report-wins check never sees this player
-// go backward. A clock set back stalls it only until the wall clock passes the
-// last time sent again, so a corrected fast clock stops leading (CORE-1703).
+// syncPlayedClock brings a play's played count up to now, then keeps it
+// running only while the video actually plays: not paused, seeking, ended or
+// waiting for data. A seek adds nothing, and the wall clock plays no part
+// (CORE-1703).
+function syncPlayedClock(queue: ProgressQueue, video: HTMLVideoElement): void {
+  const now = performance.now();
+  if (queue.playingSince !== null) queue.playedMS += now - queue.playingSince;
+  const playing =
+    !video.paused &&
+    !video.seeking &&
+    !video.ended &&
+    video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
+  queue.playingSince = playing ? now : null;
+}
+
+// nextPlaybackEventTimeMS is the wall clock, never before the last time sent,
+// so the server's latest-report-wins check never sees this player go
+// backward. A clock set back holds it only until the wall clock passes the
+// last time sent again, so a corrected fast clock stops leading. It orders
+// and dates reports; play history measures a play by its played count.
 function nextPlaybackEventTimeMS(): number {
-  const eventTimeMS = Math.max(lastPlaybackEventTimeMS + 1, Date.now());
+  const eventTimeMS = Math.max(lastPlaybackEventTimeMS, Date.now());
   lastPlaybackEventTimeMS = eventTimeMS;
   return eventTimeMS;
 }
@@ -654,6 +673,7 @@ export function usePlayer(
       if (position === null) return;
       const queue = progressQueueRef.current;
       if (!queue) return;
+      syncPlayedClock(queue, video);
       const eventTimeMS = nextPlaybackEventTimeMS();
       const songScale = songScaleRef.current;
       // The probed length, not a live transcode's growing video.duration:
@@ -672,6 +692,7 @@ export function usePlayer(
           eventTimeMS,
           paused: video.paused,
           playbackID: queue.playbackID,
+          playedMS: Math.round(queue.playedMS),
         },
         heartbeat,
       );
@@ -1543,18 +1564,30 @@ export function usePlayer(
     const onPause = () => reportProgress(false);
     const onSeeked = () => reportProgress(false);
     const onEnded = () => stopProgressReporting(true);
-    const onTimeUpdate = () => notePresentedPosition(video);
-    video.addEventListener("play", onPlay);
-    video.addEventListener("pause", onPause);
-    video.addEventListener("seeked", onSeeked);
-    video.addEventListener("ended", onEnded);
-    video.addEventListener("timeupdate", onTimeUpdate);
+    // The played clock starts and stops with every change in whether the
+    // video is actually playing; a report brings it up to date as well.
+    const syncPlayed = () => {
+      const queue = progressQueueRef.current;
+      if (queue) syncPlayedClock(queue, video);
+    };
+    const onTimeUpdate = () => {
+      syncPlayed();
+      notePresentedPosition(video);
+    };
+    const listeners: Array<[string, () => void]> = [
+      ["play", onPlay],
+      ["pause", onPause],
+      ["seeked", onSeeked],
+      ["ended", onEnded],
+      ["timeupdate", onTimeUpdate],
+      ["playing", syncPlayed],
+      ["waiting", syncPlayed],
+      ["seeking", syncPlayed],
+      ["emptied", syncPlayed],
+    ];
+    for (const [type, listener] of listeners) video.addEventListener(type, listener);
     return () => {
-      video.removeEventListener("play", onPlay);
-      video.removeEventListener("pause", onPause);
-      video.removeEventListener("seeked", onSeeked);
-      video.removeEventListener("ended", onEnded);
-      video.removeEventListener("timeupdate", onTimeUpdate);
+      for (const [type, listener] of listeners) video.removeEventListener(type, listener);
     };
   }, [reportProgress, startHeartbeat, stopProgressReporting]);
 

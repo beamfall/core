@@ -297,7 +297,8 @@ func TestPlayHistorySplitsEveryDeviceSwitch(t *testing.T) {
 // the playback ID of the play it belongs to (empty: it sent none), the
 // position it reported, whether it said it was paused (nil: it did not say),
 // the method held when the server received it, and when that was. clientAt is
-// the client's own clock, zero when it sent none.
+// the client's own clock, zero when it sent none, and played how long it says
+// it has played under the playback ID, nil when it sent none.
 type clientReport struct {
 	device   DeviceID
 	playback string
@@ -306,6 +307,13 @@ type clientReport struct {
 	clientAt time.Time
 	position int
 	paused   *bool
+	played   *int64
+}
+
+// playedSeconds is a client's played count of the given seconds.
+func playedSeconds(seconds int) *int64 {
+	ms := int64(seconds) * 1000
+	return &ms
 }
 
 func addClientReport(t *testing.T, st *Store, profile ProfileID, media MediaID, r clientReport) {
@@ -314,7 +322,7 @@ func addClientReport(t *testing.T, st *Store, profile ProfileID, media MediaID, 
 		Operation: playbackProjectionOperationProgress, ProfileID: string(profile), MediaID: string(media),
 		PositionSeconds: r.position, DurationSeconds: 3600, UpdatedAtMS: timeToMillis(r.received),
 		DeviceID: string(r.device), PlayMethod: r.method, ReportedPositionSeconds: &r.position,
-		PlaybackID: r.playback, Paused: r.paused,
+		PlaybackID: r.playback, Paused: r.paused, PlayedMS: r.played,
 	}
 	if !r.clientAt.IsZero() {
 		at := timeToMillis(r.clientAt)
@@ -590,121 +598,173 @@ func TestPlayHistoryCreditsADelayedReport(t *testing.T) {
 	}
 }
 
-// feature:play-history
-func TestPlayHistoryFallsBackToReceiptWhenEventTimeStalls(t *testing.T) {
-	// Codex CORE-1703 r4: the device clock is set back two minutes after one
-	// minute of play, and a client that holds its event time at a high-water
-	// mark then sends the same event time for the whole second minute. A step
-	// whose event time does not move forward falls back to the receipt gap,
-	// so the two-minute play still earns 120 seconds.
-	st := openSeeded(t)
-	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
-	playing := false
-	r := clientReport{device: "dev-web", playback: "play-web", method: PlayMethodDirect, paused: &playing}
-	for at := 0; at <= 120; at += 15 {
-		client := min(at, 60)
-		r.received, r.clientAt, r.position = day.Add(time.Duration(at)*time.Second), day.Add(time.Duration(client)*time.Second), at
-		addClientReport(t, st, "profile-default", "media-alpha", r)
-	}
+// playHistoryOf returns every play recorded so far.
+func playHistoryOf(t *testing.T, st *Store) []Play {
+	t.Helper()
 	plays, err := st.PlayHistory(context.Background(), LibraryFilter{AllLibraries: true}, PlayHistoryQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plays) != 1 || plays[0].WatchedSeconds != 120 {
-		t.Fatalf("plays = %#v, want one play of 120s", plays)
+	return plays
+}
+
+// feature:play-history
+func TestPlayHistoryCreditsPlayedTimeWhenTheClockGoesBack(t *testing.T) {
+	// Codex CORE-1703 r6: the device clock is set back two minutes after the
+	// first report, so the four heartbeats over the next minute carry event
+	// times only a millisecond apart. Their played count still grows by 15
+	// seconds each, so the play counts and earns its 60 seconds.
+	st := openSeeded(t)
+	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
+	playing := false
+	r := clientReport{device: "dev-web", playback: "play-web", method: PlayMethodDirect, paused: &playing}
+	for i := range 5 {
+		at := 15 * i
+		r.received, r.position, r.played = day.Add(time.Duration(at)*time.Second), at, playedSeconds(at)
+		r.clientAt = day.Add(time.Duration(i) * time.Millisecond)
+		addClientReport(t, st, "profile-default", "media-alpha", r)
+	}
+	if plays := playHistoryOf(t, st); len(plays) != 1 || plays[0].WatchedSeconds != 60 {
+		t.Fatalf("plays = %#v, want one play of 60s", plays)
 	}
 }
 
-func TestPlayHistoryCreditsTheLargerOfEventAndReceiptGaps(t *testing.T) {
-	// Codex CORE-1703 r5: a device clock set back ten seconds mid-play leaves
-	// one step whose event time moved forward only five seconds. Each step
-	// credits the larger of the event and receipt gaps, still capped by the
-	// position advance, so the two-minute play earns 120 seconds, not 110.
+// feature:play-history
+func TestPlayHistoryCreditsNothingForADelayedSeek(t *testing.T) {
+	// Codex CORE-1703 r6: after a minute of play the viewer seeks from 60 to
+	// 180, and that report arrives 45 seconds after the one before. The seek
+	// added nothing to the played count, so it earns nothing, and the 15
+	// seconds played after it count: 75 in all, not 120.
 	st := openSeeded(t)
 	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
 	playing := false
 	r := clientReport{device: "dev-web", playback: "play-web", method: PlayMethodDirect, paused: &playing}
-	for at := 0; at <= 120; at += 15 {
-		client := at
-		if at > 60 {
-			client -= 10
-		}
-		r.received, r.clientAt, r.position = day.Add(time.Duration(at)*time.Second), day.Add(time.Duration(client)*time.Second), at
+	for _, step := range []struct{ received, position, played int }{
+		{0, 0, 0}, {15, 15, 15}, {30, 30, 30}, {45, 45, 45}, {60, 60, 60}, {105, 180, 60}, {120, 195, 75},
+	} {
+		r.received, r.clientAt = day.Add(time.Duration(step.received)*time.Second), day.Add(time.Duration(step.received)*time.Second)
+		r.position, r.played = step.position, playedSeconds(step.played)
 		addClientReport(t, st, "profile-default", "media-alpha", r)
 	}
-	plays, err := st.PlayHistory(context.Background(), LibraryFilter{AllLibraries: true}, PlayHistoryQuery{})
-	if err != nil {
-		t.Fatal(err)
+	if plays := playHistoryOf(t, st); len(plays) != 1 || plays[0].WatchedSeconds != 75 {
+		t.Fatalf("plays = %#v, want one play of 75s", plays)
 	}
-	if len(plays) != 1 || plays[0].WatchedSeconds != 120 {
-		t.Fatalf("plays = %#v, want one play of 120s", plays)
+}
+
+// feature:play-history
+func TestPlayHistoryCreditsARepeatedReportOnce(t *testing.T) {
+	// A report at 15 seconds played is sent again and arrives late, after the
+	// report at 30. Each played second is credited once: 45 in all.
+	st := openSeeded(t)
+	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
+	playing := false
+	r := clientReport{device: "dev-web", playback: "play-web", method: PlayMethodDirect, paused: &playing}
+	for i, played := range []int{0, 15, 30, 15, 45} {
+		r.received, r.position, r.played = day.Add(time.Duration(15*i)*time.Second), played, playedSeconds(played)
+		addClientReport(t, st, "profile-default", "media-alpha", r)
+	}
+	if plays := playHistoryOf(t, st); len(plays) != 1 || plays[0].WatchedSeconds != 45 {
+		t.Fatalf("plays = %#v, want one play of 45s", plays)
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryIgnoresANegativePlayedCount(t *testing.T) {
+	// A played count below zero is not believed, so it cannot lower the
+	// baseline the next report is measured from: 30 seconds, not 1,030.
+	st := openSeeded(t)
+	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
+	playing := false
+	negative := int64(-1_000_000)
+	r := clientReport{device: "dev-web", playback: "play-web", method: PlayMethodDirect, paused: &playing, received: day, played: &negative}
+	addClientReport(t, st, "profile-default", "media-alpha", r)
+	r.received, r.position, r.played = day.Add(30*time.Second), 30, playedSeconds(30)
+	addClientReport(t, st, "profile-default", "media-alpha", r)
+	if plays := playHistoryOf(t, st); len(plays) != 1 || plays[0].WatchedSeconds != 30 {
+		t.Fatalf("plays = %#v, want one play of 30s", plays)
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryCountsAPlaybackByItsPlayedTime(t *testing.T) {
+	// A play is opened, played for 10 seconds and left paused, its paused
+	// heartbeats running on for ten minutes. Ten minutes of reports are not
+	// a play: it played 10 seconds, short of the 30-second minimum.
+	st := openSeeded(t)
+	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
+	paused := true
+	r := clientReport{device: "dev-web", playback: "play-web", method: PlayMethodDirect, paused: &paused}
+	for at := 0; at <= 600; at += 15 {
+		r.received, r.clientAt = day.Add(time.Duration(at)*time.Second), day.Add(time.Duration(at)*time.Second)
+		r.position, r.played = min(at, 10), playedSeconds(min(at, 10))
+		addClientReport(t, st, "profile-default", "media-alpha", r)
+	}
+	if plays := playHistoryOf(t, st); len(plays) != 0 {
+		t.Fatalf("plays = %#v, want none", plays)
 	}
 }
 
 // stalledReports appends a play that reports every 15 seconds from 0 to 300,
 // then a report at 300 whose request stalls for 30 seconds, and after it the
-// reports queued behind it, which arrive back to back. Each queued report
-// is given as its client clock offset in seconds, position and paused.
+// reports queued behind it, which arrive back to back. The device clock was
+// set back while the request stalled, so the queued reports' event times are
+// milliseconds apart too. Each queued report is given as its played count in
+// seconds, position and paused.
 func stalledReports(t *testing.T, st *Store, day time.Time, queued []struct {
-	at, position int
-	paused       bool
+	played, position int
+	paused           bool
 }) {
 	t.Helper()
 	playing := false
 	r := clientReport{device: "dev-web", playback: "play-web", method: PlayMethodDirect, paused: &playing}
 	for at := 0; at < 300; at += 15 {
 		r.received, r.clientAt, r.position = day.Add(time.Duration(at)*time.Second), day.Add(time.Duration(at)*time.Second), at
+		r.played = playedSeconds(at)
 		addClientReport(t, st, "profile-default", "media-alpha", r)
 	}
 	arrived := day.Add(330 * time.Second)
-	r.received, r.clientAt, r.position = arrived, day.Add(300*time.Second), 300
+	r.received, r.clientAt, r.position, r.played = arrived, day.Add(300*time.Second), 300, playedSeconds(300)
 	addClientReport(t, st, "profile-default", "media-alpha", r)
 	for i, q := range queued {
 		paused := q.paused
 		r.received = arrived.Add(time.Duration(i+1) * 10 * time.Millisecond)
-		r.clientAt, r.position, r.paused = day.Add(time.Duration(q.at)*time.Second), q.position, &paused
+		r.clientAt = day.Add(10*time.Second + time.Duration(i)*time.Millisecond)
+		r.position, r.paused, r.played = q.position, &paused, playedSeconds(q.played)
 		addClientReport(t, st, "profile-default", "media-alpha", r)
 	}
 }
 
 // feature:play-history
 func TestPlayHistoryCreditsReportsQueuedBehindAStall(t *testing.T) {
-	// Codex CORE-1703 r3: the report at 300 stalls; a pause at 302, a resume
-	// at 310 and a heartbeat at 324 (position 314) queue behind it and
-	// arrive within milliseconds. The 14 seconds played after the resume
-	// count: 314 in all.
+	// Codex CORE-1703 r3 and r6: the report at 300 stalls, and the device
+	// clock is set back; a pause at 302, a resume eight seconds later and a
+	// heartbeat 14 seconds after that queue behind it and arrive, with event
+	// times, within milliseconds. Their played counts carry the 16 seconds
+	// played: 316 in all.
 	st := openSeeded(t)
 	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
 	stalledReports(t, st, day, []struct {
-		at, position int
-		paused       bool
-	}{{302, 300, true}, {310, 300, false}, {324, 314, false}})
-	plays, err := st.PlayHistory(context.Background(), LibraryFilter{AllLibraries: true}, PlayHistoryQuery{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(plays) != 1 || plays[0].WatchedSeconds != 314 {
-		t.Fatalf("plays = %#v, want one play of 314s", plays)
+		played, position int
+		paused           bool
+	}{{302, 302, true}, {302, 302, false}, {316, 316, false}})
+	if plays := playHistoryOf(t, st); len(plays) != 1 || plays[0].WatchedSeconds != 316 {
+		t.Fatalf("plays = %#v, want one play of 316s", plays)
 	}
 }
 
 // feature:play-history
 func TestPlayHistoryCreditsNothingForAPausedSeekQueuedBehindAStall(t *testing.T) {
 	// Codex CORE-1703 r3: the report at 300 stalls; a pause at 301, a paused
-	// seek to 3599 at 305, play at 306 and the finish at 3600 at 307 queue
-	// behind it. Only the last second played counts: 301 in all.
+	// seek to 3599, play, and the finish at 3600 a second later queue behind
+	// it. Only the seconds played count: 302 in all.
 	st := openSeeded(t)
 	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
 	stalledReports(t, st, day, []struct {
-		at, position int
-		paused       bool
-	}{{301, 300, true}, {305, 3599, true}, {306, 3599, false}, {307, 3600, false}})
-	plays, err := st.PlayHistory(context.Background(), LibraryFilter{AllLibraries: true}, PlayHistoryQuery{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(plays) != 1 || plays[0].WatchedSeconds != 301 {
-		t.Fatalf("plays = %#v, want one play of 301s", plays)
+		played, position int
+		paused           bool
+	}{{301, 301, true}, {301, 3599, true}, {301, 3599, false}, {302, 3600, false}})
+	if plays := playHistoryOf(t, st); len(plays) != 1 || plays[0].WatchedSeconds != 302 {
+		t.Fatalf("plays = %#v, want one play of 302s", plays)
 	}
 }
 

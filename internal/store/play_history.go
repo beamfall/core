@@ -203,26 +203,40 @@ type derivedPlay struct {
 	lastPos  int
 	// playedMS is how long the run actually played; see playedStepMS.
 	playedMS int64
+	// keyed is whether the run is one playback ID's reports. Such a run is
+	// measured by playedMS alone; its report times only date it.
+	keyed bool
 }
 
-// counts reports whether the run lasted long enough to be a play.
+// ranMS is how long the run lasted for counting and for judging how far it
+// got: the time it actually played for a playback ID's run, whose report
+// times can come from a client clock that stalled or went back, and the span
+// of its report times otherwise.
+func (p derivedPlay) ranMS() int64 {
+	if p.keyed {
+		return p.playedMS
+	}
+	return p.endMS - p.startMS
+}
+
+// counts reports whether the run lasted long enough to be a play (ranMS).
 func (p derivedPlay) counts() bool {
 	minSpan := playMinSpan
 	if p.duration > 0 {
 		minSpan = min(minSpan, time.Duration(p.duration)*time.Second/4)
 	}
-	return time.Duration(p.endMS-p.startMS)*time.Millisecond >= minSpan
+	return time.Duration(p.ranMS())*time.Millisecond >= minSpan
 }
 
 // reachedEnd reports whether the run got near the end of the item: its
-// highest reported position, or where it started plus how long it ran, is
+// highest reported position, or where it started plus how long it ran (ranMS), is
 // within playFinishedFraction or playFinishedTail of the end. An item of
 // unknown length cannot be judged, so the watched flag stands alone.
 func (p derivedPlay) reachedEnd() bool {
 	if p.duration <= 0 {
 		return true
 	}
-	reached := max(p.lastPos, p.firstPos+int((p.endMS-p.startMS)/1000))
+	reached := max(p.lastPos, p.firstPos+int(p.ranMS()/1000))
 	return float64(reached) >= playFinishedFraction*float64(p.duration) || p.duration-reached <= playFinishedTail
 }
 
@@ -247,35 +261,34 @@ const playedAtMS = `CASE
 		THEN json_extract(payload, '$.eventTimeMs')
 		ELSE occurred_at_ms END`
 
-// playedStepMS is how much one report adds to its run's watched time: the
-// span from the report before it in the same run. The first report of a run
-// adds nothing.
+// playedStepMS is how much one report adds to its run's watched time.
 //
-// Within a playback ID the step is the advance of the position the client
-// reported, but no more than the time that passed between the two reports,
-// and nothing when the earlier report said the player was paused. The time
-// that passed is the larger of the difference between the client's own event
-// times and the difference between the two arrivals at the server, so a report
-// queued behind a slow request still earns the time it covered, and a client
-// clock that stood still or went back costs nothing; without client event
-// times it is the arrival difference. A pause earns nothing whether the client stays silent or keeps
-// reporting, a seek made while paused earns nothing, and a forward seek earns
-// no more than the time it took. A report that does not say whether the
-// player was paused reads as playing.
+// Within a playback ID whose client reports how long it has played
+// (playedMs, counted only while media actually plays), the step is how far
+// that count grew past the largest count the server had already received for
+// the ID, and never less than nothing. The count is cumulative, so a delayed,
+// queued or repeated report credits exactly the playing it covers, a seek or a
+// pause adds nothing, and the client's wall clock plays no part. The first
+// report of an ID credits its whole count.
+//
+// Reports with a playback ID but no played count credit the advance of the
+// position the client reported, but no more than the time between their
+// arrivals at the server, and nothing after a report that said the player was
+// paused. The first report of their run adds nothing. A report that does not
+// say whether the player was paused reads as playing.
 //
 // Reports without a playback ID keep the CORE-1307 rule unchanged, so
-// recorded history reads as it did: nothing across a gap longer than
-// playReportGapCap, otherwise the gap between their observed times, but no
-// more than the stored position advanced when both sides have one, and no
-// more than playReportGapCap.
+// recorded history reads as it did: the first report of a run adds nothing,
+// nothing across a gap longer than playReportGapCap, otherwise the gap between
+// their observed times, but no more than the stored position advanced when
+// both sides have one, and no more than playReportGapCap.
 const playedStepMS = `CASE
+		WHEN part <> '' AND played IS NOT NULL
+		THEN MAX(played - COALESCE(prev_played, 0), 0)
 		WHEN starts = 1 THEN 0
 		WHEN part <> ''
 		THEN CASE WHEN prev_paused = 1 OR reported IS NULL OR prev_reported IS NULL THEN 0
-		          ELSE MAX(MIN(CASE WHEN client_ms > 0 AND prev_client > 0
-		                            THEN MAX(client_ms - prev_client, recv_ms - prev_recv)
-		                            ELSE recv_ms - prev_recv END,
-		                       (reported - prev_reported) * 1000), 0) END
+		          ELSE MAX(MIN(recv_ms - prev_recv, (reported - prev_reported) * 1000), 0) END
 		WHEN at_ms - prev_ms > ? THEN 0
 		WHEN watched = 0 AND prev_watched = 0 AND (position > 0 OR prev_position > 0)
 		THEN MAX(MIN(at_ms - prev_ms, MAX(position - prev_position, 0) * 1000), 0)
@@ -312,7 +325,8 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 			       ` + playMethodRankSQL + ` AS method,
 			       ` + playedAtMS + ` AS at_ms,
 			       occurred_at_ms AS recv_ms, rowid AS seq,
-			       COALESCE(json_extract(payload, '$.eventTimeMs'), 0) AS client_ms,
+			       CASE WHEN json_extract(payload, '$.playedMs') >= 0
+			            THEN json_extract(payload, '$.playedMs') END AS played,
 			       COALESCE(json_extract(payload, '$.durationSeconds'), 0) AS duration,
 			       COALESCE(json_extract(payload, '$.watched'), 0) AS watched,
 			       COALESCE(json_extract(payload, '$.positionSeconds'), 0) AS position,
@@ -343,7 +357,8 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 			FROM src
 		), ev AS (
 			SELECT *, LAG(ord_ms) OVER w AS prev_ord, LAG(at_ms) OVER w AS prev_ms,
-			       LAG(recv_ms) OVER w AS prev_recv, LAG(client_ms) OVER w AS prev_client,
+			       LAG(recv_ms) OVER w AS prev_recv,
+			       MAX(played) OVER (w ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_played,
 			       LAG(position) OVER w AS prev_position, LAG(watched) OVER w AS prev_watched,
 			       LAG(reported) OVER w AS prev_reported, LAG(paused) OVER w AS prev_paused
 			FROM raw
@@ -369,7 +384,7 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 			       MIN(at_ms) AS start_ms, MAX(at_ms) AS end_ms, MAX(duration) AS duration, MAX(watched) AS watched,
 			       COALESCE(MIN(CASE WHEN watched = 0 THEN position END), 0) AS first_pos,
 			       COALESCE(MAX(CASE WHEN watched = 0 THEN position END), 0) AS last_pos,
-			       SUM(step_ms) AS played_ms
+			       SUM(step_ms) AS played_ms, part <> '' AS keyed
 			FROM step
 			GROUP BY profile_id, media_id, part, run_no
 		), result AS (
@@ -379,7 +394,7 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 			 AND credit.part = play.part AND credit.run_no = play.run_no AND credit.pick = 1
 		)
 		SELECT profile_id, media_id, device_id, play_method, start_ms, end_ms, duration, watched,
-		       first_pos, last_pos, played_ms
+		       first_pos, last_pos, played_ms, keyed
 		FROM result
 		WHERE 1 = 1`
 	args = append(args, playGap.Milliseconds(), playGap.Milliseconds(),
@@ -411,7 +426,7 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 	for rows.Next() {
 		var p derivedPlay
 		var finished int
-		if err := rows.Scan(&p.profileID, &p.mediaID, &p.deviceID, &p.method, &p.startMS, &p.endMS, &p.duration, &finished, &p.firstPos, &p.lastPos, &p.playedMS); err != nil {
+		if err := rows.Scan(&p.profileID, &p.mediaID, &p.deviceID, &p.method, &p.startMS, &p.endMS, &p.duration, &finished, &p.firstPos, &p.lastPos, &p.playedMS, &p.keyed); err != nil {
 			return err
 		}
 		if !p.counts() {

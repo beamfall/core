@@ -51,9 +51,13 @@ type PlaybackProgress struct {
 	// random ID for one play, new each time a player starts an item and kept
 	// across pauses and seeks; play history groups a play by it. Empty when
 	// the client sent none. Paused says whether the player was paused when it
-	// reported; nil when the client did not say.
+	// reported; nil when the client did not say. PlayedMS is the time, in
+	// milliseconds, the client has actually played under PlaybackID so far
+	// (not paused, seeking or buffering); play history credits its growth.
+	// nil when the client did not say.
 	PlaybackID string
 	Paused     *bool
+	PlayedMS   *int64
 	// Provenance is the ADR-0009 §7 import discriminator: "" native,
 	// a shape-named source value for imported engagement. Write-only on input
 	// is via UpsertPlaybackProgressWithProvenance; this field is the read-back.
@@ -291,6 +295,7 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 		ReportedPositionSeconds: optionalInt(prov.Source == "", progress.PositionSeconds),
 		PlaybackID:              progress.PlaybackID,
 		Paused:                  progress.Paused,
+		PlayedMS:                progress.PlayedMS,
 	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {

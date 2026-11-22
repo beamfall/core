@@ -416,6 +416,9 @@ export interface ReportPlaybackVars {
   paused?: boolean;
   /** The client's random ID for this play, kept across pauses and seeks. */
   playbackID?: string;
+  /** Milliseconds actually played under playbackID so far (not paused, seeking or
+   *  buffering): play history credits its growth. */
+  playedMS?: number;
 }
 
 // --- Viewer: My Data / Privacy panel (internal/graph/mydata.go) -----------

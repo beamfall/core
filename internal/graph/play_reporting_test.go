@@ -168,8 +168,8 @@ func TestReportPlaybackRecordsPausedAndPlaybackID(t *testing.T) {
 	// none.
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)
-	report := `{"query":"mutation R($position: Int!, $paused: Boolean, $playbackID: String) { reportPlayback(mediaID: \"media-alpha\", positionSeconds: $position, durationSeconds: 3600, paused: $paused, playbackID: $playbackID) { mediaID } }","variables":%s}`
-	for _, vars := range []string{`{"position":45,"paused":true,"playbackID":"play-1"}`, `{"position":50}`} {
+	report := `{"query":"mutation R($position: Int!, $paused: Boolean, $playbackID: String, $playedMS: Int) { reportPlayback(mediaID: \"media-alpha\", positionSeconds: $position, durationSeconds: 3600, paused: $paused, playbackID: $playbackID, playedMS: $playedMS) { mediaID } }","variables":%s}`
+	for _, vars := range []string{`{"position":45,"paused":true,"playbackID":"play-1","playedMS":44000}`, `{"position":50,"playedMS":null}`} {
 		if _, errs := post(t, handler, fmt.Sprintf(report, vars), authorizeViewer); len(errs) != 0 {
 			t.Fatalf("reportPlayback errors = %#v", errs)
 		}
@@ -197,6 +197,13 @@ func TestReportPlaybackRecordsPausedAndPlaybackID(t *testing.T) {
 	}
 	if paused["playbackId"] != "play-1" || playing["playbackId"] != nil {
 		t.Fatalf("progress payloads = %#v, want playback ID play-1 at 45, none at 50", payloads)
+	}
+	// The played count is recorded as sent; a null one is no count at all.
+	if paused["playedMs"] != float64(44000) || playing["playedMs"] != nil {
+		t.Fatalf("progress payloads = %#v, want playedMs 44000 at 45, none at 50", payloads)
+	}
+	if _, errs := post(t, handler, fmt.Sprintf(report, `{"position":55,"playedMS":-1}`), authorizeViewer); len(errs) == 0 {
+		t.Fatal("reportPlayback with a negative playedMS succeeded, want an error")
 	}
 	// The ID is checked exactly as sent: 64 characters counted in runes, and
 	// surrounding whitespace is refused rather than trimmed, so " x" and "x"

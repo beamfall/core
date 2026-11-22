@@ -4397,6 +4397,17 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 	if p, ok := req.Variables["paused"].(bool); ok {
 		paused = &p
 	}
+	// playedMS is the time, in milliseconds, the client has actually played
+	// under playbackID so far (not paused, seeking or buffering); play history
+	// credits its growth (CORE-1703). Optional: nil when omitted.
+	var playedMS *int64
+	if raw, ok := req.Variables["playedMS"]; ok && raw != nil {
+		v := int64Var(req, "playedMS")
+		if v < 0 {
+			return PlaybackReport{}, clientError("playedMS must not be negative")
+		}
+		playedMS = &v
+	}
 	// playbackID is the client's random ID for this play: new each time the
 	// player starts the item, kept across pauses and seeks. Play history
 	// groups a play by it (CORE-1703). Optional for older clients.
@@ -4434,6 +4445,7 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 		EventTimeMS:     eventTimeMS,
 		Paused:          paused,
 		PlaybackID:      playbackID,
+		PlayedMS:        playedMS,
 	}, finished)
 	if err != nil {
 		return PlaybackReport{}, err
@@ -4492,6 +4504,7 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		PlayMethod:      h.heldPlayMethod(scope.SessionID, media.ID),
 		PlaybackID:      report.PlaybackID,
 		Paused:          report.Paused,
+		PlayedMS:        report.PlayedMS,
 	}, finished, h.resumePolicy(ctx, media)); err != nil {
 		return store.PlaybackProgress{}, err
 	}

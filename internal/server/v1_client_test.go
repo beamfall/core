@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -201,7 +202,7 @@ func TestV1ReportProgressRecordsPositionAndWatched(t *testing.T) {
 // An ID with surrounding whitespace or over 64 characters is refused.
 func TestV1ReportProgressRecordsPlaybackID(t *testing.T) {
 	srv, st := newTestServerWithStore(t)
-	rec := v1DeviceRequest(t, srv, http.MethodPut, "/v1/media/media-alpha/progress", `{"positionSeconds":42,"eventTimeMS":1000,"playbackID":"play-v1","paused":true}`, "", authorizeViewer)
+	rec := v1DeviceRequest(t, srv, http.MethodPut, "/v1/media/media-alpha/progress", `{"positionSeconds":42,"eventTimeMS":1000,"playbackID":"play-v1","paused":true,"playedMS":41500}`, "", authorizeViewer)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("progress status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
@@ -216,11 +217,11 @@ func TestV1ReportProgressRecordsPlaybackID(t *testing.T) {
 			t.Fatal(err)
 		}
 		if payload["operation"] == "progress" {
-			found = payload["playbackId"] == "play-v1" && payload["paused"] == true
+			found = payload["playbackId"] == "play-v1" && payload["paused"] == true && payload["playedMs"] == float64(41500)
 		}
 	}
 	if !found {
-		t.Fatalf("progress events = %#v, want playbackId play-v1 and paused", export.EngagementEvents)
+		t.Fatalf("progress events = %#v, want playbackId play-v1, paused and playedMs 41500", export.EngagementEvents)
 	}
 	for _, id := range []string{" play-v1", strings.Repeat("x", 65)} {
 		body, _ := json.Marshal(map[string]any{"positionSeconds": 50, "playbackID": id})
@@ -240,7 +241,7 @@ func TestV1ReportProgressRejectsHiddenAndNegativeReports(t *testing.T) {
 	if _, ok, err := st.PlaybackProgressFor(ctx, "profile-default", "media-archive"); err != nil || ok {
 		t.Errorf("hidden media progress stored: ok=%v err=%v, want nothing written", ok, err)
 	}
-	for _, body := range []string{`{}`, `{"positionSeconds":null}`, `{"positionSeconds":-1}`, `{"positionSeconds":1,"durationSeconds":-1}`, `{"positionSeconds":1,"eventTimeMS":-1}`} {
+	for _, body := range []string{`{}`, `{"positionSeconds":null}`, `{"positionSeconds":-1}`, `{"positionSeconds":1,"durationSeconds":-1}`, `{"positionSeconds":1,"eventTimeMS":-1}`, `{"positionSeconds":1,"playedMS":-1}`} {
 		if rec := v1DeviceRequest(t, srv, http.MethodPut, "/v1/media/media-alpha/progress", body, "", authorizeViewer); rec.Code != http.StatusBadRequest {
 			t.Errorf("progress %s = %d, want 400: %s", body, rec.Code, rec.Body.String())
 		}
@@ -297,9 +298,9 @@ func TestV1PlaybackInfoKeepsCaptionStreamIndex(t *testing.T) {
 }
 
 // TestOpenAPIProgressRequestMatchesHandler pins the documented /v1
-// ProgressRequest schema to the fields the handler decodes, so a client
-// generated from the served contract can send each of them (Codex CORE-1703
-// r5: playbackID and paused were accepted but undocumented).
+// ProgressRequest schema to the fields the handler decodes: each property's
+// name and JSON type, and which ones are required, so a client generated from
+// the served contract sends what the handler reads (Codex CORE-1703 r5 and r6).
 func TestOpenAPIProgressRequestMatchesHandler(t *testing.T) {
 	raw, err := os.ReadFile("../../docs/api/openapi.json")
 	if err != nil {
@@ -308,24 +309,49 @@ func TestOpenAPIProgressRequestMatchesHandler(t *testing.T) {
 	var spec struct {
 		Components struct {
 			Schemas map[string]struct {
-				Properties map[string]json.RawMessage `json:"properties"`
+				Properties map[string]struct {
+					Type string `json:"type"`
+				} `json:"properties"`
+				Required []string `json:"required"`
 			} `json:"schemas"`
 		} `json:"components"`
 	}
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		t.Fatal(err)
 	}
-	var documented []string
-	for name := range spec.Components.Schemas["ProgressRequest"].Properties {
-		documented = append(documented, name)
+	schema := spec.Components.Schemas["ProgressRequest"]
+	documented := map[string]string{}
+	for name, property := range schema.Properties {
+		documented[name] = property.Type
 	}
-	var decoded []string
+	decoded := map[string]string{}
+	var required []string
 	for field := range reflect.TypeFor[v1ProgressRequest]().Fields() {
-		decoded = append(decoded, strings.Split(field.Tag.Get("json"), ",")[0])
+		name, options, _ := strings.Cut(field.Tag.Get("json"), ",")
+		kind := field.Type
+		if kind.Kind() == reflect.Pointer {
+			kind = kind.Elem()
+		}
+		switch kind.Kind() {
+		case reflect.Int, reflect.Int64:
+			decoded[name] = "integer"
+		case reflect.Bool:
+			decoded[name] = "boolean"
+		case reflect.String:
+			decoded[name] = "string"
+		default:
+			t.Fatalf("field %s has type %s, which this test does not map to JSON", field.Name, field.Type)
+		}
+		if !slices.Contains(strings.Split(options, ","), "omitempty") {
+			required = append(required, name)
+		}
 	}
-	slices.Sort(documented)
-	slices.Sort(decoded)
-	if !slices.Equal(documented, decoded) {
+	if !maps.Equal(documented, decoded) {
 		t.Fatalf("OpenAPI ProgressRequest properties = %v, handler decodes %v", documented, decoded)
+	}
+	slices.Sort(schema.Required)
+	slices.Sort(required)
+	if !slices.Equal(schema.Required, required) {
+		t.Fatalf("OpenAPI ProgressRequest required = %v, handler requires %v", schema.Required, required)
 	}
 }

@@ -23,11 +23,13 @@ server and never sent anywhere.
   time (each step counts for the report that ends it), read from the session's held decision on
   receipt. Reports without a playback ID (older clients, events written before this change) are
   grouped and credited by the CORE-1307 rule exactly.
-- Within a play, watched time is the position advance between consecutive reports, capped at the
-  time between them (the client clock difference when it ran forward, else the receipt
-  difference), and zero after a report that said paused. The web player now sends an optional
-  `paused` flag and `playbackID`, reports on resume, and queues reports in strict order; clients
-  that do not say paused read as playing. Apple and Android send the playback ID in follow-ups.
+- Within a play, watched time is the growth of the client's `playedMS`, the time its player has
+  actually played under the playback ID (not paused, seeking or stalled), taken in receipt order;
+  a play counts against the minimum span by that time. A play whose reports carry no `playedMS`
+  credits the position advance capped at the receipt difference, and nothing after a paused
+  report. The web player now sends optional `paused`, `playbackID` and `playedMS`, reports on
+  resume, and queues reports in strict order; clients that do not say paused read as playing.
+  Apple and Android send the playback ID and played time in follow-ups.
 - `playHistory` gains `mediaID`, `deviceID` and `playMethod` filters, and each play carries the
   device ID, device name, device client surface and play method.
 - `playStats` accepts a `since`/`until` range (up to 366 days) as well as a 7/30/90-day window,

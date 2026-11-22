@@ -37652,6 +37652,27 @@
                   "type": "integer"
                 },
                 "omitempty": true
+              },
+              {
+                "name": "playbackID",
+                "shape": {
+                  "type": "string"
+                },
+                "omitempty": true
+              },
+              {
+                "name": "paused",
+                "shape": {
+                  "type": "boolean"
+                },
+                "omitempty": true
+              },
+              {
+                "name": "playedMS",
+                "shape": {
+                  "type": "integer"
+                },
+                "omitempty": true
               }
             ]
           }
