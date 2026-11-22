@@ -7,6 +7,21 @@ import { ARCHIVED_VISUAL_PARITY_SHA256 } from "./required-visual-parity-states.m
 
 type ScreenshotSubject = Page | Locator;
 
+// The header's server build label (CORE-3055) names the commit and build date,
+// so every head renders it differently. Pixel comparisons leave it out; its
+// text is covered by the serverBuild unit tests. The page's content policy
+// refuses an injected stylesheet (the screenshot `style` option), so the label
+// is hidden through the CSSOM, which the policy allows.
+export async function hideBuildLabel(page: Page): Promise<void> {
+  await page
+    .locator(".bf-build-label")
+    .evaluateAll((labels) =>
+      labels.forEach((label) =>
+        (label as HTMLElement).style.setProperty("display", "none", "important"),
+      ),
+    );
+}
+
 type ApprovedDelta = {
   differentPixels: number;
   coordinateSHA256: string;
@@ -80,6 +95,7 @@ export async function expectArchivedVisualParity(
   ).toBe(false);
 
   const fileName = `${state}.png`;
+  await hideBuildLabel("page" in subject ? subject.page() : subject);
   const current = await subject.screenshot({
     animations: "disabled",
     caret: "hide",
