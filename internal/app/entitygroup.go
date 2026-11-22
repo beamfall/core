@@ -8,8 +8,8 @@ import (
 )
 
 // EntityGroupRule is a plugin wiring's declaration that one of its Entity
-// kinds splits into groups by a text field when listed among an Entity's
-// related Entities (CORE-2769). Groups lists the field's known values in
+// kinds splits by a text field read from its linked Media when listed among
+// an Entity's related Entities (CORE-2769). Groups lists the field's known values in
 // display order with their headings; core never interprets the values.
 type EntityGroupRule struct {
 	PluginID string

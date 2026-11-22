@@ -222,8 +222,18 @@ type musicHydrationMapper struct{}
 
 func (musicHydrationMapper) MarkerField() string { return music.HydratedField }
 
-// Version 2 derives the album grouping field from existing track tags.
-func (musicHydrationMapper) HydrationVersion() string { return "v2" }
+func (musicHydrationMapper) HydrationTag() app.HydrationTag {
+	return app.HydrationTag{
+		Field: music.ReleaseTypeField,
+		Keys: []string{
+			"releasetype", "musicbrainz_albumtype", "musicbrainz album type", "release type",
+			"compilation", "tcmp", "cpil", "album_artist", "albumartist",
+		},
+		Read: func(tags map[string]string) string {
+			return music.MapHydration(tags, "").ReleaseType
+		},
+	}
+}
 
 func (musicHydrationMapper) ExternalIDSchemes() []string {
 	return []string{music.SchemeMusicBrainzRecording}
@@ -324,13 +334,10 @@ func (musicHydrationMapper) MapHydration(tags map[string]string, path string) ap
 			albumArtist = credit.Artist
 		}
 		album := app.HydrationEntity{
-			Kind: "album", Title: hydration.Album, Scope: albumArtist, MergeTextField: music.ReleaseTypeField,
+			Kind: "album", Title: hydration.Album, Scope: albumArtist,
 		}
 		if !hydration.ReleaseDate.IsZero() {
 			album.Fields = append(album.Fields, store.EntityField{Name: "release-date", Type: store.EntityFieldDate, Date: hydration.ReleaseDate.UTC()})
-		}
-		if hydration.ReleaseType != "" {
-			album.Fields = append(album.Fields, store.EntityField{Name: music.ReleaseTypeField, Type: store.EntityFieldText, Text: hydration.ReleaseType})
 		}
 		if hydration.ReleaseMBID != "" {
 			album.Fields = append(album.Fields, store.EntityField{Name: "musicbrainz-release-id", Type: store.EntityFieldText, Text: hydration.ReleaseMBID})

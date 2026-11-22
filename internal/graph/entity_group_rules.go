@@ -2,15 +2,14 @@ package graph
 
 import (
 	"cmp"
-	"maps"
-	"math"
 	"slices"
 
 	"github.com/beamfall/core/internal/plugin"
+	"github.com/beamfall/core/internal/store"
 )
 
 // EntityGroupRule splits one Entity kind in entity(id)'s related groups by
-// the value of one of its text fields (CORE-2769): a plugin's wiring names
+// a text value derived from its linked Media (CORE-2769): a plugin's wiring names
 // the field and the values it knows, in display order, with their headings.
 // Options.EntityGroupRules holds them keyed by plugin then kind.
 // Core never interprets the values; a value the rule does not list still
@@ -45,7 +44,7 @@ func (r EntityGroupRule) rank(value string) int {
 			return i
 		}
 	}
-	return math.MaxInt
+	return len(r.Groups)
 }
 
 // sortNewestFirst orders a ruled kind's cards by year, newest first; cards
@@ -62,63 +61,31 @@ func sortNewestFirst(items []SourceItem) {
 	})
 }
 
-// relatedEntityPart is one store group of a kind, split by a rule's field
-// value, before mergeRuledParts folds a kind's parts into one wire group.
-type relatedEntityPart struct {
-	value string
-	rule  EntityGroupRule
-	info  RelatedEntityGroupInfo
-}
-
-// mergeRuledParts folds each ruled kind's parts (contiguous, as the store
-// returns a kind's parts together) into one group whose Sections follow rule
-// order — Entities without a value first, then the listed values, then
-// unlisted ones by value — so clients that ignore Sections still see one
-// group per kind. Unruled groups pass through unchanged.
-func mergeRuledParts(parts []relatedEntityPart) []RelatedEntityGroupInfo {
-	var out []RelatedEntityGroupInfo
-	for start := 0; start < len(parts); {
-		end := start + 1
-		for end < len(parts) && parts[end].info.Kind == parts[start].info.Kind {
-			end++
-		}
-		run := parts[start:end]
-		if !slices.ContainsFunc(run, func(part relatedEntityPart) bool { return part.rule.Field != "" }) {
-			for _, part := range parts[start:end] {
-				out = append(out, part.info)
-			}
-			start = end
-			continue
-		}
-		slices.SortStableFunc(run, func(a, b relatedEntityPart) int {
-			return cmp.Or(cmp.Compare(a.rule.rank(a.value), b.rule.rank(b.value)), cmp.Compare(a.value, b.value))
-		})
-		merged := run[0].info
-		merged.Items = nil
-		var sectionItems [][]SourceItem
-		byValue := map[string][]int{}
-		for _, part := range run {
-			label := part.rule.label(part.value)
-			matching := byValue[part.value]
-			match := slices.IndexFunc(matching, func(index int) bool {
-				return maps.Equal(merged.Sections[index].DisplayName, label)
-			})
-			if match >= 0 {
-				index := matching[match]
-				sectionItems[index] = append(sectionItems[index], part.info.Items...)
-				continue
-			}
-			byValue[part.value] = append(matching, len(merged.Sections))
-			merged.Sections = append(merged.Sections, RelatedEntitySectionInfo{Value: part.value, DisplayName: label})
-			sectionItems = append(sectionItems, part.info.Items)
-		}
-		for i, items := range sectionItems {
-			sortNewestFirst(items)
-			merged.Items = append(merged.Items, items...)
-			merged.Sections[i].Count = len(items)
-		}
-		out = append(out, merged)
-		start = end
+// apply orders one Library's cards by its rule and records each section's
+// span. An unruled group keeps the store's relation order.
+func (r EntityGroupRule) apply(group *RelatedEntityGroupInfo, values map[store.MediaID]string) {
+	if r.Field == "" {
+		return
 	}
-	return out
+	byValue := map[string][]SourceItem{}
+	for _, item := range group.Items {
+		value := values[store.MediaID(item.ID)]
+		byValue[value] = append(byValue[value], item)
+	}
+	keys := make([]string, 0, len(byValue))
+	for value := range byValue {
+		keys = append(keys, value)
+	}
+	slices.SortFunc(keys, func(a, b string) int {
+		return cmp.Or(cmp.Compare(r.rank(a), r.rank(b)), cmp.Compare(a, b))
+	})
+	group.Items = group.Items[:0]
+	for _, value := range keys {
+		items := byValue[value]
+		sortNewestFirst(items)
+		group.Items = append(group.Items, items...)
+		group.Sections = append(group.Sections, RelatedEntitySectionInfo{
+			Value: value, DisplayName: r.label(value), Count: len(items),
+		})
+	}
 }

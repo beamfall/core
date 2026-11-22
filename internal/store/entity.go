@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
 	"slices"
 	"sort"
@@ -98,22 +97,6 @@ type EntityRelation struct {
 	// upsert: only a new row takes Attributes. For writers that re-order or
 	// re-link a row without carrying its attributes (CORE-2913).
 	KeepAttributes bool
-	// HydrationText is an internal text-field contribution from the linked
-	// Media. It is persisted with the relation and omitted from its render attributes.
-	HydrationText *EntityTextContribution `json:"-"`
-}
-
-// EntityTextContribution is one Media's non-empty value for an Entity field.
-type EntityTextContribution struct {
-	Field string
-	Value string
-}
-
-// Hydrated rows wrap the render attributes so no plugin attribute name needs
-// to be reserved. Legacy rows remain plain maps of attribute names to strings.
-type hydratedRelationAttributes struct {
-	Attributes    map[string]string       `json:"attributes,omitempty"`
-	HydrationText *EntityTextContribution `json:"@hydration"`
 }
 
 // RelatedEntity pairs an Entity with the attributes of the relation row that
@@ -137,18 +120,6 @@ type EntityRelationRow struct {
 // values. Like ImportMediaFile this is a server-internal write path (scan,
 // scraper, identification) — reads are reveal-filtered, writes are not.
 func (s *Store) UpsertEntity(ctx context.Context, entity Entity) error {
-	return s.upsertEntity(ctx, entity, "", "")
-}
-
-// UpsertEntityMergingText resolves a shared text field from current Media
-// contributions, including the one being written. The lexically first
-// non-empty value wins. In the absence of contributions the stored value
-// is kept. Other fields follow UpsertEntity's replacement semantics.
-func (s *Store) UpsertEntityMergingText(ctx context.Context, entity Entity, field string, mediaID MediaID) error {
-	return s.upsertEntity(ctx, entity, field, mediaID)
-}
-
-func (s *Store) upsertEntity(ctx context.Context, entity Entity, mergeTextField string, mediaID MediaID) error {
 	// Authority face: an Entity is a catalog-identity row. An
 	// Attached node identifies locally (probe/parse — byte-local), but the
 	// row-authoring side-effect of Identification is main-only; it index-pushes.
@@ -211,12 +182,6 @@ func (s *Store) upsertEntity(ctx context.Context, entity Entity, mergeTextField 
 	`, entity.ID, entity.LibraryID, entity.Kind, entity.Title); err != nil {
 		return err
 	}
-	if mergeTextField != "" {
-		entity.Fields, err = mergeEntityTextField(ctx, tx, entity, mergeTextField, mediaID)
-		if err != nil {
-			return err
-		}
-	}
 	for _, table := range entityFieldTables {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE entity_id = ?`, entity.ID); err != nil {
 			return err
@@ -267,48 +232,6 @@ func (s *Store) upsertEntity(ctx context.Context, entity Entity, mergeTextField 
 		s.titleFolds.note(entity.LibraryID, entity.Kind, entity.ID, entity.Title)
 	}
 	return nil
-}
-
-func mergeEntityTextField(ctx context.Context, tx *sql.Tx, entity Entity, name string, mediaID MediaID) ([]EntityField, error) {
-	var winner sql.NullString
-	if err := tx.QueryRowContext(ctx, `
-		SELECT MIN(NULLIF(json_extract(r.attributes, '$."@hydration".Value'), '') COLLATE BINARY)
-		FROM entity_relation r
-		JOIN media m ON m.id = r.to_media_id
-		WHERE r.from_entity_id = ? AND m.id <> ? AND m.trashed_at_ms IS NULL
-		  AND json_extract(r.attributes, '$."@hydration".Field') = ?
-		  AND EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id AND f.missing_at_ms IS NULL)
-	`, entity.ID, mediaID, name).Scan(&winner); err != nil {
-		return nil, err
-	}
-	index := slices.IndexFunc(entity.Fields, func(field EntityField) bool { return field.Name == name })
-	if index >= 0 {
-		field := entity.Fields[index]
-		if field.Type != EntityFieldText {
-			return nil, fmt.Errorf("merge field %q must be text", name)
-		}
-		if field.Text != "" && (!winner.Valid || field.Text <= winner.String) {
-			return entity.Fields, nil
-		}
-	}
-	if !winner.Valid {
-		err := tx.QueryRowContext(ctx, `
-			SELECT value FROM entity_field_text WHERE entity_id = ? AND field = ? AND field_type = 'text'
-		`, entity.ID, name).Scan(&winner)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return nil, err
-		}
-	}
-	if !winner.Valid {
-		return entity.Fields, nil
-	}
-	fields := slices.Clone(entity.Fields)
-	field := EntityField{Name: name, Type: EntityFieldText, Text: winner.String}
-	if index < 0 {
-		return append(fields, field), nil
-	}
-	fields[index] = field
-	return fields, nil
 }
 
 // EnsureEntity creates an Entity when no row carries its ID and otherwise
@@ -706,14 +629,8 @@ func (s *Store) ReplaceEntityRelations(ctx context.Context, fromID EntityID, nam
 // entityRelationRowValues encodes a relation's attributes and sort order as
 // their nullable column values.
 func entityRelationRowValues(relation EntityRelation) (attributes, sortOrder any, err error) {
-	var values any
-	if relation.HydrationText != nil {
-		values = hydratedRelationAttributes{Attributes: relation.Attributes, HydrationText: relation.HydrationText}
-	} else if len(relation.Attributes) > 0 {
-		values = relation.Attributes
-	}
-	if values != nil {
-		data, err := json.Marshal(values)
+	if len(relation.Attributes) > 0 {
+		data, err := json.Marshal(relation.Attributes)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1381,13 +1298,16 @@ func decodeRelationAttributes(raw sql.NullString) (map[string]string, error) {
 		return nil, nil
 	}
 	attributes := map[string]string{}
-	data := []byte(raw.String)
-	if err := json.Unmarshal(data, &attributes); err != nil {
-		var wrapped hydratedRelationAttributes
-		if wrappedErr := json.Unmarshal(data, &wrapped); wrappedErr != nil || wrapped.HydrationText == nil {
+	if err := json.Unmarshal([]byte(raw.String), &attributes); err != nil {
+		// Older hydration wrote a tag alongside the render attributes.
+		var legacy struct {
+			Attributes map[string]string `json:"attributes"`
+			Tag        json.RawMessage   `json:"@hydration"`
+		}
+		if legacyErr := json.Unmarshal([]byte(raw.String), &legacy); legacyErr != nil || len(legacy.Tag) == 0 {
 			return nil, err
 		}
-		return wrapped.Attributes, nil
+		return legacy.Attributes, nil
 	}
 	return attributes, nil
 }

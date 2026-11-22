@@ -24,7 +24,7 @@ func (rootlessStore) LibraryRoots(context.Context, store.LibraryID) ([]string, e
 // database is not yet unsealed does.
 type sealedMediaStore struct{ *store.Store }
 
-func (sealedMediaStore) MediaNeedingHydration(context.Context, store.LibraryID, store.MediaClass, string, string, string, bool) (map[store.MediaID]struct{}, error) {
+func (sealedMediaStore) MediaLackingFieldInLibrary(context.Context, store.LibraryID, store.MediaClass, string) (map[store.MediaID]struct{}, error) {
 	return nil, store.ErrEncryptedLibraryDBDisabled
 }
 

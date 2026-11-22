@@ -85,7 +85,7 @@ export function groupHeading(group: RelatedEntityGroup, locale: string): string 
 export interface RelatedSection {
   key: string;
   title: string;
-  count: number;
+  count?: number;
   items: SourceItem[];
 }
 
@@ -99,24 +99,21 @@ export interface RelatedSection {
 export function groupSections(group: RelatedEntityGroup, locale: string): RelatedSection[] {
   const heading = groupHeading(group, locale);
   const whole = [
-    { key: group.kind, title: heading, count: group.items.length, items: group.items },
+    { key: `${group.kind}:${group.items[0]?.id ?? ""}`, title: heading, items: group.items },
   ];
   const sections = group.sections ?? [];
   const covered = sections.reduce((sum, section) => sum + Math.max(0, section.count), 0);
   if (sections.length === 0 || covered !== group.items.length) return whole;
   const out: RelatedSection[] = [];
-  const keys = new Set<string>();
   let start = 0;
   for (const section of sections) {
     if (section.count <= 0) continue;
-    const key = `${group.kind}:${section.value}`;
     out.push({
-      key: keys.has(key) ? `${key}:${group.items[start].id}` : key,
+      key: `${group.kind}:${group.items[start].id}`,
       title: section.value ? displayString(section.displayName, locale) || section.value : heading,
       count: section.count,
       items: group.items.slice(start, start + section.count),
     });
-    keys.add(key);
     start += section.count;
   }
   return out;

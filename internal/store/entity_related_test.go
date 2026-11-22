@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"reflect"
-	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -232,69 +231,69 @@ func TestRelatedEntityGroupsReadsTheEncryptedLibraryPlane(t *testing.T) {
 	}
 }
 
-// TestRelatedEntityGroupsBySplitsAKindByField pins CORE-2769: a kind named in
-// groupFields splits by its text field's value — valueless Entities first as
-// the kind's own group, then one group per value in item order — while other
-// kinds stay whole.
-func TestRelatedEntityGroupsBySplitsAKindByField(t *testing.T) {
-	st, lib, _ := relatedFixture(t)
-	ctx := context.Background()
-	server := LibraryFilter{Revealed: true, AllLibraries: true}
-	upsertRelatedEntity(t, st, "entity-maker", lib.ID, "maker", "Maker")
-	upsertRelatedEntity(t, st, "entity-place", lib.ID, "place", "Place")
-	for _, box := range []struct {
-		id    EntityID
-		title string
-		shape string
-	}{{"entity-box-a", "Alpha", "round"}, {"entity-box-b", "Beta", ""}, {"entity-box-c", "Gamma", "square"}, {"entity-box-d", "Delta", "round"}} {
-		entity := Entity{ID: box.id, LibraryID: lib.ID, Kind: "box", Title: box.title}
-		if box.shape != "" {
-			entity.Fields = []EntityField{{Name: "shape", Type: EntityFieldText, Text: box.shape}}
-		}
-		if err := st.UpsertEntity(ctx, entity); err != nil {
+func TestRelatedEntityGroupsDeriveValuesFromCurrentVisibleMedia(t *testing.T) {
+	st, lib, hidden := relatedFixture(t)
+	ctx := t.Context()
+	upsertRelatedEntity(t, st, "maker", lib.ID, "maker", "Maker")
+	for _, id := range []EntityID{"box-a", "box-b"} {
+		// A legacy stored Entity value must have no effect on grouping.
+		if err := st.UpsertEntity(ctx, Entity{ID: id, LibraryID: lib.ID, Kind: "box", Title: string(id),
+			Fields: []EntityField{{Name: "shape", Type: EntityFieldText, Text: "stale"}},
+		}); err != nil {
 			t.Fatal(err)
 		}
-		relateEntities(t, st, EntityRelation{FromEntityID: box.id, Name: "made-by", ToEntityID: "entity-maker"})
+		relateEntities(t, st, EntityRelation{FromEntityID: id, Name: "made-by", ToEntityID: "maker"})
 	}
-	relateEntities(t, st, EntityRelation{FromEntityID: "entity-maker", Name: "based-in", ToEntityID: "entity-place"})
+	setTag := func(id MediaID, value string) {
+		t.Helper()
+		if err := st.UpsertMediaFields(ctx, id, []MediaField{{Name: "shape", Type: EntityFieldText, Text: value}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add := func(id string, library LibraryID, tag string) MediaID {
+		t.Helper()
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: library, Path: "/shelf/" + id + ".flac", Title: id, Container: "flac", Codec: "flac",
+			Class: MediaClassAudio, ContentFingerprint: id, Year: 2005,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		setTag(media.ID, tag)
+		relateEntities(t, st, EntityRelation{FromEntityID: "box-a", Name: "contains", ToMediaID: media.ID})
+		return media.ID
+	}
+	add("hidden", hidden.ID, "alphabetically-first")
+	add("dated", lib.ID, "long")
+	moved := add("moved", lib.ID, "short")
+	alsoShort := add("also-short", lib.ID, "short")
+	relateEntities(t, st, EntityRelation{FromEntityID: "box-a", Name: "also-contains", ToMediaID: alsoShort})
 
-	groups, err := st.RelatedEntityGroupsBy(ctx, "entity-maker", server, func(_, kind string) string {
-		if kind == "box" {
-			return "shape"
+	check := func(a, b string) {
+		t.Helper()
+		groups, err := st.RelatedEntityGroupsBy(ctx, "maker", LibraryFilter{AllLibraries: true}, func(owner, kind string) string {
+			if owner == "shelf" && kind == "box" {
+				return "shape"
+			}
+			return ""
+		})
+		if err != nil || len(groups) != 1 || len(groups[0].Items) != 2 {
+			t.Fatalf("groups = %+v, err = %v", groups, err)
 		}
-		return ""
-	})
-	if err != nil {
+		g := groups[0]
+		if g.GroupValues["box-a"] != a || g.GroupValues["box-b"] != b || g.Items[0].Year != 2005 {
+			t.Fatalf("values = %v, first year = %d, want %q, %q and 2005", g.GroupValues, g.Items[0].Year, a, b)
+		}
+	}
+	check("short", "")
+	if err := st.ReplaceMediaRelations(ctx, moved, []EntityRelation{{
+		FromEntityID: "box-b", Name: "contains", ToMediaID: moved,
+	}}); err != nil {
 		t.Fatal(err)
 	}
-	type part struct {
-		kind, group string
-		ids         []MediaID
-	}
-	var got []part
-	for _, g := range groups {
-		p := part{kind: g.Kind, group: g.Group}
-		for _, item := range g.Items {
-			p.ids = append(p.ids, item.ID)
-		}
-		got = append(got, p)
-	}
-	want := []part{
-		{"box", "", []MediaID{"entity-box-b"}},
-		{"box", "round", []MediaID{"entity-box-a", "entity-box-d"}},
-		{"box", "square", []MediaID{"entity-box-c"}},
-		{"place", "", []MediaID{"entity-place"}},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("RelatedEntityGroupsBy = %+v, want %+v", got, want)
-	}
-	plain, err := st.RelatedEntityGroups(ctx, "entity-maker", server)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(plain) != 2 || len(plain[0].Items) != 4 || plain[0].Group != "" {
-		t.Fatalf("RelatedEntityGroups = %+v, want box whole then place", plain)
-	}
+	check("long", "short") // tie on box A, even with a duplicate link to the short item
+	setTag(moved, "")
+	check("long", "") // the moved track was box B's only vote
 }
 
 func TestRelatedEntityYearsExceedSQLiteVariableLimit(t *testing.T) {
@@ -327,77 +326,47 @@ func TestRelatedEntityYearsExceedSQLiteVariableLimit(t *testing.T) {
 	}
 }
 
-func TestUpsertEntityMergingTextIsIndependentOfTrackOrder(t *testing.T) {
+func TestHydrationTagCandidatesReuseOnlyPerMediaLegacyValues(t *testing.T) {
 	st, lib, _ := relatedFixture(t)
 	ctx := t.Context()
-	for _, tc := range []struct {
-		name   string
-		values []string
-		want   []string
-	}{
-		{"short first", []string{"short", "", "long", ""}, []string{"short", "short", "long", "long"}},
-		{"long first", []string{"long", "short", "", ""}, []string{"long", "long", "long", "long"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			entity := Entity{ID: EntityID("box-" + tc.name), LibraryID: lib.ID, Kind: "box", Title: "Box"}
-			var linked []MediaID
-			for i, value := range tc.values {
-				track := tc.name + "-" + strconv.Itoa(i)
-				media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
-					LibraryID: lib.ID, Path: "/shelf/" + track + ".flac", Title: track, Container: "flac", Codec: "flac",
-					Class: MediaClassAudio, ContentFingerprint: track,
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
-				entity.Fields = []EntityField{{Name: "other", Type: EntityFieldText, Text: "latest write"}}
-				if value != "" {
-					entity.Fields = append(entity.Fields, EntityField{Name: "shape", Type: EntityFieldText, Text: value})
-				}
-				if err := st.UpsertEntityMergingText(ctx, entity, "shape", media.ID); err != nil {
-					t.Fatal(err)
-				}
-				linked = append(linked, media.ID)
-				attributes := map[string]string{"@hydration": "render attribute"}
-				relation := EntityRelation{
-					FromEntityID: entity.ID, Name: "contains", ToMediaID: media.ID, Attributes: attributes,
-				}
-				if value != "" {
-					relation.HydrationText = &EntityTextContribution{Field: "shape", Value: value}
-				}
-				relateEntities(t, st, relation)
-				credits, err := st.EntitiesForMedia(ctx, media.ID, "contains", LibraryFilter{AllLibraries: true})
-				if err != nil || len(credits) != 1 || !reflect.DeepEqual(credits[0].Attributes, attributes) {
-					t.Fatalf("public relation attributes = %+v, err = %v", credits, err)
-				}
-				read, err := st.Entity(ctx, entity.ID, LibraryFilter{AllLibraries: true})
-				if err != nil {
-					t.Fatal(err)
-				}
-				want := []EntityField{
-					{Name: "other", Type: EntityFieldText, Text: "latest write"},
-					{Name: "shape", Type: EntityFieldText, Text: tc.want[i]},
-				}
-				if !reflect.DeepEqual(read.Fields, want) {
-					t.Fatalf("fields after %q = %+v, want %+v", value, read.Fields, want)
-				}
-			}
-
-			// Once the winning track is trashed, it no longer votes when
-			// another track hydrates, even with several live tracks.
-			winner := slices.Index(tc.values, "long")
-			filter := LibraryFilter{AllLibraries: true}
-			if err := st.TrashMedia(ctx, linked[winner], filter); err != nil {
-				t.Fatal(err)
-			}
-			entity.Fields = nil
-			if err := st.UpsertEntityMergingText(ctx, entity, "shape", linked[len(linked)-1]); err != nil {
-				t.Fatal(err)
-			}
-			read, err := st.Entity(ctx, entity.ID, filter)
-			if want := []EntityField{{Name: "shape", Type: EntityFieldText, Text: "short"}}; err != nil || !reflect.DeepEqual(read.Fields, want) {
-				t.Fatalf("fields without the trashed track = %+v, err = %v; want %+v", read.Fields, err, want)
-			}
+	entity := Entity{ID: "box", LibraryID: lib.ID, Kind: "box", Title: "Box",
+		Fields: []EntityField{{Name: "shape", Type: EntityFieldText, Text: "shared-and-stale"}},
+	}
+	if err := st.UpsertEntity(ctx, entity); err != nil {
+		t.Fatal(err)
+	}
+	results := map[MediaID]string{}
+	for _, name := range []string{"with-legacy", "without-legacy"} {
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: lib.ID, Path: "/shelf/" + name + ".flac", Title: name, Container: "flac", Codec: "flac",
+			Class: MediaClassAudio, ContentFingerprint: name,
 		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		relateEntities(t, st, EntityRelation{FromEntityID: entity.ID, Name: "contains", ToMediaID: media.ID})
+		results[media.ID] = ""
+		if name == "with-legacy" {
+			legacy := `{"attributes":{"label":"legacy label"},"@hydration":{"Field":"shape","Value":"oval"}}`
+			if _, err := st.catalogW.ExecContext(ctx, "UPDATE entity_relation SET attributes = ? WHERE to_media_id = ?", legacy, media.ID); err != nil {
+				t.Fatal(err)
+			}
+			results[media.ID] = "oval"
+			links, err := st.EntitiesForMedia(ctx, media.ID, "contains", LibraryFilter{AllLibraries: true})
+			if err != nil || len(links) != 1 || !reflect.DeepEqual(links[0].Attributes, map[string]string{"label": "legacy label"}) {
+				t.Fatalf("legacy render attributes: %v, err = %v", links, err)
+			}
+		}
+	}
+	candidates, err := st.HydrationTagCandidates(ctx, lib.ID, []MediaClass{MediaClassAudio}, "shape")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[MediaID]string{}
+	for _, candidate := range candidates {
+		got[candidate.MediaID] = candidate.PersistedValue
+	}
+	if !reflect.DeepEqual(got, results) {
+		t.Fatalf("per-Media candidates = %v, want %v", got, results)
 	}
 }

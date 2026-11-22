@@ -5190,7 +5190,6 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 	if err != nil {
 		return EntityDetailInfo{}, err
 	}
-	var parts []relatedEntityPart
 	for _, group := range groups {
 		// Related cards display and sort by their earliest linked Media year.
 		if err := h.annotateCardsForProfile(ctx, scope.ProfileID, filter, group.Items, false); err != nil {
@@ -5202,16 +5201,16 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 		}
 		spec := h.entityKindSpec(ctx, group.LibraryID, group.Kind)
 		rule := h.entityGroupRules[plugin.ID(group.PluginID)][group.Kind]
-		part := relatedEntityPart{value: group.Group, rule: rule, info: RelatedEntityGroupInfo{
+		related := RelatedEntityGroupInfo{
 			Kind:                  group.Kind,
 			KindDisplayName:       spec.DisplayName,
 			KindPluralDisplayName: spec.PluralDisplayName,
 			Archetype:             spec.Archetype,
 			Items:                 items,
-		}}
-		parts = append(parts, part)
+		}
+		rule.apply(&related, group.GroupValues)
+		info.RelatedEntities = append(info.RelatedEntities, related)
 	}
-	info.RelatedEntities = mergeRuledParts(parts)
 	return info, nil
 }
 

@@ -117,9 +117,6 @@ type HydrationEntity struct {
 	// mapper that sets it must declare the kind through HydrationScopeMapper.
 	Scope  string
 	Fields []store.EntityField
-	// MergeTextField retains the lexically first non-empty value for a
-	// declared text field contributed by multiple Media.
-	MergeTextField string `json:",omitempty"`
 }
 
 // HydrationEntityScope declares that Entities of Kind are scoped, and that the
@@ -158,6 +155,20 @@ type HydrationTitleFoldMapper interface {
 // (CORE-2554). A mapper without it may write any declared Media field.
 type HydrationMediaFieldsMapper interface {
 	HydratedMediaFields() []string
+}
+
+// HydrationTag is an independent text field on Media, supplied by compiled
+// plugin glue. Read selects and normalizes the tag from container metadata.
+type HydrationTag struct {
+	Field string
+	Keys  []string
+	Read  func(map[string]string) string
+}
+
+// HydrationTagMapper opts into a field that can be backfilled independently
+// of the mapper's Entity and relation plan.
+type HydrationTagMapper interface {
+	HydrationTag() HydrationTag
 }
 
 // HydrationRelation targets the current Media when ToEntity is nil.

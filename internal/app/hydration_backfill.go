@@ -18,17 +18,16 @@ type hydrationBackfillStore interface {
 	Libraries(ctx context.Context, filter store.LibraryFilter) ([]store.Library, error)
 	HydrationBackfillChecked(ctx context.Context, libraryID store.LibraryID, markerField string) (bool, error)
 	MarkHydrationBackfillChecked(ctx context.Context, libraryID store.LibraryID, markerField string, now time.Time) error
-	MediaNeedingHydration(ctx context.Context, libraryID store.LibraryID, class store.MediaClass, fieldName, fingerprintField, fingerprintPrefix string, includeUnmarked bool) (map[store.MediaID]struct{}, error)
+	MediaLackingFieldInLibrary(ctx context.Context, libraryID store.LibraryID, class store.MediaClass, fieldName string) (map[store.MediaID]struct{}, error)
 	LibraryRoots(ctx context.Context, libraryID store.LibraryID) ([]string, error)
 	EnqueueJob(ctx context.Context, job store.Job) (store.Job, error)
 }
 
 // queueHydrationBackfills checks each Library of a plugin with a metadata
-// hydrator once per marker field and mapper version. An ordinary scan never hydrates an
+// hydrator once per marker field. An ordinary scan never hydrates an
 // unchanged file, so Media imported before the mapper existed would otherwise
 // never be hydrated: when any Media of a hydrated class lacks the marker, a
-// backfill scan is queued for every root of the Library. A mapper version
-// also selects Media with older hydration fingerprints. The check is
+// backfill scan is queued for every root of the Library. The check is
 // recorded after the scans are queued, so a crash in between checks again on
 // the next start, and a file the backfill cannot hydrate (an unreadable probe)
 // does not queue another scan on every start. A failure only delays the check
@@ -57,11 +56,7 @@ func queueHydrationBackfills(ctx context.Context, st hydrationBackfillStore, hyd
 		if capability.MarkerField == "" {
 			continue
 		}
-		checkKey := capability.MarkerField
-		if capability.FingerprintPrefix != "" {
-			checkKey += "/" + capability.FingerprintPrefix
-		}
-		checked, err := st.HydrationBackfillChecked(ctx, library.ID, checkKey)
+		checked, err := st.HydrationBackfillChecked(ctx, library.ID, capability.MarkerField)
 		switch {
 		case errors.Is(err, serverrole.ErrAttachedAuthorityRefused):
 			return
@@ -71,7 +66,7 @@ func queueHydrationBackfills(ctx context.Context, st hydrationBackfillStore, hyd
 		case checked:
 			continue
 		}
-		lacking, err := mediaNeedingHydration(ctx, st, library.ID, capability)
+		lacking, err := mediaLackingMarker(ctx, st, library.ID, capability)
 		if err != nil {
 			logger.Warn("hydration backfill check failed; retrying next start", "library", library.ID, "error", err)
 			continue
@@ -83,20 +78,20 @@ func queueHydrationBackfills(ctx context.Context, st hydrationBackfillStore, hyd
 				logger.Warn("hydration backfill scan not queued; retrying next start", "library", library.ID, "error", err)
 				continue
 			}
-			logger.Info("hydration backfill queued", "library", library.ID, "plugin", *library.PluginID)
+			logger.Info("hydration backfill queued for media imported before the plugin's mapper", "library", library.ID, "plugin", *library.PluginID)
 		}
-		if err := st.MarkHydrationBackfillChecked(ctx, library.ID, checkKey, time.Now().UTC()); err != nil {
+		if err := st.MarkHydrationBackfillChecked(ctx, library.ID, capability.MarkerField, time.Now().UTC()); err != nil {
 			logger.Warn("hydration backfill check not recorded", "library", library.ID, "error", err)
 		}
 	}
 }
 
-func mediaNeedingHydration(ctx context.Context, st hydrationBackfillStore, libraryID store.LibraryID, capability scanpkg.MetadataHydrationCapability) (bool, error) {
+func mediaLackingMarker(ctx context.Context, st hydrationBackfillStore, libraryID store.LibraryID, capability scanpkg.MetadataHydrationCapability) (bool, error) {
 	for _, class := range capability.MediaClasses {
 		if class == "" {
 			continue
 		}
-		lacking, err := st.MediaNeedingHydration(ctx, libraryID, class, capability.MarkerField, capability.FingerprintField, capability.FingerprintPrefix, true)
+		lacking, err := st.MediaLackingFieldInLibrary(ctx, libraryID, class, capability.MarkerField)
 		if err != nil {
 			return false, err
 		}

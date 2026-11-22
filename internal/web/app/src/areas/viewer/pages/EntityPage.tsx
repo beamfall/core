@@ -789,7 +789,7 @@ export function EntityPage() {
 
           {groups.other.map((group) => (
             <RelatedGroup
-              key={group.kind}
+              key={`${group.kind}:${group.items[0]?.id ?? ""}`}
               title={groupHeading(group, displayLocale)}
               items={group.items}
             />

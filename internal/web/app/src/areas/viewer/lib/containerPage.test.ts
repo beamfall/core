@@ -283,9 +283,7 @@ describe("groupSections (CORE-2769)", () => {
   const base = { kind: "record", kindPluralDisplayName: { en: "Records" }, items };
 
   it("lists a group without sections as one run under its heading", () => {
-    expect(groupSections(base, "en")).toEqual([
-      { key: "record", title: "Records", count: 4, items },
-    ]);
+    expect(groupSections(base, "en")).toEqual([{ key: "record:a", title: "Records", items }]);
   });
 
   it("splits a group into its sections in order, titled by display name, then value", () => {
@@ -301,9 +299,9 @@ describe("groupSections (CORE-2769)", () => {
       "fr",
     );
     expect(sections.map((s) => [s.key, s.title, s.count, s.items.map((i) => i.id)])).toEqual([
-      ["record:", "Records", 1, ["a"]],
-      ["record:long", "Longs", 2, ["b", "c"]],
-      ["record:odd", "odd", 1, ["d"]],
+      ["record:a", "Records", 1, ["a"]],
+      ["record:b", "Longs", 2, ["b", "c"]],
+      ["record:d", "odd", 1, ["d"]],
     ]);
   });
 

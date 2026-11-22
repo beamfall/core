@@ -526,13 +526,6 @@ func (s *Store) mediaFieldsSQL(ctx context.Context, id MediaID) ([]MediaField, e
 // hydrated). fieldName is a parameter, not a hardcoded marker, so the store
 // stays free of music vocabulary (invariant 1).
 func (s *Store) MediaLackingFieldInLibrary(ctx context.Context, libraryID LibraryID, class MediaClass, fieldName string) (map[MediaID]struct{}, error) {
-	return s.MediaNeedingHydration(ctx, libraryID, class, fieldName, "", "", true)
-}
-
-// MediaNeedingHydration also selects files with an outdated or missing
-// fingerprint on a previously marked Media when a mapper versions its
-// hydration. Explicit backfill also selects unmarked Media.
-func (s *Store) MediaNeedingHydration(ctx context.Context, libraryID LibraryID, class MediaClass, fieldName, fingerprintField, fingerprintPrefix string, includeUnmarked bool) (map[MediaID]struct{}, error) {
 	if libraryID == "" {
 		return nil, errors.New("library ID is required")
 	}
@@ -558,14 +551,11 @@ func (s *Store) MediaNeedingHydration(ctx context.Context, libraryID LibraryID, 
 		    SELECT 1 FROM media_file f
 		    WHERE f.media_id = m.id AND f.missing_at_ms IS NULL
 		  )
-		  AND CASE WHEN EXISTS (
+		  AND NOT EXISTS (
 		    SELECT 1 FROM media_field_int i
 		    WHERE i.media_id = m.id AND i.field = ?
-		  ) THEN (? <> '' AND NOT EXISTS (
-		    SELECT 1 FROM media_field_text f
-		    WHERE f.media_id = m.id AND f.field = ? AND substr(f.value, 1, length(?)) = ?
-		  )) ELSE ? END
-	`, libraryID, class, fieldName, fingerprintPrefix, fingerprintField, fingerprintPrefix, fingerprintPrefix, includeUnmarked)
+		  )
+	`, libraryID, class, fieldName)
 	if err != nil {
 		return nil, err
 	}

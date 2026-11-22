@@ -109,15 +109,13 @@ type LocalEntity struct {
 type MetadataHydrationCapability struct {
 	MediaClasses []store.MediaClass
 	MarkerField  string
-	// A versioned fingerprint reopens Media hydrated by an older mapper.
-	FingerprintField  string
-	FingerprintPrefix string
 	// MediaFieldsBounded is true when MediaFields names every text, number
 	// or date Media field the hydrator writes (at the scan tier); otherwise
 	// it may write any. The scan uses it to tell which older scan-tier values
 	// the filename parser alone wrote (CORE-2554).
 	MediaFieldsBounded bool
 	MediaFields        []string
+	TrackFilePath      bool // include a library-scoped file path witness on full probes
 }
 
 // Supports reports whether this capability accepts class.
@@ -141,7 +139,9 @@ type MetadataHydrationInput struct {
 	Class              store.MediaClass
 	Path               string
 	Metadata           map[string]string
+	MetadataProbed     bool // a successful probe, even if the file had no tags
 	ContentFingerprint string
+	FilePathChanged    bool // this path is new or the store invalidated its path facts
 }
 
 // MetadataHydrator is scan's consumer-side local metadata hook. A dedicated

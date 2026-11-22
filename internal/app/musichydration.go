@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,7 +31,6 @@ type hydrationStore interface {
 	MediaFields(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaField, error)
 	MediaFieldLocks(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFieldLock, error)
 	UpsertEntity(ctx context.Context, entity store.Entity) error
-	UpsertEntityMergingText(ctx context.Context, entity store.Entity, field string, mediaID store.MediaID) error
 	UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error
 	ReplaceMediaRelations(ctx context.Context, mediaID store.MediaID, relations []store.EntityRelation) error
 	AddMediaExternalID(ctx context.Context, mediaID store.MediaID, scheme string, value string) error
@@ -63,12 +63,6 @@ type HydrationRehydrator interface {
 	DecideHydrationWrite(recordedFingerprint, currentFingerprint string) HydrationWrite
 }
 
-// VersionedHydrationRehydrator can reopen files hydrated by an older version
-// of a mapper even when their bytes have not changed.
-type VersionedHydrationRehydrator interface {
-	HydrationVersion() string
-}
-
 // hydrationAdapter validates a plugin-supplied write plan against the active
 // bundle before adapting it to scan's local-metadata seam.
 type hydrationAdapter struct {
@@ -82,6 +76,7 @@ type hydrationAdapter struct {
 	// names them (HydrationMediaFieldsMapper); nil allows any declared field.
 	hydratedMediaFields map[string]bool
 
+	tag                   HydrationTag
 	declaredMediaFields   map[string]string
 	declaredEntityFields  map[string]map[string]string
 	declaredRelationSpecs map[string]plugin.RelationSpec
@@ -140,13 +135,14 @@ func newHydrationAdapters(registry *plugin.Registry, st hydrationStore, mappers 
 		if rehydrator, ok := mapper.(HydrationRehydrator); ok {
 			adapter.rehydrator = rehydrator
 			adapter.fingerprintField = rehydrator.FingerprintField()
-			if versioned, ok := mapper.(VersionedHydrationRehydrator); ok && versioned.HydrationVersion() != "" {
-				adapter.capability.FingerprintField = adapter.fingerprintField
-				adapter.capability.FingerprintPrefix = versioned.HydrationVersion() + ":"
-			}
+		}
+		if tagged, ok := mapper.(HydrationTagMapper); ok {
+			adapter.tag = tagged.HydrationTag()
+			adapter.capability.TrackFilePath = adapter.tag.Field != ""
 		}
 		if bounded, ok := mapper.(HydrationMediaFieldsMapper); ok {
-			adapter.boundMediaFields(bounded.HydratedMediaFields())
+			fields := slices.Clone(bounded.HydratedMediaFields())
+			adapter.boundMediaFields(append(fields, adapter.tag.Field))
 		}
 		out[pluginID] = adapter
 	}
@@ -244,15 +240,20 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if err != nil {
 		return err
 	}
-	if key != "" {
-		key = a.capability.FingerprintPrefix + key
-	}
-	write, err := a.decideWrite(ctx, input.MediaID, key)
+	write, err := a.decideWrite(ctx, input, key)
 	if err != nil {
 		return err
 	}
+	// Keep the standalone tag out of the plan digest so adding it does
+	// not replay an already hydrated Entity plan.
+	tag := HydrationPlan{}
+	if input.MetadataProbed && a.tag.Field != "" {
+		tag.MediaFields = []store.MediaField{{
+			Name: a.tag.Field, Type: store.EntityFieldText, Text: a.tag.Read(input.Metadata),
+		}}
+	}
 	if write == HydrationWriteSkip {
-		return nil
+		return a.writeMediaFields(ctx, input.MediaID, tag, "", HydrationWriteFresh, nil)
 	}
 	var locked map[string]bool
 	if write == HydrationWriteReplace {
@@ -264,7 +265,7 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 			write = HydrationWriteFresh
 		}
 	}
-	if plan.Empty() {
+	if plan.Empty() && tag.Empty() {
 		return nil
 	}
 	marker := a.capability.MarkerField
@@ -272,6 +273,7 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if err != nil {
 		return err
 	}
+	validated.MediaFields = append(validated.MediaFields, tag.MediaFields...)
 	if validated.Empty() {
 		return nil
 	}
@@ -335,14 +337,14 @@ func (a *hydrationAdapter) recordFingerprint(ctx context.Context, mediaID store.
 // decideWrite asks an opted-in mapper how to land this hydration, from the
 // hydration key recorded at the last hydration and the current one.
 // A mapper without a fingerprint field always gets the absent-only write.
-func (a *hydrationAdapter) decideWrite(ctx context.Context, mediaID store.MediaID, key string) (HydrationWrite, error) {
+func (a *hydrationAdapter) decideWrite(ctx context.Context, input scanpkg.MetadataHydrationInput, key string) (HydrationWrite, error) {
 	if a.rehydrator == nil {
 		return HydrationWriteFresh, nil
 	}
 	if declaredType, ok := a.declaredMediaFields[a.fingerprintField]; a.fingerprintField == "" || !ok || declaredType != string(store.EntityFieldText) {
 		return HydrationWriteFresh, fmt.Errorf("hydration fingerprint field %q is not a declared text field", a.fingerprintField)
 	}
-	fields, err := a.store.MediaFields(ctx, mediaID, metadataLibraryFilter)
+	fields, err := a.store.MediaFields(ctx, input.MediaID, metadataLibraryFilter)
 	if err != nil {
 		return HydrationWriteFresh, err
 	}
@@ -351,6 +353,17 @@ func (a *hydrationAdapter) decideWrite(ctx context.Context, mediaID store.MediaI
 		if field.Name == a.fingerprintField {
 			recorded = field.Text
 			break
+		}
+	}
+	// The old v2 plan included the release value. For tagged mappers
+	// an unchanged file at a known path needs only the standalone tag.
+	// A new path can change derived facts even when the bytes match.
+	if a.tag.Field != "" && !input.FilePathChanged && input.ContentFingerprint != "" {
+		if legacy, ok := strings.CutPrefix(recorded, "v2:"); ok {
+			content, _, _ := strings.Cut(legacy, ";plan=")
+			if content == input.ContentFingerprint {
+				return HydrationWriteSkip, nil
+			}
 		}
 	}
 	return a.rehydrator.DecideHydrationWrite(recorded, key), nil
@@ -546,9 +559,6 @@ func (a *hydrationAdapter) validateEntity(entity HydrationEntity) error {
 			return fmt.Errorf("hydration scope relation %q from entity kind %q is not a declared entity relation", relation, entity.Kind)
 		}
 	}
-	if entity.MergeTextField != "" && declared[entity.MergeTextField] != string(store.EntityFieldText) {
-		return fmt.Errorf("hydration merge field %q on kind %q must be declared as text", entity.MergeTextField, entity.Kind)
-	}
 	for _, field := range entity.Fields {
 		declaredType, ok := declared[field.Name]
 		if !ok {
@@ -694,7 +704,7 @@ func (a *hydrationAdapter) resolveRelation(ctx context.Context, mediaID store.Me
 			return store.EntityRelation{}, false, nil
 		}
 	}
-	fromID, err := a.upsertEntity(ctx, libraryID, mapped.From, resolved, mediaID)
+	fromID, err := a.upsertEntity(ctx, libraryID, mapped.From, resolved)
 	if err != nil {
 		return store.EntityRelation{}, false, err
 	}
@@ -707,40 +717,29 @@ func (a *hydrationAdapter) resolveRelation(ctx context.Context, mediaID store.Me
 		SortOrder:    mapped.SortOrder,
 	}
 	if mapped.ToEntity != nil {
-		toID, err := a.upsertEntity(ctx, libraryID, *mapped.ToEntity, resolved, mediaID)
+		toID, err := a.upsertEntity(ctx, libraryID, *mapped.ToEntity, resolved)
 		if err != nil {
 			return store.EntityRelation{}, false, err
 		}
 		relation.ToMediaID = ""
 		relation.ToEntityID = toID
 	}
-	if relation.ToMediaID != "" && mapped.From.MergeTextField != "" {
-		for _, field := range mapped.From.Fields {
-			if field.Name == mapped.From.MergeTextField && field.Text != "" {
-				relation.HydrationText = &store.EntityTextContribution{Field: field.Name, Value: field.Text}
-				break
-			}
-		}
-	}
 	return relation, true, nil
 }
 
-func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity, resolved map[string]store.EntityID, mediaID store.MediaID) (store.EntityID, error) {
+func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity, resolved map[string]store.EntityID) (store.EntityID, error) {
 	id, err := a.entityID(ctx, libraryID, mapped, resolved)
 	if err != nil {
 		return "", err
 	}
-	entity := store.Entity{
+	err = a.store.UpsertEntity(ctx, store.Entity{
 		ID:        id,
 		LibraryID: libraryID,
 		Kind:      mapped.Kind,
 		Title:     mapped.Title,
 		Fields:    mapped.Fields,
-	}
-	if mapped.MergeTextField != "" {
-		return id, a.store.UpsertEntityMergingText(ctx, entity, mapped.MergeTextField, mediaID)
-	}
-	return id, a.store.UpsertEntity(ctx, entity)
+	})
+	return id, err
 }
 
 // entityID resolves the id a mapped Entity is written under. A scoped Entity

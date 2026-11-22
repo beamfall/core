@@ -1217,7 +1217,7 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
     expect(screen.queryByRole("status", { name: "player" })).toBeNull();
   });
 
-  it("heads each section of a split container kind with its count (CORE-2769)", async () => {
+  it("gives ruled sections counts and keeps unruled related cards in order (CORE-2769)", async () => {
     vi.mocked(fetchEntity).mockResolvedValue({
       ...record,
       archetype: "person",
@@ -1236,6 +1236,15 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
             { value: "short", displayName: { en: "Short Players" }, count: 1 },
           ],
         },
+        {
+          kind: "release",
+          archetype: "container",
+          kindPluralDisplayName: { en: "Other Releases" },
+          items: [
+            { id: "r4", kind: "entity", title: "Z First", year: 1990 },
+            { id: "r5", kind: "entity", title: "A Second", year: 2022 },
+          ],
+        },
       ],
     } as EntityInfo);
     renderEntity();
@@ -1246,6 +1255,10 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
     expect(within(long.closest("section") as HTMLElement).getAllByRole("listitem")).toHaveLength(2);
     expect(screen.getByRole("heading", { name: "Short Players 1" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /^Releases/ })).toBeNull();
+    const unruled = screen.getByRole("heading", { name: "Other Releases" });
+    const links = within(unruled.closest("section") as HTMLElement).getAllByRole("link");
+    expect(links[0]).toHaveAccessibleName(/^Z First/);
+    expect(links[1]).toHaveAccessibleName(/^A Second/);
   });
 
   it("lists a video container's own Media as detail rows over its Media-only Layout (CORE-2510)", async () => {
@@ -1363,7 +1376,7 @@ describe("EntityPage hero (CORE-2441)", () => {
     expect(screen.getByText("Channel")).toBeInTheDocument();
     // Child containers carry their item counts on the card.
     expect(screen.getByText("Part one")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Parts 2" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Parts" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "People" })).toBeInTheDocument();
   });
 

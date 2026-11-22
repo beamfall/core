@@ -704,6 +704,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		}
 		return result, err
 	})
+	jobRegistry.Register(hydrationTagBackfillKind, governedSweep(resourceGovernor, logger, hydrationTagBackfillHandler(st, metadataHydrators, ffmpegRunner, logger)))
 	jobRegistry.Register(retentionSweepJobKind, retentionSweepHandler(st, artworkService, logger))
 	// Subtitle offset-nudge sweep. Nudge rows are keyed on a
 	// subtitle track's byte fingerprint, so a row whose track no longer exists can
@@ -1117,6 +1118,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	backfillHydration := func(ctx context.Context) {
 		reclassifyAttachedPictureAudio(ctx, st, ffmpegRunner, logger)
 		queueHydrationBackfills(ctx, st, metadataHydrators, logger)
+		queueHydrationTagBackfills(ctx, st, metadataHydrators, jobWake, logger)
 	}
 	backfillHydration(ctx)
 	// Device push-token registration: the persisting

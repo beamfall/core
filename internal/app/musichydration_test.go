@@ -1320,7 +1320,11 @@ type rehydrationScan struct {
 
 func newRehydrationScan(t *testing.T) *rehydrationScan {
 	t.Helper()
-	st := storetest.Open(t)
+	return newRehydrationScanWithStore(t, storetest.Open(t))
+}
+
+func newRehydrationScanWithStore(t *testing.T, st *store.Store) *rehydrationScan {
+	t.Helper()
 	library, err := st.CreateLibrary(context.Background(), "Library", false, testHydrationPluginID, "profile-default")
 	if err != nil {
 		t.Fatal(err)
@@ -1376,120 +1380,102 @@ func (r *rehydrationScan) field(name string) string {
 	return ""
 }
 
-type versionedFixtureHydration struct{ rehydratingTestMapper }
+type taggedFixtureHydration struct{ rehydratingTestMapper }
 
-func (versionedFixtureHydration) HydrationVersion() string { return "v2" }
-
-func (m versionedFixtureHydration) MapHydration(tags map[string]string, path string) HydrationPlan {
-	plan := m.rehydratingTestMapper.MapHydration(tags, path)
-	plan.Relations = append(plan.Relations, HydrationRelation{
-		From: HydrationEntity{
-			Kind: "album", Title: tags["album"], MergeTextField: "format",
-			Fields: []store.EntityField{{Name: "format", Type: store.EntityFieldText, Text: tags["RELEASETYPE"]}},
-		},
-		Name: "album-track", Cardinality: "one",
-	})
-	return plan
+func (taggedFixtureHydration) HydrationTag() HydrationTag {
+	return HydrationTag{Field: "format", Keys: []string{"releasetype"}, Read: func(tags map[string]string) string { return tags["releasetype"] }}
 }
 
-type failingHydrationProbe struct{ calls int }
-
-func (p *failingHydrationProbe) Probe(context.Context, string) (ffmpeg.Probe, error) {
-	p.calls++
-	return ffmpeg.Probe{}, errors.New("transient probe failure")
+type backfillTagProbe struct {
+	paths []string
+	keys  []string
+	tags  map[string]string
+	err   error
 }
 
-func TestBackfillRehydratesAlreadyMarkedTrackAfterMapperUpgrade(t *testing.T) {
+func (p *backfillTagProbe) ProbeMetadataTags(_ context.Context, path string, keys []string) (map[string]string, error) {
+	p.paths = append(p.paths, path)
+	p.keys = keys
+	return p.tags, p.err
+}
+
+func TestTagBackfillLeavesArtistFieldsIntact(t *testing.T) {
 	r := newRehydrationScan(t)
 	ctx := t.Context()
 	r.write("previously hydrated audio bytes", 3*time.Hour, map[string]string{
-		"title": "Track", "album": "Release", "RELEASETYPE": "ep",
+		"title": "Track", "contributors": "Artist",
 	})
 	r.scan()
-	mediaID := r.mediaID
-	legacyFingerprint := r.field(testHydrationFingerprintField)
-	if legacyFingerprint == "" {
-		t.Fatal("legacy scan did not record a fingerprint")
-	}
-	if stale, err := r.st.MediaLackingFieldInLibrary(ctx, r.library, store.MediaClassAudio, testHydrationMarkerField); err != nil || len(stale) != 0 {
-		t.Fatalf("legacy scan left unmarked Media %v, err = %v", stale, err)
-	}
-	if err := r.st.SetLibraryRoots(ctx, r.library, []string{r.root}); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.st.MarkHydrationBackfillChecked(ctx, r.library, testHydrationMarkerField, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	albumID := identify.EntityIDForName(r.library, "album", "Release")
-	if err := r.st.UpsertEntity(ctx, store.Entity{ID: albumID, LibraryID: r.library, Kind: "album", Title: "Release"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.st.UpsertEntityRelation(ctx, store.EntityRelation{
-		FromEntityID: albumID, Name: "album-track", ToMediaID: mediaID,
+	fingerprint := r.field(testHydrationFingerprintField)
+	artistID := identify.EntityIDForName(r.library, "artist", "Artist")
+	fields := []store.EntityField{{Name: "biography", Type: store.EntityFieldText, Text: "Curated artist data"}}
+	if err := r.st.UpsertEntity(ctx, store.Entity{
+		ID: artistID, LibraryID: r.library, Kind: "artist", Title: "Artist", Fields: fields,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	bundle := rehydrationBundle()
-	for i := range bundle.EntityKinds {
-		if bundle.EntityKinds[i].Name == "album" {
-			bundle.EntityKinds[i].Fields = append(bundle.EntityKinds[i].Fields, plugin.FieldSpec{
-				Name: "format", Type: "text", Label: plugin.L("Format"),
-			})
-		}
-	}
-	registry, err := plugin.NewRegistry([]plugin.Bundle{bundle})
+
+	registry, err := plugin.NewRegistry([]plugin.Bundle{rehydrationBundle()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	hydrators := newHydrationAdapters(registry, r.counted, map[string]HydrationMapper{testHydrationPluginID: versionedFixtureHydration{}})
+	hydrators := newHydrationAdapters(registry, r.st, map[string]HydrationMapper{testHydrationPluginID: taggedFixtureHydration{}})
+	logger := slog.New(slog.DiscardHandler)
+	wake := newJobWake()
 	for range 2 {
-		queueHydrationBackfills(ctx, r.st, hydrators, slog.New(slog.DiscardHandler))
+		queueHydrationTagBackfills(ctx, r.st, hydrators, wake, logger)
 	}
-	jobs, err := r.st.ListJobs(ctx)
-	if err != nil || len(jobs) != 1 || jobs[0].Kind != scanpkg.JobKind {
-		t.Fatalf("versioned backfill jobs = %+v, err = %v; want one scan", jobs, err)
+	queued, err := r.st.ListJobs(ctx)
+	if err != nil || len(queued) != 1 || queued[0].Kind != hydrationTagBackfillKind {
+		t.Fatalf("backfill jobs = %+v, err = %v; want one tag job", queued, err)
 	}
-	scan := func(prober scanpkg.Prober, backfill bool) {
-		t.Helper()
-		if _, err := scanpkg.ScanWithMetadataHydration(ctx, r.st, prober, nil, nil, nil, nil, nil,
-			hydrators, scanpkg.Request{LibraryID: r.library, Root: r.root, Backfill: backfill}); err != nil {
-			t.Fatal(err)
-		}
+	probe := &backfillTagProbe{err: errors.New("transient probe failure")}
+	run := hydrationTagBackfillHandler(r.st, hydrators, probe, logger)
+	if _, err := run(ctx, queued[0]); err == nil {
+		t.Fatal("failed probe was recorded as a completed backfill")
 	}
-	failedProbe := &failingHydrationProbe{}
-	scan(failedProbe, true)
-	if failedProbe.calls != 1 || r.field(testHydrationFingerprintField) != legacyFingerprint {
-		t.Fatal("failed backfill must probe the legacy track and leave it eligible for retry")
-	}
-	prober := tagProber{tags: &r.tags}
-	scan(prober, false)
-	checkReleaseType := func(value string) {
-		t.Helper()
-		album, err := r.st.Entity(ctx, albumID, store.LibraryFilter{AllLibraries: true})
-		want := []store.EntityField{{Name: "format", Type: store.EntityFieldText, Text: value}}
-		if err != nil || !reflect.DeepEqual(album.Fields, want) {
-			t.Fatalf("release fields = %+v, err = %v; want %v", album.Fields, err, want)
-		}
-	}
-	checkReleaseType("ep")
-	if fingerprint := r.field(testHydrationFingerprintField); !strings.HasPrefix(fingerprint, "v2:") {
-		t.Fatalf("backfilled fingerprint = %q, want current version", fingerprint)
-	}
-	writes := r.counted.writes
-	scan(prober, true)
-	if r.counted.writes != writes {
-		t.Fatal("second backfill hydrated the same track")
-	}
-
-	// The only live track can correct its tag, even to a later value.
-	r.tags["RELEASETYPE"] = "single"
-	if err := hydrators[testHydrationPluginID].HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
-		LibraryID: r.library, MediaID: mediaID, Class: store.MediaClassAudio, Path: r.path,
-		Metadata: r.tags, ContentFingerprint: "corrected",
-	}); err != nil {
+	probe.err = nil
+	probe.tags = map[string]string{"releasetype": "ep", "title": "Would overwrite the title", "contributors": "Would replace relations"}
+	if _, err := run(ctx, queued[0]); err != nil {
 		t.Fatal(err)
 	}
-	checkReleaseType("single")
+	if _, err := run(ctx, queued[0]); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(probe.paths, []string{r.path, r.path}) || !reflect.DeepEqual(probe.keys, []string{"releasetype"}) {
+		t.Fatalf("probe paths = %v, keys = %v; want only the release tag on the first attempt and retry", probe.paths, probe.keys)
+	}
+	artist, err := r.st.Entity(ctx, artistID, metadataLibraryFilter)
+	if err != nil || !reflect.DeepEqual(artist.Fields, fields) {
+		t.Fatalf("artist fields = %v, err = %v; want %v", artist.Fields, err, fields)
+	}
+	credits, err := r.st.EntitiesForMedia(ctx, r.mediaID, "appears-on", metadataLibraryFilter)
+	if err != nil || len(credits) != 1 || credits[0].Entity.ID != artistID {
+		t.Fatalf("artist credits = %v, err = %v", credits, err)
+	}
+	if r.field("format") != "ep" || r.field("title") != "Track" || r.field(testHydrationFingerprintField) != fingerprint {
+		t.Fatal("backfill did not write only the missing Media tag")
+	}
+}
+
+func TestScanWritesAndClearsIndependentTag(t *testing.T) {
+	r := newRehydrationScan(t)
+	registry, err := plugin.NewRegistry([]plugin.Bundle{rehydrationBundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hydrators := newHydrationAdapters(registry, r.counted, map[string]HydrationMapper{testHydrationPluginID: taggedFixtureHydration{}})
+	r.adapter = hydrators[testHydrationPluginID].(*hydrationAdapter)
+	r.write("tagged audio file bytes", 3*time.Hour, map[string]string{"releasetype": "ep"})
+	r.scan()
+	if got := r.field("format"); got != "ep" {
+		t.Fatalf("first scan tag = %q, want ep", got)
+	}
+	r.write("retagged audio file bytes", 2*time.Hour, nil)
+	r.scan()
+	if got := r.field("format"); got != "" {
+		t.Fatalf("tag after clearing = %q, want empty", got)
+	}
 }
 
 func TestScanRehydratesRetaggedFile(t *testing.T) {
@@ -1630,6 +1616,85 @@ func (discFolderTestMapper) MapHydration(tags map[string]string, path string) Hy
 		}
 	}
 	return plan
+}
+
+type taggedDiscFolderMapper struct{ discFolderTestMapper }
+
+func (taggedDiscFolderMapper) HydrationTag() HydrationTag {
+	return taggedFixtureHydration{}.HydrationTag()
+}
+
+func TestScanMovesLegacyTaggedFileAfterSkippingAnUnchangedProbe(t *testing.T) {
+	t.Run("public", func(t *testing.T) {
+		checkLegacyTaggedFileMove(t, newRehydrationScan(t), false)
+	})
+	t.Run("encrypted", func(t *testing.T) {
+		ctx := t.Context()
+		st, err := store.Open(ctx, storetest.MigratedDataDir(t), store.Options{
+			SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = st.Close() })
+		r := newRehydrationScanWithStore(t, st)
+		if err := st.SetLibraryBacking(ctx, r.library, false, true); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UnsealEncryptedLibraryDB(ctx, r.library, passthroughAppDBCipher{}); err != nil {
+			t.Fatal(err)
+		}
+		checkLegacyTaggedFileMove(t, r, true)
+	})
+}
+
+func checkLegacyTaggedFileMove(t *testing.T, r *rehydrationScan, occupiedTarget bool) {
+	t.Helper()
+	registry, err := plugin.NewRegistry([]plugin.Bundle{rehydrationBundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.adapter = newHydrationAdapters(registry, r.st, map[string]HydrationMapper{
+		testHydrationPluginID: taggedDiscFolderMapper{},
+	})[testHydrationPluginID].(*hydrationAdapter)
+	r.path = filepath.Join(r.root, "Release", "CD1", "01 track.flac")
+	if err := os.MkdirAll(filepath.Dir(r.path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	r.write("old audio file bytes", 3*time.Hour, map[string]string{"title": "Track"})
+	r.scan()
+	first := r.mediaID
+	fingerprint := r.field(testHydrationFingerprintField)
+	content, _, _ := strings.Cut(fingerprint, ";plan=")
+	legacy := "v2:" + content + ";plan=old"
+	if err := r.st.UpsertMediaFields(t.Context(), first, []store.MediaField{{
+		Name: testHydrationFingerprintField, Type: store.EntityFieldText, Text: legacy,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	r.touch(2 * time.Hour)
+	r.scan()
+	if got := r.field(testHydrationFingerprintField); got != legacy {
+		t.Fatalf("unchanged file replayed its plan: fingerprint = %q, want %q", got, legacy)
+	}
+
+	target := filepath.Join("Release", "CD2", "01 track.flac")
+	if occupiedTarget {
+		// The pathname previously belonged to another Media in this Library.
+		if _, _, err := r.st.ImportMediaFile(t.Context(), store.ImportMediaFile{
+			LibraryID: r.library, Path: filepath.Join(r.root, target), Title: "Previous track",
+			Class: store.MediaClassAudio, Container: "flac", Codec: "flac",
+			ContentFingerprint: "prior-content", ModTime: time.Now().Add(-time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.move(target)
+	r.scan()
+	if r.mediaID != first || r.number("disc-number") != 2 || r.field(testHydrationFingerprintField) == legacy {
+		t.Fatalf("moved legacy Media = %s, disc = %v, fingerprint = %q", r.mediaID, r.number("disc-number"), r.field(testHydrationFingerprintField))
+	}
 }
 
 func (r *rehydrationScan) number(name string) float64 {

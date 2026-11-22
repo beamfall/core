@@ -45,6 +45,11 @@ func TestEntityQuerySplitsRuledKindByField(t *testing.T) {
 			Archetype: "person",
 		}},
 		Layouts: []plugin.LayoutSpec{{ID: "home", Role: "browse"}},
+	}, {
+		ID: "plain", Version: "1.0.0", DisplayName: plugin.L("Plain"),
+		MediaLabel: plugin.L("Item"), MediaClasses: []string{"audio"},
+		EntityKinds: []plugin.EntityKind{{Name: "record", Archetype: "category", DisplayName: plugin.L("Plain Record")}},
+		Layouts:     []plugin.LayoutSpec{{ID: "home", Role: "browse"}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -88,9 +93,6 @@ func TestEntityQuerySplitsRuledKindByField(t *testing.T) {
 	}
 	for _, r := range records {
 		entity := store.Entity{ID: store.EntityID(r.id), LibraryID: library.ID, Kind: "record", Title: r.title}
-		if r.format != "" {
-			entity.Fields = []store.EntityField{{Name: "format", Type: store.EntityFieldText, Text: r.format}}
-		}
 		// The release date would reverse the order of the two dated long cards.
 		switch r.id {
 		case "entity-b":
@@ -102,12 +104,15 @@ func TestEntityQuerySplitsRuledKindByField(t *testing.T) {
 			t.Fatal(err)
 		}
 		relations := []store.EntityRelation{{FromEntityID: entity.ID, Name: "record-performer", ToEntityID: "entity-performer"}}
-		if r.year != 0 {
+		if r.year != 0 || r.format != "" {
 			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
 				LibraryID: library.ID, Path: "/srv/tunes/" + r.id + ".flac", Title: r.title, Container: "flac", Codec: "flac",
 				Class: store.MediaClassAudio, ContentFingerprint: "fp-" + r.id, Year: r.year,
 			})
 			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.UpsertMediaFields(ctx, media.ID, []store.MediaField{{Name: "format", Type: store.EntityFieldText, Text: r.format}}); err != nil {
 				t.Fatal(err)
 			}
 			relations = append(relations, store.EntityRelation{FromEntityID: entity.ID, Name: "record-cut", ToMediaID: media.ID})
@@ -171,37 +176,61 @@ func TestEntityQuerySplitsRuledKindByField(t *testing.T) {
 	if !reflect.DeepEqual(groups[0].Sections, wantSections) {
 		t.Fatalf("sections = %+v, want %+v", groups[0].Sections, wantSections)
 	}
-}
 
-func TestRelatedSectionsCombineMatchingLabelsAcrossPluginRules(t *testing.T) {
-	shared := EntityGroupValue{Value: "shared", Label: plugin.L("Shared")}
-	first := EntityGroupRule{Field: "format", Groups: []EntityGroupValue{shared}}
-	second := EntityGroupRule{Field: "shape", Groups: []EntityGroupValue{{Value: "early"}, {Value: "middle"}, shared}}
-	part := func(rule EntityGroupRule, value string, id string, year int) relatedEntityPart {
-		return relatedEntityPart{
-			value: value, rule: rule,
-			info: RelatedEntityGroupInfo{Kind: "record", Items: []SourceItem{{ID: id, Year: year}}},
+	// A second Library of the same plugin keeps its own sections, and the
+	// unruled plugin retains its archetype and relation order.
+	plain, err := st.CreateLibrary(ctx, "Plain Library", false, "plain", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := st.CreateLibrary(ctx, "Other Tunes Library", false, "tunes", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addRelated := func(libraryID store.LibraryID, id, title, value string, order, year int) {
+		t.Helper()
+		entity := store.Entity{ID: store.EntityID(id), LibraryID: libraryID, Kind: "record", Title: title}
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpsertEntityRelation(ctx, store.EntityRelation{
+			FromEntityID: entity.ID, Name: "record-performer", ToEntityID: "entity-performer", SortOrder: &order,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: libraryID, Path: "/srv/tunes/" + id + ".flac", Title: title, Container: "flac", Codec: "flac",
+			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + id, Year: year,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpsertMediaFields(ctx, media.ID, []store.MediaField{{Name: "format", Type: store.EntityFieldText, Text: value}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: entity.ID, Name: "record-cut", ToMediaID: media.ID}); err != nil {
+			t.Fatal(err)
 		}
 	}
-	groups := mergeRuledParts([]relatedEntityPart{
-		part(first, "shared", "older", 2000),
-		part(first, "unlisted", "unlisted", 2001),
-		part(second, "middle", "middle", 2002),
-		part(second, "shared", "newer", 2003),
-	})
-	want := []RelatedEntitySectionInfo{
-		{Value: "shared", DisplayName: shared.Label, Count: 2},
-		{Value: "middle", Count: 1},
-		{Value: "unlisted", Count: 1},
+	addRelated(plain.ID, "plain-first", "Z", "long", 1, 1990)
+	addRelated(second.ID, "other-long", "Other Long", "long", 2, 2020)
+	addRelated(plain.ID, "plain-last", "A", "short", 3, 2015)
+	detail, err := handler.entityQuery(ctx, auth.Scope{ProfileID: "profile-default", LibraryIDs: []store.LibraryID{
+		plain.ID, second.ID, library.ID, pageLibrary.ID,
+	}}, request{Variables: map[string]any{"id": "entity-performer"}})
+	if err != nil || len(detail.RelatedEntities) != 3 {
+		t.Fatalf("mixed owners = %+v, err = %v; want three groups", detail.RelatedEntities, err)
 	}
-	if len(groups) != 1 || !reflect.DeepEqual(groups[0].Sections, want) {
-		t.Fatalf("groups = %+v, want one group with sections %+v", groups, want)
+	mixed := detail.RelatedEntities
+	if got := mixed[0]; got.Archetype != "category" || len(got.Sections) != 0 || len(got.Items) != 2 ||
+		got.Items[0].ID != "plain-first" || got.Items[1].ID != "plain-last" {
+		t.Fatalf("unruled group = %+v, want category in relation order", got)
 	}
-	var ids []string
-	for _, item := range groups[0].Items {
-		ids = append(ids, item.ID)
+	if got := mixed[1]; got.Archetype != "container" || len(got.Items) != 1 || got.Items[0].ID != "other-long" ||
+		len(got.Sections) != 1 || got.Sections[0].Value != "long" {
+		t.Fatalf("second Library group = %+v, want its own long section", got)
 	}
-	if wantIDs := []string{"newer", "older", "middle", "unlisted"}; !reflect.DeepEqual(ids, wantIDs) {
-		t.Fatalf("items = %v, want %v", ids, wantIDs)
+	if got := mixed[2]; !reflect.DeepEqual(got.Sections, wantSections) {
+		t.Fatalf("first Library sections = %+v, want %+v", got.Sections, wantSections)
 	}
 }
