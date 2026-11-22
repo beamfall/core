@@ -964,14 +964,17 @@ func compatRequireGraphQLRefusal(t *testing.T, rec *httptest.ResponseRecorder, d
 		t.Fatalf("raw GraphQL refusal data = (%v, present=%t), want explicit null: %s", dataVal, hasData, rec.Body.String())
 	}
 	// Existing clients detect a refusal from the top-level fields of any 403.
-	for _, key := range []string{"decision", "messageClass"} {
+	for _, key := range []string{"decision", "reasonCode", "messageClass"} {
 		if _, ok := raw[key]; !ok {
 			t.Fatalf("GraphQL refusal dropped top-level %s: %s", key, rec.Body.String())
 		}
 	}
 	var envelope struct {
-		Data   any `json:"data"`
-		Errors []struct {
+		Decision     string `json:"decision"`
+		ReasonCode   string `json:"reasonCode"`
+		MessageClass string `json:"messageClass"`
+		Data         any    `json:"data"`
+		Errors       []struct {
 			Message    string `json:"message"`
 			Extensions struct {
 				Code         string `json:"code"`
@@ -999,6 +1002,17 @@ func compatRequireGraphQLRefusal(t *testing.T, rec *httptest.ResponseRecorder, d
 		(reason != "" && entry.Extensions.ReasonCode != reason) ||
 		entry.Extensions.MessageClass != wantClass {
 		t.Fatalf("extensions = %#v, want decision=%q reason=%q messageClass=%q", entry.Extensions, decision, reason, wantClass)
+	}
+	if envelope.Decision == "" || envelope.ReasonCode == "" || envelope.MessageClass == "" {
+		t.Fatalf("top-level decision=%q reasonCode=%q messageClass=%q must be non-empty: %s", envelope.Decision, envelope.ReasonCode, envelope.MessageClass, rec.Body.String())
+	}
+	if envelope.Decision != entry.Extensions.Decision ||
+		envelope.ReasonCode != entry.Extensions.ReasonCode ||
+		envelope.MessageClass != entry.Extensions.MessageClass {
+		t.Fatalf("top-level (%q, %q, %q) != extensions (%q, %q, %q): %s",
+			envelope.Decision, envelope.ReasonCode, envelope.MessageClass,
+			entry.Extensions.Decision, entry.Extensions.ReasonCode, entry.Extensions.MessageClass,
+			rec.Body.String())
 	}
 }
 
