@@ -82,3 +82,33 @@ func TestAttestationStatusSourceRefusesWithoutAnyList(t *testing.T) {
 		t.Fatal("served a list from a malformed document")
 	}
 }
+
+func TestAttestationStatusCacheKeepsItsRealAge(t *testing.T) {
+	// A restored cache gets a fresh mtime; its embedded fetch time must win.
+	cache := filepath.Join(t.TempDir(), "attestation-status.json")
+	body := `{"fetchedAt":"` + testNow.Add(-60*24*time.Hour).UTC().Format(time.RFC3339) + `","body":{"entries":{"2a":{"status":"REVOKED"}}}}`
+	if err := os.WriteFile(cache, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src := &AttestationStatusSource{URL: "http://127.0.0.1:0/unreachable", CachePath: cache, Now: func() time.Time { return testNow }}
+	list, err := src.Current(context.Background())
+	if err == nil {
+		t.Fatal("60-day-old restored cache served as fresh")
+	}
+	if _, listed := list.status(big.NewInt(0x2a)); !listed {
+		t.Fatal("stale list not returned alongside the error")
+	}
+}
+
+func TestAttestationStatusFetchSurvivesCanceledCaller(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"entries":{}}`))
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	src := &AttestationStatusSource{URL: srv.URL, Client: srv.Client(), Now: func() time.Time { return testNow }}
+	if _, err := src.Current(ctx); err != nil {
+		t.Fatalf("a canceled caller blocked the shared fetch: %v", err)
+	}
+}

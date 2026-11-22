@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -192,11 +193,10 @@ func (v *AndroidKeyAttestationVerifier) checkRevocation(ctx context.Context, cha
 	if v.opts.Status == nil {
 		return nil // AllowSoftware only; enforced by the constructor.
 	}
+	// On error the source may still return the last list it held: its
+	// entries stay refused even in the dev opt-in.
 	list, err := v.opts.Status(ctx)
-	if err != nil {
-		if v.opts.AllowSoftware {
-			return nil
-		}
+	if err != nil && !v.opts.AllowSoftware {
 		return err
 	}
 	for i, cert := range chain {
@@ -251,6 +251,13 @@ func (v *AndroidKeyAttestationVerifier) verifyChain(chain []*x509.Certificate) e
 	}
 	// Full path validation enforces what single links cannot: path length
 	// constraints, name constraints and unhandled critical extensions.
+	// ExtKeyUsageAny below skips Go's EKU checks, so refuse any certificate
+	// restricted to some other purpose. Attestation certificates carry none.
+	for i, cert := range chain {
+		if (len(cert.ExtKeyUsage) > 0 || len(cert.UnknownExtKeyUsage) > 0) && !slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageAny) {
+			return fmt.Errorf("attestation certificate %d is restricted to another extended key usage", i)
+		}
+	}
 	pool := x509.NewCertPool()
 	for _, root := range v.roots {
 		pool.AddCert(root)
@@ -301,6 +308,21 @@ func leafKeyDescription(leaf *x509.Certificate) (keyDescription, error) {
 	if len(rest) != 0 {
 		return keyDescription{}, errors.New("attestation KeyDescription has trailing data")
 	}
+	// The struct decoder ignores extra SEQUENCE elements; count them.
+	var outer asn1.RawValue
+	if _, err := asn1.Unmarshal(found, &outer); err != nil {
+		return keyDescription{}, fmt.Errorf("attestation KeyDescription is malformed: %w", err)
+	}
+	fields := 0
+	for body := outer.Bytes; len(body) > 0; fields++ {
+		var field asn1.RawValue
+		if body, err = asn1.Unmarshal(body, &field); err != nil {
+			return keyDescription{}, fmt.Errorf("attestation KeyDescription is malformed: %w", err)
+		}
+	}
+	if fields != 8 {
+		return keyDescription{}, fmt.Errorf("attestation KeyDescription has %d fields, want 8", fields)
+	}
 	return desc, nil
 }
 
@@ -326,6 +348,11 @@ func parseAuthorizationList(raw asn1.RawValue) (authorizationList, error) {
 		}
 		if _, dup := list[entry.Tag]; dup {
 			return nil, fmt.Errorf("attestation authorization %d appears twice", entry.Tag)
+		}
+		// Each explicit tag wraps exactly one value.
+		var value asn1.RawValue
+		if tail, err := asn1.Unmarshal(entry.Bytes, &value); err != nil || len(tail) != 0 {
+			return nil, fmt.Errorf("attestation authorization %d is malformed", entry.Tag)
 		}
 		list[entry.Tag] = entry.Bytes
 	}

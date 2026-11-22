@@ -59,6 +59,8 @@ type leafSpec struct {
 	dupOrigin      int // when non-zero, a second origin entry with this value
 	purposes       []int
 	trailing       bool
+	extraField     bool // a ninth element inside the KeyDescription SEQUENCE
+	emptyWrapper   bool // an explicit tag wrapping no value
 	notAfter       time.Time
 }
 
@@ -129,6 +131,13 @@ func keyDescriptionDER(t *testing.T, spec leafSpec) []byte {
 	if !spec.noOrigin {
 		hw = append(hw, tagged(authorizationTagOrigin, spec.origin, "")...)
 	}
+	if spec.emptyWrapper {
+		empty, err := asn1.Marshal(asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 2, IsCompound: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		hw = append(hw, empty...)
+	}
 	if spec.dupOrigin != 0 {
 		hw = append(hw, tagged(authorizationTagOrigin, spec.dupOrigin, "")...)
 	}
@@ -147,6 +156,17 @@ func keyDescriptionDER(t *testing.T, spec leafSpec) []byte {
 	der, err := asn1.Marshal(desc)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if spec.extraField {
+		var outer asn1.RawValue
+		if _, err := asn1.Unmarshal(der, &outer); err != nil {
+			t.Fatal(err)
+		}
+		outer.Bytes = append(outer.Bytes, 0x05, 0x00)
+		outer.FullBytes = nil
+		if der, err = asn1.Marshal(outer); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if spec.trailing {
 		der = append(der, 0x05, 0x00)
@@ -209,6 +229,8 @@ func TestAndroidAttestationRefusals(t *testing.T) {
 		"signing key":      {spec: func(s *leafSpec) { s.purposes = []int{2, 3} }, reason: "key agreement"},
 		"no purpose":       {spec: func(s *leafSpec) { s.purposes = nil }, reason: "key agreement"},
 		"trailing data":    {spec: func(s *leafSpec) { s.trailing = true }, reason: "trailing"},
+		"ninth field":      {spec: func(s *leafSpec) { s.extraField = true }, reason: "9 fields"},
+		"empty wrapper":    {spec: func(s *leafSpec) { s.emptyWrapper = true }, reason: "authorization 2 is malformed"},
 		"no origin":        {spec: func(s *leafSpec) { s.noOrigin = true }, reason: "not generated"},
 		"wrong key":        {key: func([]byte) []byte { return other.devicePublicKey(t) }, reason: "not the device key"},
 		"expired leaf":     {now: testNow.Add(2 * time.Hour), reason: "validity"},
@@ -363,5 +385,35 @@ func TestAndroidAttestationRevocation(t *testing.T) {
 	}
 	if _, err := NewAndroidKeyAttestationVerifier(AndroidKeyAttestationOptions{}); err == nil {
 		t.Fatal("production verifier built without a revocation status source")
+	}
+}
+
+func TestAndroidAttestationRefusesEKURestrictedIntermediate(t *testing.T) {
+	f := newAttestationFixture(t)
+	f.inter = signTestCert(t, &x509.Certificate{
+		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "tls-only intermediate"},
+		NotBefore: testNow.Add(-time.Hour), NotAfter: testNow.Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}, f.root, &f.interKey.PublicKey, f.rootKey)
+	err := f.verifier(t, false).VerifyDeviceKey(context.Background(), testEnrollmentID, f.devicePublicKey(t), f.chain(t, defaultLeaf()))
+	if err == nil || !strings.Contains(err.Error(), "extended key usage") {
+		t.Fatalf("err = %v, want EKU refusal", err)
+	}
+}
+
+func TestAndroidAttestationDevModeKeepsStaleRevocations(t *testing.T) {
+	f := newAttestationFixture(t)
+	revoked, err := ParseAttestationStatusList([]byte(`{"entries":{"2":{"status":"REVOKED"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := f.verifier(t, true)
+	v.opts.Status = func(context.Context) (*AttestationStatusList, error) {
+		return revoked, errors.New("attestation revocation status is unavailable: expired")
+	}
+	err = v.VerifyDeviceKey(context.Background(), testEnrollmentID, f.devicePublicKey(t), f.chain(t, defaultLeaf()))
+	if err == nil || !strings.Contains(err.Error(), "revoked") {
+		t.Fatalf("err = %v, want stale revocation honoured", err)
 	}
 }
