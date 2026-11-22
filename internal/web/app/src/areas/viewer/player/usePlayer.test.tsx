@@ -1615,6 +1615,20 @@ describe("usePlayer", () => {
     expect(screen.getByTestId("phase")).toHaveTextContent("playing");
   });
 
+  it("plays a composed picture's precomputed rendition over HLS", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+      decision: "precomputed-rendition",
+      reason: "composed-picture",
+      streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+    });
+    render(<Harness />);
+
+    await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+    expect(fakeHlsInstances[0].sources).toEqual(["/api/media/hls/token/master.m3u8"]);
+    expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+  });
+
   it("applies markers that arrive after playback has started", async () => {
     let resolveMarkers: (markers: PlaybackMarker[]) => void = () => {};
     vi.mocked(fetchPlaybackMarkers).mockReturnValue(

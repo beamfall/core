@@ -941,7 +941,11 @@ export function usePlayer(
       const stream = choosePlaybackStream(info);
       const decision = playbackDecision(info, stream);
       if (
-        (decision !== "direct-play" && decision !== "direct-stream" && decision !== "transcode") ||
+        (decision !== "direct-play" &&
+          decision !== "direct-stream" &&
+          decision !== "transcode" &&
+          // A Ready precomputed rendition (a composed picture) is HLS like a transcode.
+          decision !== "precomputed-rendition") ||
         !stream ||
         !stream.url
       ) {

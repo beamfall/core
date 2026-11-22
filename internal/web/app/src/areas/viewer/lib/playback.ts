@@ -48,7 +48,7 @@ export function hdrName(hdr: string | undefined): string {
 
 /** One playback route the server offers for the Media (ADR-0010 stream inventory). */
 export interface PlaybackStream {
-  /** "direct-play" | "direct-stream" | "transcode" — also surfaced as info.decision. */
+  /** "direct-play" | "direct-stream" | "transcode" | "precomputed-rendition" — also surfaced as info.decision. */
   kind?: string;
   /** The bytes URL: a direct /api/media/... path, or an HLS .m3u8 for transcode. */
   url?: string;
