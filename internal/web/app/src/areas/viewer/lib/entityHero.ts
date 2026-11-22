@@ -74,19 +74,37 @@ function playable(item: SourceItem): boolean {
 }
 
 /**
+ * Whether an Entity page offers Mark watched, the watchlist toggle and a
+ * rating: only a container is something a viewer watches. A person or a
+ * category is watched through, so its page keeps Hide alone (CORE-3058).
+ */
+export function entityOffersWatchActions(archetype: string | undefined): boolean {
+  return archetype === "container";
+}
+
+/**
  * How many of the Entity's own playable Media are not finished yet (0 when
- * none are left or none are known). Only direct Media are counted: related
- * container groups carry relations in both directions with no direction on
- * the wire, so a parent cannot be told from a child and their counts are never
- * summed. A container of containers shows no count until the wire carries the
- * Entity's own engagement. A Media item reached by two relations counts once.
+ * none are left or none are known), plus the children left in each container
+ * card the Entity's rolled-up Media list stands in for its held Media
+ * (CORE-3058). Related container groups are never summed: they carry
+ * relations in both directions with no direction on the wire, so a parent
+ * cannot be told from a child. A container of containers shows no count until
+ * the wire carries the Entity's own engagement. An item reached by two
+ * relations counts once.
  */
 export function unwatchedCount(items: readonly SourceItem[] | null | undefined): number {
   const unfinished = new Set<string>();
+  let rolledUp = 0;
   for (const item of items ?? []) {
-    if (playable(item) && item.engagement?.completed !== true) unfinished.add(item.id);
+    if (unfinished.has(item.id)) continue;
+    if (playable(item) && item.engagement?.completed !== true) {
+      unfinished.add(item.id);
+    } else if (item.kind === "entity" && !item.locked && item.engagement?.remainingCount) {
+      unfinished.add(item.id);
+      rolledUp += item.engagement.remainingCount - 1;
+    }
   }
-  return unfinished.size;
+  return unfinished.size + rolledUp;
 }
 
 /** The hero's rows: child containers first, then people, then everything else. */

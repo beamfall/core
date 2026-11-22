@@ -61,7 +61,11 @@ export function EntityMediaBrowse({
   if (tracks) return <ContainerTracks tracks={tracks} />;
   if (entity && rows && entity.archetype === "person" && isAudioListing(items, rows))
     return <PersonListening entity={entity} items={items} rows={rows} />;
-  if (entity?.archetype === "person") return <PersonFilmography items={items} />;
+  if (entity?.archetype === "person") return <PosterGrid items={items} byYear />;
+  // A rolled-up list stands its containers' Media in as container cards
+  // (CORE-3058), which open their Entity page rather than play.
+  if (items.some((item) => item.kind === "entity"))
+    return <PosterGrid items={items} label={label} />;
   const container = entity?.archetype === "container" ? entity : null;
   return (
     <ContainerChildren
@@ -75,19 +79,31 @@ export function EntityMediaBrowse({
   );
 }
 
-function PersonFilmography({ items }: { items: SourceItem[] }) {
+/**
+ * The listed Media and container cards as a poster grid: a person's, newest
+ * year first under "Appears in", or anything else's in the server's order.
+ */
+function PosterGrid({
+  items,
+  byYear = false,
+  label,
+}: {
+  items: SourceItem[];
+  byYear?: boolean;
+  label?: string;
+}) {
   const t = useT();
-  const ordered = useMemo(
-    () => filmographyOrder(items.filter((item) => item.kind === "media")),
-    [items],
-  );
+  const ordered = useMemo(() => (byYear ? filmographyOrder(items) : items), [items, byYear]);
   if (ordered.length === 0) return null;
+  const heading = byYear ? t("personAppearsIn") : "";
   return (
     <section className="bf-section flex flex-col gap-3">
-      <h2 className="bf-section-title">
-        <span>{t("personAppearsIn")}</span>
-      </h2>
-      <ul className="bf-grid" aria-label={t("personAppearsIn")}>
+      {heading && (
+        <h2 className="bf-section-title">
+          <span>{heading}</span>
+        </h2>
+      )}
+      <ul className="bf-grid" aria-label={heading || label}>
         {ordered.map((item, index) => (
           <MediaItemCard
             key={item.id}

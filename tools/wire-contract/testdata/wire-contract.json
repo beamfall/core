@@ -15266,6 +15266,11 @@
         {
           "name": "entityID",
           "kind": "string"
+        },
+        {
+          "name": "rollUp",
+          "kind": "boolean",
+          "optional": true
         }
       ],
       "children": [

@@ -53,7 +53,9 @@ vi.mock("@/components/chrome/AppShell", () => ({
 vi.mock("../components/ViewerActions", () => ({ ViewerActions: () => null }));
 vi.mock("../actions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../actions")>()),
-  ItemActions: () => null,
+  ItemActions: ({ watchActions = true }: { watchActions?: boolean }) => (
+    <div data-testid="item-actions" data-watch-actions={String(watchActions)} />
+  ),
 }));
 vi.mock("../components/NotAvailable", () => ({ NotAvailable: () => <p>not available</p> }));
 
@@ -1563,5 +1565,272 @@ describe("EntityPage middle and top containers", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "The Whole" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Related" })).toBeNull();
+  });
+});
+
+describe("EntityPage rolled-up Media (CORE-3058)", () => {
+  const person: EntityInfo = {
+    id: "e1",
+    kind: "cast",
+    archetype: "person",
+    title: "A Person",
+    fields: [],
+  };
+  const film: SourceItem = {
+    id: "f1",
+    kind: "media",
+    title: "A Film",
+    year: 2001,
+    engagement: { completed: true },
+  };
+  const card = (remainingCount?: number): SourceItem => ({
+    id: "s1",
+    kind: "entity",
+    title: "A Whole",
+    year: 2010,
+    engagement: { totalCount: 4, ...(remainingCount ? { remainingCount } : {}) },
+  });
+  const part = (id: string, title: string, engagement?: SourceItem["engagement"]): SourceItem => ({
+    id,
+    kind: "media",
+    title,
+    engagement,
+  });
+  const parts = [
+    part("c1", "First part", { completed: true }),
+    part("c2", "Second part", { positionSeconds: 60, durationSeconds: 600 }),
+    part("c3", "Third part"),
+  ];
+
+  it("asks for the Entity's Media rolled up to their outermost containers", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(person);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+    renderEntity();
+    await act(async () => {});
+
+    expect(fetchMediaForEntity).toHaveBeenCalledWith("e1", expect.any(AbortSignal), {
+      rollUp: true,
+    });
+  });
+
+  it.each([
+    ["container", "true"],
+    ["person", "false"],
+    ["category", "false"],
+  ])("offers watch actions on a %s page: %s", async (archetype, offered) => {
+    vi.mocked(fetchEntity).mockResolvedValue({ ...person, archetype });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+    renderEntity();
+    await act(async () => {});
+
+    expect(screen.getByTestId("item-actions")).toHaveAttribute("data-watch-actions", offered);
+  });
+
+  it("lists a container card, counts its children left and plays on through it", async () => {
+    vi.mocked(fetchEntity).mockImplementation(async (id: string) =>
+      id === "s1"
+        ? {
+            id: "s1",
+            kind: "whole",
+            archetype: "container",
+            title: "A Whole",
+            fields: [],
+            relatedEntities: [
+              {
+                kind: "part",
+                archetype: "container",
+                items: [
+                  {
+                    id: "p1",
+                    kind: "entity",
+                    title: "Part one",
+                    engagement: { totalCount: 3, remainingCount: 2 },
+                  },
+                ],
+              },
+            ],
+          }
+        : person,
+    );
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) => {
+      if (id === "e1") return [film, card(3)];
+      return id === "p1" ? parts : [];
+    });
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+    await act(async () => {});
+
+    const grid = screen.getByRole("list", { name: "Appears in" });
+    expect(within(grid).getByRole("link", { name: /A Whole/ })).toHaveAttribute(
+      "href",
+      "/entity/s1",
+    );
+    expect(within(grid).getByRole("link", { name: /A Film/ })).toBeInTheDocument();
+    expect(screen.getByText("3 unwatched")).toBeInTheDocument();
+    expect(fetchMediaForEntity).toHaveBeenCalledWith("p1", expect.any(AbortSignal));
+
+    fireEvent.click(screen.getByRole("button", { name: "Resume Second part" }));
+    const player = screen.getByRole("status", { name: "player" }).textContent ?? "";
+    expect(player.startsWith("c2 ")).toBe(true);
+    const state = JSON.parse(player.slice(3));
+    expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("plays its own unfinished Media before a container card", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(person);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([card(3), { ...film, engagement: undefined }]);
+    renderEntity();
+    await act(async () => {});
+
+    expect(screen.getByRole("button", { name: "Play A Film" })).toBeInTheDocument();
+    expect(fetchMediaForEntity).toHaveBeenCalledTimes(1);
+  });
+
+  const holder = (id: string, children: SourceItem[]): EntityInfo => ({
+    id,
+    kind: "whole",
+    archetype: "container",
+    title: id,
+    fields: [],
+    relatedEntities: [{ kind: "part", archetype: "container", items: children }],
+  });
+  const box = (id: string): SourceItem => ({ id, kind: "entity", title: id });
+  async function settle() {
+    for (let i = 0; i < 8; i++) await act(async () => {});
+  }
+
+  it("plays an unfinished item three containers down, past finished Media on the way", async () => {
+    const entities: Record<string, EntityInfo> = {
+      e1: person,
+      s1: holder("s1", [box("m1")]),
+      // The middle container's related groups list its parent too.
+      m1: holder("m1", [box("s1"), box("i1")]),
+      i1: holder("i1", [box("m1")]),
+    };
+    vi.mocked(fetchEntity).mockImplementation(async (id: string) => entities[id] ?? null);
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) => {
+      if (id === "e1") return [film, card(1)];
+      if (id === "s1") return [part("d1", "Done", { completed: true })];
+      return id === "i1" ? [part("leaf", "Leaf")] : [];
+    });
+    renderEntity();
+    await settle();
+
+    expect(screen.getByRole("button", { name: "Play Leaf" })).toBeInTheDocument();
+  });
+
+  it("tries the next container card when one holds only locked Media", async () => {
+    const lockedCard: SourceItem = { ...card(2), id: "s1" };
+    const openCard: SourceItem = { ...card(1), id: "s2", title: "Another" };
+    vi.mocked(fetchEntity).mockImplementation(async (id: string) =>
+      id === "e1" ? person : holder(id, []),
+    );
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) => {
+      if (id === "e1") return [lockedCard, openCard];
+      if (id === "s1") return [{ ...part("x1", "Locked"), locked: true }];
+      return id === "s2" ? [part("o1", "Open")] : [];
+    });
+    renderEntity();
+    await settle();
+
+    expect(screen.getByRole("button", { name: "Play Open" })).toBeInTheDocument();
+  });
+
+  it("tries a sibling inner container after one that holds only locked Media", async () => {
+    const entities: Record<string, EntityInfo> = {
+      e1: person,
+      s1: holder("s1", [box("a1"), box("b1")]),
+      a1: holder("a1", []),
+      b1: holder("b1", []),
+    };
+    vi.mocked(fetchEntity).mockImplementation(async (id: string) => entities[id] ?? null);
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) => {
+      if (id === "e1") return [card(2)];
+      if (id === "a1") return [{ ...part("x1", "Locked"), locked: true }];
+      return id === "b1" ? [part("o1", "Open")] : [];
+    });
+    renderEntity();
+    await settle();
+
+    expect(screen.getByRole("button", { name: "Play Open" })).toBeInTheDocument();
+  });
+
+  it("keeps its finished standalone Media when the containers hold nothing playable", async () => {
+    vi.mocked(fetchEntity).mockImplementation(async (id: string) =>
+      id === "e1" ? person : holder(id, []),
+    );
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) => {
+      if (id === "e1") return [film, card(2)];
+      return id === "s1" ? [{ ...part("x1", "Locked"), locked: true }] : [];
+    });
+    renderEntity();
+    await settle();
+
+    expect(screen.getByRole("button", { name: "Play A Film" })).toBeInTheDocument();
+  });
+
+  it("keeps a replay it found when a container's detail read fails", async () => {
+    vi.mocked(fetchEntity).mockImplementation(async (id: string) => {
+      if (id === "e1") return person;
+      throw new Error("boom");
+    });
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) => {
+      if (id === "e1") return [card(2)];
+      return id === "s1" ? [part("d1", "Done", { completed: true })] : [];
+    });
+    renderEntity();
+    await settle();
+
+    expect(screen.getByRole("button", { name: "Play Done" })).toBeInTheDocument();
+  });
+
+  it("lists a container a related row already shows once", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...person,
+      relatedEntities: [{ kind: "whole", archetype: "container", items: [box("s1")] }],
+    });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([film, card(3)]);
+    renderEntity();
+    await settle();
+
+    const links = screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("href") === "/entity/s1");
+    expect(links).toHaveLength(1);
+  });
+
+  it("lists rolled-up cards beside a person's audio Media as a poster grid", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(person);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      { ...part("t1", "A Track"), mediaClass: "audio" } as SourceItem,
+      card(3),
+    ]);
+    renderEntity();
+    await settle();
+
+    const grid = screen.getByRole("list", { name: "Appears in" });
+    expect(within(grid).getByRole("link", { name: /A Whole/ })).toBeInTheDocument();
+  });
+
+  it("lists a person's rolled-up Media over a detail Layout that only lists them", async () => {
+    mocks.layouts = [
+      {
+        id: "cast-detail",
+        role: "detail",
+        entityKind: "cast",
+        sections: [
+          { id: "media", kind: "list", title: { en: "Rows" }, source: { kind: "entity-media" } },
+        ],
+      },
+    ];
+    vi.mocked(fetchEntity).mockResolvedValue(person);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([film, card(3)]);
+    renderEntity();
+    await settle();
+
+    const grid = screen.getByRole("list", { name: "Appears in" });
+    expect(within(grid).getByRole("link", { name: /A Whole/ })).toBeInTheDocument();
+    expect(fetchSourceItems).not.toHaveBeenCalled();
   });
 });
