@@ -398,6 +398,10 @@ func TestSubscriptionExportByteLimit(t *testing.T) {
 		"second": {{FeedURL: feedURL, Title: title}},
 	}
 	srv := newTestServer(t)
+	// Under -race this test outlives the 30s provisional compat decision, so
+	// pin the compat clock: the test exercises export limits, not expiry.
+	compatNow := time.Now()
+	srv.compat.now = func() time.Time { return compatNow }
 	srv.subscriptionExport = st
 	body := downloadSubscriptionOPML(t, srv, "").Body.Bytes()
 	if len(body) != limit {
