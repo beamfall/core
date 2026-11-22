@@ -204,14 +204,41 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 	if err := s.guardAuthority(serverrole.FaceEngagement); err != nil {
 		return err
 	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	event, err := newPlaybackProgressEvent(progress, finished, policy, prov, timeToMillis(time.Now().UTC()))
+	if err != nil {
+		return err
+	}
+	tx, err := s.eventsW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := appendPlaybackProjectionEvent(ctx, tx, event); err != nil {
+		return err
+	}
+	if err := applyPlaybackProjectionEvent(ctx, tx, event); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// newPlaybackProgressEvent validates a playback report and builds its progress
+// projection event: the watched decision, resume position and play increment
+// shared by the online report and the offline replay (CORE-3182).
+func newPlaybackProgressEvent(progress PlaybackProgress, finished bool, policy ResumePolicy, prov EngagementProvenance, now int64) (playbackProjectionEvent, error) {
 	if progress.ProfileID == "" || progress.MediaID == "" {
-		return ValidationError("profile ID and media ID are required")
+		return playbackProjectionEvent{}, ValidationError("profile ID and media ID are required")
 	}
 	if progress.PositionSeconds < 0 || progress.DurationSeconds < 0 {
-		return ValidationError("playback position must not be negative")
+		return playbackProjectionEvent{}, ValidationError("playback position must not be negative")
 	}
 	if progress.PlayCount < 0 {
-		return ValidationError("play count must not be negative")
+		return playbackProjectionEvent{}, ValidationError("play count must not be negative")
 	}
 	threshold := watchedThreshold
 	if policy.Class == MediaClassAudio {
@@ -229,12 +256,6 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 	if watched || !resumeEligible {
 		position = 0
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return err
-	}
-	now := timeToMillis(time.Now().UTC())
 	playIncrement := 0
 	if watched {
 		// A play is counted on the unwatched -> watched transition; the
@@ -277,7 +298,7 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 	if progress.EventTimeMS > 0 {
 		eventTimeMS = &progress.EventTimeMS
 	}
-	event := playbackProjectionEvent{
+	return playbackProjectionEvent{
 		Operation:        playbackProjectionOperationProgress,
 		ProfileID:        string(progress.ProfileID),
 		MediaID:          string(progress.MediaID),
@@ -303,19 +324,7 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 		PlaybackID:              progress.PlaybackID,
 		Paused:                  progress.Paused,
 		PlayedMS:                progress.PlayedMS,
-	}
-	tx, err := s.eventsW.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := appendPlaybackProjectionEvent(ctx, tx, event); err != nil {
-		return err
-	}
-	if err := applyPlaybackProjectionEvent(ctx, tx, event); err != nil {
-		return err
-	}
-	return tx.Commit()
+	}, nil
 }
 
 // positionAdvancedPredicate is the ON CONFLICT test

@@ -735,6 +735,17 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "playedMS", Kind: "int", Optional: true},
 		{Name: "positionSeconds", Kind: "int", Optional: true},
 	},
+	"replayofflineengagement": {
+		{Name: "events", Kind: "list", Elem: &NestedArgument{Kind: "object", Fields: []NestedArgument{
+			{Name: "completed", Kind: "boolean"},
+			{Name: "durationSeconds", Kind: "int", Optional: true},
+			{Name: "eventID", Kind: "string"},
+			{Name: "mediaID", Kind: "string"},
+			{Name: "playedAtMS", Kind: "number"},
+			{Name: "positionSeconds", Kind: "int"},
+		}}},
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+	},
 	"requestaccess": {
 		{Name: "mediaID", Kind: "string"},
 	},

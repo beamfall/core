@@ -6448,6 +6448,7 @@ var mutationFields = map[string]bool{
 	"relock":                       true,
 	"setrevealpin":                 true,
 	"reportplayback":               true,
+	"replayofflineengagement":      true, // CORE-3182: offline engagement replay
 	"endplayback":                  true, // CORE-2305: a closing player ends its live session
 	"marknotificationread":         true,
 	"registerdevicepushtoken":      true,

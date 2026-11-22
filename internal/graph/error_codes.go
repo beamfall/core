@@ -190,6 +190,9 @@ func errorCode(err error) ErrorCode {
 // or that a rule would classify wrongly. A message here wins over every rule.
 var clientErrorCodes = map[string]ErrorCode{
 	"scraper declares no child listing":                ErrorCodeInvalid,
+	"at most 500 events per call":                      ErrorCodeInvalid,
+	"events must be a list":                            ErrorCodeInvalid,
+	"each event must be an object":                     ErrorCodeInvalid,
 	"no such level":                                    ErrorCodeInvalid,
 	"parentKey is forbidden at level 1":                ErrorCodeInvalid,
 	"parentKey was not returned by the previous level": ErrorCodeInvalid,

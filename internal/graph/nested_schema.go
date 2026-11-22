@@ -181,6 +181,7 @@ var resultTypes = map[string]any{
 	"relock":                     RevealState{},
 	"setrevealpin":               RevealState{},
 	"reportplayback":             PlaybackReport{},
+	"replayofflineengagement":    OfflineEngagementReplay{},
 	"controlsession":             ControlSessionResult{},
 	"formgroup":                  GroupInfo{},
 	"joingroup":                  GroupInfo{},

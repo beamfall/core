@@ -2990,6 +2990,17 @@
       ]
     },
     {
+      "field": "replayofflineengagement",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "applied",
+        "duplicates",
+        "rejected",
+        "results"
+      ]
+    },
+    {
       "field": "reportdrift",
       "effect": "write",
       "tier": "session",

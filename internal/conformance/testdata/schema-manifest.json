@@ -1095,6 +1095,11 @@
     "tier": "admin"
   },
   {
+    "field": "replayofflineengagement",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "reportdrift",
     "effect": "write",
     "tier": "session"
