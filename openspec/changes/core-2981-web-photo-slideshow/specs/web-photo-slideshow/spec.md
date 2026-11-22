@@ -62,16 +62,80 @@ playback decision, open a playback session or send progress for a slide.
 - **WHEN** a slideshow shows images and clips
 - **THEN** no `/api/playback-info` request and no playback progress or end is sent
 
-### Requirement: Overlay, music and Dark Room
+### Requirement: Overlay and music
 
 The slideshow SHALL offer an overlay with a clock, a caption with the item's date and subtitle when
 it has them, and the title of the track the current play queue is playing. Audio the player is
-playing SHALL keep playing under the slideshow. Dark Room SHALL dim the stage to near-black.
+playing SHALL keep playing under the slideshow.
 
 #### Scenario: Now playing
 
 - **WHEN** the play queue is playing a track and the overlay is on
 - **THEN** the overlay names that track
+
+### Requirement: Dark Room schedule
+
+The setup sheet SHALL offer Dark Room as an on/off setting with a start and an end time, defaulting
+to 22:00 and 07:00 and stored per device. A window whose end is earlier than its start SHALL cross
+midnight. Inside the window, while Dark Room is on, the stage SHALL be dimmed.
+
+#### Scenario: Window crosses midnight
+
+- **WHEN** Dark Room is on from 22:00 to 07:00 and the local time is 02:30
+- **THEN** the stage is dimmed
+
+#### Scenario: Outside the window
+
+- **WHEN** Dark Room is on from 22:00 to 07:00 and the local time is 12:00
+- **THEN** the stage is not dimmed
+
+### Requirement: Dark Room dimming is UI only
+
+The Dark Room dim SHALL be a plain opaque black scrim at about 85% over the stage, with no filter,
+blur or shader. The clock and caption SHALL stay readable but dim. D SHALL dim or undim at once
+until the schedule next changes state.
+
+#### Scenario: Dim now
+
+- **WHEN** the stage is not dimmed and the viewer presses D
+- **THEN** the scrim covers the stage until the schedule next changes state
+
+### Requirement: Portrait pairing
+
+On a landscape screen, a portrait image SHALL share the stage with the next slide when that slide is
+also a portrait image, side by side in two halves with a small gap, each fitted whole. Otherwise a
+portrait SHALL show alone. Clips SHALL never pair.
+
+#### Scenario: Two portraits pair
+
+- **WHEN** the current and next slides are portrait images on a landscape screen
+- **THEN** both show side by side
+
+#### Scenario: Lone portrait
+
+- **WHEN** a portrait image is followed by a landscape image, or ends the queue
+- **THEN** the portrait shows alone
+
+### Requirement: A pair is one slide
+
+A pair SHALL be one slide for timing and for Previous and Next, and its caption SHALL be the first
+image's date and place.
+
+#### Scenario: Next skips past a pair
+
+- **WHEN** a pair is showing and the viewer presses Next
+- **THEN** the slide after the pair's second image shows
+
+### Requirement: Pairing is layout only
+
+Pairing SHALL add no visual effect. A lone portrait SHALL keep dark bars until the Oscillux `fill`
+and `pair` layouts (CORE-2980) are wired through the motion seam, since a blurred fill is a visual
+effect and visual effects come only from Oscillux.
+
+#### Scenario: No blurred fill
+
+- **WHEN** a lone portrait shows and the pinned Oscillux release has no fill layout
+- **THEN** the space beside it is the dark stage, with no blur of the photo
 
 ### Requirement: Keyboard control
 

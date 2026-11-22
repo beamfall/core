@@ -6,6 +6,9 @@
 - [ ] Web: Slideshow action on Collection and Library browse pages
 - [ ] Web: hidden, locked and other-identity items never shown; no playback decision requested
 - [ ] Web: `oscilluxSlideMotion` seam, hard cuts until Oscillux CORE-2980 ships
+- [ ] Web: Dark Room schedule (on/off, start, end; default 22:00–07:00; crosses midnight), per-device storage, 85% black scrim
+- [ ] Web: portrait pairing on a landscape screen; a pair is one slide; lone portrait alone with dark bars
+- [ ] Vitest: pairing decision and Dark Room window (midnight crossing)
 - [ ] Strings in every shipped locale
 - [ ] Vitest: hidden items never shown, interval bounds, engagement silence
 - [ ] Browser check against a Photos library
