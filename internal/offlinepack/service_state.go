@@ -664,6 +664,43 @@ func (s *Service) servable(pack store.OfflinePack) bool {
 	return true
 }
 
+func packMediaIDs(items []store.OfflinePackItem) []store.MediaID {
+	ids := make([]store.MediaID, 0, len(items))
+	seen := make(map[store.MediaID]struct{}, len(items))
+	for _, it := range items {
+		if _, ok := seen[it.MediaID]; ok {
+			continue
+		}
+		seen[it.MediaID] = struct{}{}
+		ids = append(ids, it.MediaID)
+	}
+	return ids
+}
+
+// packMembersVisible reports whether every frozen Media member of the pack is
+// currently visible under filter, returning the pack's items when all members
+// pass (CORE-3116).
+func (s *Service) packMembersVisible(ctx context.Context, pack store.OfflinePack, filter store.LibraryFilter) ([]store.OfflinePackItem, bool, error) {
+	items, err := s.store.OfflinePackItems(ctx, pack.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(items) == 0 {
+		return nil, false, nil
+	}
+	ids := packMediaIDs(items)
+	visible, err := s.store.VisibleMediaBatch(ctx, ids, filter)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, id := range ids {
+		if _, ok := visible[id]; !ok {
+			return nil, false, nil
+		}
+	}
+	return items, true, nil
+}
+
 // packRestricted reports whether any frozen member is in a restricted Library
 // for the caller. store.Media carries no restricted flag, so it is derived by
 // comparing visibility: a member visible under a REVEALED filter but NOT under
@@ -678,10 +715,7 @@ func (s *Service) packRestricted(ctx context.Context, pack store.OfflinePack, fi
 	if len(items) == 0 {
 		return false, nil
 	}
-	ids := make([]store.MediaID, 0, len(items))
-	for _, it := range items {
-		ids = append(ids, it.MediaID)
-	}
+	ids := packMediaIDs(items)
 	revealed := filter
 	revealed.Revealed = true
 	unrevealed := filter
@@ -753,10 +787,7 @@ func (s *Service) packHasSealedMember(ctx context.Context, pack store.OfflinePac
 	if len(items) == 0 {
 		return false, nil
 	}
-	ids := make([]store.MediaID, 0, len(items))
-	for _, it := range items {
-		ids = append(ids, it.MediaID)
-	}
+	ids := packMediaIDs(items)
 	// Resolve member Libraries under a Reveal+sentinel filter so we learn every
 	// member's Library (a sealed member's Library would be dropped by a
 	// sealed-stamped filter — here we want the raw mapping to test it ourselves).
