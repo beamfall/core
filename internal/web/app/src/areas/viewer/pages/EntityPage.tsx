@@ -27,6 +27,7 @@ import { LayoutView } from "../components/LayoutView";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { NotAvailable } from "../components/NotAvailable";
 import type { SeeAllTarget } from "../components/SectionView";
+import { StartRadioButton } from "../components/StartRadio";
 import { useListingRows } from "../components/useListingRows";
 import { ViewerActions } from "../components/ViewerActions";
 import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
@@ -622,6 +623,8 @@ export function EntityPage() {
                         {t("libraryBrowseShuffle")}
                       </button>
                     )}
+                    {/* Radio plays on from this Entity with related music (CORE-2772). */}
+                    {isAudio && entity && <StartRadioButton entityID={entity.id} />}
                     <p className="bf-entity-next">
                       <span className="bf-entity-ondeck">
                         {t(isAudio ? "entityDetailUpNext" : "entityDetailOnDeck")}

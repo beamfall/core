@@ -56,6 +56,7 @@ import { profileDeviceStrings } from "./profiles-devices";
 import { profileDevicePairingStrings } from "./profiles-devices-pairing";
 import { profileDeviceRequestStrings } from "./profiles-devices-requests";
 import { providerKeyStrings } from "./provider-keys";
+import { radioStrings } from "./radio";
 import { remoteAccessStrings } from "./remote-access";
 import { remoteAccessMappingStrings } from "./remote-access-mapping";
 import { remoteControlStrings } from "./remote-control";
@@ -180,6 +181,7 @@ export const en = {
   ...activityPluginStrings.en,
   ...workbenchPageStrings.en,
   ...appearanceStrings.en,
+  ...radioStrings.en,
 } as const;
 
 export const fr = {
@@ -273,6 +275,7 @@ export const fr = {
   ...activityPluginStrings.fr,
   ...workbenchPageStrings.fr,
   ...appearanceStrings.fr,
+  ...radioStrings.fr,
 } as const;
 
 export const de = {
@@ -366,6 +369,7 @@ export const de = {
   ...activityPluginStrings.de,
   ...workbenchPageStrings.de,
   ...appearanceStrings.de,
+  ...radioStrings.de,
 } as const;
 
 export const es = {
@@ -459,6 +463,7 @@ export const es = {
   ...activityPluginStrings.es,
   ...workbenchPageStrings.es,
   ...appearanceStrings.es,
+  ...radioStrings.es,
 } as const;
 
 export const pt = {
@@ -552,4 +557,5 @@ export const pt = {
   ...activityPluginStrings.pt,
   ...workbenchPageStrings.pt,
   ...appearanceStrings.pt,
+  ...radioStrings.pt,
 } as const;

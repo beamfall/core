@@ -22,6 +22,7 @@ import type {
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { RadioTuning } from "../components/StartRadio";
 import { mediaPath } from "../lib/mediaAddress";
 import {
   MUSIC_QUEUE_PARAM,
@@ -44,6 +45,7 @@ import {
   skipIntervalOverrideKey,
   skipIntervalOverrideValue,
 } from "../lib/preferences";
+import { RADIO_LOW_WATER, topUpRadio, useActiveRadio } from "../lib/radio";
 import { noteAutoAdvance } from "../lib/stillWatching";
 import {
   encodeSubtitleAppearance,
@@ -250,6 +252,31 @@ function FeaturePlayer({
     () => ({ mediaId, queueProfile, identity, epoch, revealed, profileID }),
     [mediaId, queueProfile, identity, epoch, revealed, profileID],
   );
+
+  // Radio (CORE-2772) runs on this Profile's server queue: the player names why
+  // each item was picked and tops the queue up before it runs out.
+  const activeStation = useActiveRadio(profileID);
+  const station = serverQueueRun && queueMatchesProfile ? activeStation : null;
+  const radioReason = station?.reasons[mediaId] ?? "";
+  const toppingUp = useRef(false);
+  const queueRows = musicQueue?.rows;
+  useEffect(() => {
+    if (!station || !queueRows || toppingUp.current) return;
+    const index = queueRows.findIndex((row) => row.id === mediaId);
+    if (index < 0) return;
+    if (queueRows.slice(index + 1).filter(playableMusic).length >= RADIO_LOW_WATER) return;
+    toppingUp.current = true;
+    topUpRadio(station, new Set(queueRows.map((row) => row.id)))
+      .then((added) => {
+        if (added) void refreshMusicQueue(true);
+      })
+      .catch(() => {
+        // The queue still plays what it holds; the next item change tries again.
+      })
+      .finally(() => {
+        toppingUp.current = false;
+      });
+  }, [station, queueRows, mediaId, refreshMusicQueue]);
 
   const needsInitialQueueRead = serverQueueRun && queueMatchesProfile && !musicQueue;
   useEffect(() => {
@@ -1066,6 +1093,7 @@ function FeaturePlayer({
                 videoRef={videoRef}
                 stream={state.stream}
                 trackKey={stage.key}
+                reason={radioReason}
                 next={
                   issuedNext
                     ? { key: issuedNext.mediaID, stream: decodableStream(issuedNext) }
@@ -1114,6 +1142,11 @@ function FeaturePlayer({
               </div>
             )}
             {!docked && queueFailureNotice}
+            {station && showAudioStage && !docked && (
+              <div className="absolute left-4 top-4 z-10">
+                <RadioTuning station={station} credits={stage.credits} />
+              </div>
+            )}
             {state.waitingForNetwork ? (
               <p
                 className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-scrim/70 px-3 py-1 text-sm text-on-scrim"

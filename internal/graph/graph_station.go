@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"hash/fnv"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/store"
 )
@@ -37,9 +40,12 @@ const stationWindowSize = 50
 // stationSeedKinds is the closed set of seed kinds (ADR-0098 §Stations: Track,
 // Artist, Album, Genre, or Collection). Track is a Media id; Artist/Album/Genre
 // are Music Plugin Entity ids; Collection is a Collection id. The names are
-// generic shape labels, not domain types.
+// generic shape labels, not domain types. "media" and "entity" are the generic
+// spellings of a Media and an Entity seed, so a client never has to name a
+// plugin's Entity kind (CORE-2772).
 var stationSeedKinds = map[string]bool{
 	"track": true, "artist": true, "album": true, "genre": true, "collection": true,
+	"media": true, "entity": true,
 }
 
 // stationSeed is the parsed seed for a generation request.
@@ -76,6 +82,7 @@ type StationGenerateResult struct {
 // previewed window and a started window are produced identically. rules and
 // tuning are the parsed (executing) Source filter and ranking hints.
 func (h *Handler) generateStation(ctx context.Context, scope auth.Scope, seed stationSeed, rules stationRules, tuning stationTuning, rankSeed uint64) ([]StationCandidate, string, error) {
+	locale := l10n.FromContext(ctx)
 	// 1. Sealed + non-music subtraction FIRST: build a filter scoped
 	//    to the caller's visible, music-plugin, NON-Sealed Libraries only.
 	filter, err := h.sealedFreeStationFilter(ctx, scope)
@@ -86,12 +93,13 @@ func (h *Handler) generateStation(ctx context.Context, scope auth.Scope, seed st
 		// No music Library is currently both visible and unsealed — the Station
 		// has no candidate space. Empty window, scarcity explanation; reveals no
 		// Library name.
-		return []StationCandidate{}, stationScarcityExplanation(0), nil
+		return []StationCandidate{}, stationScarcityExplanation(locale, 0), nil
 	}
 	// 2. Collect candidates for the seed through reveal-filtered store reads,
-	//    each constrained to the sealed-free music filter. Candidates are full
-	//    Media rows so the hard filter + tuning can read real fields.
-	candidates, err := h.collectStationCandidates(ctx, scope, filter, seed)
+	//    each constrained to the sealed-free music filter: the seed's own Media,
+	//    then Media sharing an Entity with them (CORE-2772). Candidates are full
+	//    Media rows so the hard filter + ranking can read real fields.
+	pool, err := h.collectStationCandidates(ctx, scope, filter, seed, rules, rankSeed)
 	if err != nil {
 		return nil, "", err
 	}
@@ -100,35 +108,33 @@ func (h *Handler) generateStation(ctx context.Context, scope auth.Scope, seed st
 	//    it can never appear in the window or an explanation. (The SEALED / HIDDEN
 	//    / RESTRICTED / non-music suppression is an additional hard filter already
 	//    enforced upstream by sealedFreeStationFilter + the per-read LibraryFilter.)
-	//    The declarative rule vocabulary MUSIC-1 will hydrate (genre, mood, decade
-	//    Entity predicates) layers onto this same pass; the field predicates wired
-	//    today (year / duration, present on every Media) make the pass execute now.
-	kept := candidates[:0]
-	for _, m := range candidates {
-		if rules.admits(m) {
-			kept = append(kept, m)
+	candidates := make([]store.Media, 0, len(pool.candidates))
+	for _, m := range pool.candidates {
+		if rules.admits(m, pool.links[m.ID]) {
+			candidates = append(candidates, m)
 		}
 	}
-	candidates = kept
-	// 4. Rank: deterministic given rankSeed (debug reproducibility), then tuning
-	//    hints bias the order. Tuning is RANKING-ONLY — it reorders the post-filter
-	//    set and can never admit an item rule.admits already rejected (the rejected
-	//    items are gone from `candidates` before tuning ever sees them).
-	rankStationCandidates(candidates, tuning, rankSeed)
+	// 4. Rank: deterministic given rankSeed (debug reproducibility). A track
+	//    seed leads, tuning hints bias the order, similarity orders the rest.
+	//    Tuning is RANKING-ONLY — it reorders the post-filter set and can never
+	//    admit an item rule.admits already rejected.
+	played := h.stationPlayed(ctx, scope, filter, candidates)
+	scored := scoreStationCandidates(pool, candidates, played, rankSeed)
+	rankStationCandidates(scored, tuning)
 	// 5. Rolling window.
-	if len(candidates) > stationWindowSize {
-		candidates = candidates[:stationWindowSize]
+	if len(scored) > stationWindowSize {
+		scored = scored[:stationWindowSize]
 	}
-	out := make([]StationCandidate, len(candidates))
-	for i, c := range candidates {
+	out := make([]StationCandidate, len(scored))
+	for i, c := range scored {
 		out[i] = StationCandidate{
-			MediaID:     string(c.ID),
-			LibraryID:   string(c.LibraryID),
-			Title:       c.Title,
-			Explanation: stationItemExplanation(seed),
+			MediaID:     string(c.item.ID),
+			LibraryID:   string(c.item.LibraryID),
+			Title:       c.item.Title,
+			Explanation: c.reason.text(locale),
 		}
 	}
-	return out, stationScarcityExplanation(len(out)), nil
+	return out, stationScarcityExplanation(locale, len(out)), nil
 }
 
 // sealedFreeStationFilter returns a LibraryFilter restricted to the caller's
@@ -169,84 +175,382 @@ func (h *Handler) sealedFreeStationFilter(ctx context.Context, scope auth.Scope)
 	}, nil
 }
 
+// Similarity bounds (CORE-2772). The generator reads only catalog data the
+// store already holds — Entity links (credits, containers, categories), release
+// year and the acting Profile's play history. Audio similarity is the separate
+// sonic-mixes work and never happens here.
+const (
+	// stationSeedMediaCap bounds how many of a large seed's Media (a genre
+	// with thousands of items) feed the seed profile.
+	stationSeedMediaCap = 200
+	// stationExpandEntities is how many of the seed profile's strongest
+	// Entities are expanded into candidates.
+	stationExpandEntities = 12
+	// stationPerEntityCap bounds how many Media one expanded Entity adds.
+	stationPerEntityCap = 100
+	// stationSeedEntityWeight keeps an Entity seed at the top of its own
+	// profile, so its Media are always expanded and ranked strongly.
+	stationSeedEntityWeight = 10
+)
+
+// stationPool is the collected candidate space plus the seed profile the
+// ranker scores it against.
+type stationPool struct {
+	seed       stationSeed
+	seedMedia  map[store.MediaID]bool
+	seedEntity store.EntityID
+	// profile weighs each Entity linked to the seed's Media by archetype.
+	profile    map[store.EntityID]float64
+	archetypes map[store.EntityID]string
+	seedYear   int
+	candidates []store.Media
+	links      map[store.MediaID][]store.MediaEntityLink
+}
+
 // collectStationCandidates gathers candidate Media (full rows, so the hard
-// filter + tuning can read real fields) for the seed. Every id is resolved
-// through the sealed-free music filter so no Sealed/hidden/non-music Media can
-// enter the pool. Duplicate ids are collapsed keeping first appearance.
-func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, seed stationSeed) ([]store.Media, error) {
-	var ids []store.MediaID
+// filter + ranking can read real fields) for the seed: the seed's own Media,
+// then Media sharing the seed profile's strongest Entities, plus Media of any
+// Entity a rule requires. Every id is resolved through the sealed-free music
+// filter so no Sealed/hidden/non-music Media can enter the pool. Duplicate ids
+// are collapsed keeping first appearance.
+func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, seed stationSeed, rules stationRules, rankSeed uint64) (stationPool, error) {
+	pool := stationPool{seed: seed, seedMedia: map[store.MediaID]bool{}, profile: map[store.EntityID]float64{}, archetypes: map[store.EntityID]string{}}
+	var seedIDs []store.MediaID
 	switch seed.kind {
-	case "track":
+	case "track", "media":
 		// Resolve the seed itself through the sealed-free music filter: a seed
 		// Media outside that scope is "unknown" — never an oracle for a hidden/
 		// sealed/non-music id.
 		media, err := h.store.Media(ctx, store.MediaID(seed.id), filter)
 		if err != nil {
-			return nil, clientError("unknown station seed")
+			return pool, clientError("unknown station seed")
 		}
-		ids = append(ids, media.ID)
-	case "artist", "album", "genre":
+		seedIDs = append(seedIDs, media.ID)
+	case "artist", "album", "genre", "entity":
 		items, err := h.store.MediaForEntity(ctx, store.EntityID(seed.id), filter)
 		if err != nil {
-			return nil, clientError("unknown station seed")
+			return pool, clientError("unknown station seed")
 		}
 		for _, it := range items {
-			ids = append(ids, it.ID)
+			seedIDs = append(seedIDs, it.ID)
 		}
+		pool.seedEntity = store.EntityID(seed.id)
 	case "collection":
 		// MUSIC-4's canonical ordered-membership read (ADR-0098 area 4): it returns
 		// the ordered static membership with Reveal/Sealed visibility already
 		// applied under the sealed-free MUSIC filter, so non-music / Sealed / hidden
 		// members are dropped (never gapped) before they can enter the candidate
 		// pool. The MediaByIDs batch below re-resolves the same filter to fetch full
-		// Media rows for the hard filter + tuning.
+		// Media rows for the hard filter + ranking.
 		members, err := h.store.ResolveCollectionMembers(ctx, store.CollectionID(seed.id), filter)
 		if err != nil {
-			return nil, clientError("unknown station seed")
+			return pool, clientError("unknown station seed")
 		}
 		for _, m := range members {
-			ids = append(ids, m.MediaID)
+			seedIDs = append(seedIDs, m.MediaID)
 		}
 	default:
-		return nil, clientError("seedKind must be one of track, artist, album, genre, collection")
+		return pool, clientError("seedKind must be one of media, entity, collection, track, artist, album, genre")
 	}
+	seedIDs = sampleStationIDs(seedIDs, stationSeedMediaCap, rankSeed)
+
+	// The seed profile: every Entity linked to a visible seed Media, weighed by
+	// its archetype, plus the median release year.
+	seedRows, err := h.store.MediaByIDs(ctx, seedIDs, filter)
+	if err != nil {
+		return pool, err
+	}
+	visibleSeed := make([]store.MediaID, 0, len(seedIDs))
+	var years []int
+	for _, id := range seedIDs {
+		m, ok := seedRows[id]
+		if !ok || pool.seedMedia[id] {
+			continue
+		}
+		pool.seedMedia[id] = true
+		visibleSeed = append(visibleSeed, id)
+		if m.Year > 0 {
+			years = append(years, m.Year)
+		}
+	}
+	if len(years) > 0 {
+		sort.Ints(years)
+		pool.seedYear = years[len(years)/2]
+	}
+	seedLinks, err := h.store.MediaEntityLinks(ctx, visibleSeed)
+	if err != nil {
+		return pool, err
+	}
+	archetypeOf := h.stationArchetypeLookup(ctx)
+	for _, id := range visibleSeed {
+		for _, link := range seedLinks[id] {
+			archetype := archetypeOf(link.LibraryID, link.Kind)
+			pool.archetypes[link.EntityID] = archetype
+			pool.profile[link.EntityID] += stationArchetypeWeight(archetype)
+		}
+	}
+	if pool.seedEntity != "" {
+		pool.profile[pool.seedEntity] += stationSeedEntityWeight
+	}
+
+	// Expand the strongest Entities, then any Entity a rule requires (a genre
+	// rule must find that genre's Media even when the seed never touched it).
+	expand := strongestStationEntities(pool.profile, stationExpandEntities)
+	for _, id := range rules.AnyEntityIDs {
+		expand = append(expand, store.EntityID(id))
+	}
+	ids := append([]store.MediaID{}, visibleSeed...)
+	expanded := map[store.EntityID]bool{}
+	for _, entityID := range expand {
+		if expanded[entityID] {
+			continue
+		}
+		expanded[entityID] = true
+		items, err := h.store.MediaForEntity(ctx, entityID, filter)
+		if err != nil {
+			// An Entity this scope cannot see adds nothing; it never errors the
+			// Station, so a rule naming one is not an oracle either.
+			continue
+		}
+		related := make([]store.MediaID, len(items))
+		for i, it := range items {
+			related[i] = it.ID
+		}
+		ids = append(ids, sampleStationIDs(related, stationPerEntityCap, rankSeed)...)
+	}
+
 	// One batch read resolves every candidate id to a full Media row through the
 	// sealed-free MUSIC filter. A CollectionMembers list may mix non-music Media
 	// (it carries no library-kind); resolving through this filter drops every
 	// non-music / Sealed / hidden member (ADR-0098: never cross those Libraries).
 	visible, err := h.store.MediaByIDs(ctx, ids, filter)
 	if err != nil {
-		return nil, err
+		return pool, err
 	}
 	seen := make(map[store.MediaID]bool, len(ids))
-	out := make([]store.Media, 0, len(ids))
+	pool.candidates = make([]store.Media, 0, len(ids))
+	kept := make([]store.MediaID, 0, len(ids))
 	for _, id := range ids {
 		if seen[id] {
 			continue
 		}
 		seen[id] = true
 		if m, ok := visible[id]; ok {
-			out = append(out, m)
+			pool.candidates = append(pool.candidates, m)
+			kept = append(kept, id)
 		}
 	}
-	return out, nil
+	pool.links, err = h.store.MediaEntityLinks(ctx, kept)
+	if err != nil {
+		return pool, err
+	}
+	for _, links := range pool.links {
+		for _, link := range links {
+			if _, ok := pool.archetypes[link.EntityID]; !ok {
+				pool.archetypes[link.EntityID] = archetypeOf(link.LibraryID, link.Kind)
+			}
+		}
+	}
+	return pool, nil
 }
 
-// rankStationCandidates orders candidates deterministically for a given
-// rankSeed (same seed → same order: debug reproducibility, ADR-0098), then
-// applies the tuning bias. The base key mixes the rankSeed with each Media id so
-// different sessions/seeds yield different-but-stable shuffles; tuning reorders
-// the post-filter set ONLY and can never admit a filtered item (the rejected
-// items are already removed before this runs).
-func rankStationCandidates(candidates []store.Media, tuning stationTuning, rankSeed uint64) {
-	sort.SliceStable(candidates, func(i, j int) bool {
-		bi := tuning.bias(candidates[i])
-		bj := tuning.bias(candidates[j])
-		if bi != bj {
-			// Higher bias ranks earlier.
-			return bi > bj
+// stationArchetypeLookup maps an Entity kind to its plugin-declared archetype
+// (person, container, category, ...), caching each Library's bundle. Core
+// reasons about archetypes, never plugin kind names.
+func (h *Handler) stationArchetypeLookup(ctx context.Context) func(store.LibraryID, string) string {
+	byLibrary := map[store.LibraryID]map[string]string{}
+	return func(libraryID store.LibraryID, kind string) string {
+		kinds, ok := byLibrary[libraryID]
+		if !ok {
+			kinds = map[string]string{}
+			if bundle, found := h.libraryBundle(ctx, libraryID); found {
+				for _, k := range bundle.EntityKinds {
+					kinds[k.Name] = k.Archetype
+				}
+			}
+			byLibrary[libraryID] = kinds
 		}
-		return stationRankKey(candidates[i].ID, rankSeed) < stationRankKey(candidates[j].ID, rankSeed)
+		return kinds[kind]
+	}
+}
+
+// stationArchetypeWeight is how strongly sharing an Entity of an archetype
+// ties two Media together: a shared credit (person) most, a shared container
+// next, a shared category (genre, mood) least.
+func stationArchetypeWeight(archetype string) float64 {
+	switch archetype {
+	case "person":
+		return 3
+	case "container":
+		return 2
+	case "category":
+		return 1.5
+	}
+	return 1
+}
+
+// strongestStationEntities returns up to n profile Entities, strongest first,
+// ties broken by id so the order is stable.
+func strongestStationEntities(profile map[store.EntityID]float64, n int) []store.EntityID {
+	ids := make([]store.EntityID, 0, len(profile))
+	for id := range profile {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		if profile[ids[i]] != profile[ids[j]] {
+			return profile[ids[i]] > profile[ids[j]]
+		}
+		return ids[i] < ids[j]
+	})
+	if len(ids) > n {
+		ids = ids[:n]
+	}
+	return ids
+}
+
+// sampleStationIDs keeps at most n ids, chosen deterministically for the rank
+// seed so a large Entity contributes a different-but-reproducible slice.
+func sampleStationIDs(ids []store.MediaID, n int, rankSeed uint64) []store.MediaID {
+	if len(ids) <= n {
+		return ids
+	}
+	sampled := append([]store.MediaID{}, ids...)
+	sort.SliceStable(sampled, func(i, j int) bool {
+		return stationRankKey(sampled[i], rankSeed) < stationRankKey(sampled[j], rankSeed)
+	})
+	return sampled[:n]
+}
+
+// stationPlayed returns the candidates the acting Profile has finished: a
+// light familiarity signal from its own play history, never another Profile's.
+func (h *Handler) stationPlayed(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, candidates []store.Media) map[store.MediaID]bool {
+	played := map[store.MediaID]bool{}
+	if len(candidates) == 0 {
+		return played
+	}
+	items := make([]store.SourceItem, len(candidates))
+	for i, m := range candidates {
+		items[i] = store.SourceItem{ID: m.ID, Kind: "media"}
+	}
+	// Play history only nudges the order; a failed read leaves it out rather
+	// than failing the Station.
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, filter, items, nil); err != nil {
+		return played
+	}
+	for _, it := range items {
+		if it.Engagement != nil && it.Engagement.Completed {
+			played[it.ID] = true
+		}
+	}
+	return played
+}
+
+// stationScored is one ranked candidate with the reason it was picked.
+type stationScored struct {
+	item   store.Media
+	lead   bool
+	score  float64
+	key    uint64
+	reason stationReason
+}
+
+// scoreStationCandidates scores each admitted candidate against the seed
+// profile: shared Entities by archetype, the seed Entity itself, closeness to
+// the seed's era and the Profile's play history, plus a small rank-seed jitter
+// so consecutive generations vary. A track seed leads its own window.
+func scoreStationCandidates(pool stationPool, candidates []store.Media, played map[store.MediaID]bool, rankSeed uint64) []stationScored {
+	out := make([]stationScored, len(candidates))
+	for i, m := range candidates {
+		key := stationRankKey(m.ID, rankSeed)
+		c := stationScored{item: m, key: key, score: float64(key%1000) / 1000 * 1.5}
+		var best store.MediaEntityLink
+		bestWeight := 0.0
+		for _, link := range pool.links[m.ID] {
+			if _, shared := pool.profile[link.EntityID]; !shared {
+				continue
+			}
+			weight := stationArchetypeWeight(pool.archetypes[link.EntityID])
+			if link.EntityID == pool.seedEntity {
+				weight += 3
+			}
+			c.score += weight
+			if weight > bestWeight {
+				best, bestWeight = link, weight
+			}
+		}
+		era := 0
+		if pool.seedYear > 0 && m.Year > 0 {
+			switch gap := abs(m.Year - pool.seedYear); {
+			case gap <= 5:
+				era = 2
+			case gap <= 10:
+				era = 1
+			}
+		}
+		c.score += float64(era)
+		if played[m.ID] {
+			c.score++
+		}
+		switch {
+		case pool.seedMedia[m.ID] && (pool.seed.kind == "track" || pool.seed.kind == "media"):
+			c.lead = true
+			c.reason = stationReason{key: l10n.StationReasonSeed}
+		case pool.seedMedia[m.ID] && pool.seed.kind == "collection":
+			c.reason = stationReason{key: l10n.StationReasonSeed}
+		case bestWeight > 0 && best.EntityID == pool.seedEntity:
+			c.reason = stationReason{key: l10n.StationReasonFrom, args: l10n.Args{"title": best.Title}}
+		case bestWeight > 0 && pool.archetypes[best.EntityID] == "category":
+			c.reason = stationReason{key: l10n.StationReasonCategory, args: l10n.Args{"title": best.Title}}
+		case bestWeight > 0:
+			c.reason = stationReason{key: l10n.StationReasonShared, args: l10n.Args{"title": best.Title}}
+		case era > 0:
+			c.reason = stationReason{key: l10n.StationReasonEra, args: l10n.Args{"decade": strconv.Itoa(pool.seedYear / 10 * 10)}}
+		case played[m.ID]:
+			c.reason = stationReason{key: l10n.StationReasonPlayed}
+		default:
+			c.reason = stationReason{key: l10n.StationReasonPicked}
+		}
+		out[i] = c
+	}
+	return out
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+// stationReason is a candidate's localized, product-safe explanation: it names
+// the seed, a visible Entity the candidate shares with it, an era or the
+// listener's own history — never a Library, another Profile or a score.
+type stationReason struct {
+	key  l10n.Key
+	args l10n.Args
+}
+
+func (r stationReason) text(locale string) string { return l10n.Text(locale, r.key, r.args) }
+
+// rankStationCandidates orders candidates deterministically for a given
+// rankSeed (same seed → same order: debug reproducibility, ADR-0098). A track
+// seed leads; then the tuning bias; then the similarity score; then the rank
+// key. Tuning reorders the post-filter set ONLY and can never admit a filtered
+// item (the rejected items are already removed before this runs).
+func rankStationCandidates(candidates []stationScored, tuning stationTuning) {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		a, b := candidates[i], candidates[j]
+		if a.lead != b.lead {
+			return a.lead
+		}
+		if ba, bb := tuning.bias(a.item), tuning.bias(b.item); ba != bb {
+			// Higher bias ranks earlier.
+			return ba > bb
+		}
+		if a.score != b.score {
+			return a.score > b.score
+		}
+		return a.key < b.key
 	})
 }
 
@@ -262,21 +566,32 @@ func stationRankKey(id store.MediaID, rankSeed uint64) uint64 {
 }
 
 // stationRules is the parsed, EXECUTING hard Source filter (ADR-0098: hard
-// filters apply before ranking). The predicates wired today read fields present
-// on every Media (year, duration); the declarative rule vocabulary MUSIC-1 will
-// hydrate (genre/mood/decade Entity predicates) layers onto the same admits()
-// pass. A nil/zero field means "no constraint on that axis".
+// filters apply before ranking). Year and duration read fields present on every
+// Media; Decades keeps candidates whose year falls in a listed decade (1990
+// means 1990–1999); AnyEntityIDs keeps candidates linked to at least one listed
+// Entity — how a client asks for a genre or mood without naming plugin kinds
+// (CORE-2772). A nil/zero field means "no constraint on that axis".
 type stationRules struct {
-	MinYear            int `json:"minYear"`
-	MaxYear            int `json:"maxYear"`
-	MinDurationSeconds int `json:"minDurationSeconds"`
-	MaxDurationSeconds int `json:"maxDurationSeconds"`
+	MinYear            int      `json:"minYear"`
+	MaxYear            int      `json:"maxYear"`
+	MinDurationSeconds int      `json:"minDurationSeconds"`
+	MaxDurationSeconds int      `json:"maxDurationSeconds"`
+	Decades            []int    `json:"decades"`
+	AnyEntityIDs       []string `json:"anyEntityIDs"`
 }
 
-// admits reports whether a Media passes every hard filter. An item it rejects is
-// removed from the candidate set before ranking, so it can never reach the
-// window or an explanation.
-func (r stationRules) admits(m store.Media) bool {
+// admits reports whether a Media, with its Entity links, passes every hard
+// filter. An item it rejects is removed from the candidate set before ranking,
+// so it can never reach the window or an explanation.
+func (r stationRules) admits(m store.Media, links []store.MediaEntityLink) bool {
+	if len(r.Decades) > 0 && (m.Year == 0 || !slices.Contains(r.Decades, m.Year/10*10)) {
+		return false
+	}
+	if len(r.AnyEntityIDs) > 0 && !slices.ContainsFunc(links, func(link store.MediaEntityLink) bool {
+		return slices.Contains(r.AnyEntityIDs, string(link.EntityID))
+	}) {
+		return false
+	}
 	if r.MinYear > 0 && (m.Year == 0 || m.Year < r.MinYear) {
 		return false
 	}
@@ -334,34 +649,15 @@ func parseStationTuning(raw string) (stationTuning, error) {
 	return t, nil
 }
 
-// stationItemExplanation is the per-item, product-safe explanation. It names the
-// seed shape only — never another Profile's behavior, a hidden/Sealed Library
-// name, secrets, or a score vector.
-func stationItemExplanation(seed stationSeed) string {
-	switch seed.kind {
-	case "track":
-		return "from your track seed"
-	case "artist":
-		return "from your artist seed"
-	case "album":
-		return "from your album seed"
-	case "genre":
-		return "from your genre seed"
-	case "collection":
-		return "from your collection seed"
-	}
-	return ""
-}
-
 // stationScarcityExplanation is the Station-level explanation. When few items
 // survived filtering it says so generically, never disclosing which Libraries
 // were Sealed/hidden or why an item was dropped.
-func stationScarcityExplanation(n int) string {
+func stationScarcityExplanation(locale string, n int) string {
 	if n == 0 {
-		return "No tracks are available to start this station right now."
+		return l10n.Text(locale, l10n.StationEmpty, nil)
 	}
 	if n < stationWindowSize {
-		return "Only a few tracks matched, so this station is short."
+		return l10n.Text(locale, l10n.StationShort, nil)
 	}
 	return ""
 }
@@ -388,7 +684,7 @@ func parseStationSeed(req request) (stationSeed, error) {
 		return stationSeed{}, clientError("seedKind and seedID are required")
 	}
 	if !stationSeedKinds[kind] {
-		return stationSeed{}, clientError("seedKind must be one of track, artist, album, genre, collection")
+		return stationSeed{}, clientError("seedKind must be one of media, entity, collection, track, artist, album, genre")
 	}
 	return stationSeed{kind: kind, id: id}, nil
 }
