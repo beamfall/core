@@ -40,6 +40,18 @@ describe("card titles (CORE-2320)", () => {
     expect(cardSubline({ ...track, byline: ["A", "B"], summary: "" }, false)).toBe("A, B");
   });
 
+  it("leaves out a summary that only restates the card's runtime", () => {
+    const song = { ...item("s", "Glass Harbor", undefined, "45 sec"), subtitle: "Velvet Static" };
+    expect(cardSubline({ ...song, durationSeconds: 45 }, false)).toBe("Velvet Static");
+    expect(cardSubline({ ...song, summary: "4 min", durationSeconds: 200 }, false)).toBe(
+      "Velvet Static",
+    );
+    expect(cardSubline({ ...song, summary: "1 play", durationSeconds: 45 }, false)).toBe(
+      "Velvet Static · 1 play",
+    );
+    expect(cardSubline(song, false)).toBe("Velvet Static · 45 sec");
+  });
+
   it("puts the plugin subtitle first, in the display locale (CORE-2386)", () => {
     const episode = {
       ...item("e", "Reunion", 2024, "Reunion"),

@@ -705,7 +705,9 @@ function Rotation({
                       ? `${entry.participantName || name} (${t("partyGuestYou")})`
                       : entry.participantName}
                   </p>
-                  <p className="m-0 truncate text-sm text-muted-foreground">{entry.title}</p>
+                  <p className="m-0 truncate text-sm text-muted-foreground">
+                    {[entry.title, entry.subtitle].filter(Boolean).join(" · ")}
+                  </p>
                 </div>
                 <span className="shrink-0 text-sm text-muted-foreground">{etaLabel(entry, t)}</span>
               </li>

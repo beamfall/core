@@ -6,8 +6,8 @@ github.com/beamfall/plugin-familyarchive v0.1.18 h1:rTgmSIKjit/vhnZ4lwEFkd89WFyw
 github.com/beamfall/plugin-familyarchive v0.1.18/go.mod h1:j3FTnqKRhHntkq0zfP9dOCxtNKeVf4V1njh62maWJP8=
 github.com/beamfall/plugin-filmtv v0.1.28 h1:vK9JgM/+3zaYo2i5dKMl0/kgPx9AkEL9z+PvPhUWzH4=
 github.com/beamfall/plugin-filmtv v0.1.28/go.mod h1:UBO3hRVjAFT3F66JQEz/0A7RVC5HaljZQ+gfa0j2gAQ=
-github.com/beamfall/plugin-karaoke v0.1.12 h1:SzlUCQuNE8R22cKS02SrBKLBMC5Pa8OtkA25zrwC4DQ=
-github.com/beamfall/plugin-karaoke v0.1.12/go.mod h1:OWePHC8QM0rnVmuJJF8pisZK6Z0H1oNl1jWfed5gKSc=
+github.com/beamfall/plugin-karaoke v0.1.13 h1:tnMW/2p3a50Ju/PsDul9pPsuurCok9c8pE98o8OJDFI=
+github.com/beamfall/plugin-karaoke v0.1.13/go.mod h1:OWePHC8QM0rnVmuJJF8pisZK6Z0H1oNl1jWfed5gKSc=
 github.com/beamfall/plugin-music v0.1.20 h1:YeKtCfLCWjD7/vqW2WtIcICDuD7jzkmicU8WNHYrKuc=
 github.com/beamfall/plugin-music v0.1.20/go.mod h1:PHDzlsOT0ZxVKvjqa9rAv/zrmdDtnBL9kbjreFqXNmY=
 github.com/beamfall/plugin-photos v0.1.15 h1:q0lzHYiXAUH0PVMS6l1csbYhP7mopYJBiptugdX49aU=
