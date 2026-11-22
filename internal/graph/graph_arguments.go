@@ -364,12 +364,15 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "scraperID", Kind: "string"},
 		{Name: "year", Kind: "number", Optional: true},
 	},
+	"fixmatchcurrent":      {{Name: "mediaID", Kind: "string"}},
+	"fixmatchlockedfields": {{Name: "mediaID", Kind: "string"}},
 	"fixmatchpreview": {
 		{Name: "candidateID", Kind: "string"},
 		{Name: "mediaID", Kind: "string"},
 		{Name: "pluginID", Kind: "string"},
 		{Name: "scraperID", Kind: "string"},
 	},
+	"fixmatchsources": {{Name: "mediaID", Kind: "string"}},
 	"foldertree": {
 		{Name: "depth", Kind: "number", Optional: true},
 		{Name: "libraryID", Kind: "string"},

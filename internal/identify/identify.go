@@ -510,6 +510,12 @@ func (s *Service) applyOrdinal(ctx context.Context, mediaID store.MediaID, plugi
 // path. Visibility gating belongs to the caller — this is the server-internal
 // write path.
 func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string) error {
+	return s.ApplyWithClearedLocks(ctx, mediaID, pluginID, scraperID, candidateID, nil)
+}
+
+// ApplyWithClearedLocks applies a candidate and clears the chosen metadata locks.
+// The lookup and result validation happen before any locks can be changed.
+func (s *Service) ApplyWithClearedLocks(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, clearLocks []string) error {
 	if mediaID == "" {
 		return errors.New("identify: media ID is required")
 	}
@@ -534,6 +540,7 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 		title := s.appliedTitle(ctx, mediaID, pluginID, *metadata.Title, identifiedFieldTexts(bundle, spec, result))
 		metadata.Title = &title
 	}
+	metadata.ClearLocks = clearLocks
 	if err := s.applyLocal(ctx, mediaID, pluginID, scraperID, candidateID, metadata, bundle, spec, result); err != nil {
 		return err
 	}

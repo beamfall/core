@@ -7,9 +7,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
+	filmtv "github.com/beamfall/plugin-filmtv"
+	music "github.com/beamfall/plugin-music"
 	sdk "github.com/beamfall/plugin-sdk"
 
 	"github.com/beamfall/core/internal/auth"
@@ -20,6 +23,215 @@ import (
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
+
+const fixMatchSourcesTestQuery = `query($mediaID: String!) {
+	fixMatchSources(mediaID: $mediaID) { pluginID scraperID label supportsChildren acceptsPastedID isDefault }
+}`
+
+func TestFixMatchSourcesUsesOwningBundleAndProvenance(t *testing.T) {
+	st := storetest.Open(t)
+	registry, err := newTestPluginRegistry([]plugin.Bundle{filmtv.Bundle(), music.Bundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(manifest.NewService(st, time.Now, registry), auth.NewService(st), st, registry)
+	ctx := t.Context()
+	for _, tc := range []struct {
+		name       string
+		pluginID   string
+		container  string
+		codec      string
+		provenance store.MediaMetadataProvenance
+		want       []string
+		firstLabel string
+	}{
+		{"video", "filmtv", "mkv", "h264", store.MediaMetadataProvenance{PluginID: "filmtv", ScraperID: "tvdb-series", CandidateID: "7"},
+			[]string{"tvdb-series", "tmdb-movie", "tmdb-tv", "anilist-series", "anilist-movie"}, "TheTVDB (Series)"},
+		{"audio", "music", "flac", "flac", store.MediaMetadataProvenance{PluginID: "filmtv", ScraperID: "tmdb-tv", CandidateID: "8"},
+			[]string{"musicbrainz"}, "MusicBrainz"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			library, err := st.CreateLibrary(ctx, tc.name, false, tc.pluginID, "profile-default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: library.ID, Path: "/fixtures/" + tc.name + "." + tc.container, Title: tc.name,
+				Container: tc.container, Codec: tc.codec,
+				ContentFingerprint: "sha256:" + tc.name,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetMediaMetadataProvenance(ctx, media.ID, tc.provenance.PluginID, tc.provenance.ScraperID, tc.provenance.CandidateID); err != nil {
+				t.Fatal(err)
+			}
+			var sources []FixMatchSourceInfo
+			execGraph(t, handler, authorizeManager, fixMatchSourcesTestQuery, map[string]any{"mediaID": string(media.ID)}, "fixMatchSources", &sources)
+			var ids []string
+			for i, source := range sources {
+				ids = append(ids, source.ScraperID)
+				if source.PluginID != tc.pluginID || source.IsDefault != (i == 0) || source.SupportsChildren {
+					t.Fatalf("source %d = %+v", i, source)
+				}
+			}
+			if !slices.Equal(ids, tc.want) {
+				t.Fatalf("scraper IDs = %v, want %v", ids, tc.want)
+			}
+			if sources[0].Label != tc.firstLabel || !sources[0].AcceptsPastedID {
+				t.Fatalf("default source = %+v, want label %q and pasted-ID lookup", sources[0], tc.firstLabel)
+			}
+		})
+	}
+}
+
+func TestFixMatchReadsRequireManagerAndVisibleMedia(t *testing.T) {
+	handler, _ := newIdentifyTestHandler(t)
+	for _, query := range []string{
+		fixMatchSourcesTestQuery,
+		`query($mediaID: String!) { fixMatchCurrent(mediaID: $mediaID) { candidateID } }`,
+		`query($mediaID: String!) { fixMatchLockedFields(mediaID: $mediaID) { field value } }`,
+	} {
+		for _, tc := range []struct {
+			authorize func(*http.Request)
+			mediaID   string
+			message   string
+		}{
+			{authorizeManager, "media-archive", "unknown media"},
+			{authorizeViewer, "media-alpha", "manager role required"},
+		} {
+			resp := postGraphJSON(t, handler, tc.authorize, query, map[string]any{"mediaID": tc.mediaID})
+			if len(resp.Errors) != 1 || resp.Errors[0].Message != tc.message {
+				t.Fatalf("%s with %s = %+v, want %q", query, tc.mediaID, resp.Errors, tc.message)
+			}
+		}
+	}
+}
+
+type rematchTestEngine struct {
+	identifyTestEngine
+	searchCalls int
+}
+
+func (e *rematchTestEngine) Search(ctx context.Context, spec plugin.ScraperSpec, query string, vars ...scrape.Variables) ([]scrape.Result, error) {
+	e.searchCalls++
+	return e.identifyTestEngine.Search(ctx, spec, query, vars...)
+}
+
+func TestFixMatchReidentifiesMatchedItemAndRespectsLocks(t *testing.T) {
+	handler, st := newIdentifyTestHandler(t)
+	engine := &rematchTestEngine{}
+	service := identify.NewService(engine, handler.plugins, st)
+	service.SetProvenance(st)
+	service.SetAutoStores(st, st)
+	service.RegisterScorer("demo", fixedScorer{scores: map[string]float64{"42": 1}}, 0.75)
+	handler.SetIdentify(service)
+	ctx := t.Context()
+	media, first, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: "library-local", Path: "/fixtures/matched.mkv", Title: "Previous Title",
+		Container: "mkv", Codec: "h264", ContentFingerprint: "sha256:matched",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	part := store.MediaFile{Path: "/fixtures/matched-part2.mkv", ContentFingerprint: "sha256:matched-part2", PartOrdinal: 1}
+	alternate := store.MediaFile{Path: "/fixtures/matched-alt.mkv", ContentFingerprint: "sha256:matched-alt", VersionLabel: "alternate"}
+	for _, file := range []store.MediaFile{part, alternate} {
+		if err := st.AddMediaFileVersion(ctx, media.ID, file, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.MarkMediaFileMissing(ctx, media.LibraryID, alternate.Path); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetMediaMetadataProvenance(ctx, media.ID, "demo", "lookup", "previous"); err != nil {
+		t.Fatal(err)
+	}
+	title, summary := "Operator Title", "Operator Summary"
+	if err := st.UpdateMediaMetadata(ctx, media.ID, store.MediaMetadata{Title: &title, Summary: &summary, Source: store.MutationSourceManual}); err != nil {
+		t.Fatal(err)
+	}
+	if queued, err := st.IsUnmatched(ctx, media.ID); err != nil || queued {
+		t.Fatalf("initial unmatched state = %v, %v", queued, err)
+	}
+
+	const mutation = `mutation($mediaID: String!, $candidateID: String!, $clearLocks: [String!]) {
+		fixMatch(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: $candidateID, clearLocks: $clearLocks) { title summary year }
+	}`
+	const lockedFieldsQuery = `query($mediaID: String!) {
+		fixMatchLockedFields(mediaID: $mediaID) { field value }
+	}`
+	vars := map[string]any{"mediaID": string(media.ID), "candidateID": "42"}
+	var matched MediaInfo
+	execGraph(t, handler, authorizeManager, mutation, vars, "fixMatch", &matched)
+	if matched.Title != title || matched.Summary != summary || matched.Year != 1977 {
+		t.Fatalf("re-match with locks = %+v", matched)
+	}
+	for _, file := range []store.MediaFile{first, part, alternate} {
+		if pinned, found, err := st.MatchPinned(ctx, file.ContentFingerprint); err != nil || !found || !pinned {
+			t.Fatalf("match pin for %s = %v, %v, %v", file.ContentFingerprint, pinned, found, err)
+		}
+		outcome, err := service.AutoIdentify(ctx, media.ID, "demo", file.ContentFingerprint, identify.ParsedMedia{Title: "blue harvest"})
+		if err != nil || !outcome.Skipped || outcome.SkipReason != identify.SkipPinned || outcome.Applied || outcome.Queued {
+			t.Fatalf("auto-identify for %s = %+v, %v", file.ContentFingerprint, outcome, err)
+		}
+	}
+	if engine.searchCalls != 0 {
+		t.Fatalf("pinned re-match triggered %d searches", engine.searchCalls)
+	}
+	if queued, err := st.IsUnmatched(ctx, media.ID); err != nil || queued {
+		t.Fatalf("unmatched state after re-match and rescan = %v, %v", queued, err)
+	}
+
+	const currentQuery = `query($mediaID: String!) {
+		fixMatchCurrent(mediaID: $mediaID) { pluginID scraperID candidateID title year }
+	}`
+	var current *FixMatchCurrentInfo
+	execGraph(t, handler, authorizeManager, currentQuery, vars, "fixMatchCurrent", &current)
+	if want := (FixMatchCurrentInfo{PluginID: "demo", ScraperID: "lookup", CandidateID: "42", Title: title, Year: 1977}); current == nil || *current != want {
+		t.Fatalf("current match = %+v, want %+v", current, want)
+	}
+	execGraph(t, handler, authorizeManager, currentQuery, map[string]any{"mediaID": "media-alpha"}, "fixMatchCurrent", &current)
+	if current != nil {
+		t.Fatalf("unidentified current match = %+v, want null", current)
+	}
+
+	vars["clearLocks"] = []string{"title", "bogus"}
+	rejected := postGraphJSON(t, handler, authorizeManager, mutation, vars)
+	if len(rejected.Errors) != 1 || rejected.Errors[0].Extensions.Code != ErrorCodeInvalid || rejected.Errors[0].Message != "unknown lockable field" {
+		t.Fatalf("invalid clearLocks = %+v", rejected.Errors)
+	}
+	vars["candidateID"] = "missing"
+	vars["clearLocks"] = []string{"title"}
+	if rejected := postGraphJSON(t, handler, authorizeManager, mutation, vars); len(rejected.Errors) != 1 {
+		t.Fatalf("failed candidate lookup = %+v", rejected)
+	}
+	var locks []FixMatchLockedFieldInfo
+	execGraph(t, handler, authorizeManager, lockedFieldsQuery, vars, "fixMatchLockedFields", &locks)
+	if want := []FixMatchLockedFieldInfo{{Field: "title", Value: title}, {Field: "summary", Value: summary}}; !slices.Equal(locks, want) {
+		t.Fatalf("locks after failed fixes = %+v, want %+v", locks, want)
+	}
+
+	vars["candidateID"] = "42"
+	execGraph(t, handler, authorizeManager, mutation, vars, "fixMatch", &matched)
+	if matched.Title != "Blue Harvest" || matched.Summary != summary {
+		t.Fatalf("re-match clearing title lock = %+v", matched)
+	}
+	execGraph(t, handler, authorizeManager, lockedFieldsQuery, vars, "fixMatchLockedFields", &locks)
+	if want := []FixMatchLockedFieldInfo{{Field: "summary", Value: summary}}; !slices.Equal(locks, want) {
+		t.Fatalf("locks after clear = %+v, want %+v", locks, want)
+	}
+
+	sortTitle := "Earlier Provider Sort Key"
+	if err := st.UpdateMediaMetadata(ctx, media.ID, store.MediaMetadata{SortTitle: &sortTitle}); err != nil {
+		t.Fatal(err)
+	}
+	vars["clearLocks"] = []string{"sortTitle"}
+	execGraph(t, handler, authorizeManager, mutation, vars, "fixMatch", &matched)
+	if got, err := st.MediaSortTitle(ctx, media.ID, managerScope().LibraryFilter()); err != nil || got != "" {
+		t.Fatalf("sort title = %q, %v; replacement with no sort key must retract the earlier provider's key", got, err)
+	}
+}
 
 // METAPARITY-4 (ADR-0068 §A) — the Fix-Match full contract: the failure-reason
 // taxonomy on the queue read, per-candidate confidence + source attribution,

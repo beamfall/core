@@ -2,12 +2,16 @@ package graph
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/identify"
+	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -162,37 +166,141 @@ func (h *Handler) fixMatch(ctx context.Context, scope auth.Scope, req request) (
 	if mediaID == "" || pluginID == "" || scraperID == "" || candidateID == "" {
 		return MediaInfo{}, clientError("mediaID, pluginID, scraperID, and candidateID are required")
 	}
-	filter := scope.LibraryFilter()
-	if _, err := h.store.Media(ctx, store.MediaID(mediaID), filter); err != nil {
-		return MediaInfo{}, clientError("unknown media")
-	}
-	if err := h.identify.Apply(ctx, store.MediaID(mediaID), pluginID, scraperID, candidateID); err != nil {
+	vars := newVars(req)
+	clearLocks, _ := vars.StringList("clearLocks", "strings")
+	if err := vars.Err(); err != nil {
 		return MediaInfo{}, err
 	}
-	// Pin every file backing the Media so the corrected match survives rescans
-	// (a Media may carry several files across Versions/Parts, each keyed by its
-	// own content fingerprint, FREEZE-3 / ADR-0009 §7).
-	files, err := h.store.MediaFilesForMedia(ctx, store.MediaID(mediaID), filter)
+	filter := scope.LibraryFilter()
+	media, err := h.store.Media(ctx, store.MediaID(mediaID), filter)
+	if err != nil {
+		return MediaInfo{}, clientError("unknown media")
+	}
+	// Identification provenance lives in the shared catalog, outside encrypted Libraries.
+	encrypted, err := h.store.LibraryEncrypted(ctx, media.LibraryID)
 	if err != nil {
 		return MediaInfo{}, err
 	}
-	for _, file := range files {
-		if file.ContentFingerprint == "" {
-			continue
+	if encrypted {
+		return MediaInfo{}, clientError("unknown media")
+	}
+	if err := h.identify.ApplyWithClearedLocks(ctx, media.ID, pluginID, scraperID, candidateID, clearLocks); err != nil {
+		if errors.Is(err, store.ValidationError("unknown lockable field")) {
+			return MediaInfo{}, clientError("unknown lockable field")
 		}
-		if _, err := h.store.SetMatchPinned(ctx, file.ContentFingerprint, true); err != nil {
+		return MediaInfo{}, err
+	}
+	if len(clearLocks) != 0 {
+		if err := h.logActivity(ctx, scope, store.ActivityMediaFieldLock, "media", mediaID, media.LibraryID); err != nil {
 			return MediaInfo{}, err
 		}
+	}
+	if err := h.store.PinMediaMatch(ctx, media.ID, filter); err != nil {
+		return MediaInfo{}, err
 	}
 	// The item is resolved — drop its Unmatched-queue row if one was parked.
 	if _, err := h.store.ClearUnmatched(ctx, store.MediaID(mediaID)); err != nil {
 		return MediaInfo{}, err
 	}
-	media, err := h.store.Media(ctx, store.MediaID(mediaID), filter)
+	media, err = h.store.Media(ctx, media.ID, filter)
 	if err != nil {
 		return MediaInfo{}, clientError("unknown media")
 	}
 	return h.mediaInfo(ctx, scope, media)
+}
+
+// FixMatchSourceInfo describes a searchable scraper available to this Media.
+type FixMatchSourceInfo struct {
+	PluginID         string `json:"pluginID"`
+	ScraperID        string `json:"scraperID"`
+	Label            string `json:"label"`
+	SupportsChildren bool   `json:"supportsChildren"`
+	AcceptsPastedID  bool   `json:"acceptsPastedID"`
+	IsDefault        bool   `json:"isDefault"`
+}
+
+func (h *Handler) fixMatchSources(ctx context.Context, scope auth.Scope, req request) ([]FixMatchSourceInfo, error) {
+	media, err := h.fixMatchMedia(ctx, scope, req)
+	if err != nil {
+		return nil, err
+	}
+	sources := []FixMatchSourceInfo{}
+	pluginID, err := h.store.LibraryPluginID(ctx, media.LibraryID)
+	if err != nil {
+		return nil, err
+	}
+	if pluginID == "" || h.plugins == nil {
+		return sources, nil
+	}
+	bundle, ok := h.plugins.Bundle(plugin.ID(pluginID))
+	if !ok {
+		return sources, nil
+	}
+	current, _, err := h.store.MediaMetadataProvenance(ctx, media.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, scraper := range bundle.Scrapers {
+		if scraper.SearchTemplate == "" || plugin.LocalFileScraperKind(scraper.Kind) {
+			continue
+		}
+		label := scraper.DisplayName.Resolve("")
+		if label == "" {
+			label = scraper.ID
+		}
+		source := FixMatchSourceInfo{
+			PluginID:         pluginID,
+			ScraperID:        scraper.ID,
+			Label:            label,
+			SupportsChildren: false, // CORE-3127 adds ScraperSpec.Children.
+			AcceptsPastedID:  scraper.LookupTemplate != "" || len(scraper.LookupByIDTemplate) != 0,
+		}
+		if current.PluginID == pluginID && current.ScraperID == scraper.ID {
+			sources = slices.Insert(sources, 0, source)
+		} else {
+			sources = append(sources, source)
+		}
+	}
+	if len(sources) != 0 {
+		sources[0].IsDefault = true
+	}
+	return sources, nil
+}
+
+// FixMatchCurrentInfo pairs the applied candidate with the item's stored title and year.
+type FixMatchCurrentInfo struct {
+	PluginID    string `json:"pluginID"`
+	ScraperID   string `json:"scraperID"`
+	CandidateID string `json:"candidateID"`
+	Title       string `json:"title"`
+	Year        int    `json:"year"`
+}
+
+func (h *Handler) fixMatchCurrent(ctx context.Context, scope auth.Scope, req request) (*FixMatchCurrentInfo, error) {
+	media, err := h.fixMatchMedia(ctx, scope, req)
+	if err != nil {
+		return nil, err
+	}
+	current, found, err := h.store.MediaMetadataProvenance(ctx, media.ID)
+	if err != nil || !found {
+		return nil, err
+	}
+	return &FixMatchCurrentInfo{
+		PluginID: current.PluginID, ScraperID: current.ScraperID, CandidateID: current.CandidateID,
+		Title: media.Title, Year: media.Year,
+	}, nil
+}
+
+func (h *Handler) fixMatchMedia(ctx context.Context, scope auth.Scope, req request) (store.Media, error) {
+	mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
+	if mediaID == "" {
+		return store.Media{}, clientError("mediaID is required")
+	}
+	media, err := h.store.Media(ctx, mediaID, scope.LibraryFilter())
+	if err != nil {
+		return store.Media{}, clientError("unknown media")
+	}
+	return media, nil
 }
 
 func (h *Handler) associateImportUnmatchedRecord(ctx context.Context, scope auth.Scope, mediaID, recordID, importRunID string) (MediaInfo, error) {
@@ -410,6 +518,66 @@ func (h *Handler) fixMatchPreview(ctx context.Context, scope auth.Scope, req req
 		fieldDiff("summary", media.Summary, candidate.Summary),
 		fieldDiff("year", yearText(media.Year), yearText(candidate.Year)),
 	}, nil
+}
+
+// FixMatchLockedFieldInfo carries a manually locked value alongside the preview.
+type FixMatchLockedFieldInfo struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
+}
+
+func (h *Handler) fixMatchLockedFields(ctx context.Context, scope auth.Scope, req request) ([]FixMatchLockedFieldInfo, error) {
+	media, err := h.fixMatchMedia(ctx, scope, req)
+	if err != nil {
+		return nil, err
+	}
+	filter := scope.LibraryFilter()
+	locks, err := h.store.MediaFieldLocks(ctx, media.ID, filter)
+	if err != nil {
+		return nil, err
+	}
+	fields := []FixMatchLockedFieldInfo{}
+	var pluginValues map[string]string
+	for _, lock := range locks {
+		if !lock.Locked {
+			continue
+		}
+		var value string
+		switch lock.Field {
+		case "title":
+			value = media.Title
+		case "summary":
+			value = media.Summary
+		case "year":
+			value = yearText(media.Year)
+		case "sortTitle":
+			value, err = h.store.MediaSortTitle(ctx, media.ID, filter)
+			if err != nil {
+				return nil, err
+			}
+		case store.ArtworkLockField("poster"), store.ArtworkLockField("backdrop"), store.ArtworkLockField("thumb"):
+			slot := strings.ToLower(strings.TrimPrefix(lock.Field, "artwork"))
+			value = h.mediaArtworkSlots(media.ID)[slot]
+		default:
+			if pluginValues == nil {
+				stored, err := h.mediaFieldsQuery(ctx, scope, req)
+				if err != nil {
+					return nil, err
+				}
+				pluginValues = make(map[string]string, len(stored))
+				for _, field := range stored {
+					pluginValues[field.Name] = field.Value
+				}
+			}
+			var ok bool
+			value, ok = pluginValues[lock.Field]
+			if !ok {
+				continue
+			}
+		}
+		fields = append(fields, FixMatchLockedFieldInfo{Field: lock.Field, Value: value})
+	}
+	return fields, nil
 }
 
 // fieldDiff pairs one field's current and proposed text. An empty proposal is

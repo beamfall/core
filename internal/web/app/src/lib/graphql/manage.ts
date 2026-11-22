@@ -1697,7 +1697,7 @@ export async function identifySearch(vars: {
 }
 
 const FIX_MATCH_MUTATION =
-  "mutation FixMatch($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!) { fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID) { id title summary year favorited } }";
+  "mutation FixMatch($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $clearLocks: [String!]) { fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, clearLocks: $clearLocks) { id title summary year favorited } }";
 
 /** FixMatch — apply a selected candidate and clear the unmatched row. */
 export async function fixMatch(vars: {
@@ -1705,12 +1705,44 @@ export async function fixMatch(vars: {
   pluginID: string;
   scraperID: string;
   candidateID: string;
+  clearLocks?: string[];
 }): Promise<GenericMediaInfo> {
   const data = await graphql<{ fixMatch: GenericMediaInfo }>(FIX_MATCH_MUTATION, vars);
   return data.fixMatch;
 }
 
 // --- Fix Match full contract (METAPARITY-4, ADR-0068 §A) -------------------
+
+export interface FixMatchSourceInfo {
+  pluginID: string;
+  scraperID: string;
+  label: string;
+  supportsChildren: boolean;
+  acceptsPastedID: boolean;
+  isDefault: boolean;
+}
+
+export interface FixMatchCurrentInfo {
+  pluginID: string;
+  scraperID: string;
+  candidateID: string;
+  title: string;
+  year: number;
+}
+
+export interface FixMatchLockedFieldInfo {
+  field: string;
+  value: string;
+}
+
+export const FIX_MATCH_SOURCES_QUERY =
+  "query FixMatchSources($mediaID: String!) { fixMatchSources(mediaID: $mediaID) { pluginID scraperID label supportsChildren acceptsPastedID isDefault } }";
+
+export const FIX_MATCH_CURRENT_QUERY =
+  "query FixMatchCurrent($mediaID: String!) { fixMatchCurrent(mediaID: $mediaID) { pluginID scraperID candidateID title year } }";
+
+export const FIX_MATCH_LOCKED_FIELDS_QUERY =
+  "query FixMatchLockedFields($mediaID: String!) { fixMatchLockedFields(mediaID: $mediaID) { field value } }";
 
 const FIX_MATCH_CANDIDATES_QUERY =
   "query FixMatchCandidates($mediaID: String!, $pluginID: String!, $scraperID: String!, $query: String!, $year: Int) { fixMatchCandidates(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, query: $query, year: $year) { id title summary year pluginID scraperID confidence threshold scored reason } }";

@@ -482,7 +482,10 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"extensionrequest":                   newFieldHandler("extensionRequest", "extensionRequest", fieldRead, roleSession, 95),
 	"fixmatch":                           newFieldHandler("fixMatch", "fixMatch", fieldMutation, roleSession|roleManager, 60),
 	"fixmatchcandidates":                 newFieldHandler("fixMatchCandidates", "fixMatchCandidates", fieldRead, roleSession|roleManager, 60),
+	"fixmatchcurrent":                    newFieldHandler("fixMatchCurrent", "fixMatchCurrent", fieldRead, roleSession|roleManager, 60),
+	"fixmatchlockedfields":               newFieldHandler("fixMatchLockedFields", "fixMatchLockedFields", fieldRead, roleSession|roleManager, 60),
 	"fixmatchpreview":                    newFieldHandler("fixMatchPreview", "fixMatchPreview", fieldRead, roleSession|roleManager, 60),
+	"fixmatchsources":                    newFieldHandler("fixMatchSources", "fixMatchSources", fieldRead, roleSession|roleManager, 60),
 	"foldertree":                         newFieldHandler("folderTree", "folderTree", fieldRead, roleSession|roleManager, 110),
 	"formgroup":                          newFieldHandler("formGroup", "formGroup", fieldMutation, roleSession, 131),
 	"identifyapply":                      newFieldHandler("identifyApply", "identifyApply", fieldMutation, roleSession|roleManager, 60),
@@ -2051,6 +2054,24 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
+	if fields["fixmatchsources"] {
+		sources, err := h.fixMatchSources(ctx, scope, req)
+		if resp := resolveField(dispatch, "fixmatchsources", sources, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["fixmatchcurrent"] {
+		current, err := h.fixMatchCurrent(ctx, scope, req)
+		if resp := resolveField(dispatch, "fixmatchcurrent", current, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["fixmatchlockedfields"] {
+		locks, err := h.fixMatchLockedFields(ctx, scope, req)
+		if resp := resolveField(dispatch, "fixmatchlockedfields", locks, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	if fields["identifysearch"] || fields["identifyapply"] || fields["fixmatch"] ||
 		fields["identifylookup"] || fields["fixmatchcandidates"] || fields["fixmatchpreview"] {
 		if h.identify == nil {

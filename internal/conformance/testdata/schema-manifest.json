@@ -485,7 +485,22 @@
     "tier": "session"
   },
   {
+    "field": "fixmatchcurrent",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "fixmatchlockedfields",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "fixmatchpreview",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "fixmatchsources",
     "effect": "read",
     "tier": "session"
   },

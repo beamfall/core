@@ -7680,6 +7680,14 @@
         "optional": true
       },
       {
+        "name": "clearLocks",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
         "name": "importRunID",
         "kind": "string",
         "optional": true
@@ -8015,6 +8023,46 @@
     ]
   },
   {
+    "field": "fixmatchcurrent",
+    "kind": "object",
+    "children": [
+      {
+        "name": "candidateID",
+        "kind": "scalar"
+      },
+      {
+        "name": "pluginID",
+        "kind": "scalar"
+      },
+      {
+        "name": "scraperID",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      },
+      {
+        "name": "year",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "fixmatchlockedfields",
+    "kind": "object",
+    "children": [
+      {
+        "name": "field",
+        "kind": "scalar"
+      },
+      {
+        "name": "value",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "fixmatchpreview",
     "kind": "object",
     "children": [
@@ -8032,6 +8080,36 @@
       },
       {
         "name": "proposed",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "fixmatchsources",
+    "kind": "object",
+    "children": [
+      {
+        "name": "acceptsPastedID",
+        "kind": "scalar"
+      },
+      {
+        "name": "isDefault",
+        "kind": "scalar"
+      },
+      {
+        "name": "label",
+        "kind": "scalar"
+      },
+      {
+        "name": "pluginID",
+        "kind": "scalar"
+      },
+      {
+        "name": "scraperID",
+        "kind": "scalar"
+      },
+      {
+        "name": "supportsChildren",
         "kind": "scalar"
       }
     ]

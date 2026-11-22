@@ -181,6 +181,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"unknown family scope":                 ErrorCodeInvalid,
 	"unknown importer":                     ErrorCodeInvalid,
 	"unknown lifecycle action":             ErrorCodeInvalid,
+	"unknown lockable field":               ErrorCodeInvalid,
 	"unknown or non-flippable capability":  ErrorCodeInvalid,
 	"unknown permission":                   ErrorCodeInvalid,
 	"unknown plugin action":                ErrorCodeInvalid,

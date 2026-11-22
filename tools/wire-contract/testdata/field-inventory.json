@@ -1249,6 +1249,27 @@
       ]
     },
     {
+      "field": "fixmatchcurrent",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "candidateID",
+        "pluginID",
+        "scraperID",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "fixmatchlockedfields",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "field",
+        "value"
+      ]
+    },
+    {
       "field": "fixmatchpreview",
       "effect": "read",
       "tier": "session",
@@ -1257,6 +1278,19 @@
         "current",
         "field",
         "proposed"
+      ]
+    },
+    {
+      "field": "fixmatchsources",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "acceptsPastedID",
+        "isDefault",
+        "label",
+        "pluginID",
+        "scraperID",
+        "supportsChildren"
       ]
     },
     {

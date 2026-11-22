@@ -84,7 +84,10 @@ var resultTypes = map[string]any{
 	"identifysearch":         IdentifyCandidate{},
 	"identifylookup":         IdentifyCandidate{},
 	"fixmatchcandidates":     FixMatchCandidateInfo{},
+	"fixmatchcurrent":        FixMatchCurrentInfo{},
+	"fixmatchlockedfields":   FixMatchLockedFieldInfo{},
 	"fixmatchpreview":        FixMatchFieldDiff{},
+	"fixmatchsources":        FixMatchSourceInfo{},
 	"unmatchedqueue":         UnmatchedItemInfo{},
 	"unmatchedrecords":       UnmatchedRecordInfo{},
 	"unmatchedsuppressions":  UnmatchedSuppressionInfo{},
@@ -389,6 +392,7 @@ var fieldArguments = map[string][]NestedArgument{
 	"entityrelations":  {{Name: "entityID", Kind: "string"}, {Name: "relation", Kind: "string", Optional: true}},
 	"fixmatch": {
 		{Name: "candidateID", Kind: "string", Optional: true},
+		{Name: "clearLocks", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string"}},
 		{Name: "importRunID", Kind: "string", Optional: true},
 		{Name: "mediaID", Kind: "string"},
 		{Name: "pluginID", Kind: "string", Optional: true},

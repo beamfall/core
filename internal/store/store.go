@@ -571,6 +571,8 @@ type MediaMetadata struct {
 	// zero-value the store falls back to MutationSourceOperator (all
 	// explicit identification writes are operator-initiated today).
 	Source MutationSource
+	// ClearLocks are field locks to clear in the same transaction as the write.
+	ClearLocks []string
 }
 
 // ArtworkCandidate is one persisted scraped artwork alternative for a
@@ -2709,6 +2711,26 @@ func (s *Store) SetMatchPinned(ctx context.Context, fingerprint string, pinned b
 		return false, err
 	}
 	return affected > 0, nil
+}
+
+// PinMediaMatch pins the fingerprint of every file on a visible Media item,
+// including missing Parts or Versions that might be rediscovered by a scan.
+func (s *Store) PinMediaMatch(ctx context.Context, id MediaID, filter LibraryFilter) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, id, filter); err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx,
+		"UPDATE media_file SET match_pinned = 1 WHERE media_id = ? AND content_fingerprint <> ''", id)
+	return err
 }
 
 // SetMediaFileDecodeBroken records the result of a decode-verify pass over one

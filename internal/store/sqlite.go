@@ -3480,6 +3480,16 @@ func (s *Store) updateMediaMetadataSQL(ctx context.Context, id MediaID, metadata
 		}
 		return err
 	}
+	cleared := make(map[string]bool, len(metadata.ClearLocks))
+	for _, field := range metadata.ClearLocks {
+		if cleared[field] {
+			continue
+		}
+		if err := setMediaFieldLockTx(ctx, tx, id, field, false, true); err != nil {
+			return err
+		}
+		cleared[field] = true
+	}
 	// Per-field source-precedence gate: a built-in field lands
 	// only when the write's source rank >= the field's recorded rank, so an
 	// operator re-identify cannot overwrite a manual edit. Every landed field
