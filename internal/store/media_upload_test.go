@@ -214,10 +214,26 @@ func TestMediaUploadRefusesNestedLibraryAndTrashSpellings(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(nested, "x")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("refused commit created folders: %v", err)
 	}
+	if alias := filepath.Join(root, "OTHER"); sameFolder(nested, alias) {
+		if _, err := st.CommitMediaUpload(ctx, upload.ID, filepath.Join(alias, "x"), store.MediaUploadKeepBoth, filter, now); err == nil || !strings.Contains(err.Error(), "another library") {
+			t.Fatalf("nested library spelled in another case: %v", err)
+		}
+	}
 	if _, err := st.CommitMediaUpload(ctx, upload.ID, filepath.Join(root, "Kept"), store.MediaUploadKeepBoth, filter, now); err != nil {
 		t.Fatalf("sibling destination: %v", err)
 	}
 	if _, err := st.CreateMediaUpload(ctx, "library-local", "a.mkv", strings.ToUpper(".beamfall-trash")+"/x", 1, filter, now); err == nil {
 		t.Fatal("trash folder spelled in another case was accepted")
 	}
+}
+
+// sameFolder reports whether two spellings name one folder (true on a
+// case-insensitive volume).
+func sameFolder(a, b string) bool {
+	ai, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bi, err := os.Stat(b)
+	return err == nil && os.SameFile(ai, bi)
 }

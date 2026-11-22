@@ -719,6 +719,29 @@ func (s *Store) rejectNestedLibraryRootLocked(ctx context.Context, libraryID Lib
 		if other != root && pathWithinRoot(root, other) && pathWithinRoot(other, dir) {
 			return ValidationError("destination is inside another library")
 		}
+		// Spelling comparison misses a case-insensitive volume, where "other"
+		// and "Other" name one folder: compare the existing ancestors by identity.
+		if destinationReachesFolder(root, dir, other) {
+			return ValidationError("destination is inside another library")
+		}
 	}
 	return rows.Err()
+}
+
+// destinationReachesFolder reports whether dir or one of its existing
+// ancestors strictly below root is the same file as folder.
+func destinationReachesFolder(root, dir, folder string) bool {
+	target, err := os.Stat(folder)
+	if err != nil || !target.IsDir() {
+		return false
+	}
+	if rootInfo, err := os.Stat(root); err == nil && os.SameFile(rootInfo, target) {
+		return false
+	}
+	for p := filepath.Clean(dir); p != root && pathWithinRoot(root, p); p = filepath.Dir(p) {
+		if info, err := os.Stat(p); err == nil && os.SameFile(info, target) {
+			return true
+		}
+	}
+	return false
 }
