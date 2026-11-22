@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ItemTarget, SourceItem } from "@/lib/graphql/types";
 import { fetchSourceItems } from "@/lib/graphql/viewer";
@@ -14,6 +14,7 @@ import {
   saveScreensaverEnabled,
   screensaverEnabled,
   screensaverPath,
+  trackTyping,
 } from "./lib/screensaver";
 import {
   clampInterval,
@@ -342,6 +343,52 @@ describe("SlideshowPage", () => {
     );
   });
 
+  it("does not record a Source switched to before it paints (CORE-2981)", async () => {
+    function SwitchSource() {
+      const navigate = useNavigate();
+      return (
+        <button
+          type="button"
+          onClick={() => navigate("/slideshow?source=collection&collection=empty")}
+        >
+          switch
+        </button>
+      );
+    }
+    // The mocked collection read is empty.
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/slideshow?source=favorites&library=lib"]}>
+          <SwitchSource />
+          <Routes>
+            <Route path="/slideshow" element={<SlideshowPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    fireEvent.load(await screen.findByRole("img", { name: "Title one" }));
+    await waitFor(() =>
+      expect(lastSlideshowSource()).toEqual({ kind: "favorites", libraryID: "lib" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "switch" }));
+    await waitFor(() => expect(screen.queryByRole("img")).not.toBeInTheDocument());
+    expect(lastSlideshowSource()).toEqual({ kind: "favorites", libraryID: "lib" });
+  });
+
+  it("closes the screensaver on one large pointer move after the grace period", async () => {
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    renderAt("/slideshow?source=favorites&screensaver=1");
+    await screen.findByRole("img", { name: "Title one" });
+    // jsdom has no PointerEvent; a MouseEvent carries the coordinates.
+    const point = (clientX: number) =>
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX, clientY: 10 }));
+    point(10);
+    clock = 5000;
+    point(200);
+    expect(await screen.findByText("home")).toBeInTheDocument();
+  });
+
   it("keeps the screensaver option per device from the setup sheet", async () => {
     renderAt("/slideshow");
     const option = await screen.findByRole("checkbox", { name: "Open this slideshow when idle" });
@@ -357,7 +404,14 @@ describe("screensaver helpers", () => {
   it("counts idle only on browsing routes", () => {
     expect(idleRoute("/")).toBe(true);
     expect(idleRoute("/n/lib/all")).toBe(true);
-    for (const route of ["/watch/m1", "/view/m1", "/slideshow", "/profiles", "/remote"]) {
+    for (const route of [
+      "/watch/m1",
+      "/view/m1",
+      "/slideshow",
+      "/profiles",
+      "/remote",
+      "/party/stage/s1",
+    ]) {
       expect(idleRoute(route)).toBe(false);
     }
   });
@@ -373,6 +427,33 @@ describe("screensaver helpers", () => {
     expect(pageBusy(document)).toBe(true);
     document.body.innerHTML = '<div role="dialog"></div>';
     expect(pageBusy(document)).toBe(true);
+    document.body.innerHTML = "";
+  });
+
+  it("treats text typed into a controlled field as unsaved until its form submits", () => {
+    const untrack = trackTyping(document);
+    document.body.innerHTML = '<form><input id="name"><button id="go">Create</button></form>';
+    const field = document.getElementById("name") as HTMLInputElement;
+    field.focus();
+    field.value = "New playlist";
+    // React mirrors a controlled field's value into defaultValue.
+    field.defaultValue = "New playlist";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    (document.getElementById("go") as HTMLElement).focus();
+    expect(pageBusy(document)).toBe(true);
+    field.form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(pageBusy(document)).toBe(false);
+    untrack();
+    document.body.innerHTML = "";
+  });
+
+  it("treats playing media as busy", () => {
+    document.body.innerHTML = "<video></video>";
+    const video = document.querySelector("video") as HTMLVideoElement;
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    expect(pageBusy(document)).toBe(true);
+    Object.defineProperty(video, "paused", { configurable: true, value: true });
+    expect(pageBusy(document)).toBe(false);
     document.body.innerHTML = "";
   });
 

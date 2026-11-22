@@ -13,7 +13,7 @@ const ENABLED_KEY = "bf.screensaver.enabled";
 const LAST_SOURCE_KEY = "bf.slideshow.lastSource";
 
 /** Routes where a viewer is watching or doing something, so idle does not count. */
-const BUSY_ROUTES = ["/watch", "/view", "/slideshow", "/profiles", "/remote"];
+const BUSY_ROUTES = ["/watch", "/view", "/slideshow", "/profiles", "/remote", "/party/stage"];
 /** Fields a viewer types into; a focused checkbox or button is not mid-task. */
 const TEXT_FIELDS =
   "input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='button']):not([type='submit']), textarea, [contenteditable='true']";
@@ -67,12 +67,44 @@ export function idleRoute(pathname: string): boolean {
   return !BUSY_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
 
-/** Whether the page is mid-task: a dialog is open, or a text field has focus or unsaved text. */
+// Text fields the viewer has typed into since their form last submitted or
+// reset. React keeps a controlled field's defaultValue equal to its value, so
+// value against defaultValue cannot tell unsaved text on its own.
+const typed = new WeakSet<Element>();
+
+/** Follows typing in doc's text fields for pageBusy; returns the cleanup. */
+export function trackTyping(doc: Document): () => void {
+  const onInput = (event: Event) => {
+    const target = event.target;
+    if (target instanceof Element && target.matches(TEXT_FIELDS)) typed.add(target);
+  };
+  const onDone = (event: Event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    for (const field of form.querySelectorAll(TEXT_FIELDS)) typed.delete(field);
+  };
+  doc.addEventListener("input", onInput, true);
+  doc.addEventListener("submit", onDone, true);
+  doc.addEventListener("reset", onDone, true);
+  return () => {
+    doc.removeEventListener("input", onInput, true);
+    doc.removeEventListener("submit", onDone, true);
+    doc.removeEventListener("reset", onDone, true);
+  };
+}
+
+/**
+ * Whether the page is mid-task: a dialog is open, media is playing, or a text
+ * field has focus or unsaved text.
+ */
 export function pageBusy(doc: Document): boolean {
   if (
     doc.querySelector("dialog[open], [role='dialog'], [role='alertdialog'], [aria-modal='true']")
   ) {
     return true;
+  }
+  for (const media of doc.querySelectorAll("video, audio")) {
+    if (media instanceof HTMLMediaElement && !media.paused && !media.ended) return true;
   }
   const active = doc.activeElement;
   if (active instanceof HTMLElement && active.closest(TEXT_FIELDS)) return true;
@@ -81,7 +113,7 @@ export function pageBusy(doc: Document): boolean {
   for (const field of doc.querySelectorAll(TEXT_FIELDS)) {
     if (
       (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) &&
-      field.value !== field.defaultValue
+      (field.value !== field.defaultValue || (typed.has(field) && field.value !== ""))
     ) {
       return true;
     }

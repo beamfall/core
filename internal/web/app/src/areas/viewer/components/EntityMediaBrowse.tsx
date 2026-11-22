@@ -72,7 +72,7 @@ export function EntityMediaBrowse({
   // as a filmography, anything else in the server's order, one queue per card.
   if (listsPlaysAlone(items))
     return entity?.archetype === "person" ? (
-      <PersonFilmography items={items} />
+      <PosterGrid items={items} byYear />
     ) : (
       <SequencedMedia items={items} label={label} />
     );

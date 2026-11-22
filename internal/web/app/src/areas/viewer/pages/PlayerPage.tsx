@@ -387,10 +387,16 @@ function FeaturePlayer({
   const [learnedClasses, setLearnedClasses] = useState<Record<string, string>>({});
   // An item that plays on its own neither queues its siblings nor is queued
   // after one (CORE-3147).
-  const navQueue = useMemo(
-    () => (navState.queue ? queueForPlaying(navState.queue, mediaId || "") : undefined),
-    [navState.queue, mediaId],
-  );
+  // The media(id) read is authoritative: an entry a page sent without the flag
+  // still plays alone once the read says so.
+  const playsAloneRead = media?.id === mediaId && media?.playsAlone === true;
+  const navQueue = useMemo(() => {
+    if (!navState.queue) return undefined;
+    const queue = playsAloneRead
+      ? navState.queue.map((item) => (item.id === mediaId ? { ...item, playsAlone: true } : item))
+      : navState.queue;
+    return queueForPlaying(queue, mediaId || "");
+  }, [navState.queue, mediaId, playsAloneRead]);
   const classedQueue = useMemo(
     () => (navQueue ? withQueueClasses(navQueue, learnedClasses) : undefined),
     [navQueue, learnedClasses],

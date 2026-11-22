@@ -220,7 +220,7 @@ export async function fetchSourceItems(
 }
 
 const SMART_COLLECTION_ITEMS_QUERY =
-  "query SmartCollectionItems($kind: String, $value: String, $limit: Int, $offset: Int) { sourceItems(kind: $kind, value: $value, limit: $limit, offset: $offset) { id title durationSeconds mediaClass locked } }";
+  "query SmartCollectionItems($kind: String, $value: String, $limit: Int, $offset: Int) { sourceItems(kind: $kind, value: $value, limit: $limit, offset: $offset) { id title durationSeconds mediaClass locked playsAlone } }";
 
 /** One page of a Smart Collection's items, evaluated by the server for the calling Profile. */
 export async function fetchSmartCollectionItems(

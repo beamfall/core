@@ -217,6 +217,8 @@ function Slideshow() {
   const [prefs, setPrefs] = useState<SlideshowPrefs>(loadPrefs);
   const [sheetOpen, setSheetOpen] = useState(source === null && !screensaver);
   const [items, setItems] = useState<SourceItem[] | null>(null);
+  // The Source `items` came from: on the first render after a switch they are still the old one's.
+  const [itemsSource, setItemsSource] = useState<SlideshowSource | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   // Whether every page of the Source has arrived: an empty first page is not an empty Source.
   const [loadDone, setLoadDone] = useState(false);
@@ -295,7 +297,14 @@ function Slideshow() {
     }
     if (!source) return;
     const controller = new AbortController();
-    fetchSlideshowItems(source, (next) => setItems(next), controller.signal)
+    fetchSlideshowItems(
+      source,
+      (next) => {
+        setItems(next);
+        setItemsSource(source);
+      },
+      controller.signal,
+    )
       .then(() => {
         if (!controller.signal.aborted) setLoadDone(true);
       })
@@ -539,10 +548,12 @@ function Slideshow() {
       close();
     };
     const move = (event: PointerEvent) => {
-      if (performance.now() - openedAt < SCREENSAVER_GRACE_MS) return;
-      if (!origin) {
+      // Moves during the grace period only fix where the pointer rests, so the
+      // first deliberate move after it can close the screensaver on its own.
+      const resting = performance.now() - openedAt < SCREENSAVER_GRACE_MS;
+      if (!origin || resting) {
         origin = { x: event.clientX, y: event.clientY };
-        return;
+        if (resting) return;
       }
       if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) >= SCREENSAVER_MOVE_PX) {
         dismiss(event);
@@ -666,7 +677,7 @@ function Slideshow() {
   }, [screensaver, nothingToShow, close]);
 
   // The Source this device last played is what its screensaver plays: one that painted a slide.
-  const playing = !!source && !!shown;
+  const playing = !!source && !!shown && sameSource(itemsSource, source);
   useEffect(() => {
     if (!screensaver && playing && source) saveLastSlideshowSource(source);
   }, [screensaver, playing, source]);

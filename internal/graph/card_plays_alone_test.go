@@ -94,3 +94,56 @@ func TestPlaysAloneFollowsThePluginDeclaration(t *testing.T) {
 		}
 	}
 }
+
+// TestSemanticSourceItemsCarryPlaysAlone pins CORE-3147 on the one card path
+// that skips card enrichment: an all-items Source read in semantic mode.
+func TestSemanticSourceItemsCarryPlaysAlone(t *testing.T) {
+	st := storetest.Open(t)
+	registry, err := newTestPluginRegistry([]plugin.Bundle{{
+		ID: "alonekit", Version: "0.1.0", DisplayName: plugin.L("alonekit"), MediaLabel: plugin.L("Item"),
+		Engagement: plugin.Engagement{PlaysAlone: true},
+		Layouts: []plugin.LayoutSpec{{ID: "home", Role: "browse", Sections: []plugin.SectionSpec{
+			{ID: "all", Kind: "grid", Title: plugin.L("All"), ArtworkSlot: "poster", Source: plugin.SourceSpec{Kind: "all-items"}},
+		}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(
+		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, registry),
+		auth.NewService(st),
+		st,
+		registry,
+	)
+	ctx := context.Background()
+	library, err := st.CreateLibrary(ctx, "Lib alonekit", false, "alonekit", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	vec := []float32{1, 0, 0}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: "/alone/semantic.mkv", Title: "Semantic Alone",
+		Container: "mkv", Codec: "h264", ContentFingerprint: "sha256:alone-semantic", DurationSecondsHint: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEmbedding(ctx, "sha256:alone-semantic", "text-v1", vec); err != nil {
+		t.Fatal(err)
+	}
+	handler.SetQueryEmbedder(stubEmbedder{kind: "text-v1", available: true, vector: vec})
+
+	data, errs := post(t, handler,
+		`{"query":"query { sourceItems { id playsAlone } }","variables":{"kind":"all-items","query":"anything","mode":"semantic"}}`,
+		authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("semantic sourceItems errors = %#v", errs)
+	}
+	card, ok := cardsByID(t, data["sourceItems"])[string(media.ID)]
+	if !ok {
+		t.Fatalf("semantic sourceItems omitted the hit: %s", data["sourceItems"])
+	}
+	if got := string(card["playsAlone"]); got != "true" {
+		t.Errorf("semantic card playsAlone = %q, want true", got)
+	}
+}

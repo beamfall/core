@@ -551,6 +551,9 @@ func (h *Handler) semanticItems(ctx context.Context, profileID store.ProfileID, 
 	if err := h.store.AnnotateEngagement(ctx, profileID, filter, sources, nil); err != nil {
 		return nil, err
 	}
+	// The all-items Source returns these hits without the card enrichment
+	// search results get, so the plays-alone flag is set here (CORE-3147).
+	h.annotatePlaysAlone(ctx, sources)
 	items := make([]SearchResultItem, len(sources))
 	for i := range sources {
 		items[i] = SearchResultItem{
