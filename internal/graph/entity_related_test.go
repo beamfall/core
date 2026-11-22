@@ -152,7 +152,7 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 	}
 }
 
-func TestUnruledRelatedEntityCardsUseOwningPluginArchetype(t *testing.T) {
+func TestUnruledRelatedEntityCardsPreserveOrderAndOwningPluginArchetype(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
 	var bundles []plugin.Bundle
@@ -174,11 +174,16 @@ func TestUnruledRelatedEntityCardsUseOwningPluginArchetype(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		id := store.EntityID(archetype)
-		if err := st.UpsertEntity(ctx, store.Entity{ID: id, LibraryID: library.ID, Kind: "record", Title: archetype}); err != nil {
+	}
+	want := []struct {
+		id    store.EntityID
+		owner int
+	}{{"first", 0}, {"second", 1}, {"third", 0}}
+	for i, card := range want {
+		if err := st.UpsertEntity(ctx, store.Entity{ID: card.id, LibraryID: libraries[card.owner], Kind: "record", Title: string(card.id)}); err != nil {
 			t.Fatal(err)
 		}
-		if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: id, Name: "related", ToEntityID: "context"}); err != nil {
+		if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: card.id, Name: "related", ToEntityID: "context", SortOrder: &i}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -193,12 +198,13 @@ func TestUnruledRelatedEntityCardsUseOwningPluginArchetype(t *testing.T) {
 		t.Fatal(err)
 	}
 	groups := detail.RelatedEntities
-	if len(groups) != 2 {
-		t.Fatalf("related groups = %+v, want two owning plugin groups", groups)
+	if len(groups) != len(want) {
+		t.Fatalf("related groups = %+v, want three consecutive owner runs", groups)
 	}
-	for _, group := range groups {
-		if len(group.Items) != 1 || group.Items[0].ID != group.Archetype || len(group.Sections) != 0 {
-			t.Fatalf("group = %+v, want one card with its owning plugin's archetype and no sections", group)
+	for i, group := range groups {
+		archetype := bundles[want[i].owner].EntityKinds[0].Archetype
+		if len(group.Items) != 1 || group.Items[0].ID != string(want[i].id) || group.Archetype != archetype || len(group.Sections) != 0 {
+			t.Fatalf("group %d = %+v, want card %q with archetype %q and no sections", i, group, want[i].id, archetype)
 		}
 	}
 }

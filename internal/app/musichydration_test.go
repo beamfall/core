@@ -1398,27 +1398,38 @@ func (r *rehydrationScan) field(name string) string {
 	return ""
 }
 
-type taggedFixtureHydration struct{ rehydratingTestMapper }
+type taggedFixtureHydration struct {
+	rehydratingTestMapper
+	tagField string
+}
 
-func (taggedFixtureHydration) HydrationTag() HydrationTag {
-	return HydrationTag{Field: "format", Keys: []string{"releasetype"}, Read: func(tags map[string]string) string { return tags["releasetype"] }}
+func (m taggedFixtureHydration) HydrationTag() HydrationTag {
+	field := m.tagField
+	if field == "" {
+		field = "format"
+	}
+	return HydrationTag{Field: field, Keys: []string{"releasetype"}, Read: func(tags map[string]string) string { return tags["releasetype"] }}
 }
 
 func TestHydrationRegistrationRejectsInvalidTagField(t *testing.T) {
-	for _, fieldType := range []string{"", "number"} {
-		t.Run("type="+fieldType, func(t *testing.T) {
+	for _, tc := range []struct{ name, field, fieldType string }{
+		{name: "undeclared", field: "format"},
+		{name: "wrong type", field: "format", fieldType: "number"},
+		{name: "implicit plan title", field: "title"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			bundle := rehydrationBundle()
 			i := slices.IndexFunc(bundle.MediaFields, func(f plugin.FieldSpec) bool { return f.Name == "format" })
-			if fieldType == "" {
+			if tc.fieldType == "" {
 				bundle.MediaFields = slices.Delete(bundle.MediaFields, i, i+1)
 			} else {
-				bundle.MediaFields[i].Type = fieldType
+				bundle.MediaFields[i].Type = tc.fieldType
 			}
 			registry, err := plugin.NewRegistry([]plugin.Bundle{bundle})
 			if err != nil {
 				t.Fatal(err)
 			}
-			hydrators := newHydrationAdapters(registry, newFakeHydrationStore(), map[string]HydrationMapper{testHydrationPluginID: taggedFixtureHydration{}})
+			hydrators := newHydrationAdapters(registry, newFakeHydrationStore(), map[string]HydrationMapper{testHydrationPluginID: taggedFixtureHydration{tagField: tc.field}})
 			adapter := hydrators[testHydrationPluginID].(*hydrationAdapter)
 			if adapter.tag.Field != "" || adapter.Capability().TrackFilePath {
 				t.Fatalf("invalid tag field %q was registered", adapter.tag.Field)
@@ -1516,6 +1527,46 @@ func TestScanWritesAndClearsIndependentTag(t *testing.T) {
 	r.scan()
 	if got := r.field("format"); got != "" {
 		t.Fatalf("tag after clearing = %q, want empty", got)
+	}
+}
+
+func TestFreshHydrationReplacesBackfilledTag(t *testing.T) {
+	registry, err := plugin.NewRegistry([]plugin.Bundle{rehydrationBundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, tag string }{{"replace", "lp"}, {"clear", ""}} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRehydrationScan(t)
+			r.write("unhydrated audio file bytes", 3*time.Hour, nil)
+			r.scan()
+			ctx := t.Context()
+			if err := r.st.InsertHydrationTagIfAbsent(ctx, r.mediaID, "format", "ep"); err != nil {
+				t.Fatal(err)
+			}
+			if tag, key := r.field("format"), r.field(testHydrationFingerprintField); tag != "ep" || key != "" {
+				t.Fatalf("before hydration: tag = %q, key = %q, want ep and no key", tag, key)
+			}
+			adapter := newHydrationAdapters(registry, r.st, map[string]HydrationMapper{testHydrationPluginID: taggedFixtureHydration{}})[testHydrationPluginID]
+			if err := adapter.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
+				MediaID: r.mediaID, LibraryID: r.library, Class: store.MediaClassAudio,
+				Path: r.path, MetadataProbed: true, ContentFingerprint: "fp-1",
+				Metadata: map[string]string{"releasetype": tc.tag},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			fields, err := r.st.MediaFields(ctx, r.mediaID, metadataLibraryFilter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			i := slices.IndexFunc(fields, func(f store.MediaField) bool { return f.Name == "format" })
+			if tc.tag == "" && i != -1 || tc.tag != "" && (i == -1 || fields[i].Text != tc.tag) {
+				t.Fatalf("fresh hydration fields = %+v, want tag %q (absent when empty)", fields, tc.tag)
+			}
+			if key := r.field(testHydrationFingerprintField); recordedFingerprint(key) != "fp-1" {
+				t.Fatalf("fresh hydration key = %q, want fingerprint fp-1", key)
+			}
+		})
 	}
 }
 

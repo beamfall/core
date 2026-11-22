@@ -298,10 +298,10 @@ func (s *Store) UpsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 // probe clears the value and records scan provenance so backfill cannot revive it.
 func (s *Store) UpsertScannedMediaTag(ctx context.Context, id MediaID, name, value string) error {
 	field := MediaField{Name: name, Type: EntityFieldText, Text: value}
-	return s.upsertMediaFieldsWithSource(ctx, id, []MediaField{field}, MutationSourceScan, value == "")
+	return s.upsertMediaFieldsWithSource(ctx, id, []MediaField{field}, MutationSourceScan, true)
 }
 
-func (s *Store) upsertMediaFieldsWithSource(ctx context.Context, id MediaID, fields []MediaField, source MutationSource, clear bool) error {
+func (s *Store) upsertMediaFieldsWithSource(ctx context.Context, id MediaID, fields []MediaField, source MutationSource, standaloneTag bool) error {
 	if id == "" {
 		return errors.New("media ID is required")
 	}
@@ -328,6 +328,7 @@ func (s *Store) upsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 	defer tx.Rollback()
 	wrote := 0
 	for _, field := range fields {
+		clear := standaloneTag && field.Text == ""
 		if !clear && source != MutationSourceManual {
 			tombstoned, err := mediaFieldTombstonedTx(ctx, tx, id, field)
 			if err != nil {
@@ -343,6 +344,15 @@ func (s *Store) upsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 		}
 		if !allowed {
 			continue // a higher-precedence source owns this field — preserve it
+		}
+		if standaloneTag {
+			unchanged, err := scannedMediaTagMatchesTx(ctx, tx, id, field, clear)
+			if err != nil {
+				return err
+			}
+			if unchanged {
+				continue
+			}
 		}
 		// A field's type may change across writes, so the old value is
 		// cleared from every side table, not just the new type's.
@@ -369,6 +379,24 @@ func (s *Store) upsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 		s.emitMediaUpdated(ctx, id)
 	}
 	return nil
+}
+
+func scannedMediaTagMatchesTx(ctx context.Context, tx *sql.Tx, id MediaID, field MediaField, clear bool) (bool, error) {
+	var sameProvenance bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM media_field_provenance
+		WHERE media_id = ? AND field = ? AND source = ? AND parser_owned = ?)
+	`, id, field.Name, MutationSourceScan, parserOwnedNone).Scan(&sameProvenance); err != nil || !sameProvenance {
+		return false, err
+	}
+	stored, exists, err := mediaFieldValueTx(ctx, tx, id, field.Name)
+	if err != nil {
+		return false, err
+	}
+	if clear {
+		return !exists, nil
+	}
+	return exists && mediaFieldValuesEqual(stored, field), nil
 }
 
 // InsertMediaFieldsIfAbsent writes only fields with no existing (media_id,
