@@ -279,7 +279,7 @@ GET /source/ffmpeg, with its SHA-256 in the X-Checksum-SHA256 header.
 
 -------------------------------------------------------------------------------
 
-25. Oscillux v0.2.14 oscillux-cdg-render.wasm (AGPL-3.0-only)
+25. Oscillux v0.2.17 oscillux-cdg-render.wasm (AGPL-3.0-only)
     https://github.com/beamfall/oscillux
     Embedded unchanged in internal/ffmpeg/cdgrender/ as the CD+G presenter that
     draws composed karaoke graphics (CORE-3150, ADR-0228). Its release and
