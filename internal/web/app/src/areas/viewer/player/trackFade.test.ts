@@ -75,6 +75,34 @@ describe("fadeAdvance", () => {
     expect(video.volume).toBeCloseTo(0.8);
   });
 
+  it("skips at once, at the listener's level, when the tab hides mid-fade (CORE-3356)", () => {
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    try {
+      const video = playingElement();
+      const advance = vi.fn();
+      fadeAdvance(video, advance);
+      vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+      // A hidden tab runs no frames: the skip must not wait for them.
+      hidden.mockReturnValue(true);
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(advance).toHaveBeenCalledOnce();
+      expect(video.volume).toBe(0.8);
+      expect(skipFadingOut()).toBe(false);
+      hidden.mockReturnValue(false);
+      document.dispatchEvent(new Event("visibilitychange"));
+      vi.advanceTimersByTime(TRACK_FADE_MS * 4);
+      expect(advance).toHaveBeenCalledOnce();
+
+      // Started while hidden, it is a cut.
+      hidden.mockReturnValue(true);
+      const later = vi.fn();
+      fadeAdvance(playingElement(), later);
+      expect(later).toHaveBeenCalledOnce();
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
   it("fades back in when the skip loads nothing", () => {
     const video = playingElement();
     fadeAdvance(video, () => {});

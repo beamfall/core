@@ -2512,6 +2512,30 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
     await waitFor(() => expect(playingNow()).toBe("media-next"));
   });
 
+  it("plays the named item once when the tab hides during a Play now and the track ends (CORE-3356)", async () => {
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    try {
+      const video = await playNowAudibly();
+      // A hidden tab runs no animation frames: the skip cannot wait for them.
+      hidden.mockReturnValue(true);
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+        video.dispatchEvent(new Event("ended"));
+      });
+      await waitFor(() => expect(playingNow()).toBe("media-next"));
+      hidden.mockReturnValue(false);
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 600)));
+      const ids = vi.mocked(usePlayer).mock.calls.map(([id]) => id);
+      expect(ids.slice(ids.indexOf("media-next"))).not.toContain("media-alpha");
+      expect(playingNow()).toBe("media-next");
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
   it("drops a Play now when a Watch Party takes the lead under it (CORE-3352)", async () => {
     const rerender = renderAdvance();
     const stage = document.querySelector<HTMLElement>(".bf-audio-stage");

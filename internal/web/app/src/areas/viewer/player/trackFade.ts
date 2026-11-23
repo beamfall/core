@@ -51,7 +51,8 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   // A second skip mid-fade replaces the first: its level comes back, and only the newer skip happens.
   runs.get(video)?.supersede();
   const base = video.volume;
-  if (video.paused || listenerMuted(video) || base === 0) return advance();
+  // A hidden tab runs no animation frames (CORE-3356): there the skip is a cut.
+  if (video.paused || listenerMuted(video) || base === 0 || document.hidden) return advance();
 
   let written = base;
   let frame = 0;
@@ -67,6 +68,7 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     clearTimeout(wait);
     video.removeEventListener("loadstart", loading);
     video.removeEventListener("playing", fadeIn);
+    document.removeEventListener("visibilitychange", hide);
     if (restore && !theirs()) video.volume = base;
     fadingOut.delete(run);
     if (runs.get(video) === run) runs.delete(video);
@@ -120,6 +122,13 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     clearTimeout(wait);
     wait = setTimeout(fadeIn, PLAY_WAIT_MS);
   }
+  // Hidden mid-fade, the frames stop: the skip happens now, at the listener's level.
+  function hide() {
+    if (!document.hidden) return;
+    done(true);
+    if (!advanced) go();
+  }
+  document.addEventListener("visibilitychange", hide);
   runs.set(video, run);
   fadingOut.add(run);
   ramp(Math.cos, () => {
