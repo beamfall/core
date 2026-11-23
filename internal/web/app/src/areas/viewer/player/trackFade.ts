@@ -18,7 +18,7 @@ type Run = {
   level: () => number;
   supersede: () => void;
   cancel: () => void;
-  finish: () => void;
+  finish: () => boolean;
 };
 const runs = new WeakMap<HTMLMediaElement, Run>();
 // Skips still fading out, on any element: a retried track mounts a new one.
@@ -37,25 +37,30 @@ export function cancelFadeAdvance() {
 /**
  * Moves every skip still fading out on at once: the track ended, so nothing is
  * left to fade, and the listener's pick owns what plays next. Needs no
- * animation frame, so a hidden tab still advances. Returns whether one did.
+ * animation frame, so a hidden tab still advances. Returns whether a skip
+ * owns what plays next; one that declined leaves the end to act as usual.
  */
 export function finishFadeAdvance(): boolean {
-  const pending = [...fadingOut];
-  for (const run of pending) run.finish();
-  return pending.length > 0;
+  let owned = false;
+  for (const run of [...fadingOut]) if (run.finish()) owned = true;
+  return owned;
 }
 
 /**
  * Runs `advance` after a short fade out, then fades the element back in once it plays again.
+ * An `advance` that returns false declined: nothing moved on, and the skip lets go at once.
  * `withdraw` runs once the skip lets go of what plays next, unless a newer skip replaced it:
  * the item it left may join its next one again (CORE-3360).
  */
 export function fadeAdvance(
   video: HTMLMediaElement | null,
-  advance: () => void,
+  advance: () => boolean | void,
   withdraw?: () => void,
 ) {
-  if (!video) return advance();
+  if (!video) {
+    advance();
+    return;
+  }
   // A second skip mid-fade replaces the first: its level comes back, and only the newer skip happens.
   runs.get(video)?.supersede();
   const base = video.volume;
@@ -84,14 +89,19 @@ export function fadeAdvance(
   };
   // The skip owns what plays next until it fades in, the item changes or the wait runs out:
   // the outgoing track's own end must not advance a second time.
-  const go = () => {
+  // Returns false when the skip declined and let go.
+  const go = (): boolean => {
     advanced = true;
     advancing = true;
+    let moved: boolean | void;
     try {
-      advance();
+      moved = advance();
     } finally {
       advancing = false;
     }
+    if (moved !== false) return true;
+    decline();
+    return false;
   };
   const run: Run = {
     // A level the listener set while the next track loads is theirs.
@@ -107,14 +117,23 @@ export function fadeAdvance(
     // The track ended: the listener's level comes back at once, with no fade
     // in to wait on frames, and the skip happens.
     finish: () => {
-      if (advanced) return;
+      if (advanced) return true;
       done(true);
-      try {
-        go();
-      } finally {
-        withdraw?.();
-      }
+      const moved = go();
+      if (moved) withdraw?.();
+      return moved;
     },
+  };
+  // Nothing moved on: the track plays on, back at the listener's level, and its end acts as usual.
+  const decline = () => {
+    const fading = runs.get(video) === run && !Number.isNaN(written);
+    fadingOut.delete(run);
+    withdraw?.();
+    if (!fading) return done(false);
+    clearTimeout(wait);
+    video.removeEventListener("loadstart", loading);
+    video.removeEventListener("playing", fadeIn);
+    ramp(Math.sin, () => done(true));
   };
   const stop = () => {
     const owned = fadingOut.has(run);

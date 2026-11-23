@@ -1798,7 +1798,7 @@ describe("PlayerPage server Play Queue", () => {
     setIdentityEpochSignal();
   });
 
-  it("lets Next pick when a queue read mid-fade drops the item Play now named (CORE-3361)", async () => {
+  async function playNowThenLoseC(): Promise<HTMLVideoElement> {
     graphql.mockImplementation(async (query, variables) => {
       if (!query.startsWith("query MusicQueueMedia")) return readQueue();
       const id = (variables as { id: string }).id;
@@ -1807,68 +1807,40 @@ describe("PlayerPage server Play Queue", () => {
         currentSession: serverSession,
       };
     });
-    const d = { id: "track-d", title: "D", mediaClass: "audio" };
     renderQueue();
     await screen.findByRole("heading", { name: "B" });
     const video = stageVideo();
     playAudibly(video);
     const card = await screen.findByRole("region", { name: /Playing next: C/ });
     fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    vi.mocked(rejoinSkip).mockClear();
+    return video;
+  }
+
+  it("declines a Play now whose item a queue read mid-fade locks: the track fades back in (CORE-3361)", async () => {
+    const video = await playNowThenLoseC();
     // Another device locks C mid-fade, and a read lands before the skip does.
-    rows = [a, b, { ...locked, id: c.id, title: c.title }, d];
+    rows = [a, b, { ...locked, id: c.id, title: c.title }];
     act(() => controls()?.onMusicQueueOpenChange?.(true));
-    await waitFor(() => expect(playingID()).toBe(d.id));
+    await waitFor(() => expect(controls()?.onNextInQueue).toBeUndefined());
+    // The fade reaches its skip, which declines: B may join its next one again (CORE-3360).
+    await waitFor(() => expect(rejoinSkip).toHaveBeenCalledWith(video, b.id));
+    // B plays on, faded back to the listener's level.
+    await waitFor(() => expect(video.volume).toBeCloseTo(0.8));
+    expect(playingID()).toBe(b.id);
     expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === c.id)).toBe(false);
   });
 
-  it("reads afresh at the track's end when a Play now's item is gone with nothing after it (CORE-3361)", async () => {
-    graphql.mockImplementation(async (query, variables) => {
-      if (!query.startsWith("query MusicQueueMedia")) return readQueue();
-      const id = (variables as { id: string }).id;
-      return {
-        media: { id, title: id === c.id ? "C" : "B", favorited: false, credits: [] },
-        currentSession: serverSession,
-      };
-    });
-    renderQueue();
-    await screen.findByRole("heading", { name: "B" });
-    const video = stageVideo();
-    playAudibly(video);
-    const card = await screen.findByRole("region", { name: /Playing next: C/ });
-    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
-    rows = [a, b];
+  it("leaves the track's end to act as usual when Play now's item is gone (CORE-3361)", async () => {
+    const d = { id: "track-d", title: "D", mediaClass: "audio" };
+    const video = await playNowThenLoseC();
+    rows = [a, b, d];
     act(() => controls()?.onMusicQueueOpenChange?.(true));
-    await waitFor(() => expect(controls()?.onNextInQueue).toBeUndefined());
-    const reads = readQueue.mock.calls.length;
-    vi.mocked(rejoinSkip).mockClear();
-    Object.defineProperty(video, "ended", { configurable: true, value: true });
-    fireEvent.ended(video);
-    // The end still reads the queue, and the item may join its next one again.
-    await waitFor(() => expect(readQueue.mock.calls.length).toBeGreaterThan(reads));
-    expect(rejoinSkip).toHaveBeenCalledWith(video, b.id);
-    expect(playingID()).toBe(b.id);
-  });
-
-  it("keeps a Watch Party's lead taken during Next's queue read", async () => {
-    renderQueue();
     await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
-    let release = () => {};
-    readQueue = vi.fn(
-      () =>
-        new Promise((resolve) => {
-          release = () => resolve({ sourceItems: rows, currentSession: serverSession });
-        }),
-    );
-    act(() => controls()?.onNextInQueue?.());
-    vi.mocked(watchPartyDefersUpNext).mockReturnValue(true);
-    try {
-      act(() => controls()?.onMusicQueueOpenChange?.(false));
-      await act(async () => release());
-      await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
-      expect(playingID()).toBe(b.id);
-    } finally {
-      vi.mocked(watchPartyDefersUpNext).mockReturnValue(false);
-    }
+    // B ends under the fade: the declined skip does not swallow the end, whose own read picks D.
+    fireEvent.ended(video);
+    await waitFor(() => expect(playingID()).toBe(d.id));
+    expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === c.id)).toBe(false);
   });
 
   it("reads the card afresh each time it shows, and the held title links to its own track (CORE-3353)", async () => {

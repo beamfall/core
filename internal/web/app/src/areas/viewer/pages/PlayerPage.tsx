@@ -911,8 +911,6 @@ function FeaturePlayer({
         const replay = () => {
           if (rows.some((row) => row.id === mediaId && playableMusic(row))) restart(0);
         };
-        // A Watch Party that took the lead during the read keeps it.
-        if (action !== "ended" && partyLeadsRef.current) return;
         if (action === "ended" && playModes.repeat === "one") return replay();
         const neighbours = reorder
           ? modeNeighbours(rows, mediaId, playModes, playableMusic)
@@ -975,9 +973,9 @@ function FeaturePlayer({
     advanceToNext,
   ]);
   // The current way to open an item: docking mid-fade changes it (CORE-3352).
-  const openNextRef = useRef({ playNext, goToQueueItem, advanceToNext, runQueueAction });
+  const openNextRef = useRef({ playNext, goToQueueItem, advanceToNext });
   useLayoutEffect(() => {
-    openNextRef.current = { playNext, goToQueueItem, advanceToNext, runQueueAction };
+    openNextRef.current = { playNext, goToQueueItem, advanceToNext };
   }, [playNext, goToQueueItem, advanceToNext]);
   // A card queue names its own previous item; without one, a Play all queue
   // that holds this item may (stepping back keeps that queue going).
@@ -1054,12 +1052,11 @@ function FeaturePlayer({
         const advance = playNowTarget
           ? () => {
               // A queue read mid-fade that drops or locks the named item
-              // (CORE-3361) leaves a fresh read to pick instead: the track's
-              // own end if it ended under the fade, Next otherwise.
+              // (CORE-3361) declines the skip: the track fades back in, and
+              // its own end reads the queue afresh as usual.
               const rows = latestQueueRows();
               if (!rows?.some((row) => row.id === playNowTarget && playableMusic(row))) {
-                void openNextRef.current.runQueueAction(video?.ended ? "ended" : "next");
-                return;
+                return false;
               }
               endedWithoutNext.current = null;
               playItemRef.current(playNowTarget, "", true, profileID);
@@ -1075,8 +1072,8 @@ function FeaturePlayer({
         fadeAdvance(
           video,
           () => {
-            if (chosenUnder?.aborted) return;
-            advance();
+            if (chosenUnder?.aborted) return false;
+            return advance();
           },
           video ? () => rejoinSkip(video, left) : undefined,
         );

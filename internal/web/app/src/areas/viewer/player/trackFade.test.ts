@@ -160,7 +160,9 @@ describe("fadeAdvance", () => {
     const order: string[] = [];
     fadeAdvance(
       video,
-      () => order.push("advance"),
+      () => {
+        order.push("advance");
+      },
       () => order.push("withdraw"),
     );
     vi.advanceTimersByTime(TRACK_FADE_MS / 2);
@@ -172,6 +174,26 @@ describe("fadeAdvance", () => {
     vi.advanceTimersByTime(TRACK_FADE_MS / 2);
     fadeAdvance(video, () => {});
     expect(withdraw).not.toHaveBeenCalled();
+  });
+
+  it("lets go at once when the skip declines, leaving the track's end its own", () => {
+    const video = playingElement();
+    const withdraw = vi.fn();
+    fadeAdvance(video, () => false, withdraw);
+    vi.advanceTimersByTime(TRACK_FADE_MS + 20);
+    expect(withdraw).toHaveBeenCalledOnce();
+    expect(finishFadeAdvance()).toBe(false);
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
+    expect(video.volume).toBeCloseTo(0.8);
+
+    // Declined at the track's end: the end is not taken.
+    const ended = vi.fn(() => false);
+    fadeAdvance(video, ended, withdraw);
+    vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+    expect(finishFadeAdvance()).toBe(false);
+    expect(ended).toHaveBeenCalledOnce();
+    expect(video.volume).toBeCloseTo(0.8);
+    expect(withdraw).toHaveBeenCalledTimes(2);
   });
 
   it("fades back in when the skip loads nothing", () => {
