@@ -2918,8 +2918,8 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     expect(stageVideo()).toBe(video);
     expect(document.querySelector("main")).not.toBeVisible();
     expect(within(region).getByText("Track One")).toBeInTheDocument();
-    expect(within(region).getByRole("progressbar", { name: "Playback position" })).toBeVisible();
-    for (const name of ["Play", "Next", "Open player", "Stop and close player"]) {
+    expect(within(region).getByRole("slider", { name: "Playback position" })).toBeVisible();
+    for (const name of ["Play", /^Next: /, "Open player", "Stop and close player"]) {
       expect(within(region).getByRole("button", { name })).toBeEnabled();
     }
 
@@ -3018,7 +3018,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
       return found;
     });
 
-    fireEvent.click(within(region).getByRole("button", { name: "Next" }));
+    fireEvent.click(within(region).getByRole("button", { name: /^Next: / }));
     await waitFor(() =>
       expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-next")).toBe(true),
     );

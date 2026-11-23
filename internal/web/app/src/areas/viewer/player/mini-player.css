@@ -2,7 +2,7 @@
    while an audio Media plays outside the watch route; the spacer gives the
    page the same height below its end so nothing is hidden under it. */
 :root {
-  --bf-mini-height: 72px;
+  --bf-mini-height: 80px;
 }
 
 .bf-mini-spacer {
@@ -15,26 +15,63 @@
   z-index: 40;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   height: var(--bf-mini-height);
-  padding: 0 16px;
-  padding-bottom: env(safe-area-inset-bottom, 0);
+  /* The top 14px are the seek strip; the row centres in the rest. */
+  padding: 14px 12px env(safe-area-inset-bottom, 0) 20px;
   background: color-mix(in oklab, var(--scrim) 96%, transparent);
-  border-top: 1px solid color-mix(in oklab, var(--on-scrim) 10%, transparent);
   color: var(--on-scrim);
   backdrop-filter: blur(12px);
 }
 
+/* A short fade lifts the bar off the page content scrolling behind it. */
+.bf-mini-player::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 100%;
+  height: 28px;
+  background: linear-gradient(
+    to top,
+    color-mix(in oklab, var(--scrim) 70%, transparent),
+    transparent
+  );
+  pointer-events: none;
+}
+
+/* The seek strip along the top edge: 14px tall to hit, drawing a 3px line
+   or, with a waveform (CORE-2404), a 10px peak band. */
 .bf-mini-progress {
   position: absolute;
   inset: 0 0 auto;
-  height: 3px;
-  background: color-mix(in oklab, var(--on-scrim) 12%, transparent);
+  display: flex;
+  align-items: flex-start;
+  height: 14px;
+  cursor: pointer;
+  touch-action: none;
 }
 
-/* With a waveform (CORE-2404) the strip is a short peak band along the top
-   edge, inside the bar's free space above the 48px artwork. */
-.bf-mini-progress.has-waveform {
+.bf-mini-progress[aria-disabled="true"] {
+  cursor: default;
+}
+
+.bf-mini-progress:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.bf-mini-progress-track {
+  width: 100%;
+  height: 3px;
+  background: color-mix(in oklab, var(--on-scrim) 12%, transparent);
+  transition: height 120ms var(--ease-standard);
+}
+
+.bf-mini-progress:not(.has-waveform):hover .bf-mini-progress-track,
+.bf-mini-progress.is-scrubbing:not(.has-waveform) .bf-mini-progress-track {
+  height: 5px;
+}
+
+.bf-mini-progress.has-waveform .bf-mini-progress-track {
   height: 10px;
   background: transparent;
 }
@@ -73,7 +110,8 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  line-height: 1.25;
 }
 
 .bf-mini-title,
@@ -100,6 +138,7 @@
 
 .bf-mini-time {
   flex: none;
+  margin-inline-end: 6px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   color: color-mix(
@@ -112,7 +151,8 @@
 .bf-mini-controls {
   display: flex;
   flex: none;
-  gap: 4px;
+  align-items: center;
+  gap: 2px;
 }
 
 .bf-mini-button {
@@ -147,7 +187,17 @@
   cursor: default;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .bf-mini-progress-track {
+    transition: none;
+  }
+}
+
 @media (max-width: 560px) {
+  .bf-mini-player {
+    padding-inline: 12px 4px;
+  }
+
   .bf-mini-time {
     display: none;
   }

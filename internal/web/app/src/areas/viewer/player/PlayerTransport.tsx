@@ -71,6 +71,7 @@ import { CastControl } from "./cast/CastControl";
 import { InfoOverlay } from "./InfoOverlay";
 import { listenerMuted, setListenerMuted } from "./listenerMute";
 import { MusicQueuePanel } from "./MusicQueuePanel";
+import { NeighbourTip } from "./NeighbourTip";
 import type { RepeatMode } from "./nowPlaying";
 import { savePlayerVolume } from "./playerVolume";
 import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
@@ -158,6 +159,7 @@ export function PlayerTransport({
   musicQueueOpen = false,
   serverQueueNextID,
   audioStage = false,
+  listening,
   lyricsOpen = false,
   onLyricsOpenChange,
   shuffle,
@@ -224,6 +226,15 @@ export function PlayerTransport({
   serverQueueNextID?: string;
   /** The audio stage is showing: the transport carries the visualizer control (CORE-2814). */
   audioStage?: boolean;
+  /**
+   * The audio stage's listening rows (speed, long pauses, sleep timer;
+   * CORE-2960), drawn at the top of the settings sheet. They portal into the
+   * transport's layer so a press inside them keeps the sheet open.
+   */
+  listening?: (
+    container: React.RefObject<HTMLElement | null>,
+    side: "left" | "top",
+  ) => React.ReactNode;
   /** The audio stage shows the lyrics view (CORE-1638). */
   lyricsOpen?: boolean;
   /** Toggles the lyrics view; the control shows only on the audio stage. */
@@ -1264,6 +1275,7 @@ export function PlayerTransport({
                   {t("playbackSettings")}
                 </p>
                 {/* The audio stage has its own persisted Speed control (CORE-2960). */}
+                {audioStage && listening?.(layerRef, menuSide)}
                 {!audioStage && (
                   <label className="bf-settings-row">
                     <span aria-hidden="true" className="bf-settings-tile">
@@ -1508,15 +1520,4 @@ function useNarrowViewport(): boolean {
     return () => query.removeEventListener?.("change", sync);
   }, []);
   return narrow;
-}
-
-// The hover/focus label over Previous and Next (CORE-3216). The control's own
-// accessible name already carries the title, so this is visual only.
-function NeighbourTip({ eyebrow, title }: { eyebrow: string; title: string }) {
-  return (
-    <span className="bf-neighbour-tip" aria-hidden="true">
-      <span className="bf-neighbour-tip-eyebrow">{eyebrow}</span>
-      <span className="bf-neighbour-tip-title">{title}</span>
-    </span>
-  );
 }
