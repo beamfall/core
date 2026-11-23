@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/beamfall/core/internal/capabilities"
@@ -51,6 +53,7 @@ func TestPlayerProfileWireContract(t *testing.T) {
 		"ControlRendererSessionResult": func() any { return new(graph.ControlRendererSessionResult) },
 	}
 	covered := map[string]bool{}
+	setOptional := map[string]bool{}
 	for _, f := range doc.Fixtures {
 		newValue, ok := types[f.Type]
 		if !ok {
@@ -70,6 +73,7 @@ func TestPlayerProfileWireContract(t *testing.T) {
 		if !bytes.Equal(got, want.Bytes()) {
 			t.Fatalf("%s drifted from %s:\n got  %s\n want %s", f.Name, f.Type, got, want.Bytes())
 		}
+		markSetOptionalFields(reflect.ValueOf(value), setOptional)
 		if display, ok := value.(*graph.PlayerDisplayInfo); ok && !slices.Contains(doc.Presence, display.Presence) {
 			t.Fatalf("%s: presence %q outside the vocabulary", f.Name, display.Presence)
 		}
@@ -77,6 +81,74 @@ func TestPlayerProfileWireContract(t *testing.T) {
 	for name := range types {
 		if !covered[name] {
 			t.Fatalf("no fixture covers %s", name)
+		}
+	}
+	// Every omitempty field must appear in at least one fixture, or a client
+	// decoder can mis-type or drop it while the round trip above stays green.
+	for _, newValue := range types {
+		for _, field := range optionalFields(reflect.TypeOf(newValue()).Elem()) {
+			if !setOptional[field] {
+				t.Errorf("no fixture sets optional field %s", field)
+			}
+		}
+	}
+}
+
+// optionalFields lists the omitempty JSON fields reachable from typ as
+// "Type.field" keys, descending into nested structs, slices and pointers.
+func optionalFields(typ reflect.Type) []string {
+	var out []string
+	seen := map[reflect.Type]bool{}
+	var walk func(reflect.Type)
+	walk = func(rt reflect.Type) {
+		for rt.Kind() == reflect.Pointer || rt.Kind() == reflect.Slice {
+			rt = rt.Elem()
+		}
+		if rt.Kind() != reflect.Struct || seen[rt] {
+			return
+		}
+		seen[rt] = true
+		for i := range rt.NumField() {
+			f := rt.Field(i)
+			name, opts, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if name == "-" || !f.IsExported() {
+				continue
+			}
+			if strings.Contains(opts, "omitempty") || strings.Contains(opts, "omitzero") {
+				out = append(out, rt.Name()+"."+name)
+			}
+			walk(f.Type)
+		}
+	}
+	walk(typ)
+	return out
+}
+
+// markSetOptionalFields records every non-zero JSON field in v, nested values included.
+func markSetOptionalFields(v reflect.Value, set map[string]bool) {
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+	switch v.Kind() {
+	case reflect.Slice:
+		for i := range v.Len() {
+			markSetOptionalFields(v.Index(i), set)
+		}
+	case reflect.Struct:
+		rt := v.Type()
+		for i := range rt.NumField() {
+			f := rt.Field(i)
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if name == "-" || !f.IsExported() {
+				continue
+			}
+			if !v.Field(i).IsZero() {
+				set[rt.Name()+"."+name] = true
+			}
+			markSetOptionalFields(v.Field(i), set)
 		}
 	}
 }

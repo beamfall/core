@@ -57,6 +57,11 @@
       "name": "control-conflict",
       "type": "ControlRendererSessionResult",
       "value": {"status": "CONFLICT", "sessionID": "session-karaoke-tv", "command": "pause", "revision": 9, "snapshot": [{"sessionID": "session-karaoke-tv", "deviceID": "pd_4f1c2a9e", "deviceName": "Karaoke room TV", "deviceRole": "viewer", "current": false, "mediaID": "media-alpha", "title": "Alpha", "libraryID": "library-local", "transcoding": false, "positionSeconds": 44, "durationSeconds": 215, "revision": 9}]}
+    },
+    {
+      "name": "control-conflict-private-snapshot",
+      "type": "ControlRendererSessionResult",
+      "value": {"status": "CONFLICT", "sessionID": "session-karaoke-tv", "command": "next", "revision": 12, "snapshot": [{"sessionID": "session-karaoke-tv", "deviceID": "pd_4f1c2a9e", "deviceName": "Karaoke room TV", "deviceRole": "viewer", "current": false, "mediaID": "media-alpha", "title": "Alpha", "libraryID": "library-local", "artworkURL": "/artwork/media-alpha/poster", "transcoding": true, "positionSeconds": 12, "durationSeconds": 215, "revision": 12}, {"sessionID": "session-den-tv", "deviceID": "pd_9b20d7c1", "deviceName": "Den TV", "deviceRole": "viewer", "current": false, "privateItem": true, "label": "Private item", "transcoding": false, "positionSeconds": 300, "durationSeconds": 1800, "revision": 4}]}
     }
   ]
 }

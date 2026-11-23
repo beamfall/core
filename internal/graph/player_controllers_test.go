@@ -684,4 +684,22 @@ func TestOlderControllerWithoutPlayerControlSeesNoPlayerRows(t *testing.T) {
 	if len(errs) == 0 || errs[0].Message != "display not found" {
 		t.Fatalf("older controller partyScreenAddDisplay errors = %#v, want display not found", errs)
 	}
+
+	// Once a capable controller adds the display, an older controller sees it only as an
+	// ordinary screen: no player flag and no handle.
+	var added PartyScreenJoinResult
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyScreenAddDisplay(handle: "`+handle+`") { screen { id playerDisplay } } }`, nil, "partyScreenAddDisplay", &added)
+	if !added.Screen.PlayerDisplay {
+		t.Fatalf("capable partyScreenAddDisplay screen = %+v, want a player display", added.Screen)
+	}
+	var capable, olderAfter PartySessionInfo
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `query { partySession { screens { id playerDisplay playerDisplayHandle } } }`, nil, "partySession", &capable)
+	execGraph(t, h, authorizeRevealed, `query { partySession { screens { id playerDisplay playerDisplayHandle } } }`, nil, "partySession", &olderAfter)
+	if len(capable.Screens) != 1 || !capable.Screens[0].PlayerDisplay || capable.Screens[0].PlayerDisplayHandle != handle {
+		t.Fatalf("capable partySession screens = %+v, want the flagged player display", capable.Screens)
+	}
+	if len(olderAfter.Screens) != 1 || olderAfter.Screens[0].ID != added.Screen.ID ||
+		olderAfter.Screens[0].PlayerDisplay || olderAfter.Screens[0].PlayerDisplayHandle != "" {
+		t.Fatalf("older partySession screens = %+v, want an ordinary screen without player fields", olderAfter.Screens)
+	}
 }

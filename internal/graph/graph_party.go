@@ -235,12 +235,14 @@ func partyPlaybackInfo(playback *store.PartyPlaybackView) *PartyPlaybackInfo {
 	}
 }
 
-func (h *Handler) partyScreenInfo(screen store.PartyScreenView) PartyScreenInfo {
+// partyScreenInfo renders a party screen. A controller without the player-control capability sees
+// a joined player display as an ordinary screen: no flag and no handle it could act on (ADR-0240 D11).
+func (h *Handler) partyScreenInfo(screen store.PartyScreenView, playerControl bool) PartyScreenInfo {
 	info := PartyScreenInfo{
 		ID: screen.ID, Name: screen.Name, Kind: screen.Kind, Carrier: screen.Carrier, Lead: screen.Lead,
 		Ticker: screen.Ticker, OffsetMS: screen.OffsetMS, RTTMS: screen.RTTMS, ReportedAt: PartyTime(screen.ReportedAt),
 	}
-	if screen.DeviceID != "" {
+	if playerControl && screen.DeviceID != "" {
 		info.PlayerDisplay = true
 		info.PlayerDisplayHandle = h.playerDisplayHandle(screen.DeviceID)
 	}
@@ -273,7 +275,7 @@ func (h *Handler) partySessionInfo(ctx context.Context, view store.PartyView, pl
 		}
 	}
 	for i, screen := range view.Screens {
-		info.Screens[i] = h.partyScreenInfo(screen)
+		info.Screens[i] = h.partyScreenInfo(screen, playerControl)
 	}
 	return info
 }
@@ -673,7 +675,7 @@ func (h *Handler) partyScreenRegisterWrite(ctx context.Context, scope auth.Scope
 	if err != nil {
 		return PartyScreenInfo{}, err
 	}
-	return h.partyScreenInfo(screen), nil
+	return h.partyScreenInfo(screen, declaresPlayerControl(scope)), nil
 }
 
 // partyScreenReportWrite resolves partyScreenReport for the registering Session.
@@ -760,7 +762,7 @@ func (h *Handler) partyScreenAddDisplayWrite(ctx context.Context, scope auth.Sco
 		missing = []store.LibraryID{}
 	}
 	return PartyScreenJoinResult{
-		Screen:            h.partyScreenInfo(joinView.Screen),
+		Screen:            h.partyScreenInfo(joinView.Screen, true),
 		Session:           sessionInfo,
 		CoversLibraries:   joinView.CoversLibraries,
 		MissingLibraryIDs: missing,
