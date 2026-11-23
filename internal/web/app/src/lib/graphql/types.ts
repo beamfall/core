@@ -368,6 +368,8 @@ export interface MediaCredit {
   title: string;
   kind: string;
   kindDisplayName?: DisplayString;
+  /** The kind's declared plural display name, absent when it declares none (CORE-3337). */
+  kindPluralDisplayName?: DisplayString;
   /** The kind's fixed archetype ("container", "person", …). */
   archetype?: string;
   relation: string;

@@ -1,3 +1,4 @@
+import { displayString } from "@/lib/display";
 import type { MediaCredit, SourceItem } from "@/lib/graphql/types";
 
 // People and credits (CORE-2406, CORE-2503). A Media item's person-archetype credits
@@ -126,4 +127,18 @@ export function firstBilledPerson(
   credits: readonly MediaCredit[] | null | undefined,
 ): MediaCredit | null {
   return castGroups(credits)[0]?.credits[0] ?? null;
+}
+
+/**
+ * The heading for a Media item's person-archetype credits (CORE-3337): the
+ * plural display name their kind declares when they all share one kind that
+ * declares it, else "" so the caller falls back to its generic label.
+ */
+export function peopleHeading(
+  credits: readonly MediaCredit[] | null | undefined,
+  locale: string,
+): string {
+  const people = (credits ?? []).filter((credit) => credit.archetype === "person");
+  if (people.length === 0 || people.some((credit) => credit.kind !== people[0].kind)) return "";
+  return displayString(people[0].kindPluralDisplayName, locale);
 }
