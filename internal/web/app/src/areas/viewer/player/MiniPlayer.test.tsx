@@ -129,13 +129,13 @@ describe("MiniPlayer artist and album links (CORE-3349)", () => {
     const { container } = render(<Linked credits={credits} />);
     expect(screen.getByRole("link", { name: "Bon Iver" })).toHaveAttribute("href", "/entity/p1");
     expect(screen.getByRole("link", { name: "Guest" })).toHaveAttribute("href", "/entity/p2");
-    expect(screen.getByRole("link", { name: "22, A Million" })).toHaveAttribute(
-      "href",
-      "/entity/c1",
-    );
+    const albumLinks = screen.getAllByRole("link", { name: "22, A Million" });
+    expect(albumLinks).toHaveLength(2);
+    for (const link of albumLinks) expect(link).toHaveAttribute("href", "/entity/c1");
     const artwork = container.querySelector("a.bf-mini-artwork");
-    expect(artwork).toHaveAttribute("href", "/entity/c1");
+    expect(albumLinks).toContain(artwork);
     expect(artwork).toHaveAttribute("tabindex", "-1");
+    expect(artwork).not.toHaveAttribute("aria-hidden");
   });
 
   it("keeps names plain when a credit names no Entity", () => {

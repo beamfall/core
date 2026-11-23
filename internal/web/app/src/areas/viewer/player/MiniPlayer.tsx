@@ -1,5 +1,5 @@
 import { Maximize2, Pause, Play, SkipForward, X } from "lucide-react";
-import { type RefObject, useEffect, useState } from "react";
+import { Fragment, type RefObject, useEffect, useState } from "react";
 import { Link, useInRouterContext } from "react-router";
 import type { MediaCredit } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -125,7 +125,7 @@ export function MiniPlayer({
       {albumPath ? (
         // The album name below is the keyboard route to the same page; the
         // artwork is a pointer shortcut, so it stays out of the tab order.
-        <Link to={albumPath} className="bf-mini-artwork" tabIndex={-1} aria-hidden="true">
+        <Link to={albumPath} className="bf-mini-artwork" tabIndex={-1} aria-label={album?.title}>
           {artwork}
         </Link>
       ) : (
@@ -138,14 +138,14 @@ export function MiniPlayer({
         {(people.length > 0 || album) && (
           <p className="bf-mini-artist">
             {people.map((credit, index) => (
-              <span key={`${credit.entityID}-${index}`}>
-                {index > 0 && ", "}
+              <Fragment key={`${credit.entityID}-${index}`}>
+                {index > 0 && <span className="bf-mini-sep">, </span>}
                 <CreditLink credit={credit} linked={linked} />
-              </span>
+              </Fragment>
             ))}
             {album && (
               <>
-                {people.length > 0 && " · "}
+                {people.length > 0 && <span className="bf-mini-sep"> · </span>}
                 <CreditLink credit={album} linked={linked} />
               </>
             )}
@@ -198,11 +198,12 @@ function creditPath(credit: MediaCredit): string {
   return `/entity/${encodeURIComponent(credit.entityID)}`;
 }
 
-// A credit's name, linked to its Entity page when it names one.
+// A credit's name, linked to its Entity page when it names one. Each credit is
+// its own shrinking flex item, so a long name cannot push later links out of reach.
 function CreditLink({ credit, linked }: { credit: MediaCredit; linked: boolean }) {
-  if (!linked || !credit.entityID) return credit.title;
+  if (!linked || !credit.entityID) return <span className="bf-mini-credit">{credit.title}</span>;
   return (
-    <Link to={creditPath(credit)} className="bf-mini-link">
+    <Link to={creditPath(credit)} className="bf-mini-credit bf-mini-link">
       {credit.title}
     </Link>
   );
