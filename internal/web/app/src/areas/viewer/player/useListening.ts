@@ -11,6 +11,7 @@ import {
   sleepFadeSeconds,
   sleepRemaining,
 } from "./listening";
+import { noteSleepStop } from "./sleepStop";
 import {
   cancelFadeAdvance,
   dropFadeAdvance,
@@ -143,6 +144,8 @@ export function useLongPauseSkip(
 
 /** How often the volume steps while the sleep timer fades it, so the fade sounds smooth. */
 export const SLEEP_FADE_STEP_MS = 50;
+/** How often the sleep timer checks the time left. */
+const SLEEP_POLL_MS = 250;
 
 /**
  * The sleep timer (CORE-2960): after a number of minutes, at the end of this
@@ -185,11 +188,14 @@ export function useSleepTimer(
   durationRef.current = durationSeconds;
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!timer || !video || !enabled) {
+    const first = videoRef.current;
+    if (!timer || !first || !enabled) {
       setRemaining(null);
       return;
     }
+    // The element the timer fades and pauses. Try again after an error mounts a
+    // new one, and the timer moves to it (CORE-3365).
+    let video = first;
     // The fade's hold on the volume, and the seconds left when it began: a
     // fade the listener interrupts starts again from their level over what is left.
     let hold: VolumeHold | null = null;
@@ -217,27 +223,51 @@ export function useSleepTimer(
         hold.release(false);
         hold = null;
       }
-      if (fadeSeconds === null || left >= fadeSeconds || video.paused) {
+      if (fadeSeconds === null || video.paused) {
         letGo();
+        return;
+      }
+      if (left >= fadeSeconds) {
+        // The next poll could land past the fade's start, so a short fade steps from
+        // here and still begins on time (CORE-3364).
+        if (left - SLEEP_POLL_MS / 1000 > fadeSeconds) return letGo();
+        // Back before the fade (a seek): the listener's level until it begins again.
+        hold?.release(true);
+        hold = null;
+        stepping ??= setInterval(() => fade(measure()), SLEEP_FADE_STEP_MS);
         return;
       }
       if (!hold) {
         if (volumeHeld(video)) return; // A skip is fading; this fade starts once it is done.
         hold = holdVolume(video);
-        from = left;
+        // One step in, so even a fade only a step or two long is heard.
+        from = Math.min(fadeSeconds, left + SLEEP_FADE_STEP_MS / 1000);
         stepping ??= setInterval(() => fade(measure()), SLEEP_FADE_STEP_MS);
       }
       hold.write(sleepFade(left, from));
     };
-    const tick = () => {
+    // A pause gives the level back at once; a play starts what is left of the fade afresh.
+    const playState = () => tick();
+    const bind = (next: HTMLVideoElement) => {
+      video.removeEventListener("pause", playState);
+      video.removeEventListener("play", playState);
+      letGo();
+      video = next;
+      video.addEventListener("pause", playState);
+      video.addEventListener("play", playState);
+    };
+    function tick() {
       clearTimeout(finish);
+      const mounted = videoRef.current;
+      if (mounted && mounted !== video) bind(mounted);
       const left = measure();
       setRemaining(Number.isFinite(left) ? left : null);
       if (left <= 0) {
         // A skip still under way would start the next item, or leave it faded, after the stop.
-        // Any element: a retried track mounts a new one (following it is CORE-3365).
+        // Any element, and a load already under way: neither starts after the stop.
         cancelFadeAdvance();
         dropFadeAdvance(video);
+        noteSleepStop();
         video.pause();
         letGo();
         setState(null);
@@ -248,11 +278,9 @@ export function useSleepTimer(
       // carry the item past its end between ticks.
       if (left < 0.5 && !video.paused) finish = setTimeout(tick, left * 1000);
       fade(left);
-    };
+    }
     tick();
-    const interval = setInterval(tick, 250);
-    // A pause gives the level back at once; a play starts what is left of the fade afresh.
-    const playState = () => tick();
+    const interval = setInterval(tick, SLEEP_POLL_MS);
     video.addEventListener("pause", playState);
     video.addEventListener("play", playState);
     return () => {

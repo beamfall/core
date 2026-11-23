@@ -1,4 +1,5 @@
 import { listenerMuted } from "./listenerMute";
+import { noteSkip } from "./sleepStop";
 
 /** How long a listener's skip fades the playing track out, and the next one in. */
 export const TRACK_FADE_MS = 350;
@@ -152,6 +153,7 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   const go = () => {
     advanced = true;
     advancing = true;
+    noteSkip();
     try {
       advance();
     } finally {

@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { holdMute, setListenerMuted } from "./listenerMute";
+import { sleepHoldsAutoplay, sleepStopMark } from "./sleepStop";
 import { fadeAdvance, holdVolume, volumeHeld } from "./trackFade";
 import { useSleepTimer } from "./useListening";
 
@@ -256,5 +257,55 @@ describe("useSleepTimer fade", () => {
     expect(video.volume).toBeCloseTo(0.8, 2);
     advance(5_000); // half of the 10 s left
     expect(video.volume).toBeCloseTo(0.8 * Math.SQRT1_2, 2);
+  });
+
+  it("still fades a chapter timer set with a second left before it pauses", () => {
+    const video = element();
+    // Whole milliseconds, so a poll lands exactly on the 250 ms fade's start.
+    let ms = 0;
+    Object.defineProperty(video, "currentTime", { configurable: true, get: () => 100 + ms / 1000 });
+    const hook = render(video);
+    act(() => hook.result.current.setTimer({ kind: "chapter", end: 101 }));
+    let quietest = video.volume;
+    while (!video.paused && ms < 2_000) {
+      ms += 10;
+      advance(10);
+      if (!video.paused) quietest = Math.min(quietest, video.volume);
+    }
+    expect(video.paused).toBe(true);
+    expect(quietest).toBeLessThan(0.5);
+    expect(video.volume).toBe(0.8);
+  });
+
+  it("holds back a load already under way from starting after the stop", () => {
+    const video = element();
+    const hook = render(video);
+    const mark = sleepStopMark();
+    startMinutes(hook, 1);
+    advance(30_000);
+    expect(sleepHoldsAutoplay(mark)).toBe(false);
+    advance(31_000);
+    expect(video.paused).toBe(true);
+    expect(sleepHoldsAutoplay(mark)).toBe(true);
+    // A load begun after the stop starts as usual.
+    expect(sleepHoldsAutoplay(sleepStopMark())).toBe(false);
+  });
+
+  it("moves to the element Try again mounts, fading and pausing that one", () => {
+    const first = element();
+    const ref: { current: HTMLVideoElement } = { current: first };
+    const hook = renderHook(() => useSleepTimer(ref, "m1", true, undefined));
+    startMinutes(hook, 15);
+    advance(15 * 60_000 - 30_000);
+    expect(first.volume).toBeLessThan(0.8);
+    const second = element(0.6);
+    ref.current = second;
+    advance(300);
+    expect(first.volume).toBe(0.8);
+    expect(second.volume).toBeLessThan(0.6);
+    advance(31_000);
+    expect(second.paused).toBe(true);
+    expect(second.volume).toBe(0.6);
+    expect(first.paused).toBe(false);
   });
 });
