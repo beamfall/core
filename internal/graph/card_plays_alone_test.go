@@ -12,25 +12,30 @@ import (
 	"github.com/beamfall/core/internal/store/storetest"
 )
 
-// TestPlaysAloneFollowsThePluginDeclaration pins CORE-3147: Media in a Library
-// whose plugin declares Engagement.PlaysAlone carry playsAlone on their card,
-// their search card and their media(id) read; Media in a Library whose plugin
-// does not declare it, and in a plugin-less Library, omit it.
+// TestPlaysAloneFollowsThePluginDeclaration pins CORE-3147 and CORE-3307:
+// Media in a Library whose plugin declares Engagement.PlaysAlone or
+// Engagement.SelectPlays carry playsAlone or selectPlays on their card, their
+// search card and their media(id) read; Media in a Library whose plugin does
+// not declare them, and in a plugin-less Library, omit them.
 func TestPlaysAloneFollowsThePluginDeclaration(t *testing.T) {
-	bundleFor := func(id plugin.ID, playsAlone bool) plugin.Bundle {
+	bundleFor := func(id plugin.ID, engagement plugin.Engagement) plugin.Bundle {
 		return plugin.Bundle{
 			ID:          id,
 			Version:     "0.1.0",
 			DisplayName: plugin.L(string(id)),
 			MediaLabel:  plugin.L("Item"),
-			Engagement:  plugin.Engagement{PlaysAlone: playsAlone},
+			Engagement:  engagement,
 			Layouts: []plugin.LayoutSpec{{ID: "home", Role: "browse", Sections: []plugin.SectionSpec{
 				{ID: "all", Kind: "grid", Title: plugin.L("All"), ArtworkSlot: "poster", Source: plugin.SourceSpec{Kind: "all-items"}},
 			}}},
 		}
 	}
 	st := storetest.Open(t)
-	registry, err := newTestPluginRegistry([]plugin.Bundle{bundleFor("alonekit", true), bundleFor("queuekit", false)})
+	registry, err := newTestPluginRegistry([]plugin.Bundle{
+		bundleFor("alonekit", plugin.Engagement{PlaysAlone: true}),
+		bundleFor("selectkit", plugin.Engagement{SelectPlays: true}),
+		bundleFor("queuekit", plugin.Engagement{}),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +46,8 @@ func TestPlaysAloneFollowsThePluginDeclaration(t *testing.T) {
 		registry,
 	)
 	ctx := context.Background()
-	want := map[string]bool{"alonekit": true, "queuekit": false, "": false}
+	type flags struct{ playsAlone, selectPlays bool }
+	want := map[string]flags{"alonekit": {playsAlone: true}, "selectkit": {selectPlays: true}, "queuekit": {}, "": {}}
 	media := map[string]store.MediaID{}
 	libraries := map[string]store.LibraryID{}
 	for pluginID := range want {
@@ -61,7 +67,7 @@ func TestPlaysAloneFollowsThePluginDeclaration(t *testing.T) {
 
 	var search SearchResultResponse
 	execGraph(t, handler, authorizeViewer,
-		`query($query: String!) { searchResult(query: $query, mode: keyword) { items { id playsAlone } } }`,
+		`query($query: String!) { searchResult(query: $query, mode: keyword) { items { id playsAlone selectPlays } } }`,
 		map[string]any{"query": "Alone Title"}, "searchResult", &search)
 	rows := map[string]SearchResultItem{}
 	for _, item := range search.Items {
@@ -70,27 +76,27 @@ func TestPlaysAloneFollowsThePluginDeclaration(t *testing.T) {
 	for pluginID, id := range media {
 		var page LibraryItemsResponse
 		execGraph(t, handler, authorizeViewer,
-			`query($libraryID: String!) { libraryItems(libraryID: $libraryID, limit: 50) { items { id playsAlone } } }`,
+			`query($libraryID: String!) { libraryItems(libraryID: $libraryID, limit: 50) { items { id playsAlone selectPlays } } }`,
 			map[string]any{"libraryID": string(libraries[pluginID])}, "libraryItems", &page)
 		if len(page.Items) != 1 || page.Items[0].ID != string(id) {
 			t.Fatalf("plugin %q libraryItems = %+v, want the one item %s", pluginID, page.Items, id)
 		}
-		if got := page.Items[0].PlaysAlone; got != want[pluginID] {
-			t.Errorf("plugin %q card playsAlone = %v, want %v", pluginID, got, want[pluginID])
+		if got := (flags{page.Items[0].PlaysAlone, page.Items[0].SelectPlays}); got != want[pluginID] {
+			t.Errorf("plugin %q card flags = %+v, want %+v", pluginID, got, want[pluginID])
 		}
 		row, ok := rows[string(id)]
 		if !ok {
 			t.Fatalf("plugin %q search row missing from %+v", pluginID, search.Items)
 		}
-		if row.PlaysAlone != want[pluginID] {
-			t.Errorf("plugin %q search playsAlone = %v, want %v", pluginID, row.PlaysAlone, want[pluginID])
+		if got := (flags{row.PlaysAlone, row.SelectPlays}); got != want[pluginID] {
+			t.Errorf("plugin %q search flags = %+v, want %+v", pluginID, got, want[pluginID])
 		}
 		var info MediaInfo
 		execGraph(t, handler, authorizeViewer,
-			`query($id: String!) { media(id: $id) { id playsAlone } }`,
+			`query($id: String!) { media(id: $id) { id playsAlone selectPlays } }`,
 			map[string]any{"id": string(id)}, "media", &info)
-		if info.PlaysAlone != want[pluginID] {
-			t.Errorf("plugin %q media(id) playsAlone = %v, want %v", pluginID, info.PlaysAlone, want[pluginID])
+		if got := (flags{info.PlaysAlone, info.SelectPlays}); got != want[pluginID] {
+			t.Errorf("plugin %q media(id) flags = %+v, want %+v", pluginID, got, want[pluginID])
 		}
 	}
 }

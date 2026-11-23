@@ -310,6 +310,7 @@ func (h *Handler) describeSearchCards(ctx context.Context, filter store.LibraryF
 		items[i].AudienceScoreLabel = plugin.LocaleString(card.AudienceScoreLabel)
 		items[i].AudienceScoreVotes = card.AudienceScoreVotes
 		items[i].PlaysAlone = card.PlaysAlone
+		items[i].SelectPlays = card.SelectPlays
 	}
 	return nil
 }

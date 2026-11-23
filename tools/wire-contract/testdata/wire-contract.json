@@ -2963,6 +2963,11 @@
           "optional": true
         },
         {
+          "name": "selectPlays",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "sequence",
           "kind": "scalar",
           "optional": true,
@@ -3552,6 +3557,11 @@
         },
         {
           "name": "restricted",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "selectPlays",
           "kind": "scalar",
           "optional": true
         },
@@ -7438,6 +7448,11 @@
           "optional": true
         },
         {
+          "name": "selectPlays",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "sequence",
           "kind": "scalar",
           "optional": true,
@@ -9224,6 +9239,11 @@
                       "optional": true
                     },
                     {
+                      "name": "selectPlays",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
                       "name": "sequence",
                       "kind": "scalar",
                       "optional": true
@@ -9425,6 +9445,11 @@
                   },
                   {
                     "name": "restricted",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "selectPlays",
                     "kind": "scalar",
                     "optional": true
                   },
@@ -9721,6 +9746,11 @@
                     "optional": true
                   },
                   {
+                    "name": "selectPlays",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "sequence",
                     "kind": "scalar",
                     "optional": true
@@ -9922,6 +9952,11 @@
                 },
                 {
                   "name": "restricted",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "selectPlays",
                   "kind": "scalar",
                   "optional": true
                 },
@@ -10379,6 +10414,11 @@
               "optional": true
             },
             {
+              "name": "selectPlays",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "sequence",
               "kind": "scalar",
               "optional": true,
@@ -10785,6 +10825,11 @@
         },
         {
           "name": "playsAlone",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "selectPlays",
           "kind": "scalar",
           "optional": true
         },
@@ -11638,6 +11683,11 @@
         },
         {
           "name": "playsAlone",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "selectPlays",
           "kind": "scalar",
           "optional": true
         },
@@ -13397,6 +13447,11 @@
                 "optional": true
               },
               {
+                "name": "selectPlays",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "sequence",
                 "kind": "scalar",
                 "optional": true
@@ -13662,6 +13717,11 @@
             },
             {
               "name": "restricted",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "selectPlays",
               "kind": "scalar",
               "optional": true
             },
@@ -14065,6 +14125,11 @@
                 "optional": true
               },
               {
+                "name": "selectPlays",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "sequence",
                 "kind": "scalar",
                 "optional": true
@@ -14266,6 +14331,11 @@
             },
             {
               "name": "restricted",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "selectPlays",
               "kind": "scalar",
               "optional": true
             },
@@ -14804,6 +14874,11 @@
                 "optional": true
               },
               {
+                "name": "selectPlays",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "sequence",
                 "kind": "scalar",
                 "optional": true
@@ -15005,6 +15080,11 @@
             },
             {
               "name": "restricted",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "selectPlays",
               "kind": "scalar",
               "optional": true
             },
@@ -16228,6 +16308,11 @@
           "optional": true
         },
         {
+          "name": "selectPlays",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "sequence",
           "kind": "scalar",
           "optional": true,
@@ -16534,6 +16619,11 @@
         },
         {
           "name": "restricted",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "selectPlays",
           "kind": "scalar",
           "optional": true
         },
@@ -16936,6 +17026,11 @@
             },
             {
               "name": "playsAlone",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "selectPlays",
               "kind": "scalar",
               "optional": true
             },
@@ -36112,6 +36207,11 @@
           "optional": true
         },
         {
+          "name": "selectPlays",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "sequence",
           "kind": "scalar",
           "optional": true
@@ -36393,6 +36493,11 @@
           "optional": true
         },
         {
+          "name": "selectPlays",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "sequence",
           "kind": "scalar",
           "optional": true
@@ -36597,6 +36702,11 @@
         },
         {
           "name": "restricted",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "selectPlays",
           "kind": "scalar",
           "optional": true
         },
@@ -36933,6 +37043,11 @@
         },
         {
           "name": "restricted",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "selectPlays",
           "kind": "scalar",
           "optional": true
         },
@@ -37710,6 +37825,11 @@
         },
         {
           "name": "restricted",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "selectPlays",
           "kind": "scalar",
           "optional": true
         },
@@ -40840,6 +40960,11 @@
           "optional": true
         },
         {
+          "name": "selectPlays",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "sequence",
           "kind": "scalar",
           "optional": true
@@ -41051,6 +41176,11 @@
         },
         {
           "name": "restricted",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "selectPlays",
           "kind": "scalar",
           "optional": true
         },
@@ -41362,6 +41492,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "selectPlays",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "sequence",
                 "kind": "scalar",
                 "optional": true
@@ -41602,6 +41737,11 @@
             {
               "name": "score",
               "kind": "scalar"
+            },
+            {
+              "name": "selectPlays",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "sequence",
@@ -44175,6 +44315,11 @@
         },
         {
           "name": "playsAlone",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "selectPlays",
           "kind": "scalar",
           "optional": true
         },
@@ -50171,6 +50316,11 @@
           "optional": true
         },
         {
+          "name": "selectPlays",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "sequence",
           "kind": "scalar",
           "optional": true
@@ -50573,6 +50723,11 @@
         },
         {
           "name": "restricted",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "selectPlays",
           "kind": "scalar",
           "optional": true
         },
@@ -51253,6 +51408,11 @@
         },
         {
           "name": "restricted",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "selectPlays",
           "kind": "scalar",
           "optional": true
         },

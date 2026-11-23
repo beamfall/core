@@ -938,6 +938,9 @@ type SourceItem struct {
 	// PlaysAlone is true when a media-kind item's Library plugin declares
 	// that its Media play alone, set by the graph layer (CORE-3147).
 	PlaysAlone bool
+	// SelectPlays is true when a media-kind item's Library plugin declares
+	// that its Media play on Select, set by the graph layer (CORE-3307).
+	SelectPlays bool
 	// Locked is true when the item is visible in browse but blocked by a
 	// certification ceiling whose FilterVisibility is "locked" (ACCESS-1,
 	// ADR-0113 §2.1). Set by annotateLockedLocked; absent means not-locked.
