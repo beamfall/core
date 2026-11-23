@@ -8,6 +8,7 @@ import {
   heardTime,
   MAX_DECODED_SECONDS,
   START_WAIT_SECONDS,
+  skipJoin,
   trimWindow,
   useGaplessAudio,
 } from "./useGaplessAudio";
@@ -456,6 +457,50 @@ describe("useGaplessAudio", () => {
     // The replacement is decoded and joined in its place.
     await vi.waitFor(() => expect(sources).toHaveLength(2));
     expect(sources[1].start.mock.calls[0][0]).toBeCloseTo(5.8, 9);
+  });
+
+  it("retires a scheduled join on Play now, until the item changes (CORE-3352)", async () => {
+    const element = playing();
+    const hook = render(element);
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    act(() => skipJoin(element, "m1"));
+    expect(sources[0].stop).toHaveBeenCalled();
+    // The outgoing track plays on until the skip lands: it schedules no join
+    // again, even when the successor's stream changes under it.
+    act(() => {
+      element.dispatchEvent(new Event("timeupdate"));
+      element.dispatchEvent(new Event("playing"));
+    });
+    hook.rerender({
+      mediaID: "m1",
+      next: { ...nextItem("m2"), streams: [{ kind: "direct-play", url: "/api/media/m2/other" }] },
+    } as never);
+    await settle();
+    act(() => {
+      element.dispatchEvent(new Event("timeupdate"));
+    });
+    expect(sources).toHaveLength(1);
+    expect(element.muted).toBe(false);
+    // The named item plays on the element; its own successor joins as usual.
+    hook.rerender({ mediaID: "m2", next: nextItem("m3") });
+    await vi.waitFor(() => expect(sources).toHaveLength(2));
+    // Back on the skipped item later, it joins its next one again.
+    hook.rerender({ mediaID: "m1", next: nextItem("m2") });
+    await settle();
+    act(() => {
+      element.dispatchEvent(new Event("timeupdate"));
+    });
+    await vi.waitFor(() => expect(sources).toHaveLength(3));
+  });
+
+  it("starts no confirmed server successor after Play now retires the join (CORE-3352)", async () => {
+    const element = playing();
+    const hook = render(element, true);
+    await settle();
+    await vi.waitFor(() => expect(contexts[0].decodeAudioData).toHaveBeenCalledOnce());
+    act(() => skipJoin(element, "m1"));
+    hook.result.current("m2");
+    expect(sources).toHaveLength(0);
   });
 
   it("hands the sound back when the join is turned off on the same item", async () => {

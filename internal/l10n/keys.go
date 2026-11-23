@@ -56,6 +56,7 @@ const (
 // Home shelf titles added after CORE-2102, rendered into every shipped locale
 // of the manifest's LocaleString (CORE-2822).
 const ManifestShelfNextUp Key = "manifest.shelf.next_up"
+const ManifestShelfContinueListening Key = "manifest.shelf.continue_listening"
 
 // Station explanations (ADR-0098 area 5, CORE-2772): why an item joined a
 // generated Station, and the Station-level scarcity note.

@@ -113,3 +113,60 @@ describe("ProfileFeed paging (CORE-1878)", () => {
     expect(screen.getByRole("button", { name: "Load more" })).toBeInTheDocument();
   });
 });
+
+describe("ProfileFeed filters (CORE-3333)", () => {
+  it("sends the filters with every page so later pages stay narrowed", async () => {
+    vi.mocked(fetchSourceItems)
+      .mockResolvedValueOnce(page(0, PROFILE_FEED_LIMIT))
+      .mockResolvedValueOnce(page(PROFILE_FEED_LIMIT, 1));
+    render(
+      <I18nProvider initialLocale="en">
+        <ProfileFeed
+          kind="recently-played"
+          empty="Nothing yet"
+          filters={{
+            query: "coltrane",
+            libraryID: "lib-music",
+            playedAfter: "2026-11-01T00:00:00.000Z",
+          }}
+        />
+      </I18nProvider>,
+    );
+    expect(await screen.findByText(`Item ${PROFILE_FEED_LIMIT - 1}`)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await screen.findByText(`Item ${PROFILE_FEED_LIMIT}`)).toBeInTheDocument();
+    for (const [vars] of vi.mocked(fetchSourceItems).mock.calls) {
+      expect(vars).toMatchObject({
+        kind: "recently-played",
+        query: "coltrane",
+        libraryID: "lib-music",
+        playedAfter: "2026-11-01T00:00:00.000Z",
+      });
+    }
+  });
+
+  it("ends a played feed on its first short page", async () => {
+    vi.mocked(fetchSourceItems).mockResolvedValueOnce(page(0, 1));
+    render(
+      <I18nProvider initialLocale="en">
+        <ProfileFeed
+          kind="most-played"
+          empty="Nothing yet"
+          filters={{ query: "coltrane", libraryID: "", playedAfter: "" }}
+        />
+      </I18nProvider>,
+    );
+    expect(await screen.findByText("Item 0")).toBeInTheDocument();
+    expect(fetchSourceItems).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("omits empty filters from the request", async () => {
+    renderFeed();
+    await waitFor(() => expect(fetchSourceItems).toHaveBeenCalled());
+    const vars = vi.mocked(fetchSourceItems).mock.calls[0][0];
+    expect(vars).not.toHaveProperty("query");
+    expect(vars).not.toHaveProperty("playedAfter");
+    expect(vars.libraryID).toBe("");
+  });
+});

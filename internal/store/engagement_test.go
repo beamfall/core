@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1062,6 +1063,136 @@ func TestNextUpFollowsPlayNextOrder(t *testing.T) {
 	mustReport(t, st, "profile-default", ids[2], 120, 120, true)
 	if items = nextUp(t, st, filter, "profile-default"); len(items) != 0 {
 		t.Fatalf("next-up after finishing all = %#v, want empty", items)
+	}
+}
+
+// TestNextUpFiltersByMediaClass pins CORE-3331: a "video" next-up offers the
+// next episode and never the next track, an "audio" one the reverse, no value
+// offers both, and an unknown value yields nothing. A container of mixed
+// classes contributes to each shelf only through its own class.
+func TestNextUpFiltersByMediaClass(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	registerNextUpContainerKind(t, st)
+	build := func(container EntityID, prefix string, classes ...MediaClass) []MediaID {
+		t.Helper()
+		if err := st.UpsertEntity(ctx, widgetEntity(container, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]MediaID, len(classes))
+		for i, class := range classes {
+			name := fmt.Sprintf("%s%d", prefix, i)
+			media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+				LibraryID: "library-local", Path: "/media/" + name, Title: name,
+				Container: "mp4", Codec: "h264", Class: class,
+				ContentFingerprint: "sha256:" + name,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids[i] = media.ID
+			order := i + 1
+			if err := st.UpsertEntityRelation(ctx, EntityRelation{
+				FromEntityID: container, Name: "linked", ToMediaID: media.ID, SortOrder: &order,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return ids
+	}
+	season := build("entity-season", "ep-", MediaClassVideo, MediaClassVideo)
+	album := build("entity-album", "tr-", MediaClassAudio, MediaClassAudio)
+	// A video bonus after the first track must not front the audio shelf, and
+	// the album's video child must not make it a video container.
+	mixed := build("entity-mixed", "mx-", MediaClassAudio, MediaClassVideo, MediaClassAudio)
+	mustReport(t, st, "profile-default", season[0], 120, 120, true)
+	mustReport(t, st, "profile-default", album[0], 120, 120, true)
+	mustReport(t, st, "profile-default", mixed[0], 120, 120, true)
+
+	read := func(value string) map[MediaID]bool {
+		t.Helper()
+		items, err := st.SourceItems(ctx, filter, SourceQuery{Kind: "next-up", ProfileID: "profile-default", Value: value})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[MediaID]bool{}
+		for _, item := range items {
+			got[item.ID] = true
+		}
+		return got
+	}
+	if got := read("video"); len(got) != 1 || !got[season[1]] {
+		t.Fatalf("video next-up = %v, want only %q", got, season[1])
+	}
+	if got := read("audio"); len(got) != 2 || !got[album[1]] || !got[mixed[2]] {
+		t.Fatalf("audio next-up = %v, want %q and %q", got, album[1], mixed[2])
+	}
+	if got := read(""); len(got) != 3 || !got[season[1]] || !got[album[1]] || !got[mixed[1]] {
+		t.Fatalf("unfiltered next-up = %v, want %q, %q and %q", got, season[1], album[1], mixed[1])
+	}
+	if got := read("image"); len(got) != 0 {
+		t.Fatalf("image next-up = %v, want empty", got)
+	}
+	if got := read("podcast"); len(got) != 0 {
+		t.Fatalf("unknown-value next-up = %v, want empty", got)
+	}
+}
+
+// TestNextUpClassScanSurvivesOtherClassPlays pins the class-filtered scan
+// (CORE-3331): more recent tracks than one nextUpRowLimit page must not push
+// an older episode out of Up Next.
+func TestNextUpClassScanSurvivesOtherClassPlays(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	registerNextUpContainerKind(t, st)
+	if err := st.UpsertEntity(ctx, widgetEntity("entity-season", "library-local")); err != nil {
+		t.Fatal(err)
+	}
+	episodes := make([]MediaID, 2)
+	for i := range episodes {
+		name := fmt.Sprintf("ep-%d", i)
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: "library-local", Path: "/media/" + name, Title: name,
+			Container: "mp4", Codec: "h264", Class: MediaClassVideo, ContentFingerprint: "sha256:" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		episodes[i] = media.ID
+		order := i + 1
+		if err := st.UpsertEntityRelation(ctx, EntityRelation{
+			FromEntityID: "entity-season", Name: "linked", ToMediaID: media.ID, SortOrder: &order,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustReport(t, st, "profile-default", episodes[0], 120, 120, true)
+	for i := 0; i <= nextUpRowLimit; i++ {
+		name := fmt.Sprintf("tr-%d", i)
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: "library-local", Path: "/music/" + name, Title: name,
+			Container: "mp4", Codec: "aac", Class: MediaClassAudio, ContentFingerprint: "sha256:" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		mustReport(t, st, "profile-default", media.ID, 120, 120, true)
+	}
+	// Age the episode's progress so every track is strictly newer.
+	if _, err := st.eventsW.ExecContext(ctx, `
+		UPDATE playback_progress SET updated_at_ms = updated_at_ms - 60000
+		WHERE profile_id = ? AND media_id = ?
+	`, "profile-default", episodes[0]); err != nil {
+		t.Fatal(err)
+	}
+	items, err := st.SourceItems(ctx, filter, SourceQuery{Kind: "next-up", ProfileID: "profile-default", Value: "video"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != episodes[1] {
+		t.Fatalf("video next-up = %v, want only %q", items, episodes[1])
 	}
 }
 

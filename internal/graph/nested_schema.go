@@ -748,6 +748,11 @@ func sourceArguments() []NestedArgument {
 		{Name: "limit", Kind: "int", Optional: true},
 		searchModeArgument(),
 		{Name: "offset", Kind: "int", Optional: true},
+		// playedAfter / playedBefore bound the last play of the
+		// recently-played and most-played kinds (RFC 3339; after inclusive,
+		// before exclusive). Ignored by every other kind.
+		{Name: "playedAfter", Kind: "string", Optional: true},
+		{Name: "playedBefore", Kind: "string", Optional: true},
 		{Name: "query", Kind: "string", Optional: true},
 		{Name: "seed", Kind: "string", Optional: true},
 		{Name: "value", Kind: "string", Optional: true},
