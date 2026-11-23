@@ -62,7 +62,7 @@ import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { attachCaptionElements, captionElement, showCaptionElement } from "../player/streamTracks";
-import { skipJoin, useGaplessAudio } from "../player/useGaplessAudio";
+import { rejoinSkip, skipJoin, useGaplessAudio } from "../player/useGaplessAudio";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
 import {
@@ -152,6 +152,7 @@ vi.mock("../player/useGaplessAudio", async (importOriginal) => {
   return {
     ...actual,
     handBack: vi.fn(actual.handBack),
+    rejoinSkip: vi.fn(actual.rejoinSkip),
     skipJoin: vi.fn(actual.skipJoin),
     useGaplessAudio: vi.fn(actual.useGaplessAudio),
   };
@@ -1797,6 +1798,29 @@ describe("PlayerPage server Play Queue", () => {
     setIdentityEpochSignal();
   });
 
+  it("lets Next pick when a queue read mid-fade drops the item Play now named (CORE-3361)", async () => {
+    graphql.mockImplementation(async (query, variables) => {
+      if (!query.startsWith("query MusicQueueMedia")) return readQueue();
+      const id = (variables as { id: string }).id;
+      return {
+        media: { id, title: id === c.id ? "C" : "B", favorited: false, credits: [] },
+        currentSession: serverSession,
+      };
+    });
+    const d = { id: "track-d", title: "D", mediaClass: "audio" };
+    renderQueue();
+    await screen.findByRole("heading", { name: "B" });
+    const video = stageVideo();
+    playAudibly(video);
+    const card = await screen.findByRole("region", { name: /Playing next: C/ });
+    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    // Another device locks C mid-fade, and a read lands before the skip does.
+    rows = [a, b, { ...locked, id: c.id, title: c.title }, d];
+    act(() => controls()?.onMusicQueueOpenChange?.(true));
+    await waitFor(() => expect(playingID()).toBe(d.id));
+    expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === c.id)).toBe(false);
+  });
+
   it("reads the card afresh each time it shows, and the held title links to its own track (CORE-3353)", async () => {
     const reads: string[] = [];
     let holdC: Promise<never> | null = null;
@@ -2561,9 +2585,12 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
     // Joining a party mid-fade withdraws the player's own Up next: the item
     // stays, back at the listener's level at once.
     vi.mocked(watchPartyDefersUpNext).mockReturnValue(true);
+    vi.mocked(rejoinSkip).mockClear();
     try {
       rerender();
       expect(video.volume).toBe(0.8);
+      // The item stays, so it joins its next one again (CORE-3360).
+      expect(rejoinSkip).toHaveBeenCalledWith(video, "media-alpha");
       await act(async () => new Promise((resolve) => setTimeout(resolve, 600)));
       expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-next")).toBe(false);
     } finally {

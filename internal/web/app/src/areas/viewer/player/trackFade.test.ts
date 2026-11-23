@@ -136,6 +136,37 @@ describe("fadeAdvance", () => {
     }
   });
 
+  it("withdraws only when it lets go without moving on (CORE-3360)", () => {
+    const video = playingElement();
+    const withdraw = vi.fn();
+    // Dropped mid-fade, before it skipped.
+    fadeAdvance(video, () => {}, withdraw);
+    vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+    cancelFadeAdvance();
+    expect(withdraw).toHaveBeenCalledOnce();
+
+    // Skipped but nothing loaded: the wait runs out.
+    withdraw.mockClear();
+    fadeAdvance(video, () => {}, withdraw);
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
+    expect(withdraw).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(LOAD_WAIT_MS + TRACK_FADE_MS * 2);
+    expect(withdraw).toHaveBeenCalledOnce();
+    cancelFadeAdvance();
+    expect(withdraw).toHaveBeenCalledOnce();
+
+    // Replaced by a newer skip, or moved on by the track's end: no withdraw.
+    withdraw.mockClear();
+    fadeAdvance(video, () => {}, withdraw);
+    vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+    const next = vi.fn();
+    fadeAdvance(video, () => {}, next);
+    expect(withdraw).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(TRACK_FADE_MS / 4);
+    finishFadeAdvance();
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("fades back in when the skip loads nothing", () => {
     const video = playingElement();
     fadeAdvance(video, () => {});

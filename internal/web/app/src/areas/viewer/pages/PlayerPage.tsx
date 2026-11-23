@@ -111,7 +111,13 @@ import { useAmbientChoice, useAmbientIdle } from "../player/useAmbient";
 import { type PartySeekAutoSkip, useAutoSkip } from "../player/useAutoSkip";
 import { useCaptionLoad } from "../player/useCaptionLoad";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
-import { decodableStream, handBack, skipJoin, useGaplessAudio } from "../player/useGaplessAudio";
+import {
+  decodableStream,
+  handBack,
+  rejoinSkip,
+  skipJoin,
+  useGaplessAudio,
+} from "../player/useGaplessAudio";
 import { useLongPauseSkip, usePlaybackSpeed, useSleepTimer } from "../player/useListening";
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
@@ -289,6 +295,11 @@ function FeaturePlayer({
   const queueReady = queueAllowed && (!serverQueueRun || musicQueue?.rows !== undefined);
   const queueReadFailed = serverQueueRun && queueAllowed && musicQueue?.failed;
   const serverItems = useMemo(() => musicQueue?.rows?.filter(playableMusic), [musicQueue?.rows]);
+  // The latest read, for a Play now that lands after a refresh (CORE-3361).
+  const serverItemsRef = useRef(serverItems);
+  useLayoutEffect(() => {
+    serverItemsRef.current = serverItems;
+  }, [serverItems]);
   const serverNeighbours = useMemo(
     () => musicQueueNeighbours(musicQueue?.rows, mediaId),
     [musicQueue?.rows, mediaId],
@@ -1039,6 +1050,12 @@ function FeaturePlayer({
         const issued = serverQueueRun || queued || !issuedNext?.streams ? undefined : issuedNext;
         const advance = playNowTarget
           ? () => {
+              // A queue read mid-fade that drops or locks the named item
+              // (CORE-3361) leaves Next's own fresh read to pick instead.
+              if (!serverItemsRef.current?.some((row) => row.id === playNowTarget)) {
+                openNextRef.current.playNext?.();
+                return;
+              }
               endedWithoutNext.current = null;
               playItemRef.current(playNowTarget, "", true, profileID);
             }
@@ -1048,10 +1065,16 @@ function FeaturePlayer({
               ? () => openNextRef.current.advanceToNext(issued)
               : () => openNextRef.current.playNext?.();
         // A relock mid-fade voids a choice made under the revealed session.
-        fadeAdvance(video, () => {
-          if (chosenUnder?.aborted) return;
-          advance();
-        });
+        // Withdrawn without moving on, the item joins its next one again (CORE-3360).
+        const left = mediaId || "";
+        fadeAdvance(
+          video,
+          () => {
+            if (chosenUnder?.aborted) return;
+            advance();
+          },
+          video ? () => rejoinSkip(video, left) : undefined,
+        );
       }
     : undefined;
   // Anything else that changes what plays (another item, a relock, leaving)

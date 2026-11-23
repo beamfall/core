@@ -45,8 +45,16 @@ export function finishFadeAdvance(): boolean {
   return pending.length > 0;
 }
 
-/** Runs `advance` after a short fade out, then fades the element back in once it plays again. */
-export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void) {
+/**
+ * Runs `advance` after a short fade out, then fades the element back in once it plays again.
+ * `withdraw` runs when the skip lets go of what plays next without being replaced or moved
+ * on by the track's end: dropped, or its wait ran out (CORE-3360).
+ */
+export function fadeAdvance(
+  video: HTMLMediaElement | null,
+  advance: () => void,
+  withdraw?: () => void,
+) {
   if (!video) return advance();
   // A second skip mid-fade replaces the first: its level comes back, and only the newer skip happens.
   runs.get(video)?.supersede();
@@ -94,6 +102,7 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
       if (advancing) return;
       if (!advanced) done(true);
       else fadingOut.delete(run);
+      withdraw?.();
     },
     // The track ended: the listener's level comes back at once, with no fade
     // in to wait on frames, and the skip happens.
@@ -103,7 +112,11 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
       go();
     },
   };
-  const stop = () => done(true);
+  const stop = () => {
+    const owned = fadingOut.has(run);
+    done(true);
+    if (owned) withdraw?.();
+  };
   // Equal power: out follows a quarter cosine, in a quarter sine, so the level sounds even.
   const ramp = (shape: (t: number) => number, then: () => void) => {
     const started = performance.now();
