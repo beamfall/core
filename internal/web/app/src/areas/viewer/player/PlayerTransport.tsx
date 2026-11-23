@@ -77,6 +77,7 @@ import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { TrackMotionSettings } from "./TrackMotionSettings";
 import { type MenuRow, TransportMenu } from "./TransportMenu";
+import { fadeBaseVolume } from "./trackFade";
 import { useAudioDelay } from "./useAudioDelay";
 import { useLiveTracks } from "./useLiveTracks";
 import type { PlayerState, SwitchResult } from "./usePlayer";
@@ -685,7 +686,8 @@ export function PlayerTransport({
     if (!video) return;
     setListenerMuted(video, !listenerMuted(video));
     setMuted(listenerMuted(video));
-    savePlayerVolume({ muted: listenerMuted(video), volume: video.volume });
+    // A skip fade holds the element lower for a moment; save the listener's own level.
+    savePlayerVolume({ muted: listenerMuted(video), volume: fadeBaseVolume(video) });
   }, [videoRef]);
 
   const visualControls = audioStage && canVisualize();

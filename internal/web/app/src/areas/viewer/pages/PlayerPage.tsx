@@ -104,7 +104,7 @@ import { PrePlayStage } from "../player/PrePlayStage";
 import { applyPlayerVolume } from "../player/playerVolume";
 import { SkippedOverlay } from "../player/SkippedOverlay";
 import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
-import { fadeAdvance } from "../player/trackFade";
+import { cancelFadeAdvance, fadeAdvance } from "../player/trackFade";
 import { UpNextCard } from "../player/UpNextCard";
 import { UpNextDrawer } from "../player/UpNextDrawer";
 import { useAmbientChoice, useAmbientIdle } from "../player/useAmbient";
@@ -659,7 +659,8 @@ function FeaturePlayer({
     !mediaId || mediaReadIsCurrent || (!serverQueueRun && playing && infoIsCurrent);
   // The held item belongs to the viewer it was shown to: a relock or a profile
   // switch never carries one listener's track onto another's stage.
-  const stageOwner = JSON.stringify([identity, revealed, profileID ?? ""]);
+  // The queue kind is part of it too: a catalog stage never carries into a server queue.
+  const stageOwner = JSON.stringify([identity, revealed, profileID ?? "", serverQueueRun]);
   const [held, setHeld] = useState<{ owner: string; item: StageItem } | null>(null);
   if (stageReady) {
     const keep = showAudioStage && queueAllowed ? liveStage : null;
@@ -983,7 +984,7 @@ function FeaturePlayer({
     info: GenericMediaInfo | null;
   } | null>(null);
   const nextReadKey = JSON.stringify([queueRoute, nextID]);
-  const cardShown = showAudioStage && playingNext.visible;
+  const cardShown = showAudioStage && !docked && playingNext.visible;
   useEffect(() => {
     if (!nextID || !cardShown || !queueTitlesAllowed) return;
     const controller = new AbortController();
@@ -999,13 +1000,30 @@ function FeaturePlayer({
     ? nextInfo.artworkSlots?.poster || nextInfo.artworkSlots?.thumb || ""
     : "";
   const nextArtist = nextInfo ? personLine(nextInfo.credits ?? NO_CREDITS) : "";
-  // Play now leaves the card at once and fades the playing track out into the next.
+  // Play now leaves the card at once and fades the playing track out into the
+  // next. It starts the item the card names at once. On the server queue it
+  // does not wait for a fresh queue read first, as Next does: on a slow server
+  // that read held the skip until the countdown ran out on its own.
+  const playNowTarget =
+    serverQueueRun && queueMatchesProfile && profileID ? nextInQueue?.id : undefined;
   const playNow = playNext
     ? () => {
         playingNext.dismiss();
-        fadeAdvance(videoRef.current, playNext);
+        const advance = playNowTarget
+          ? () => {
+              endedWithoutNext.current = null;
+              playItemRef.current(playNowTarget, "", true, profileID);
+            }
+          : playNext;
+        fadeAdvance(videoRef.current, advance);
       }
     : undefined;
+  // A track change that is not the fading skip (Back, another item, leaving)
+  // drops the skip, so it never overrides the listener's newer choice.
+  useEffect(() => {
+    const video = videoRef.current;
+    return () => cancelFadeAdvance(video);
+  }, [mediaId, videoRef]);
   // The Up next drawer lists a card queue; a server queue keeps its own panel.
   const drawerQueue = !serverQueueRun && queue && queue.length > 1 ? queue : undefined;
   const [upNextOpen, setUpNextOpen] = useState(false);

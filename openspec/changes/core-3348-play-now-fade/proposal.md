@@ -15,10 +15,14 @@ and artist on the card.
 ## What changes
 
 - Play now hides the card at once and moves to the next item on both the card queue and the server
-  Play Queue.
+  Play Queue. On the server Play Queue it plays the item the card names directly, without the fresh
+  queue read Next waits for: on a slow server that read held the skip until the countdown ran out,
+  which is how Play now looked dead.
 - A skip from Play now fades the playing item out and the next one in (equal power, about 350 ms
   each way) on the element volume, like the sleep timer fade (CORE-2960). A volume the listener sets
-  mid-fade is kept; the fade is never saved as the listener's volume.
+  mid-fade is kept and the skip still happens; the fade is never saved as the listener's volume
+  (a mute during the fade saves the listener's level). A track change that is not the fading skip
+  (Back, another item, leaving the player) drops the pending skip.
 - On the server Play Queue the audio stage keeps one identity per stage owner instead of per Media,
   so the stage and its Oscillux visual stay mounted across tracks (restores the existing visualizer
   requirement; no new effect code in the client).

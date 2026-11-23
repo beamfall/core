@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fadeAdvance, LOAD_WAIT_MS, TRACK_FADE_MS } from "./trackFade";
+import {
+  cancelFadeAdvance,
+  fadeAdvance,
+  fadeBaseVolume,
+  LOAD_WAIT_MS,
+  TRACK_FADE_MS,
+} from "./trackFade";
 
 // Play now's fade (CORE-3216): out, advance, back in once the next track plays.
 // The element is muted at the page level in no test here: a detached element
@@ -55,13 +61,37 @@ describe("fadeAdvance", () => {
     expect(video.volume).toBeCloseTo(0.8);
   });
 
-  it("keeps a volume the listener sets mid-fade", () => {
+  it("keeps a volume the listener sets mid-fade, and still skips", () => {
     const video = playingElement();
-    fadeAdvance(video, () => {});
+    const advance = vi.fn();
+    fadeAdvance(video, advance);
     vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+    expect(fadeBaseVolume(video)).toBe(0.8);
     video.volume = 0.3;
     vi.advanceTimersByTime(LOAD_WAIT_MS * 4);
+    expect(advance).toHaveBeenCalledOnce();
     expect(video.volume).toBe(0.3);
+    expect(fadeBaseVolume(video)).toBe(0.3);
+  });
+
+  it("drops a skip still fading out when the track changes another way", () => {
+    const video = playingElement();
+    const advance = vi.fn();
+    fadeAdvance(video, advance);
+    vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+    cancelFadeAdvance(video);
+    vi.advanceTimersByTime(LOAD_WAIT_MS * 4);
+    expect(advance).not.toHaveBeenCalled();
+    expect(video.volume).toBe(0.8);
+  });
+
+  it("keeps fading in after its own skip changes the track", () => {
+    const video = playingElement();
+    fadeAdvance(video, () => cancelFadeAdvance(video));
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
+    video.dispatchEvent(new Event("playing"));
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
+    expect(video.volume).toBeCloseTo(0.8);
   });
 
   it("advances at once when nothing is audible", () => {

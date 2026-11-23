@@ -1696,8 +1696,12 @@ describe("PlayerPage server Play Queue", () => {
   });
 
   it("Play now on the Playing next card advances at once, on the same stage, with the next art and artist", async () => {
+    // Once the card is up, queue reads hang: Play now must not wait on one.
+    let queueHangs = false;
     graphql.mockImplementation(async (query, variables) => {
-      if (!query.startsWith("query MusicQueueMedia")) return readQueue();
+      if (!query.startsWith("query MusicQueueMedia")) {
+        return queueHangs ? new Promise<never>(() => {}) : readQueue();
+      }
       const id = (variables as { id: string }).id;
       return {
         media: {
@@ -1735,6 +1739,7 @@ describe("PlayerPage server Play Queue", () => {
     expect(card.querySelector(".bf-playing-next-art")).toHaveAttribute("src", `/art/${c.id}.jpg`);
     expect(within(card).getByText("Cee")).toBeInTheDocument();
 
+    queueHangs = true;
     fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
     expect(screen.queryByRole("region", { name: /Playing next/ })).toBeNull();
     await waitFor(() => expect(playingID()).toBe(c.id));
