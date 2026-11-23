@@ -75,6 +75,24 @@ describe("fadeAdvance", () => {
     expect(video.volume).toBeCloseTo(0.8);
   });
 
+  it("owns what plays next until the item changes or the wait runs out (CORE-3356)", () => {
+    const video = playingElement();
+    const advance = vi.fn();
+    fadeAdvance(video, advance);
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
+    expect(advance).toHaveBeenCalledOnce();
+    // Advanced, it still owns: the outgoing track's own end moves nothing on again.
+    expect(finishFadeAdvance()).toBe(true);
+    expect(advance).toHaveBeenCalledOnce();
+    // The item changed: the player drops the skip, which keeps fading in.
+    cancelFadeAdvance();
+    expect(finishFadeAdvance()).toBe(false);
+
+    fadeAdvance(playingElement(), () => {});
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2 + LOAD_WAIT_MS + TRACK_FADE_MS * 2);
+    expect(finishFadeAdvance()).toBe(false);
+  });
+
   it("skips at once, at the listener's level, when the tab hides mid-fade (CORE-3356)", () => {
     const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
     try {
@@ -87,7 +105,10 @@ describe("fadeAdvance", () => {
       document.dispatchEvent(new Event("visibilitychange"));
       expect(advance).toHaveBeenCalledOnce();
       expect(video.volume).toBe(0.8);
-      expect(skipFadingOut()).toBe(false);
+      // Until the item changes, the outgoing track's end does not advance again.
+      expect(finishFadeAdvance()).toBe(true);
+      vi.advanceTimersByTime(LOAD_WAIT_MS);
+      expect(finishFadeAdvance()).toBe(false);
       hidden.mockReturnValue(false);
       document.dispatchEvent(new Event("visibilitychange"));
       vi.advanceTimersByTime(TRACK_FADE_MS * 4);

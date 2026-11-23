@@ -58,6 +58,7 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   let frame = 0;
   let wait: ReturnType<typeof setTimeout> | undefined;
   let advanced = false;
+  let advancing = false;
   const write = (level: number) => {
     written = Math.max(0, Math.min(1, base * level));
     video.volume = written;
@@ -73,17 +74,26 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     fadingOut.delete(run);
     if (runs.get(video) === run) runs.delete(video);
   };
+  // The skip owns what plays next until it fades in, the item changes or the wait runs out:
+  // the outgoing track's own end must not advance a second time.
   const go = () => {
     advanced = true;
-    fadingOut.delete(run);
-    advance();
+    advancing = true;
+    try {
+      advance();
+    } finally {
+      advancing = false;
+    }
   };
   const run: Run = {
     // A level the listener set while the next track loads is theirs.
     level: () => (theirs() ? video.volume : base),
     supersede: () => done(true),
     cancel: () => {
+      // The skip's own advance opening the item is not a newer choice.
+      if (advancing) return;
       if (!advanced) done(true);
+      else fadingOut.delete(run);
     },
     // The track ended: the listener's level comes back at once, with no fade
     // in to wait on frames, and the skip happens.
@@ -125,8 +135,14 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   // Hidden mid-fade, the frames stop: the skip happens now, at the listener's level.
   function hide() {
     if (!document.hidden) return;
-    done(true);
+    cancelAnimationFrame(frame);
+    clearTimeout(wait);
+    video?.removeEventListener("loadstart", loading);
+    video?.removeEventListener("playing", fadeIn);
+    document.removeEventListener("visibilitychange", hide);
+    if (!theirs() && video) written = video.volume = base;
     if (!advanced) go();
+    wait = setTimeout(stop, LOAD_WAIT_MS);
   }
   document.addEventListener("visibilitychange", hide);
   runs.set(video, run);

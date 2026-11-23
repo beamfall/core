@@ -689,7 +689,7 @@ function FeaturePlayer({
   // browsing.
   const playItem = useCallback(
     (id: string, title: string, selectPartyTitle = true, musicProfile?: string) => {
-      // A newer choice drops a Play now still fading out (its own advance has left that state).
+      // A newer choice drops a Play now still fading out (its own advance opening this item does not).
       cancelFadeAdvance();
       const search = musicProfile
         ? `?${new URLSearchParams({ [MUSIC_QUEUE_PARAM]: musicProfile })}`
@@ -1116,9 +1116,9 @@ function FeaturePlayer({
         if (!serverQueueRun) handBack(video);
         return;
       }
-      // A Play now still fading out owns the advance: its fade ends in the
-      // item the listener picked (CORE-3348).
-      if (skipFadingOut()) return;
+      // A Play now still fading out owns the advance: the end moves its skip
+      // on at once, to the item the listener picked (CORE-3348).
+      if (finishFadeAdvance()) return;
       if (loopItem) restart(0);
       else if (serverQueueRun) void runQueueAction("ended");
       else playNext?.();

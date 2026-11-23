@@ -2406,7 +2406,11 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
         : Promise.resolve(track("media-alpha", "Alpha", "Ann")),
     );
   });
-  afterEach(() => vi.mocked(fetchMedia).mockResolvedValue(null));
+  afterEach(() => {
+    vi.mocked(fetchMedia).mockResolvedValue(null);
+    // Shuffle and repeat persist: a test that toggles them must not reorder the next one's queue.
+    window.localStorage.clear();
+  });
 
   // The queue reports no classes, so only the playing item's info names it a track.
   function renderAdvance() {
@@ -2514,8 +2518,11 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
 
   it("plays the named item once when the tab hides during a Play now and the track ends (CORE-3356)", async () => {
     const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.3);
     try {
       const video = await playNowAudibly();
+      // Shuffle mid-fade (this seed) would make the outgoing track's end play media-prev.
+      act(() => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.shuffle?.onToggle());
       // A hidden tab runs no animation frames: the skip cannot wait for them.
       hidden.mockReturnValue(true);
       act(() => {
@@ -2531,7 +2538,9 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
       const ids = vi.mocked(usePlayer).mock.calls.map(([id]) => id);
       expect(ids.slice(ids.indexOf("media-next"))).not.toContain("media-alpha");
       expect(playingNow()).toBe("media-next");
+      expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-prev")).toBe(false);
     } finally {
+      random.mockRestore();
       hidden.mockRestore();
     }
   });
