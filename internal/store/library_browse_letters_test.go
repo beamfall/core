@@ -29,10 +29,10 @@ func TestLibraryBrowseLettersKeepFirstOffsetAndCountPerInitial(t *testing.T) {
 		candidates = append(candidates, libraryBrowseCandidate{item: SourceItem{Title: title}})
 	}
 	want := []LibraryBrowseLetter{{"#", 0, 2}, {"A", 1, 2}, {"B", 3, 1}, {"Z", 4, 1}}
-	if got := libraryBrowseLetters(candidates); !slices.Equal(got, want) {
+	if got := libraryBrowseLetters(candidates, libraryBrowseCandidate.titleKey); !slices.Equal(got, want) {
 		t.Fatalf("letters = %v, want %v", got, want)
 	}
-	if got := libraryBrowseLetters(nil); got == nil || len(got) != 0 {
+	if got := libraryBrowseLetters(nil, libraryBrowseCandidate.titleKey); got == nil || len(got) != 0 {
 		t.Fatalf("letters of an empty set = %#v, want an empty non-nil list", got)
 	}
 }
