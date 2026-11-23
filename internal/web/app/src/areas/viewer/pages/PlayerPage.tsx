@@ -648,6 +648,7 @@ function FeaturePlayer({
   // CORE-2363).
   const liveStage: StageItem = {
     key: mediaId || navTitle,
+    mediaID: mediaId || "",
     title: navTitle,
     artworkURL,
     credits,
@@ -991,9 +992,12 @@ function FeaturePlayer({
     key: string;
     info: GenericMediaInfo | null;
   } | null>(null);
-  const nextReadKey = JSON.stringify([queueRoute, nextID]);
+  // Each appearance reads afresh, for the viewer it shows to: a card that hides
+  // and comes back never shows an earlier read's picture (CORE-3353).
+  const nextReadKey = JSON.stringify([queueRoute, nextID, stageOwner]);
   const cardShown = showAudioStage && !docked && playingNext.visible;
   useEffect(() => {
+    if (!cardShown) setNextRead(null);
     if (!nextID || !cardShown || !queueTitlesAllowed) return;
     const controller = new AbortController();
     const settle = (info: GenericMediaInfo | null) => {
@@ -1026,7 +1030,14 @@ function FeaturePlayer({
           : playNext;
         // A relock mid-fade voids a choice made under the revealed session.
         fadeAdvance(videoRef.current, () => {
-          if (!chosenUnder?.aborted) advance();
+          if (chosenUnder?.aborted) return;
+          // A gapless join already scheduled starts the next track where the
+          // playing one would end, with the outgoing track still sounding under
+          // it (CORE-3352). The skip stops the decoded audio and lets the
+          // element play the named item from its start.
+          const video = videoRef.current;
+          if (video) handBack(video);
+          advance();
         });
       }
     : undefined;
@@ -1485,7 +1496,7 @@ function FeaturePlayer({
                     />
                   ) : null
                 }
-                mediaID={mediaId || ""}
+                mediaID={stage.mediaID}
               >
                 <NowPlayingDetails
                   quality={infoIsCurrent ? activeQuality(state.info, state.stream) : null}
@@ -1752,6 +1763,8 @@ const NO_CREDITS: readonly MediaCredit[] = [];
 /** What the audio stage shows for one item. */
 interface StageItem {
   key: string;
+  /** The item the title links to: the held item's own, not the incoming one's (CORE-3353). */
+  mediaID: string;
   title: string;
   artworkURL: string;
   credits: readonly MediaCredit[];
@@ -1762,6 +1775,7 @@ function sameStageItem(a: StageItem | null, b: StageItem | null): boolean {
   if (!a || !b) return a === b;
   return (
     a.key === b.key &&
+    a.mediaID === b.mediaID &&
     a.title === b.title &&
     a.artworkURL === b.artworkURL &&
     a.credits === b.credits &&

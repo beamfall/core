@@ -44,6 +44,7 @@ import { RegisterProvider } from "@/lib/register";
 import { clearViewerCache } from "@/lib/viewerCache";
 import { STRINGS } from "@/strings";
 import { TrackList } from "../components/TrackList";
+import { mediaPath } from "../lib/mediaAddress";
 import {
   fetchMedia as fetchAddressMedia,
   fetchMediaDetailFields,
@@ -61,7 +62,7 @@ import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { attachCaptionElements, captionElement, showCaptionElement } from "../player/streamTracks";
-import { useGaplessAudio } from "../player/useGaplessAudio";
+import { handBack, useGaplessAudio } from "../player/useGaplessAudio";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
 import {
@@ -148,7 +149,11 @@ vi.mock("../player/usePlayer", async (importOriginal) => ({
 vi.mock("../player/PlayerTransport", () => ({ PlayerTransport: vi.fn(() => null) }));
 vi.mock("../player/useGaplessAudio", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../player/useGaplessAudio")>();
-  return { ...actual, useGaplessAudio: vi.fn(actual.useGaplessAudio) };
+  return {
+    ...actual,
+    handBack: vi.fn(actual.handBack),
+    useGaplessAudio: vi.fn(actual.useGaplessAudio),
+  };
 });
 vi.mock("../player/watchPartyStore", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../player/watchPartyStore")>()),
@@ -1740,12 +1745,70 @@ describe("PlayerPage server Play Queue", () => {
     expect(within(card).getByText("Cee")).toBeInTheDocument();
 
     queueHangs = true;
+    vi.mocked(handBack).mockClear();
     fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
     expect(screen.queryByRole("region", { name: /Playing next/ })).toBeNull();
+    // A gapless join already scheduled for C's start would play B out first
+    // (CORE-3352): the skip takes the sound back to the element before moving on.
+    expect(handBack).toHaveBeenCalledWith(video);
     await waitFor(() => expect(playingID()).toBe(c.id));
     await screen.findByRole("heading", { name: "C" });
     // The stage, and the visuals on it, stay mounted across the advance.
     expect(document.querySelector(".bf-audio-stage")).toBe(stage);
+  });
+
+  it("reads the card afresh each time it shows, and the held title links to its own track (CORE-3353)", async () => {
+    const reads: string[] = [];
+    let holdC: Promise<never> | null = null;
+    graphql.mockImplementation(async (query, variables) => {
+      if (!query.startsWith("query MusicQueueMedia")) return readQueue();
+      const id = (variables as { id: string }).id;
+      reads.push(id);
+      if (id === c.id && holdC) return holdC;
+      return {
+        media: {
+          id,
+          title: id === c.id ? "C" : "B",
+          favorited: false,
+          artworkSlots: { poster: `/art/${id}.jpg` },
+          credits: [],
+        },
+        currentSession: serverSession,
+      };
+    });
+    renderQueue();
+    await screen.findByRole("heading", { name: "B" });
+    const video = document.querySelector("video");
+    if (!video) throw new Error("no media element");
+    const art = () => document.querySelector(".bf-playing-next-art");
+    Object.defineProperty(video, "duration", { configurable: true, value: 200 });
+    const seek = (to: number) =>
+      act(() => {
+        video.currentTime = to;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+    seek(195);
+    await screen.findByRole("region", { name: /Playing next: C/ });
+    await waitFor(() => expect(art()).toHaveAttribute("src", `/art/${c.id}.jpg`));
+    seek(100);
+    await waitFor(() => expect(screen.queryByRole("region", { name: /Playing next/ })).toBeNull());
+    // The card comes back with its read still out: it shows no earlier read's picture.
+    holdC = new Promise<never>(() => {});
+    seek(195);
+    await screen.findByRole("region", { name: /Playing next: C/ });
+    await waitFor(() => expect(reads.filter((id) => id === c.id)).toHaveLength(2));
+    expect(art()).toBeNull();
+
+    // C's own read never returns: the stage keeps B, and B's title still leads to B.
+    fireEvent.click(
+      within(screen.getByRole("region", { name: /Playing next: C/ })).getByRole("button", {
+        name: "Play now",
+      }),
+    );
+    await waitFor(() => expect(playingID()).toBe(c.id));
+    const title = document.querySelector(".bf-audio-title a");
+    expect(title).toHaveAccessibleName("B");
+    expect(title).toHaveAttribute("href", mediaPath("media", b.id));
   });
 
   it("waits for scoped metadata when starting a queue on the currently playing track", async () => {
