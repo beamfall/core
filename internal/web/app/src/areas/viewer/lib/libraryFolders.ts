@@ -63,7 +63,7 @@ export interface LibraryFolderRequest {
 }
 
 const LIBRARY_FOLDER_QUERY =
-  "query LibraryFolder($libraryID: String!, $path: String, $limit: Int, $offset: Int) { libraryFolder(libraryID: $libraryID, path: $path, limit: $limit, offset: $offset) { path rootCount crumbs { path name } folders { path name mediaCount } total items { id kind title summary artwork { poster } artworkSlots locked mediaClass playsAlone year byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
+  "query LibraryFolder($libraryID: String!, $path: String, $limit: Int, $offset: Int) { libraryFolder(libraryID: $libraryID, path: $path, limit: $limit, offset: $offset) { path rootCount crumbs { path name } folders { path name mediaCount } total items { id kind title summary artwork { poster } artworkSlots locked mediaClass playsAlone placeholderIcon year byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
 
 export async function fetchLibraryFolder(
   request: LibraryFolderRequest,

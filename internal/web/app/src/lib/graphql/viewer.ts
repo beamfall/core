@@ -178,7 +178,7 @@ export async function relock(signalOrCommitted?: AbortSignal | (() => void)): Pr
 // --- Catalog: Section feeds (sourceItems) ---------------------------------
 
 const SOURCE_ITEMS_QUERY =
-  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $entityID: String, $excludeEditionGroupOf: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int, $home: Boolean, $seed: String, $value: String) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, entityID: $entityID, excludeEditionGroupOf: $excludeEditionGroupOf, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset, home: $home, seed: $seed, value: $value) { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes playsAlone byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $entityID: String, $excludeEditionGroupOf: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int, $home: Boolean, $seed: String, $value: String) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, entityID: $entityID, excludeEditionGroupOf: $excludeEditionGroupOf, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset, home: $home, seed: $seed, value: $value) { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** Variables for one Section feed query (the Source context + paging cursor). */
 export interface SourceItemsVars {
@@ -249,7 +249,7 @@ export async function fetchEntity(id: string, signal?: AbortSignal): Promise<Ent
 }
 
 const MEDIA_QUERY =
-  "query Media($id: String!) { media(id: $id) { id title mediaClass playsAlone libraryID artworkSlots credits { entityID title kind kindDisplayName archetype relation attributes artworkSlots } metadataAttribution { providerName text url } } }";
+  "query Media($id: String!) { media(id: $id) { id title mediaClass playsAlone placeholderIcon libraryID artworkSlots credits { entityID title kind kindDisplayName archetype relation attributes artworkSlots } metadataAttribution { providerName text url } } }";
 
 /** Media — the player's now-playing read: title, artwork, linked credits and metadata credit. */
 export async function fetchMedia(
@@ -273,7 +273,7 @@ export async function fetchMetadataCredits(signal?: AbortSignal): Promise<Metada
 }
 
 const MEDIA_FOR_ENTITY_QUERY =
-  "query MediaForEntity($entityID: String!, $rollUp: Boolean) { mediaForEntity(entityID: $entityID, rollUp: $rollUp) { id kind title summary locked artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes playsAlone byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query MediaForEntity($entityID: String!, $rollUp: Boolean) { mediaForEntity(entityID: $entityID, rollUp: $rollUp) { id kind title summary locked artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /**
  * MediaForEntity — the hand-rolled related-Media fallback list for a detail
@@ -301,7 +301,7 @@ export async function fetchMediaForEntity(
 }
 
 const RELATED_MEDIA_QUERY =
-  "query RelatedMedia($mediaID: String!, $limit: Int) { relatedMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification locked audienceScore audienceScoreVotes playsAlone byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query RelatedMedia($mediaID: String!, $limit: Int) { relatedMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification locked audienceScore audienceScoreVotes playsAlone placeholderIcon byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /**
  * RelatedMedia — Media sharing a Media item's credits, ranked and bounded on the
@@ -344,7 +344,7 @@ export async function fetchSimilarMedia(
 // --- Search ---------------------------------------------------------------
 
 const SEARCH_QUERY =
-  "query Search($query: String!) { search(query: $query) { id kind title summary artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes playsAlone byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query Search($query: String!) { search(query: $query) { id kind title summary artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** Search — keyword catalog search (reveal-filtered server-side). */
 export async function search(term: string): Promise<SourceItem[]> {
@@ -355,7 +355,7 @@ export async function search(term: string): Promise<SourceItem[]> {
 }
 
 const SEARCH_RESULT_QUERY =
-  "query SearchResult($query: String!, $mode: SearchMode, $offset: Int, $limit: Int) { searchResult(query: $query, mode: $mode, offset: $offset, limit: $limit) { mode hasMore restrictedResultsPresent items { id kind title summary score artwork { poster } artworkSlots libraryID libraryTitle year mediaClass certification audienceScore audienceScoreVotes playsAlone byline subtitle sequence index container { id title artwork { poster } } entityKind entityKindDisplayName engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
+  "query SearchResult($query: String!, $mode: SearchMode, $offset: Int, $limit: Int) { searchResult(query: $query, mode: $mode, offset: $offset, limit: $limit) { mode hasMore restrictedResultsPresent items { id kind title summary score artwork { poster } artworkSlots libraryID libraryTitle year mediaClass certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline subtitle sequence index container { id title artwork { poster } } entityKind entityKindDisplayName engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
 
 /**
  * searchResult — the explainable, mode-aware search (ADR-0041 #106). `mode`

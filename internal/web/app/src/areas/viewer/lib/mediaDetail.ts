@@ -11,7 +11,7 @@ import type { PlaybackAudioTrack, PlaybackCaptionTrack } from "./playback";
 // another identity's item.
 
 const MEDIA_QUERY =
-  "query Media($id: String!) { media(id: $id) { id title summary year durationSeconds mediaClass playsAlone libraryID favorited artworkSlots sequence index headline classLabel videoWidth videoHeight credits { entityID title kind kindDisplayName archetype relation attributes artworkSlots } } }";
+  "query Media($id: String!) { media(id: $id) { id title summary year durationSeconds mediaClass playsAlone placeholderIcon libraryID favorited artworkSlots sequence index headline classLabel videoWidth videoHeight credits { entityID title kind kindDisplayName archetype relation attributes artworkSlots } } }";
 const MEDIA_FIELDS_QUERY =
   "query MediaFields($mediaID: String!) { mediaFields(mediaID: $mediaID) { name type value label } }";
 

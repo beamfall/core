@@ -938,6 +938,10 @@ type SourceItem struct {
 	// PlaysAlone is true when a media-kind item's Library plugin declares
 	// that its Media play alone, set by the graph layer (CORE-3147).
 	PlaysAlone bool
+	// PlaceholderIcon is the Library icon a media-kind item's Library plugin
+	// declares, drawn in place of missing artwork; set by the graph layer
+	// (CORE-3336).
+	PlaceholderIcon string
 	// Locked is true when the item is visible in browse but blocked by a
 	// certification ceiling whose FilterVisibility is "locked" (ACCESS-1,
 	// ADR-0113 §2.1). Set by annotateLockedLocked; absent means not-locked.

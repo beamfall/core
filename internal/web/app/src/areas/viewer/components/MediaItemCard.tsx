@@ -402,7 +402,7 @@ export function MediaItemCard({
                 onError={() => setFailedPoster(poster)}
               />
             ) : (
-              <PosterGlyph mediaClass={item.mediaClass} clip={isClip} />
+              <PosterGlyph mediaClass={item.mediaClass} clip={isClip} icon={item.placeholderIcon} />
             )}
             {isClip && (item.durationSeconds ?? 0) > 0 && (
               <span
