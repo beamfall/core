@@ -3,8 +3,8 @@ import {
   cancelFadeAdvance,
   fadeAdvance,
   fadeBaseVolume,
+  finishFadeAdvance,
   LOAD_WAIT_MS,
-  skipFadingOut,
   TRACK_FADE_MS,
 } from "./trackFade";
 
@@ -53,18 +53,23 @@ describe("fadeAdvance", () => {
     expect(video.volume).toBeCloseTo(0.8);
   });
 
-  it("reports a skip as fading out only until it advances or is dropped", () => {
+  it("moves a skip on at once when the track ends mid-fade, with no animation frame", () => {
     const video = playingElement();
-    expect(skipFadingOut()).toBe(false);
-    fadeAdvance(video, () => {});
-    expect(skipFadingOut()).toBe(true);
-    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
-    expect(skipFadingOut()).toBe(false);
-
-    fadeAdvance(playingElement(), () => {});
-    expect(skipFadingOut()).toBe(true);
+    const advance = vi.fn();
+    expect(finishFadeAdvance()).toBe(false);
+    fadeAdvance(video, advance);
+    // A hidden tab runs no animation frames; the end alone moves the skip on, once.
+    expect(finishFadeAdvance()).toBe(true);
+    expect(advance).toHaveBeenCalledOnce();
+    expect(finishFadeAdvance()).toBe(false);
     cancelFadeAdvance();
-    expect(skipFadingOut()).toBe(false);
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
+    expect(advance).toHaveBeenCalledOnce();
+
+    video.dispatchEvent(new Event("loadstart"));
+    video.dispatchEvent(new Event("playing"));
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
+    expect(video.volume).toBeCloseTo(0.8);
   });
 
   it("fades back in when the skip loads nothing", () => {
