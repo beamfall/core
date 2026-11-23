@@ -121,4 +121,14 @@ describe("CastRow", () => {
     const { container } = renderRow([credit("box", "A Box", { archetype: "container" })]);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("heads the row with the credits' shared kind label, else People (CORE-3337)", () => {
+    const band = { kind: "artist", kindPluralDisplayName: { en: "Artists" } };
+    renderRow([credit("a1", "The Band", band)]);
+    expect(screen.getByRole("heading", { level: 2, name: "Artists" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Artists" })).toBeInTheDocument();
+    cleanup();
+    renderRow([credit("a1", "The Band", band), credit("p1", "Someone")]);
+    expect(screen.getByRole("heading", { level: 2, name: "People" })).toBeInTheDocument();
+  });
 });

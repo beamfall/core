@@ -7,6 +7,7 @@ import {
   creditsWithJob,
   filmographyOrder,
   nameInitial,
+  peopleHeading,
 } from "./people";
 
 const person = (entityID: string, attributes?: Record<string, string>): MediaCredit => ({
@@ -142,5 +143,36 @@ describe("filmographyOrder", () => {
       "old",
       "undated",
     ]);
+  });
+});
+
+describe("peopleHeading", () => {
+  const artist = (entityID: string): MediaCredit => ({
+    ...person(entityID),
+    kind: "artist",
+    kindPluralDisplayName: { en: "Artists", fr: "Artistes" },
+  });
+
+  it("uses the plural label of the kind every person credit shares", () => {
+    expect(peopleHeading([artist("a1"), artist("a2")], "en")).toBe("Artists");
+    expect(peopleHeading([artist("a1")], "fr-CA")).toBe("Artistes");
+  });
+
+  it("ignores non-person credits", () => {
+    const album: MediaCredit = {
+      entityID: "c1",
+      title: "Album",
+      kind: "album",
+      archetype: "container",
+      relation: "on",
+    };
+    expect(peopleHeading([album, artist("a1")], "en")).toBe("Artists");
+  });
+
+  it("returns empty for mixed kinds, a kind without a plural label, or no people", () => {
+    expect(peopleHeading([artist("a1"), person("p1")], "en")).toBe("");
+    expect(peopleHeading([person("p1")], "en")).toBe("");
+    expect(peopleHeading([], "en")).toBe("");
+    expect(peopleHeading(undefined, "en")).toBe("");
   });
 });

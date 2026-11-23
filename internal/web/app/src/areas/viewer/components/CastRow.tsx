@@ -1,9 +1,9 @@
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router";
 import type { MediaCredit } from "@/lib/graphql/types";
-import { useT } from "@/lib/i18n";
+import { useDisplayLocale, useT } from "@/lib/i18n";
 import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
-import { castGroups, creditPart, creditPhoto, nameInitial } from "../lib/people";
+import { castGroups, creditPart, creditPhoto, nameInitial, peopleHeading } from "../lib/people";
 
 // The cast row on a Media detail page (CORE-2406): the item's person-archetype
 // credits in credit order, each a headshot card (the person's poster, or the
@@ -11,7 +11,8 @@ import { castGroups, creditPart, creditPhoto, nameInitial } from "../lib/people"
 // Credits carrying a department are grouped under it; the rest share one row.
 // With `preview` (the detail page, CORE-2503) only the first group shows, at
 // most `preview.max` people, and "See all" opens the full Cast & Crew view
-// when anyone is left out.
+// when anyone is left out. The row is headed with the credits' shared kind
+// label when they declare one (CORE-3337), else "People".
 export function CastRow({
   credits,
   preview,
@@ -23,14 +24,17 @@ export function CastRow({
   castHeading?: string;
 }) {
   const t = useT();
+  const locale = useDisplayLocale();
   const all = castGroups(credits);
   if (all.length === 0) return null;
   const groups = preview ? [{ ...all[0], credits: all[0].credits.slice(0, preview.max) }] : all;
   const hidden = preview && (all.length > 1 || all[0].credits.length > preview.max);
+  // The credits' own kind label ("Artists") when they share one, else "People" (CORE-3337).
+  const title = peopleHeading(credits, locale) || t("mediaDetailPeople");
   return (
     <section className="bf-section flex flex-col gap-3" aria-labelledby="bf-media-people">
       <h2 id="bf-media-people" className="bf-section-title">
-        <span>{t("mediaDetailPeople")}</span>
+        <span>{title}</span>
         {hidden && (
           <Link to={preview.to} className="bf-see-all">
             {t("seeAll")}
@@ -43,7 +47,7 @@ export function CastRow({
         return (
           <div key={group.department} className="bf-cast-group">
             {heading && <h3 className="bf-cast-group-title">{heading}</h3>}
-            <ul className="bf-shelf bf-cast" aria-label={heading || t("mediaDetailPeople")}>
+            <ul className="bf-shelf bf-cast" aria-label={heading || title}>
               {group.credits.map((credit) => (
                 <CastCard key={credit.entityID} credit={credit} />
               ))}
