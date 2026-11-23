@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { holdMute, setListenerMuted } from "./listenerMute";
-import { fadeAdvance, holdVolume } from "./trackFade";
+import { fadeAdvance, holdVolume, volumeHeld } from "./trackFade";
 import { useSleepTimer } from "./useListening";
 
 // The sleep timer's fade: equal power over the last stretch, then a pause and
@@ -221,5 +221,40 @@ describe("useSleepTimer fade", () => {
     expect(video.paused).toBe(true);
     expect(next).not.toHaveBeenCalled();
     expect(video.volume).toBe(0.8);
+  });
+
+  it("ends a skip that already moved on when the timer stops, giving the level back", () => {
+    const video = audible(element());
+    const hook = render(video);
+    startMinutes(hook, 15);
+    advance(15 * 60_000 - 600);
+    const next = vi.fn();
+    act(() => fadeAdvance(video, next));
+    advance(400); // the skip has faded out and moved on; the next item is still loading
+    expect(next).toHaveBeenCalledOnce();
+    expect(video.volume).toBeLessThan(0.1);
+    advance(400);
+    expect(video.paused).toBe(true);
+    expect(video.volume).toBe(0.8);
+    expect(volumeHeld(video)).toBe(false);
+    act(() => video.dispatchEvent(new Event("playing")));
+    advance(1_000);
+    expect(video.volume).toBe(0.8);
+  });
+
+  it("gives the listener's level back when a skip cuts through the sleep fade", () => {
+    const video = element();
+    const hook = render(video);
+    startMinutes(hook, 15);
+    advance(15 * 60_000 - 10_000);
+    expect(video.volume).toBeLessThan(0.5);
+    const next = vi.fn();
+    act(() => fadeAdvance(video, next)); // muted: a cut
+    expect(next).toHaveBeenCalledOnce();
+    expect(video.volume).toBe(0.8);
+    advance(50);
+    expect(video.volume).toBeCloseTo(0.8, 2);
+    advance(5_000); // half of the 10 s left
+    expect(video.volume).toBeCloseTo(0.8 * Math.SQRT1_2, 2);
   });
 });

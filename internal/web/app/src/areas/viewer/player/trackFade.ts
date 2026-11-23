@@ -99,6 +99,14 @@ export function cancelFadeAdvance() {
 }
 
 /**
+ * Ends the element's skip outright, before or after it moved on: the sleep
+ * timer stopped playback, so nothing fades in and the listener's level comes back.
+ */
+export function dropFadeAdvance(video: HTMLMediaElement) {
+  runs.get(video)?.supersede();
+}
+
+/**
  * Moves every skip still fading out on at once: the track ended, so nothing is
  * left to fade, and the listener's pick owns what plays next. Needs no
  * animation frame, so a hidden tab still advances. Returns whether one did.
@@ -117,6 +125,8 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   // A hidden tab runs no animation frames (CORE-3356): there the skip is a cut.
   const cut =
     video.paused || listenerMuted(video) || fadeBaseVolume(video) === 0 || document.hidden;
+  // A cut ends any fade still holding the volume (the sleep timer's), giving the listener's level back.
+  if (cut && volumeHeld(video)) holdVolume(video).release(true);
   // A cut writes nothing, so it takes no hold on the volume.
   let hold: VolumeHold | null = cut ? null : holdVolume(video);
   // A fade already under way (the sleep timer's) has the element below the
