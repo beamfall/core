@@ -3007,6 +3007,8 @@ func TestSensitivePluginFieldsWithheldAfterReveal(t *testing.T) {
 		MediaFields: []plugin.FieldSpec{
 			{Name: "public-note", Type: "text"},
 			{Name: "private-note", Type: "text", Sensitive: true},
+			{Name: "unset-count", Type: "number", Label: plugin.L("Count")},
+			{Name: "unset-secret", Type: "text", Sensitive: true},
 		},
 		EntityKinds: []plugin.EntityKind{{
 			Name:      "contact",
@@ -3064,7 +3066,7 @@ func TestSensitivePluginFieldsWithheldAfterReveal(t *testing.T) {
 
 	body, err := json.Marshal(map[string]any{
 		"query": `query Sensitive($mediaID: String!, $id: String!) {
-			mediaFields(mediaID: $mediaID) { name value }
+			mediaFields(mediaID: $mediaID) { name type value label }
 			entity(id: $id) { fields { name value } }
 		}`,
 		"variables": map[string]any{
@@ -3095,8 +3097,13 @@ func TestSensitivePluginFieldsWithheldAfterReveal(t *testing.T) {
 	if len(resp.Errors) != 0 {
 		t.Fatalf("errors = %#v", resp.Errors)
 	}
-	if len(resp.Data.MediaFields) != 1 || resp.Data.MediaFields[0].Name != "public-note" {
-		t.Fatalf("mediaFields = %#v, want only public-note", resp.Data.MediaFields)
+	// Set fields first, then declared-but-unset non-sensitive fields with an
+	// empty value so an editor can set them; sensitive ones never appear.
+	got := resp.Data.MediaFields
+	if len(got) != 2 || got[0].Name != "public-note" || got[0].Value != "returned" ||
+		got[1].Name != "unset-count" || got[1].Type != "number" || got[1].Value != "" ||
+		got[1].Label.Resolve("en") != "Count" {
+		t.Fatalf("mediaFields = %#v, want public-note then empty unset-count", got)
 	}
 	if len(resp.Data.Entity.Fields) != 1 || resp.Data.Entity.Fields[0].Name != "public-note" {
 		t.Fatalf("entity.fields = %#v, want only public-note", resp.Data.Entity.Fields)
@@ -4409,6 +4416,18 @@ type fakeArtworkImporter struct {
 	}
 }
 
+// fakeManualArtworkImporter also offers the manual-pick import, which a pin
+// or an upload must prefer (ADR-0072).
+type fakeManualArtworkImporter struct {
+	fakeArtworkImporter
+	manual int
+}
+
+func (f *fakeManualArtworkImporter) ImportManualArtwork(ctx context.Context, mediaID store.MediaID, slot string, data []byte) error {
+	f.manual++
+	return f.ImportArtwork(ctx, mediaID, slot, data)
+}
+
 func (f *fakeArtworkImporter) ImportArtwork(_ context.Context, mediaID store.MediaID, slot string, data []byte) error {
 	f.imports = append(f.imports, struct {
 		mediaID store.MediaID
@@ -4502,7 +4521,7 @@ func TestPinArtworkCandidateFetchesImportsMarksAndAudits(t *testing.T) {
 		t.Fatal(err)
 	}
 	fetcher := &fakeArtworkCandidateFetcher{data: []byte("new poster bytes")}
-	importer := &fakeArtworkImporter{}
+	importer := &fakeManualArtworkImporter{}
 	handler := newTestHandlerWithStore(st)
 	handler.SetArtworkCandidateServices(fetcher, importer)
 	candidateID := store.ArtworkCandidateID("media-alpha", artwork.SlotPoster, bURL)
@@ -4518,6 +4537,22 @@ func TestPinArtworkCandidateFetchesImportsMarksAndAudits(t *testing.T) {
 	if len(importer.imports) != 1 || importer.imports[0].mediaID != "media-alpha" ||
 		importer.imports[0].slot != artwork.SlotPoster || importer.imports[0].data != "new poster bytes" {
 		t.Fatalf("imports = %#v", importer.imports)
+	}
+	if importer.manual != 1 {
+		t.Fatalf("manual imports = %d, want the pin imported as a manual pick", importer.manual)
+	}
+	locks, err := st.MediaFieldLocks(ctx, "media-alpha", store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	posterLocked := false
+	for _, lock := range locks {
+		if lock.Field == store.ArtworkLockField(artwork.SlotPoster) {
+			posterLocked = lock.Locked
+		}
+	}
+	if !posterLocked {
+		t.Fatalf("locks = %#v, want the pinned poster slot locked", locks)
 	}
 	candidates, err := st.ArtworkCandidates(ctx, "media-alpha", artwork.SlotPoster, store.LibraryFilter{AllLibraries: true})
 	if err != nil {

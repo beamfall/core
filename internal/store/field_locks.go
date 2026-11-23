@@ -34,15 +34,29 @@ var lockableFields = []struct {
 	{Field: ArtworkLockField("poster")},
 	{Field: ArtworkLockField("backdrop")},
 	{Field: ArtworkLockField("thumb")},
+	{Field: ArtworkLockField("logo")},
+	{Field: ArtworkLockField("banner")},
+	{Field: ArtworkLockField("clearart")},
+	{Field: ArtworkLockField("disc")},
+	{Field: ArtworkLockField("season-poster")},
 }
 
 // ArtworkLockField names the lock field for one artwork slot: a locked slot is
-// not refetched by an identification or a per-item refresh.
+// not refetched by an identification or a per-item refresh. Hyphenated slots
+// camel-case ("season-poster" locks as "artworkSeasonPoster"). The slot list
+// above mirrors artwork.KnownSlots, which the store cannot import; a graph
+// test keeps the two in step.
 func ArtworkLockField(slot string) string {
-	if slot == "" {
-		return "artwork"
+	var b strings.Builder
+	b.WriteString("artwork")
+	for _, part := range strings.Split(slot, "-") {
+		if part == "" {
+			continue
+		}
+		b.WriteString(strings.ToUpper(part[:1]))
+		b.WriteString(part[1:])
 	}
-	return "artwork" + strings.ToUpper(slot[:1]) + slot[1:]
+	return b.String()
 }
 
 func lockMirror(field string) (string, bool) {

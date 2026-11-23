@@ -42,6 +42,9 @@ const (
 	roleSession fieldRoleGate = 1 << iota
 	roleManager
 	roleAdmin
+	// roleAdultProfile refuses a managed profile even on a manager device:
+	// editing an item's metadata or artwork is an admin action (CORE-2905).
+	roleAdultProfile
 )
 
 type fieldDispatchOrder uint16
@@ -144,6 +147,12 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 	if gate&roleManager != 0 && dispatch.scope.DeviceRole != store.DeviceRoleManager {
 		return response{
 			Errors:               []graphError{newGraphError(ErrorCodeForbidden, "manager role required")},
+			authorizationRefused: true,
+		}
+	}
+	if gate&roleAdultProfile != 0 && dispatch.scope.Profile == store.ProfileManaged {
+		return response{
+			Errors:               []graphError{newGraphError(ErrorCodeForbidden, "adult profile required")},
 			authorizationRefused: true,
 		}
 	}
@@ -603,7 +612,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"pathpicker":                         newFieldHandler("pathPicker", "pathPicker", fieldRead, roleSession|roleManager|roleAdmin, 109),
 	"pendingaccessrequests":              newFieldHandler("pendingAccessRequests", "pendingAccessRequests", fieldRead, roleSession, 100),
 	"pendingaitagqueue":                  newFieldHandler("pendingAITagQueue", "pendingAITagQueue", fieldRead, roleSession|roleAdmin, 77),
-	"pinartworkcandidate":                newFieldHandler("pinArtworkCandidate", "pinArtworkCandidate", fieldMutation, roleSession|roleManager, 16),
+	"pinartworkcandidate":                newFieldHandler("pinArtworkCandidate", "pinArtworkCandidate", fieldMutation, roleSession|roleManager|roleAdultProfile, 16),
 	"playbackrenditioncache":             newFieldHandler("playbackRenditionCache", "playbackRenditionCache", fieldRead, roleSession|roleAdmin, 75),
 	"plugins":                            newFieldHandler("plugins", "", fieldRead, roleSession, 5),
 	"pluginworker":                       newFieldHandler("pluginWorker", "pluginWorker", fieldRead, roleSession|roleAdmin, 66),
@@ -736,9 +745,9 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setlibraryrestricted":               newFieldHandler("setLibraryRestricted", "setLibraryRestricted", fieldMutation, roleSession|roleAdmin, 49),
 	"setlibraryroots":                    newFieldHandler("setLibraryRoots", "setLibraryRoots", fieldMutation, roleSession|roleAdmin, 46),
 	"setmediarelation":                   newFieldHandler("setMediaRelation", "setMediaRelation", fieldMutation, roleSession|roleManager, 157),
-	"setmediafieldlock":                  newFieldHandler("setMediaFieldLock", "setMediaFieldLock", fieldMutation, roleSession|roleManager, 108),
-	"editmediametadata":                  newFieldHandler("editMediaMetadata", "editMediaMetadata", fieldMutation, roleSession|roleManager, 108),
-	"refreshmediametadata":               newFieldHandler("refreshMediaMetadata", "refreshMediaMetadata", fieldMutation, roleSession|roleManager, 108),
+	"setmediafieldlock":                  newFieldHandler("setMediaFieldLock", "setMediaFieldLock", fieldMutation, roleSession|roleManager|roleAdultProfile, 108),
+	"editmediametadata":                  newFieldHandler("editMediaMetadata", "editMediaMetadata", fieldMutation, roleSession|roleManager|roleAdultProfile, 108),
+	"refreshmediametadata":               newFieldHandler("refreshMediaMetadata", "refreshMediaMetadata", fieldMutation, roleSession|roleManager|roleAdultProfile, 108),
 	"setmute":                            newFieldHandler("setMute", "setMute", fieldMutation, roleSession, 123),
 	"setnavoverride":                     newFieldHandler("setNavOverride", "setNavOverride", fieldMutation, roleSession|roleManager, 62),
 	"setpluginactive":                    newFieldHandler("setPluginActive", "setPluginActive", fieldMutation, roleSession|roleAdmin, 66),

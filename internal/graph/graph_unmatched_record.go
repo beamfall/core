@@ -184,7 +184,7 @@ func (h *Handler) pinUploadedArtwork(ctx context.Context, scope auth.Scope, medi
 			return nil
 		}
 	}
-	if err := h.candidateImport.ImportArtwork(ctx, mediaID, slot, data); err != nil {
+	if err := importPickedArtwork(ctx, h.candidateImport, mediaID, slot, data); err != nil {
 		return err
 	}
 	if err := h.store.UpsertArtworkCandidate(ctx, mediaID, slot, sourceURL, "", ""); err != nil {
@@ -193,6 +193,9 @@ func (h *Handler) pinUploadedArtwork(ctx context.Context, scope auth.Scope, medi
 	// Kept only once a candidate row names these bytes.
 	h.keepUploadedCandidate(ctx, mediaID, data)
 	if err := h.store.MarkArtworkCandidateApplied(ctx, candidateID); err != nil {
+		return err
+	}
+	if _, err := h.store.SetMediaFieldLock(ctx, mediaID, store.ArtworkLockField(slot), true, scope.LibraryFilter()); err != nil {
 		return err
 	}
 	media, err := h.store.Media(ctx, mediaID, scope.LibraryFilter())

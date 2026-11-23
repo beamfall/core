@@ -1,12 +1,23 @@
-import { Captions, Check, Eye, EyeOff, Link2, ListPlus, MoreHorizontal } from "lucide-react";
+import {
+  Captions,
+  Check,
+  Eye,
+  EyeOff,
+  Link2,
+  ListPlus,
+  MoreHorizontal,
+  PencilLine,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Menu } from "@/components/ui/astryx-primitives";
 import { buttonVariants } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
+import { useSession } from "@/lib/session";
 import { useItemHide } from "../actions";
 import { mediaPath } from "../lib/mediaAddress";
 import { useSubtitleSearchAvailable } from "../lib/subtitleSearch";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
+import { EditMediaDetailsDialog } from "./EditMediaDetailsDialog";
 import { SubtitleSearchDialog } from "./SubtitleSearchDialog";
 
 const COPIED_RESET_MS = 2000;
@@ -17,17 +28,26 @@ const COPIED_RESET_MS = 2000;
 // Add to playlist opens the existing manager-gated dialog (CORE-1635); Hide
 // takes the item out of this Profile's browsing (CORE-2836). Search online
 // for subtitles shows only when the server has a provider enabled and this
-// viewer may use it (CORE-1690); a download calls onSubtitleAdded.
+// viewer may use it (CORE-1690); a download calls onSubtitleAdded. Edit
+// details opens the metadata editor for the admin, the manager on the adult
+// Profile that Manage also requires (CORE-2905).
 export function MediaDetailMoreMenu({
   mediaID,
   title,
+  artwork,
   onSubtitleAdded,
+  onEdited,
 }: {
   mediaID: string;
   title: string;
+  artwork?: Partial<Record<string, string>>;
   onSubtitleAdded?: () => void;
+  onEdited?: () => void;
 }) {
   const t = useT();
+  const { isManager, session } = useSession();
+  const canEdit = isManager && session?.profile === "adult";
+  const [editOpen, setEditOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [subtitlesOpen, setSubtitlesOpen] = useState(false);
@@ -97,6 +117,12 @@ export function MediaDetailMoreMenu({
                 )}
                 {t(hide.hidden ? "itemUnhide" : "itemHide")}
               </Menu.Item>
+              {canEdit && (
+                <Menu.Item className="bf-card-menu-item" onClick={() => setEditOpen(true)}>
+                  <PencilLine aria-hidden="true" size={15} />
+                  {t("itemMetadataEditDetails")}
+                </Menu.Item>
+              )}
               <Menu.Item className="bf-card-menu-item" closeOnClick={false} onClick={copyLink}>
                 {copied ? (
                   <Check aria-hidden="true" size={15} />
@@ -118,6 +144,15 @@ export function MediaDetailMoreMenu({
           title={title}
           onClose={() => setSubtitlesOpen(false)}
           onDownloaded={onSubtitleAdded}
+        />
+      )}
+      {editOpen && (
+        <EditMediaDetailsDialog
+          mediaID={mediaID}
+          title={title}
+          artwork={artwork}
+          onChanged={onEdited}
+          onClose={() => setEditOpen(false)}
         />
       )}
     </>

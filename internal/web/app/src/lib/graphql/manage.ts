@@ -1595,20 +1595,23 @@ export async function fetchMediaFieldLocks(mediaID: string): Promise<FieldLockIn
 }
 
 const SET_MEDIA_FIELD_LOCK_MUTATION =
-  "mutation SetMediaFieldLock($mediaID: String!, $field: String!, $locked: Boolean!) { setMediaFieldLock(mediaID: $mediaID, field: $field, locked: $locked) { field locked } }";
+  "mutation SetMediaFieldLock($mediaID: String!, $field: String!, $locked: Boolean!, $revert: Boolean) { setMediaFieldLock(mediaID: $mediaID, field: $field, locked: $locked, revert: $revert) { field locked } }";
 
 /**
  * SetMediaFieldLock — lock/unlock one Media field against identification,
- * refresh and re-scan. Returns the Media's whole updated lock list.
+ * refresh and re-scan. Returns the Media's whole updated lock list. revert,
+ * on an unlocked artwork field, also gives the slot back from the operator's
+ * pick (the sidecar, or the provider's image on the next refresh).
  */
 export async function setMediaFieldLock(
   mediaID: string,
   field: string,
   locked: boolean,
+  revert = false,
 ): Promise<FieldLockInfo[]> {
   const data = await graphql<{ setMediaFieldLock: FieldLockInfo[] | null }>(
     SET_MEDIA_FIELD_LOCK_MUTATION,
-    { mediaID, field, locked },
+    revert ? { mediaID, field, locked, revert } : { mediaID, field, locked },
   );
   return data.setMediaFieldLock ?? [];
 }

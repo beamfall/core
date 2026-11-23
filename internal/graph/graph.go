@@ -294,6 +294,21 @@ type ArtworkCandidateImporter interface {
 	ImportArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error
 }
 
+// manualArtworkImporter is the optional importer capability for an operator
+// pick: a manual pick outranks every lock, sidecar locks included (ADR-0072).
+type manualArtworkImporter interface {
+	ImportManualArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error
+}
+
+// importPickedArtwork stores artwork an admin chose (a pinned candidate or an
+// upload) as a manual pick when the importer supports it.
+func importPickedArtwork(ctx context.Context, importer ArtworkCandidateImporter, id store.MediaID, slot string, data []byte) error {
+	if manual, ok := importer.(manualArtworkImporter); ok {
+		return manual.ImportManualArtwork(ctx, id, slot, data)
+	}
+	return importer.ImportArtwork(ctx, id, slot, data)
+}
+
 // ScanObserver receives the Library/root pair after a scan enqueue succeeds.
 type ScanObserver interface {
 	Observe(store.LibraryID, string)
@@ -5720,9 +5735,15 @@ func (h *Handler) mediaFieldsQuery(ctx context.Context, scope auth.Scope, req re
 	if err != nil {
 		return nil, clientError("unknown media")
 	}
-	specs := h.mediaFieldSpecs(ctx, store.MediaID(mediaID))
+	declared := h.declaredMediaFields(ctx, store.MediaID(mediaID))
+	specs := make(map[string]plugin.FieldSpec, len(declared))
+	for _, spec := range declared {
+		specs[spec.Name] = spec
+	}
 	infos := []EntityFieldInfo{}
+	seen := make(map[string]bool, len(fields))
 	for _, field := range fields {
+		seen[field.Name] = true
 		spec := specs[field.Name]
 		if spec.Sensitive {
 			continue
@@ -5734,6 +5755,14 @@ func (h *Handler) mediaFieldsQuery(ctx context.Context, scope auth.Scope, req re
 			Label: spec.Label,
 		})
 	}
+	// Declared fields with no value yet still appear (empty Value), in
+	// declaration order, so an editor can set them for the first time.
+	for _, spec := range declared {
+		if spec.Sensitive || seen[spec.Name] {
+			continue
+		}
+		infos = append(infos, EntityFieldInfo{Name: spec.Name, Type: string(spec.Type), Label: spec.Label})
+	}
 	return infos, nil
 }
 
@@ -5741,22 +5770,28 @@ func (h *Handler) mediaFieldsQuery(ctx context.Context, scope auth.Scope, req re
 // bundle declaration. Empty when the item is plugin-less or undeclared.
 func (h *Handler) mediaFieldSpecs(ctx context.Context, mediaID store.MediaID) map[string]plugin.FieldSpec {
 	specs := map[string]plugin.FieldSpec{}
-	libraryID, err := h.store.MediaLibrary(ctx, mediaID)
-	if err != nil {
-		return specs
-	}
-	pluginID, err := h.store.LibraryPluginID(ctx, libraryID)
-	if err != nil || pluginID == "" {
-		return specs
-	}
-	bundle, ok := h.plugins.Bundle(plugin.ID(pluginID))
-	if !ok {
-		return specs
-	}
-	for _, field := range bundle.MediaFields {
+	for _, field := range h.declaredMediaFields(ctx, mediaID) {
 		specs[field.Name] = field
 	}
 	return specs
+}
+
+// declaredMediaFields returns the owning bundle's MediaFields in declaration
+// order. Nil when the item is plugin-less or the bundle is not loaded.
+func (h *Handler) declaredMediaFields(ctx context.Context, mediaID store.MediaID) []plugin.FieldSpec {
+	libraryID, err := h.store.MediaLibrary(ctx, mediaID)
+	if err != nil {
+		return nil
+	}
+	pluginID, err := h.store.LibraryPluginID(ctx, libraryID)
+	if err != nil || pluginID == "" {
+		return nil
+	}
+	bundle, ok := h.plugins.Bundle(plugin.ID(pluginID))
+	if !ok {
+		return nil
+	}
+	return bundle.MediaFields
 }
 
 type ArtworkCandidateInfo struct {
@@ -5817,10 +5852,14 @@ func (h *Handler) pinArtworkCandidate(ctx context.Context, scope auth.Scope, req
 	if err != nil {
 		return ArtworkCandidateInfo{}, err
 	}
-	if err := h.candidateImport.ImportArtwork(ctx, candidate.MediaID, candidate.Slot, data); err != nil {
+	if err := importPickedArtwork(ctx, h.candidateImport, candidate.MediaID, candidate.Slot, data); err != nil {
 		return ArtworkCandidateInfo{}, err
 	}
 	if err := h.store.MarkArtworkCandidateApplied(ctx, candidate.ID); err != nil {
+		return ArtworkCandidateInfo{}, err
+	}
+	// A pin is a manual edit: lock the slot so a refresh or rescan keeps it.
+	if _, err := h.store.SetMediaFieldLock(ctx, candidate.MediaID, store.ArtworkLockField(candidate.Slot), true, scope.LibraryFilter()); err != nil {
 		return ArtworkCandidateInfo{}, err
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityArtworkPin, "media", string(candidate.MediaID), media.LibraryID); err != nil {
