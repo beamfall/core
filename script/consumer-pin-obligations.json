@@ -16,7 +16,8 @@
     "internal/server/",
     "internal/playback/",
     "internal/streamtoken/",
-    "contracts/registry.json"
+    "contracts/registry.json",
+    "contracts/player-profile/"
   ],
   "obligations": [
     {
@@ -143,6 +144,32 @@
           "revealed-adult/playback-info.json"
         ]
       }
+    },
+    {
+      "id": "apple-ui-player-profile-fixtures",
+      "consumerProbe": "Tests/BeamfallKitTests/PlayerProfileWireConformanceTests.swift",
+      "artifact": "Tests/BeamfallKitTests/Resources/player-profile-fixtures.json",
+      "assertedBy": "PlayerProfileWireConformanceTests.testLiveCoreFixturesMatchPin",
+      "refresh": "`cp <core>/contracts/player-profile/v1/fixtures.json <consumer>/Tests/BeamfallKitTests/Resources/player-profile-fixtures.json`",
+      "byteCopies": [
+        {
+          "producer": "contracts/player-profile/v1/fixtures.json",
+          "consumer": "Tests/BeamfallKitTests/Resources/player-profile-fixtures.json"
+        }
+      ]
+    },
+    {
+      "id": "android-ui-player-profile-fixtures",
+      "consumerProbe": "kit/src/test/kotlin/com/beamfall/kit/PlayerProfileWireConformanceTest.kt",
+      "artifact": "kit/src/test/resources/fixtures/player-profile/fixtures.json",
+      "assertedBy": "PlayerProfileWireConformanceTest.liveCoreFixturesMatchPin",
+      "refresh": "`cp <core>/contracts/player-profile/v1/fixtures.json <consumer>/kit/src/test/resources/fixtures/player-profile/fixtures.json`",
+      "byteCopies": [
+        {
+          "producer": "contracts/player-profile/v1/fixtures.json",
+          "consumer": "kit/src/test/resources/fixtures/player-profile/fixtures.json"
+        }
+      ]
     }
   ]
 }

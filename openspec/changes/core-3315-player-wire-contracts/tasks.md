@@ -12,5 +12,5 @@
 
 ## 3. SDKs
 
-- [ ] 3.1 BeamfallKit decoders and `PlayerProfileWireConformanceTests` in `beamfall-apple-ui`
-- [ ] 3.2 `:kit` decoders and a fixture conformance test in `beamfall-android-ui`
+- [x] 3.1 BeamfallKit decoders and `PlayerProfileWireConformanceTests` in `beamfall-apple-ui`
+- [x] 3.2 `:kit` decoders and a fixture conformance test in `beamfall-android-ui`
