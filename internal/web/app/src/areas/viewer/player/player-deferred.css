@@ -1572,19 +1572,6 @@
   }
 }
 
-/* Over a live visual the row gets the same plate as the words. */
-.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-listen-chip,
-.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-listen-pauses {
-  background: color-mix(in oklab, var(--scrim) 78%, transparent);
-  -webkit-backdrop-filter: blur(24px);
-  backdrop-filter: blur(24px);
-}
-
-.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-listen-pauses {
-  padding: 0 12px;
-  border-radius: 999px;
-}
-
 /* Shuffle and repeat show their state in the accent colour. */
 .bf-transport .bf-control[aria-pressed="true"],
 .bf-transport .bf-control[data-repeat="all"],
@@ -1592,35 +1579,18 @@
   color: var(--accent);
 }
 
-/* Over a live visual, Up Next and the quality badge get the same plate as the
-   words (CORE-2216 contrast; CORE-1637). */
-.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-audio-upnext {
-  margin: 0 -12px;
-  padding: 8px 12px;
+/* Over a live visual the words, the listening controls, the quality badge and
+   Up Next share one blurred scrim plate, and the muted lines drop their
+   transparency, so every line keeps WCAG AA contrast even over a white frame
+   (CORE-2216, CORE-1637). One plate with one edge, not a plate per piece
+   (CORE-3302). Without a visual nothing changes. */
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-audio-info {
+  padding: clamp(16px, 2.4vw, 24px) clamp(18px, 2.8vw, 28px);
   border-radius: var(--radius-card);
   background: color-mix(in oklab, var(--scrim) 78%, transparent);
   -webkit-backdrop-filter: blur(24px);
   backdrop-filter: blur(24px);
-}
-
-.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-audio-quality {
-  background: color-mix(in oklab, var(--scrim) 78%, transparent);
-  -webkit-backdrop-filter: blur(24px);
-  backdrop-filter: blur(24px);
-}
-
-/* Over a live visual the words sit on a blurred scrim plate, and the muted
-   lines drop their transparency, so every line keeps WCAG AA contrast even
-   over a white frame (CORE-2216). Without a visual nothing changes. */
-.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-audio-meta {
-  --bf-meta-pad-y: 16px;
-  --bf-meta-pad-x: 20px;
-  margin: calc(-1 * var(--bf-meta-pad-y)) calc(-1 * var(--bf-meta-pad-x));
-  padding: var(--bf-meta-pad-y) var(--bf-meta-pad-x);
-  border-radius: var(--radius-card);
-  background: color-mix(in oklab, var(--scrim) 78%, transparent);
-  -webkit-backdrop-filter: blur(24px);
-  backdrop-filter: blur(24px);
+  box-shadow: 0 24px 64px color-mix(in oklab, var(--shadow-color) 45%, transparent);
   text-shadow: 0 1px 2px color-mix(in oklab, var(--scrim) 60%, transparent);
 }
 
