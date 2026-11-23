@@ -52,7 +52,7 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   runs.get(video)?.supersede();
   const base = video.volume;
   // A hidden tab runs no animation frames (CORE-3356): there the skip is a cut.
-  if (video.paused || listenerMuted(video) || base === 0 || document.hidden) return advance();
+  const cut = video.paused || listenerMuted(video) || base === 0 || document.hidden;
 
   let written = base;
   let frame = 0;
@@ -147,9 +147,11 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     if (!theirs() && video) written = video.volume = base;
     settle();
   }
-  document.addEventListener("visibilitychange", hide);
   runs.set(video, run);
   fadingOut.add(run);
+  // A cut owns what plays next too: the outgoing track's end must not act as well.
+  if (cut) return settle();
+  document.addEventListener("visibilitychange", hide);
   ramp(Math.cos, () => {
     video.addEventListener("loadstart", loading);
     video.addEventListener("playing", fadeIn);

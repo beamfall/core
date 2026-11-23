@@ -121,8 +121,16 @@ describe("fadeAdvance", () => {
       // Started while hidden, it is a cut.
       hidden.mockReturnValue(true);
       const later = vi.fn();
-      fadeAdvance(playingElement(), later);
+      const cutElement = playingElement();
+      fadeAdvance(cutElement, later);
       expect(later).toHaveBeenCalledOnce();
+      // The cut still owns what plays next: the outgoing track's end does not act too.
+      expect(finishFadeAdvance()).toBe(true);
+      expect(later).toHaveBeenCalledOnce();
+      cutElement.volume = 0.4;
+      vi.advanceTimersByTime(LOAD_WAIT_MS);
+      expect(cutElement.volume).toBe(0.4);
+      expect(finishFadeAdvance()).toBe(false);
     } finally {
       hidden.mockRestore();
     }
