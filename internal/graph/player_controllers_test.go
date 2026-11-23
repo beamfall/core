@@ -417,7 +417,7 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 		PlayerBindingGeneration: 1,
 		CreatedAt:               clock,
 		ExpiresAt:               clock.Add(time.Hour),
-	}, 1); err != nil || !published {
+	}, 1, store.PlayerOriginatorPolicy{}); err != nil || !published {
 		t.Fatalf("publish observation grant = %v, %v", published, err)
 	}
 	if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{

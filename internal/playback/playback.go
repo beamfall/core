@@ -1115,10 +1115,14 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	}
 	resumeProfileID := scope.ProfileID
 	var playerGrant *store.PlaybackGrant
+	originatorPolicy := store.PlayerOriginatorPolicy{Now: s.now}
+	if s.auth != nil {
+		originatorPolicy.CertificationConstraints = s.auth.CertificationConstraints
+	}
 	if scope.IsPlayerBound() {
 		resumeProfileID = ""
 		if suffix == mainSuffix {
-			grant, allowed, err := s.preparePlayerPlaybackGrant(ctx, scope, media, commandRevision)
+			grant, allowed, err := s.preparePlayerPlaybackGrant(ctx, scope, media, commandRevision, originatorPolicy)
 			if err != nil {
 				return decision{}, err
 			}
@@ -1174,7 +1178,7 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	if suffix != mainSuffix && dec.verdict == "unavailable" {
 		return dec, nil
 	}
-	if playerGrant != nil && dec.verdict != "unavailable" && dec.media.Class != store.MediaClassImage && s.store != nil {
+	if playerGrant != nil && dec.verdict != "unavailable" {
 		now := s.now().UTC()
 		tokenLifetime := max(time.Hour, 2*time.Duration(dec.media.DurationSeconds)*time.Second)
 		grantToSave := *playerGrant
@@ -1182,7 +1186,7 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 		grantToSave.LastDurationSeconds = dec.timeline.DurationSeconds
 		grantToSave.CreatedAt = now
 		grantToSave.ExpiresAt = now.Add(tokenLifetime)
-		published, err := s.store.CreatePlaybackGrant(parent, grantToSave, commandRevision)
+		published, err := s.store.CreatePlaybackGrant(parent, grantToSave, commandRevision, originatorPolicy)
 		if err != nil {
 			return decision{}, err
 		}
@@ -1200,7 +1204,7 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	return dec, nil
 }
 
-func (s *Service) preparePlayerPlaybackGrant(ctx context.Context, scope auth.Scope, media store.Media, revision int64) (*store.PlaybackGrant, bool, error) {
+func (s *Service) preparePlayerPlaybackGrant(ctx context.Context, scope auth.Scope, media store.Media, revision int64, policy store.PlayerOriginatorPolicy) (*store.PlaybackGrant, bool, error) {
 	if s.store == nil {
 		return nil, true, nil
 	}
@@ -1220,7 +1224,7 @@ func (s *Service) preparePlayerPlaybackGrant(ctx context.Context, scope auth.Sco
 		if commanded {
 			allowed := false
 			if attr.PlayerBindingGeneration == scope.PlayerBindingGeneration {
-				allowed, err = s.originatorPlaybackAllowed(ctx, scope.PlayerProfileID, attr.OriginatorProfileID, attr.OriginatorSessionID, media.ID)
+				allowed, err = s.store.PlayerOriginatorPlaybackAllowed(ctx, scope.PlayerProfileID, attr.OriginatorProfileID, attr.OriginatorSessionID, media.ID, policy)
 				if err != nil {
 					return nil, false, err
 				}
@@ -1251,59 +1255,6 @@ func (s *Service) preparePlayerPlaybackGrant(ctx context.Context, scope auth.Sco
 		PlayerBindingGeneration: scope.PlayerBindingGeneration,
 		WalkUp:                  walkUp,
 	}, true, nil
-}
-
-func (s *Service) originatorPlaybackAllowed(ctx context.Context, playerProfileID, originatorProfileID store.ProfileID, originatorSessionID store.SessionID, mediaID store.MediaID) (bool, error) {
-	if s.store == nil || originatorProfileID == "" {
-		return false, nil
-	}
-	isCtrl, err := s.store.IsPlayerController(ctx, playerProfileID, originatorProfileID)
-	if err != nil || !isCtrl {
-		return false, err
-	}
-	var filter store.LibraryFilter
-	if s.auth != nil {
-		f, err := s.auth.OriginatorPlaybackFilter(ctx, originatorProfileID, originatorSessionID)
-		if err != nil {
-			var verr store.ValidationError
-			if errors.As(err, &verr) || errors.Is(err, store.ErrProfileDisabled) || errors.Is(err, auth.ErrAccessOutsideSchedule) {
-				return false, nil
-			}
-			return false, err
-		}
-		filter = f
-	} else {
-		p, err := s.store.Profile(ctx, originatorProfileID)
-		if err != nil {
-			var verr store.ValidationError
-			if errors.As(err, &verr) {
-				return false, nil
-			}
-			return false, err
-		}
-		if p.Disabled || p.Kind == store.ProfilePlayer {
-			return false, nil
-		}
-		origScope := auth.Scope{
-			ProfileID:  p.ID,
-			Profile:    p.Kind,
-			Revealed:   false,
-			LibraryIDs: p.Library,
-		}
-		filter = origScope.PlaybackFilter()
-	}
-	m, err := s.decisionLookup.Media(ctx, mediaID, filter)
-	if err != nil {
-		var verr store.ValidationError
-		if errors.As(err, &verr) {
-			return false, nil
-		}
-		return false, err
-	}
-	if s.sealed != nil && s.sealed(m.LibraryID) {
-		return false, nil
-	}
-	return true, nil
 }
 
 func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *decisionGrants, scope auth.Scope, resumeProfileID store.ProfileID, media store.Media, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {

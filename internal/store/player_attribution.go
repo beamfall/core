@@ -45,6 +45,13 @@ type PlaybackGrant struct {
 	CancelledAt             time.Time
 }
 
+// PlayerOriginatorPolicy supplies the clock and plugin certification scales
+// used by the originator's becoming-current check.
+type PlayerOriginatorPolicy struct {
+	Now                      func() time.Time
+	CertificationConstraints func([]ProfileCertificationCeiling) []CertificationConstraint
+}
+
 // PlayerReportResolution describes the outcome of resolving and fencing a
 // Player display's progress/completion report against its playback grant.
 type PlayerReportResolution struct {
@@ -124,7 +131,11 @@ func (s *Store) SkipPlayerCommandedAttribution(ctx context.Context, sessionID Se
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	_, err := s.eventsW.ExecContext(ctx, `
+	return skipPlayerCommandedAttributionSQL(ctx, s.eventsW, sessionID, mediaID, revision)
+}
+
+func skipPlayerCommandedAttributionSQL(ctx context.Context, exec sqlExecer, sessionID SessionID, mediaID MediaID, revision int64) error {
+	_, err := exec.ExecContext(ctx, `
 		UPDATE player_commanded_media
 		SET active_for_attribution = 0
 		WHERE session_id = ? AND media_id = ?
@@ -133,10 +144,73 @@ func (s *Store) SkipPlayerCommandedAttribution(ctx context.Context, sessionID Se
 	return err
 }
 
+// PlayerOriginatorPlaybackAllowed checks a command before stream negotiation.
+func (s *Store) PlayerOriginatorPlaybackAllowed(ctx context.Context, playerID, originatorID ProfileID, sessionID SessionID, mediaID MediaID, policy PlayerOriginatorPolicy) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	if allowed, err := isPlayerControllerLocked(ctx, s.catalogR, playerID, originatorID); err != nil || !allowed {
+		return false, err
+	}
+	return s.playerOriginatorPlaybackAllowedLocked(ctx, originatorID, sessionID, mediaID, policy)
+}
+
+func (s *Store) playerOriginatorPlaybackAllowedLocked(ctx context.Context, originatorID ProfileID, sessionID SessionID, mediaID MediaID, policy PlayerOriginatorPolicy) (bool, error) {
+	profile, err := s.profileSQL(ctx, originatorID)
+	if errors.Is(err, ValidationError("profile not found")) {
+		return false, nil
+	}
+	if err != nil || profile.Disabled || profile.Kind == ProfilePlayer {
+		return false, err
+	}
+	filter := LibraryFilter{AllowedIDs: profile.Library, PlaybackGate: true}
+	if policy.CertificationConstraints != nil {
+		filter.Certification = policy.CertificationConstraints(profile.CertificationCeilings)
+	}
+	var windows []ProfileAccessWindow
+	if profile.Kind == ProfileManaged {
+		filter.GrantedMediaIDs, err = readGrantedMediaIDs(ctx, s.catalogR, profile.ID)
+		if err != nil {
+			return false, err
+		}
+		windows, err = readProfileAccessWindows(ctx, s.catalogR, profile.ID)
+		if err != nil {
+			return false, err
+		}
+	}
+	if _, err := s.visibleMediaSQL(ctx, mediaID, filter); err != nil {
+		var invalid ValidationError
+		if errors.As(err, &invalid) {
+			return false, nil
+		}
+		return false, err
+	}
+	now := s.serverNow()
+	if policy.Now != nil {
+		now = policy.Now()
+	}
+	if AllowedAt(windows, now.Local()) {
+		return true, nil
+	}
+	if sessionID == "" {
+		return false, nil
+	}
+	session, err := s.sessionSQL(ctx, sessionID)
+	if errors.Is(err, ErrSessionNotFound) {
+		return false, nil
+	}
+	if err != nil || session.ProfileID != originatorID || (!session.ExpiresAt.IsZero() && !now.Before(session.ExpiresAt)) {
+		return false, err
+	}
+	return activeExtensionGrant(ctx, s.catalogR, originatorID, sessionID, now)
+}
+
 // CreatePlaybackGrant persists a newly issued playback grant and cancels any
 // earlier active grant on the same display Session. It returns false if
 // playback authorization changed while the stream decision was in flight.
-func (s *Store) CreatePlaybackGrant(ctx context.Context, g PlaybackGrant, expectedRevision int64) (bool, error) {
+func (s *Store) CreatePlaybackGrant(ctx context.Context, g PlaybackGrant, expectedRevision int64, policy PlayerOriginatorPolicy) (bool, error) {
 	if g.GrantID == "" || g.SessionID == "" || g.ProfileID == "" || g.MediaID == "" {
 		return false, ValidationError("playback grant is incomplete")
 	}
@@ -151,8 +225,15 @@ func (s *Store) CreatePlaybackGrant(ctx context.Context, g PlaybackGrant, expect
 
 	s.sessionBindMu.RLock()
 	defer s.sessionBindMu.RUnlock()
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	if g.OriginatorProfileID != "" {
+		// Catalog authorization and the grant live in separate databases.
+		// Keep permission writes off from the final check through commit.
+		s.mu.Lock()
+		defer s.mu.Unlock()
+	} else {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+	}
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
@@ -231,6 +312,18 @@ func (s *Store) CreatePlaybackGrant(ctx context.Context, g PlaybackGrant, expect
 		createdMS, expiresMS,
 	); err != nil {
 		return false, err
+	}
+	if g.OriginatorProfileID != "" {
+		allowed, err := s.playerOriginatorPlaybackAllowedLocked(ctx, g.OriginatorProfileID, g.OriginatorSessionID, g.MediaID, policy)
+		if err != nil {
+			return false, err
+		}
+		if !allowed {
+			if err := tx.Rollback(); err != nil {
+				return false, err
+			}
+			return false, skipPlayerCommandedAttributionSQL(ctx, s.eventsW, g.SessionID, g.MediaID, expectedRevision)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err
@@ -365,6 +458,9 @@ func (s *Store) RecordPlayerPlaybackReport(
 	seq := report.ReportSequence
 	if seq != nil && *seq < 0 {
 		return PlayerReportResolution{}, ValidationError("sequence must be a non-negative integer")
+	}
+	if policy.Class == MediaClassImage {
+		return PlayerReportResolution{DropReason: "no-playhead"}, nil
 	}
 	if sessionID == "" || report.MediaID == "" {
 		return PlayerReportResolution{DropReason: "missing-session-or-media"}, nil

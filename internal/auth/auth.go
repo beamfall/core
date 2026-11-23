@@ -319,51 +319,6 @@ func (s *Service) PlayerProfilePlaybackFilter(ctx context.Context, profileID sto
 	return playerScope.PlaybackFilter(), nil
 }
 
-// OriginatorPlaybackFilter builds the live PlaybackFilter for a Profile that
-// originated a Player display command, enforcing its current kind, disabled
-// state, certification ceilings, access grants, and access schedule (including
-// any Session-bound extension held by originatorSessionID while that Session
-// remains active for the originator Profile) (ADR-0240 D4, D5).
-func (s *Service) OriginatorPlaybackFilter(ctx context.Context, originatorProfileID store.ProfileID, originatorSessionID store.SessionID) (store.LibraryFilter, error) {
-	if s == nil || s.store == nil {
-		return store.LibraryFilter{}, errors.New("auth store unavailable")
-	}
-	profile, err := s.store.Profile(ctx, originatorProfileID)
-	if err != nil {
-		return store.LibraryFilter{}, err
-	}
-	if profile.Disabled {
-		return store.LibraryFilter{}, store.ErrProfileDisabled
-	}
-	if profile.Kind == store.ProfilePlayer {
-		return store.LibraryFilter{}, store.ValidationError("player profile cannot originate playback")
-	}
-	var activeExtSession store.SessionID
-	if originatorSessionID != "" {
-		if sess, serr := s.store.Session(ctx, originatorSessionID); serr == nil &&
-			sess.ProfileID == originatorProfileID &&
-			(sess.ExpiresAt.IsZero() || s.now().Before(sess.ExpiresAt)) {
-			activeExtSession = originatorSessionID
-		}
-	}
-	if err := s.enforceProfileAccessSchedule(ctx, profile, activeExtSession); err != nil {
-		return store.LibraryFilter{}, err
-	}
-	var grantedIDs []store.MediaID
-	if profile.Kind == store.ProfileManaged {
-		grantedIDs, _ = s.store.GrantedMediaIDsForProfile(ctx, profile.ID)
-	}
-	origScope := Scope{
-		ProfileID:       profile.ID,
-		Profile:         profile.Kind,
-		Revealed:        false,
-		LibraryIDs:      profile.Library,
-		Certification:   s.CertificationConstraints(profile.CertificationCeilings),
-		GrantedMediaIDs: grantedIDs,
-	}
-	return origScope.PlaybackFilter(), nil
-}
-
 func deriveIntegrationAttemptSecret(secret []byte, info string) []byte {
 	derived, err := hkdf.Key(sha256.New, secret, nil, info, 32)
 	if err != nil {

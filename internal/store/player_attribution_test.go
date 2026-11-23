@@ -183,7 +183,7 @@ func TestPlayerCommandedOriginatorResumeAndGrantLifecycle(t *testing.T) {
 		ProfileID: player.ID, MediaID: "media-alpha",
 		OriginatorProfileID: alice.ID, OriginatorSessionID: "sess-alice",
 		PlayerBindingGeneration: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
-	}, 2); err != nil || !published {
+	}, 2, PlayerOriginatorPolicy{}); err != nil || !published {
 		t.Fatalf("CreatePlaybackGrant = %v, %v", published, err)
 	}
 	policy := ResumePolicy{Class: MediaClassVideo}
@@ -271,10 +271,10 @@ func TestPlayerCommandedOriginatorResumeAndGrantLifecycle(t *testing.T) {
 	if err := st.SkipPlayerCommandedAttribution(ctx, delayed.SessionID, delayed.MediaID, 3); err != nil {
 		t.Fatal(err)
 	}
-	if published, err := st.CreatePlaybackGrant(ctx, bobGrant, 4); err != nil || !published {
+	if published, err := st.CreatePlaybackGrant(ctx, bobGrant, 4, PlayerOriginatorPolicy{}); err != nil || !published {
 		t.Fatalf("publish Bob's grant = %v, %v", published, err)
 	}
-	if published, err := st.CreatePlaybackGrant(ctx, delayed, 3); err != nil || published {
+	if published, err := st.CreatePlaybackGrant(ctx, delayed, 3, PlayerOriginatorPolicy{}); err != nil || published {
 		t.Fatalf("publish stale grant = %v, %v", published, err)
 	}
 	active, ok, err := st.ActivePlaybackGrantForSession(ctx, "sess-tv", "media-alpha", now)
@@ -293,10 +293,10 @@ func TestPlayerCommandedOriginatorResumeAndGrantLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	bobGrant.GrantID = "pg-bob-current"
-	if published, err := st.CreatePlaybackGrant(ctx, bobGrant, 5); err != nil || !published {
+	if published, err := st.CreatePlaybackGrant(ctx, bobGrant, 5, PlayerOriginatorPolicy{}); err != nil || !published {
 		t.Fatalf("publish Bob's replacement grant = %v, %v", published, err)
 	}
-	if published, err := st.CreatePlaybackGrant(ctx, delayedBob, 4); err != nil || published {
+	if published, err := st.CreatePlaybackGrant(ctx, delayedBob, 4, PlayerOriginatorPolicy{}); err != nil || published {
 		t.Fatalf("publish stale grant with identical attribution = %v, %v", published, err)
 	}
 
@@ -322,7 +322,7 @@ func TestPlayerCommandedOriginatorResumeAndGrantLifecycle(t *testing.T) {
 		ProfileID: player.ID, MediaID: "media-alpha",
 		OriginatorProfileID: bob.ID, PlayerBindingGeneration: 2,
 		CreatedAt: now, ExpiresAt: now.Add(time.Hour),
-	}, 1); err != nil || !published {
+	}, 1, PlayerOriginatorPolicy{}); err != nil || !published {
 		t.Fatalf("publish rebound grant = %v, %v", published, err)
 	}
 	if err := st.DeleteProfile(ctx, bob.ID); err != nil {
