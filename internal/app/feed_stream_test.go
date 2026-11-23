@@ -52,7 +52,7 @@ func (b *lockedBuffer) String() string {
 // cross-host enclosure receives no header.
 func TestPrivateFeedNotDownloadedEntryStreamsThroughProxyTee(t *testing.T) {
 	const (
-		secretCanary = "core3001-super-secret-feed-credential"
+		secretCanary = "core3001-feed-canary-value" // #nosec G101 -- test canary, not a credential
 		authHeader   = "Bearer " + secretCanary
 		privateBody  = "PRIVATE-ENCLOSURE-AUDIO-BYTES-0123456789"
 		crossBody    = "CROSS-HOST-ENCLOSURE-AUDIO-BYTES-9876543210"
@@ -356,7 +356,7 @@ func TestPrivateFeedNotDownloadedEntryStreamsThroughProxyTee(t *testing.T) {
 			foundSecretFile = true
 			return nil
 		}
-		raw, readErr := os.ReadFile(path)
+		raw, readErr := os.ReadFile(path) // #nosec G304 G122 -- path comes from walking the test data dir
 		if readErr != nil {
 			return readErr
 		}
