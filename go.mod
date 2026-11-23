@@ -8,7 +8,7 @@ require (
 	github.com/beamfall/plugin-familyarchive v0.1.18
 	github.com/beamfall/plugin-filmtv v0.1.29
 	github.com/beamfall/plugin-karaoke v0.1.13
-	github.com/beamfall/plugin-music v0.1.21
+	github.com/beamfall/plugin-music v0.1.22
 	github.com/beamfall/plugin-photos v0.1.16
 	github.com/beamfall/plugin-podcasts v0.1.16
 	github.com/beamfall/plugin-sdk v0.4.12
