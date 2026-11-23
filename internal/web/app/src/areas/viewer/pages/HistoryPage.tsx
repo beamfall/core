@@ -49,7 +49,8 @@ export function HistoryPage() {
   const [query, setQuery] = useState("");
   const [libraryID, setLibraryID] = useState("");
   const [range, setRange] = useState<HistoryRange>("any");
-  // The bound is fixed when the range is chosen, so paging stays consistent.
+  // The bound is fixed when a range is chosen or a search committed, so the
+  // pages of one read stay consistent.
   const [playedAfter, setPlayedAfter] = useState("");
   const filters = useMemo<FeedFilters>(
     () => ({ query, libraryID, playedAfter }),
@@ -63,7 +64,15 @@ export function HistoryPage() {
       <div className="flex flex-col gap-8">
         <h1 className="bf-page-title">{t("historyTitle")}</h1>
         <div className="flex flex-col gap-3">
-          <BrowseSearch value={query} label={t("historySearch")} onCommit={setQuery} />
+          <BrowseSearch
+            value={query}
+            label={t("historySearch")}
+            onCommit={(next) => {
+              setQuery(next);
+              // A fresh search re-anchors the range, so "Today" follows midnight.
+              setPlayedAfter(playedAfterFor(range, new Date()));
+            }}
+          />
           {libraries.length > 1 && (
             <div className="bf-filter-chips" role="group" aria-label={t("historyFilterLibrary")}>
               {[{ id: "", title: t("historyFilterAll") }, ...libraries].map((library) => (

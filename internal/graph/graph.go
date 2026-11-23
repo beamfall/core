@@ -1996,28 +1996,42 @@ func (h *Handler) genreRollUp(kind string, entityFilter *store.EntityFilter) *st
 // inclusive and playedBefore exclusive. A malformed bound is a client error
 // rather than a silently widened feed.
 func playedFilterVars(req request, queryText string) (store.PlayedFilter, error) {
-	after, err := playedBound("playedAfter", trimmedVariable(req, "playedAfter"))
+	after, err := playedBound("playedAfter", req.Variables["playedAfter"])
 	if err != nil {
 		return store.PlayedFilter{}, err
 	}
-	before, err := playedBound("playedBefore", trimmedVariable(req, "playedBefore"))
+	before, err := playedBound("playedBefore", req.Variables["playedBefore"])
 	if err != nil {
 		return store.PlayedFilter{}, err
 	}
 	return store.PlayedFilter{Query: queryText, PlayedAfter: after, PlayedBefore: before}, nil
 }
 
-// playedBound parses one RFC 3339 bound to Unix milliseconds; empty is 0,
-// unbounded.
-func playedBound(name, raw string) (int64, error) {
+// playedBound parses one RFC 3339 bound to Unix milliseconds; absent, null or
+// blank is 0, unbounded. Any other non-string value is a client error. Plays
+// are stored in whole milliseconds, so a sub-millisecond bound rounds up: the
+// inclusive lower bound and the exclusive upper bound both stay exact.
+func playedBound(name string, value any) (int64, error) {
+	if value == nil {
+		return 0, nil
+	}
+	raw, ok := value.(string)
+	if !ok {
+		return 0, clientError(name + " must be an RFC 3339 time")
+	}
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0, nil
 	}
 	at, err := time.Parse(time.RFC3339, raw)
-	if err != nil || at.UnixMilli() <= 0 {
+	if err != nil || at.UnixMilli() < 0 {
 		return 0, clientError(name + " must be an RFC 3339 time")
 	}
-	return at.UnixMilli(), nil
+	ms := at.UnixMilli()
+	if at.Nanosecond()%int(time.Millisecond) != 0 {
+		ms++
+	}
+	return ms, nil
 }
 
 func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request) ([]SourceItem, error) {
@@ -2078,9 +2092,13 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 			}
 		}
 	}
-	played, err := playedFilterVars(req, queryText)
-	if err != nil {
-		return nil, err
+	// Only the played kinds take the History bounds; the rest ignore them.
+	var played store.PlayedFilter
+	if kind == "recently-played" || kind == "most-played" {
+		var err error
+		if played, err = playedFilterVars(req, queryText); err != nil {
+			return nil, err
+		}
 	}
 	filter := scope.LibraryFilter()
 	if kind == "subscription-new" {

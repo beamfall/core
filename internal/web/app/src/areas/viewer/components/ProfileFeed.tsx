@@ -61,7 +61,11 @@ const FEED_END_EMPTY_PAGES = 3;
 // on by the requested size until a page comes back full (more may follow) or
 // FEED_END_EMPTY_PAGES pages in a row come back empty (the end). It returns the
 // rows and the offset of the next page, or null at the end. A read that hits
-// MAX_FEED_READS first leaves Load more to step on.
+// MAX_FEED_READS first leaves Load more to step on. The played kinds are paged
+// after every filter, Mute and the History search included, so for them a short
+// page is the end (CORE-3333).
+const EXACT_PAGE_KINDS = new Set(["recently-played", "most-played"]);
+
 async function readFeed(
   kind: string,
   filters: FeedFilters,
@@ -76,6 +80,7 @@ async function readFeed(
     items.push(...page);
     at += PROFILE_FEED_LIMIT;
     if (page.length === PROFILE_FEED_LIMIT) return { items, next: at };
+    if (EXACT_PAGE_KINDS.has(kind)) return { items, next: null };
     emptyRun = page.length === 0 ? emptyRun + 1 : 0;
     if (emptyRun === FEED_END_EMPTY_PAGES) return { items, next: null };
   }

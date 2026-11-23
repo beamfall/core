@@ -145,6 +145,22 @@ describe("ProfileFeed filters (CORE-3333)", () => {
     }
   });
 
+  it("ends a played feed on its first short page", async () => {
+    vi.mocked(fetchSourceItems).mockResolvedValueOnce(page(0, 1));
+    render(
+      <I18nProvider initialLocale="en">
+        <ProfileFeed
+          kind="most-played"
+          empty="Nothing yet"
+          filters={{ query: "coltrane", libraryID: "", playedAfter: "" }}
+        />
+      </I18nProvider>,
+    );
+    expect(await screen.findByText("Item 0")).toBeInTheDocument();
+    expect(fetchSourceItems).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
   it("omits empty filters from the request", async () => {
     renderFeed();
     await waitFor(() => expect(fetchSourceItems).toHaveBeenCalled());
