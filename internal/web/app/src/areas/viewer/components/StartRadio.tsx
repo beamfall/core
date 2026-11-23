@@ -1,4 +1,4 @@
-import { Radio } from "lucide-react";
+import { ChevronDown, Radio } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router";
 import {
@@ -177,6 +177,7 @@ export function RadioTuning({
             </option>
           ))}
         </select>
+        <ChevronDown aria-hidden />
       </label>
       {options.length > 0 && (
         <label>
@@ -200,6 +201,7 @@ export function RadioTuning({
               </option>
             ))}
           </select>
+          <ChevronDown aria-hidden />
         </label>
       )}
       <button

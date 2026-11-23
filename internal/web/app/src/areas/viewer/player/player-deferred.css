@@ -1415,65 +1415,31 @@
 
 /* Listening controls (CORE-2960): Speed, Remove long pauses and the sleep
    timer in one row under the words. */
+/* The listening rows (CORE-2960) sit in the transport's settings sheet. */
 .bf-listen {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  pointer-events: auto;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.bf-listen-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid color-mix(in oklab, var(--on-scrim) 22%, transparent);
-  border-radius: 999px;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  color: color-mix(in oklab, var(--on-scrim) 90%, var(--on-scrim-muted));
-  background: color-mix(in oklab, var(--scrim) 55%, transparent);
+.bf-listen-pauses {
   cursor: pointer;
 }
 
-.bf-listen-chip:hover,
-.bf-listen-chip[data-popup-open] {
-  background: color-mix(in oklab, var(--on-scrim) 14%, var(--scrim));
+.bf-listen-pauses .bf-settings-sublabel {
+  font-variant-numeric: tabular-nums;
 }
 
-.bf-listen-chip[data-active] {
-  border-color: var(--accent);
-  color: var(--on-scrim);
+.bf-settings-row[data-active] .bf-settings-value {
+  color: var(--accent);
 }
 
-.bf-listen-chip:focus-visible,
 .bf-listen-preset:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
-.bf-listen-pauses {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  min-height: 36px;
-  font-size: 13px;
-  color: color-mix(in oklab, var(--on-scrim) 90%, var(--on-scrim-muted));
-}
-
-.bf-listen-pauses label {
-  cursor: pointer;
-}
-
-.bf-listen-note {
-  font-variant-numeric: tabular-nums;
-  color: color-mix(in oklab, var(--on-scrim) 65%, var(--on-scrim-muted));
-}
-
-/* The popover and menu portal into the stage, above the words and transport. */
+/* The popover and menu portal into the transport layer, beside the settings sheet. */
 .bf-listen-positioner {
   z-index: 7;
 }
@@ -1566,7 +1532,6 @@
 }
 
 @media (hover: none) {
-  .bf-listen-chip,
   .bf-listen-preset {
     min-height: 44px;
   }
@@ -1836,10 +1801,6 @@
 
   .bf-audio-quality {
     align-self: center;
-  }
-
-  .bf-listen {
-    justify-content: center;
   }
 
   /* A phone keeps the artwork large: Up Next names only the next item. */
@@ -2191,20 +2152,62 @@
   font-style: italic;
 }
 
+/* Radio tuning (CORE-2772) rides in the player bar beside Back: a station
+   glyph, two pill selects the height of Back, and Stop. */
 .bf-radio-tuning {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   font-size: 13px;
   color: var(--on-scrim-muted);
 }
 
+.bf-radio-tuning > svg {
+  flex: none;
+  margin-inline: 4px 0;
+}
+
+.bf-radio-tuning label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.bf-radio-tuning label > svg {
+  position: absolute;
+  right: 11px;
+  width: 14px;
+  height: 14px;
+  color: color-mix(in oklab, var(--on-scrim) 70%, transparent);
+  pointer-events: none;
+}
+
 .bf-radio-tuning select {
+  appearance: none;
+  height: 32px;
   max-width: 14rem;
-  border-radius: var(--radius-control, 6px);
-  border: 1px solid color-mix(in oklab, var(--on-scrim) 24%, transparent);
-  background: color-mix(in oklab, var(--scrim) 60%, transparent);
+  padding: 0 30px 0 12px;
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 22%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--scrim) 55%, transparent);
   color: var(--on-scrim);
-  padding: 2px 6px;
+  font: inherit;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.bf-radio-tuning select:hover:not(:disabled) {
+  background-color: color-mix(in oklab, var(--on-scrim) 12%, var(--scrim));
+}
+
+.bf-radio-tuning select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-radio-tuning select:disabled {
+  opacity: 0.6;
+  cursor: progress;
 }

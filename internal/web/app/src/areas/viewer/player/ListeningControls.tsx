@@ -1,4 +1,4 @@
-import { Gauge, Moon } from "lucide-react";
+import { ChevronRight, Gauge, Moon, Scissors } from "lucide-react";
 import { type RefObject, useId } from "react";
 import { Menu, Popover, Slider } from "@/components/ui/astryx-primitives";
 import { Switch } from "@/components/ui/switch";
@@ -15,8 +15,10 @@ import {
 } from "./listening";
 
 export interface ListeningControlsProps {
-  /** Where the popover and menu portal: the player stage, so they show in fullscreen. */
+  /** Where the popover and menu portal: the transport's layer, so they show in fullscreen. */
   container: RefObject<HTMLElement | null>;
+  /** Which side of its row a popover opens on: left beside the sheet, or above it on a phone. */
+  side?: "left" | "top";
   speed: number;
   /** Called while the slider moves; the rate follows without a write. */
   onSpeedPreview: (speed: number) => void;
@@ -44,8 +46,8 @@ export interface ListeningControlsProps {
 export type SleepChoice = "off" | "item" | "chapter" | `${(typeof SLEEP_MINUTES)[number]}`;
 
 // The audio stage's listening controls (CORE-2960): speed, removing long
-// pauses and the sleep timer, under the words. Every state is stored or held
-// by the player; this only draws it.
+// pauses and the sleep timer, drawn as rows of the transport's settings sheet.
+// Every state is stored or held by the player; this only draws it.
 export function ListeningControls(props: ListeningControlsProps) {
   const t = useT();
   const locale = useDisplayLocale();
@@ -62,20 +64,25 @@ export function ListeningControls(props: ListeningControlsProps) {
   return (
     <div className="bf-listen" role="group" aria-label={t("listenControls")}>
       <SpeedPopover {...props} speedText={speedText} />
-      <div className="bf-listen-pauses">
+      <label htmlFor={pausesId} className="bf-settings-row bf-listen-pauses">
+        <span aria-hidden="true" className="bf-settings-tile">
+          <Scissors />
+        </span>
+        <span className="bf-settings-label is-stacked">
+          <span>{t("settingsTrimSilence")}</span>
+          {pausesNote && (
+            <span id={`${pausesId}-note`} className="bf-settings-sublabel">
+              {pausesNote}
+            </span>
+          )}
+        </span>
         <Switch
           id={pausesId}
           checked={props.removePauses}
           onCheckedChange={props.onRemovePauses}
           aria-describedby={pausesNote ? `${pausesId}-note` : undefined}
         />
-        <label htmlFor={pausesId}>{t("settingsTrimSilence")}</label>
-        {pausesNote && (
-          <span id={`${pausesId}-note`} className="bf-listen-note">
-            {pausesNote}
-          </span>
-        )}
-      </div>
+      </label>
       <SleepMenu {...props} />
     </div>
   );
@@ -83,6 +90,7 @@ export function ListeningControls(props: ListeningControlsProps) {
 
 function SpeedPopover({
   container,
+  side = "left",
   speed,
   onSpeedPreview,
   onSpeed,
@@ -97,17 +105,26 @@ function SpeedPopover({
   return (
     <Popover.Root>
       <Popover.Trigger
-        className="bf-listen-chip"
+        className="bf-settings-row"
         aria-label={t("listenSpeedButton", { speed: current })}
       >
-        <Gauge aria-hidden="true" className="size-4" />
-        <span aria-hidden="true">{current}</span>
+        <span aria-hidden="true" className="bf-settings-tile">
+          <Gauge />
+        </span>
+        <span aria-hidden="true" className="bf-settings-label">
+          {t("playbackSpeed")}
+        </span>
+        <span aria-hidden="true" className="bf-settings-value">
+          {current}
+        </span>
+        <ChevronRight aria-hidden="true" className="bf-settings-chevron" />
       </Popover.Trigger>
       <Popover.Portal container={container}>
         <Popover.Positioner
           className="bf-menu-positioner bf-listen-positioner"
-          side="top"
-          sideOffset={8}
+          side={side}
+          align={side === "top" ? "end" : "center"}
+          sideOffset={10}
           collisionPadding={12}
         >
           <Popover.Popup className="bf-menu bf-listen-popup">
@@ -167,6 +184,7 @@ function SpeedPopover({
 
 function SleepMenu({
   container,
+  side = "left",
   sleep,
   sleepRemaining,
   canSleepAtChapter,
@@ -187,18 +205,27 @@ function SleepMenu({
   return (
     <Menu.Root>
       <Menu.Trigger
-        className="bf-listen-chip"
+        className="bf-settings-row"
         data-active={sleep ? "" : undefined}
         aria-label={left ? t("listenSleepLeft", { time: left }) : t("listenSleep")}
       >
-        <Moon aria-hidden="true" className="size-4" />
-        <span aria-hidden="true">{left || t("listenSleep")}</span>
+        <span aria-hidden="true" className="bf-settings-tile">
+          <Moon />
+        </span>
+        <span aria-hidden="true" className="bf-settings-label">
+          {t("listenSleep")}
+        </span>
+        <span aria-hidden="true" className="bf-settings-value">
+          {left || t("listenSleepOff")}
+        </span>
+        <ChevronRight aria-hidden="true" className="bf-settings-chevron" />
       </Menu.Trigger>
       <Menu.Portal container={container}>
         <Menu.Positioner
           className="bf-menu-positioner bf-listen-positioner"
-          side="top"
-          sideOffset={8}
+          side={side}
+          align={side === "top" ? "end" : "center"}
+          sideOffset={10}
           collisionPadding={12}
         >
           <Menu.Popup className="bf-menu bf-listen-menu">

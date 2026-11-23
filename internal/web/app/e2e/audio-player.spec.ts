@@ -43,7 +43,7 @@ test("audio keeps playing in the mini player while browsing to search and back",
   await expect(mini).toBeVisible();
   await expect(mini.getByText("Track One")).toBeVisible();
   await expect(mini.getByText("Test Artist")).toBeVisible();
-  await expect(mini.getByRole("progressbar", { name: "Playback position" })).toBeVisible();
+  await expect(mini.getByRole("slider", { name: "Playback position" })).toBeVisible();
   await expect(mini.getByRole("button", { name: "Pause" })).toBeVisible();
   await expect(mini.getByRole("button", { name: "Next" })).toBeEnabled();
   expect(await paused(video)).toBe(false);

@@ -1311,6 +1311,10 @@ function FeaturePlayer({
           <Button variant="outline" size="sm" onClick={back}>
             {t("back")}
           </Button>
+          {/* Radio tuning sits beside Back so the two never overlap (CORE-2772). */}
+          {station && showAudioStage && !docked && (
+            <RadioTuning station={station} credits={stage.credits} />
+          )}
           {showKaraokeControls && adjustmentRanges ? (
             <KaraokeControls
               ranges={adjustmentRanges}
@@ -1412,25 +1416,6 @@ function FeaturePlayer({
                 }
                 mediaID={mediaId || ""}
               >
-                {listening && (
-                  <ListeningControls
-                    container={stageRef}
-                    speed={speed}
-                    onSpeedPreview={previewSpeed}
-                    onSpeed={setSpeed}
-                    containerTitle={speedKey ? collectionTitle : ""}
-                    forContainer={forContainer}
-                    onForContainer={setSpeedForContainer}
-                    removePauses={resolvedPrefs.trimSilence}
-                    onRemovePauses={setRemovePauses}
-                    pausesMapped={pauses.mapped}
-                    savedSeconds={pauses.saved}
-                    sleep={sleep.timer}
-                    sleepRemaining={sleep.remaining}
-                    canSleepAtChapter={hasChapters(state.markers)}
-                    onSleep={chooseSleep}
-                  />
-                )}
                 <NowPlayingDetails
                   quality={infoIsCurrent ? activeQuality(state.info, state.stream) : null}
                   upNext={upNextItems}
@@ -1495,11 +1480,6 @@ function FeaturePlayer({
               </div>
             )}
             {!docked && queueFailureNotice}
-            {station && showAudioStage && !docked && (
-              <div className="absolute left-4 top-4 z-10">
-                <RadioTuning station={station} credits={stage.credits} />
-              </div>
-            )}
             {state.waitingForNetwork ? (
               <p
                 className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-scrim/70 px-3 py-1 text-sm text-on-scrim"
@@ -1525,6 +1505,30 @@ function FeaturePlayer({
             />
             {(playing || (queueReady && advancing)) && !docked && (
               <PlayerTransport
+                listening={
+                  listening
+                    ? (container, side) => (
+                        <ListeningControls
+                          container={container}
+                          side={side}
+                          speed={speed}
+                          onSpeedPreview={previewSpeed}
+                          onSpeed={setSpeed}
+                          containerTitle={speedKey ? collectionTitle : ""}
+                          forContainer={forContainer}
+                          onForContainer={setSpeedForContainer}
+                          removePauses={resolvedPrefs.trimSilence}
+                          onRemovePauses={setRemovePauses}
+                          pausesMapped={pauses.mapped}
+                          savedSeconds={pauses.saved}
+                          sleep={sleep.timer}
+                          sleepRemaining={sleep.remaining}
+                          canSleepAtChapter={hasChapters(state.markers)}
+                          onSleep={chooseSleep}
+                        />
+                      )
+                    : undefined
+                }
                 videoRef={videoRef}
                 hlsRef={hlsRef}
                 state={state}
@@ -1651,7 +1655,9 @@ function FeaturePlayer({
           artworkURL={stage.artworkURL}
           mediaID={mediaId}
           songScale={songScale}
+          durationSeconds={infoIsCurrent ? state.info?.timeline?.durationSeconds : undefined}
           onNext={playNext}
+          nextTitle={nextTitle}
           onPrevious={playPrevious}
           onOpen={openFullPlayer}
           onStop={() => onStop?.()}

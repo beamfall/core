@@ -1,10 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { createRef } from "react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createRef, type RefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import { MiniPlayer } from "./MiniPlayer";
 import { loadWaveform, resetWaveformCache, type WaveformInput } from "./useWaveform";
+import * as viewerIntent from "./viewerIntent";
 
 beforeEach(() => resetWaveformCache());
 afterEach(() => vi.restoreAllMocks());
@@ -20,11 +21,14 @@ function mockWaveformFetch(byURL: Record<string, number[]>) {
 function Mini({
   mediaID,
   waveform,
+  durationSeconds,
+  videoRef = createRef<HTMLVideoElement>(),
 }: {
   mediaID: string;
   waveform?: Omit<WaveformInput, "mediaID">;
+  durationSeconds?: number;
+  videoRef?: RefObject<HTMLVideoElement | null>;
 }) {
-  const videoRef = createRef<HTMLVideoElement>();
   return (
     <I18nProvider initialLocale="en">
       <video ref={videoRef} />
@@ -35,6 +39,7 @@ function Mini({
         artworkURL=""
         mediaID={mediaID}
         songScale={1}
+        durationSeconds={durationSeconds}
         onOpen={() => {}}
         onStop={() => {}}
         waveform={waveform}
@@ -49,7 +54,7 @@ describe("MiniPlayer waveform strip (CORE-2404)", () => {
     await loadWaveform("a", "/w/a");
     render(<Mini mediaID="a" waveform={{ infoMediaID: "a", url: "/w/a" }} />);
 
-    const bar = screen.getByRole("progressbar", { name: "Playback position" });
+    const bar = screen.getByRole("slider", { name: "Playback position" });
     expect(bar).toHaveClass("has-waveform");
     expect(screen.getByTestId("scrubber-waveform")).not.toHaveClass("is-placeholder");
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -59,7 +64,7 @@ describe("MiniPlayer waveform strip (CORE-2404)", () => {
     mockWaveformFetch({});
     render(<Mini mediaID="a" waveform={{ infoMediaID: "a", url: "/w/a" }} />);
     await waitFor(() => expect(screen.queryByTestId("scrubber-waveform")).not.toBeInTheDocument());
-    expect(screen.getByRole("progressbar", { name: "Playback position" })).not.toHaveClass(
+    expect(screen.getByRole("slider", { name: "Playback position" })).not.toHaveClass(
       "has-waveform",
     );
   });
@@ -80,5 +85,22 @@ describe("MiniPlayer waveform strip (CORE-2404)", () => {
   it("keeps the plain strip without a waveform", () => {
     render(<Mini mediaID="v" />);
     expect(screen.queryByTestId("scrubber-waveform")).not.toBeInTheDocument();
+  });
+});
+
+describe("MiniPlayer seek strip (CORE-3340)", () => {
+  it("seeks within the server's length, not a live transcode's encoded prefix, and marks viewer intent", () => {
+    const intent = vi.spyOn(viewerIntent, "markViewerIntent");
+    const videoRef = createRef<HTMLVideoElement>();
+    render(<Mini mediaID="a" durationSeconds={200} videoRef={videoRef} />);
+    const video = videoRef.current as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 20 });
+    fireEvent(video, new Event("durationchange"));
+
+    const bar = screen.getByRole("slider", { name: "Playback position" });
+    expect(bar).toHaveAttribute("aria-valuemax", "200");
+    fireEvent.keyDown(bar, { key: "End" });
+    expect(video.currentTime).toBe(200);
+    expect(intent).toHaveBeenCalled();
   });
 });
