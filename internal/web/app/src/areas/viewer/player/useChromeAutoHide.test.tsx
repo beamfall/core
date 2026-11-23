@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { act, fireEvent, render } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useChromeAutoHide } from "./useChromeAutoHide";
+import { idleChromeClass, useChromeAutoHide } from "./useChromeAutoHide";
 
 function Harness() {
   const stageRef = useRef<HTMLDivElement>(null);
@@ -63,5 +63,196 @@ describe("useChromeAutoHide (CORE-2322)", () => {
       expect(guard, file).toBeGreaterThan(-1);
       expect(css.slice(guard, rule).includes("}"), file).toBe(false);
     }
+  });
+
+  it("rebinds to the new stage and video after an error screen and a retry", () => {
+    function Remount({ mounted }: { mounted: boolean }) {
+      const stageRef = useRef<HTMLDivElement>(null);
+      const videoRef = useRef<HTMLVideoElement>(null);
+      const { chromeHidden } = useChromeAutoHide({
+        stageRef,
+        videoRef,
+        menuOpen: false,
+        mounted,
+      });
+      return mounted ? (
+        <div ref={stageRef} data-testid="stage" data-hidden={String(chromeHidden)}>
+          <video ref={videoRef} />
+        </div>
+      ) : (
+        <p>Playback failed</p>
+      );
+    }
+    const { container, getByTestId, rerender } = render(<Remount mounted />);
+    rerender(<Remount mounted={false} />);
+    rerender(<Remount mounted />);
+    const video = playingVideo(container);
+    act(() => {
+      video.dispatchEvent(new Event("play"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(3500);
+    });
+    expect(getByTestId("stage").dataset.hidden).toBe("true");
+    fireEvent.pointerMove(getByTestId("stage"));
+    expect(getByTestId("stage").dataset.hidden).toBe("false");
+  });
+});
+
+// CORE-3351: the music stage dims instead of hiding when idle.
+function AudioHarness({ ambient = false }: { ambient?: boolean }) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const { chromeHidden } = useChromeAutoHide({
+    stageRef,
+    videoRef,
+    menuOpen: false,
+  });
+  return (
+    <div
+      ref={stageRef}
+      data-testid="stage"
+      className={
+        "bf-player-stage" +
+        idleChromeClass({
+          playing: true,
+          chromeHidden,
+          audioStage: true,
+          ambient,
+        })
+      }
+    >
+      <video ref={videoRef} />
+      <button type="button">Play</button>
+    </div>
+  );
+}
+
+describe("music stage idle dim (CORE-3351)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function startPlaying(container: HTMLElement) {
+    const video = playingVideo(container);
+    act(() => {
+      video.dispatchEvent(new Event("play"));
+    });
+    return video;
+  }
+
+  it("dims after the idle delay and wakes on activity", () => {
+    const { container, getByTestId } = render(<AudioHarness />);
+    startPlaying(container);
+    const stage = getByTestId("stage");
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+    expect(stage.className).not.toContain("is-chrome-dim");
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(stage.className).toContain("is-chrome-dim");
+    expect(stage.className).not.toContain("is-chrome-hidden");
+
+    fireEvent.pointerMove(stage);
+    expect(stage.className).not.toContain("is-chrome-dim");
+
+    act(() => {
+      vi.advanceTimersByTime(3500);
+    });
+    expect(stage.className).toContain("is-chrome-dim");
+    fireEvent.keyDown(window, { key: "a" });
+    expect(stage.className).not.toContain("is-chrome-dim");
+  });
+
+  it("never dims while paused", () => {
+    const { container, getByTestId } = render(<AudioHarness />);
+    const video = startPlaying(container);
+    Object.defineProperty(video, "paused", {
+      configurable: true,
+      get: () => true,
+    });
+    act(() => {
+      video.dispatchEvent(new Event("pause"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(getByTestId("stage").className).not.toContain("is-chrome-dim");
+  });
+
+  it("leaves Ambient mode to its own idle and video to hiding", () => {
+    expect(
+      idleChromeClass({
+        playing: true,
+        chromeHidden: true,
+        audioStage: true,
+        ambient: true,
+      }),
+    ).toBe("");
+    expect(
+      idleChromeClass({
+        playing: true,
+        chromeHidden: true,
+        audioStage: false,
+        ambient: false,
+      }),
+    ).toBe(" is-chrome-hidden");
+    expect(
+      idleChromeClass({
+        playing: false,
+        chromeHidden: true,
+        audioStage: true,
+        ambient: false,
+      }),
+    ).toBe("");
+  });
+
+  it("dims to translucent, stays up under the pointer, focus or an open menu, and skips the fade for reduced motion", () => {
+    const css = readFileSync(
+      resolve(process.cwd(), "src/areas/viewer/player/player-deferred.css"),
+      "utf8",
+    );
+    const start = css.indexOf("main:has(> .bf-player-stage.is-chrome-dim):not(");
+    expect(start).toBeGreaterThan(-1);
+    const block = css.slice(start, css.indexOf("}", css.indexOf(") {", start)) + 1);
+    for (const awake of [
+      ".bf-player-bar :focus-visible",
+      ".bf-player-stage :focus-visible",
+      ".bf-queue-drawer",
+      '[aria-expanded="true"]',
+    ]) {
+      expect(block).toContain(awake);
+    }
+    // Hover wakes only on hover-capable input: a tap leaves a sticky :hover.
+    expect(block).not.toContain(":hover");
+    const hover = css.indexOf("@media (hover: hover) {", start);
+    expect(hover).toBeGreaterThan(-1);
+    const hoverBlock = css.slice(hover, css.indexOf("}", hover) + 1);
+    expect(hoverBlock).toContain(".bf-transport:hover");
+    expect(hoverBlock).toContain(".bf-player-bar:hover");
+    expect(hoverBlock).toContain("--bf-idle-chrome: initial;");
+    // Touch hit-testing follows the same awake conditions as the opacity.
+    const touch = css.indexOf("@media not all and (pointer: fine) {", start);
+    const touchBlock = css.slice(touch, css.indexOf("pointer-events: none;", touch));
+    expect(touchBlock.split(".bf-player-stage :focus-visible").length - 1).toBe(3);
+    expect(touchBlock).toContain(".bf-audio-info");
+    expect(touchBlock.split('[aria-expanded="true"]').length - 1).toBe(3);
+    const chrome = Number(/--bf-idle-chrome:\s*([\d.]+)/.exec(block)?.[1]);
+    const card = Number(/--bf-idle-card:\s*([\d.]+)/.exec(block)?.[1]);
+    expect(chrome).toBeGreaterThan(0);
+    expect(chrome).toBeLessThanOrEqual(0.3);
+    expect(card).toBeGreaterThan(chrome);
+    expect(card).toBeLessThan(1);
+
+    const reduced = css.indexOf("@media (prefers-reduced-motion: reduce) {", start);
+    const reducedBlock = css.slice(reduced, css.indexOf("}", reduced) + 1);
+    expect(reducedBlock).toContain(".bf-player-stage.is-chrome-dim .bf-transport");
+    expect(reducedBlock).toContain(".bf-player-stage.is-chrome-dim .bf-audio-artwork");
+    expect(reducedBlock).toContain("transition: none;");
   });
 });

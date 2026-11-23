@@ -44,11 +44,15 @@ func SourceKinds() []string                  { return sdk.SourceKinds() }
 func AvailabilityValues() []string           { return sdk.AvailabilityValues() }
 func WatchedByAnyProfileValues() []string    { return sdk.WatchedByAnyProfileValues() }
 func ValuedSourceKinds() map[string][]string { return sdk.ValuedSourceKinds() }
-func FieldTypes() []string                   { return sdk.FieldTypes() }
-func AuthStyleForms() []string               { return sdk.AuthStyleForms() }
-func TransformKinds() []string               { return sdk.TransformKinds() }
-func FilterableSourceKinds() []string        { return sdk.FilterableSourceKinds() }
-func PermissionKinds() []string              { return sdk.PermissionKinds() }
+
+// OptionalValueSourceKinds re-exports the SDK's optional-value Source kinds
+// (next-up's media class).
+func OptionalValueSourceKinds() map[string][]string { return sdk.OptionalValueSourceKinds() }
+func FieldTypes() []string                          { return sdk.FieldTypes() }
+func AuthStyleForms() []string                      { return sdk.AuthStyleForms() }
+func TransformKinds() []string                      { return sdk.TransformKinds() }
+func FilterableSourceKinds() []string               { return sdk.FilterableSourceKinds() }
+func PermissionKinds() []string                     { return sdk.PermissionKinds() }
 
 const (
 	IdentificationPolicyQueue = sdk.IdentificationPolicyQueue

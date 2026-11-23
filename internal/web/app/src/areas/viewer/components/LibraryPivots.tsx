@@ -6,6 +6,7 @@ import { type LibraryPivotPath, pivotOfPath, writeLibraryPivot } from "@/lib/lib
 import { nodePath } from "@/lib/nodePath";
 import type { StringKey } from "@/strings";
 import { useLibraryHasFeeds } from "../lib/feeds";
+import { useIsKaraokeLibrary } from "../lib/karaoke";
 
 // The pivots under a Library's name (CORE-2437): Recommended (the plugin's hub
 // Layout), Library (the full browse), Collections and Categories. Each is a
@@ -16,6 +17,15 @@ import { useLibraryHasFeeds } from "../lib/feeds";
 const PIVOTS: { path: LibraryPivotPath; label: StringKey }[] = [
   { path: "", label: "libraryPivotRecommended" },
   { path: "/all", label: "libraryPivotLibrary" },
+  { path: "/collections", label: "libraryPivotCollections" },
+  { path: "/categories", label: "libraryPivotCategories" },
+];
+
+// A karaoke Library opens on its Songbook (CORE-3362): search, the singers and
+// the rotation in one place, in place of Recommended and the full browse.
+// Collections and Categories stay as the secondary ways in.
+const KARAOKE_PIVOTS: { path: LibraryPivotPath; label: StringKey }[] = [
+  { path: "", label: "karaokeSongbookPivot" },
   { path: "/collections", label: "libraryPivotCollections" },
   { path: "/categories", label: "libraryPivotCategories" },
 ];
@@ -33,7 +43,8 @@ export function LibraryPivots({ nodeID, libraryID }: { nodeID: string; libraryID
   const { pathname } = useLocation();
   const hasFeeds = useLibraryHasFeeds(libraryID);
   const onFeeds = pivotOfPath(pathname) === FEEDS_PIVOT.path;
-  const pivots = hasFeeds || onFeeds ? [...PIVOTS, FEEDS_PIVOT] : PIVOTS;
+  const base = useIsKaraokeLibrary(libraryID) ? KARAOKE_PIVOTS : PIVOTS;
+  const pivots = hasFeeds || onFeeds ? [...base, FEEDS_PIVOT] : base;
   useEffect(() => {
     writeLibraryPivot(libraryID, pivotOfPath(pathname));
   }, [libraryID, pathname]);

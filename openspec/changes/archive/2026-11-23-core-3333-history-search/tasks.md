@@ -1,0 +1,4 @@
+- [x] Store: PlayedFilter on SourceQuery, applied to the played kinds before paging
+- [x] Graph: playedAfter/playedBefore arguments, parsing and client errors; wire contract 2.52.0
+- [x] Web: History search box, Library and range chips, filters on every feed page
+- [x] Tests: store paging and matching, graph parsing, web page and feed

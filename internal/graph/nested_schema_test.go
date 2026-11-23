@@ -109,7 +109,7 @@ func cmpStr(a, b string) int {
 
 func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 	si := topLevel(t, "sourceitems")
-	wantNames := []string{"entityFilter", "entityID", "entityKind", "excludeEditionGroupOf", "fieldFilters", "filters", "kind", "libraryID", "limit", "mode", "offset", "query", "seed", "value"}
+	wantNames := []string{"entityFilter", "entityID", "entityKind", "excludeEditionGroupOf", "fieldFilters", "filters", "kind", "libraryID", "limit", "mode", "offset", "playedAfter", "playedBefore", "query", "seed", "value"}
 	if got := argumentNames(si.Arguments); !slices.Equal(got, wantNames) {
 		t.Fatalf("sourceItems arguments = %v, want %v", got, wantNames)
 	}
