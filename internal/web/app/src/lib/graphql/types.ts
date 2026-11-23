@@ -282,6 +282,10 @@ export interface EntityInfo {
   fields: EntityFieldInfo[];
   /** The kind's fixed archetype ("container", "person", …); drives generic page layout. */
   archetype?: string;
+  /** How an audio container plays ("feed" | "long-form"); only entity(id) fills it (CORE-2288). */
+  audioForm?: "feed" | "long-form";
+  /** The Subscription behind a "feed" container; only entity(id) fills it (CORE-2288). */
+  subscriptionID?: string;
   /** Entities grouped by kind and relation direction; only entity(id) fills it. */
   relatedEntities?: RelatedEntityGroup[];
   /** The Entity's own artwork slots; only entity(id) fills it (CORE-2406). */

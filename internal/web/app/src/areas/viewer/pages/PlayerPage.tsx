@@ -11,6 +11,7 @@ import {
   fetchMedia,
   fetchPlaybackAdjustmentRanges,
   fetchPrePlayQueue,
+  queuePlayNextMedia,
   setClientPref,
 } from "@/lib/graphql";
 import type {
@@ -64,12 +65,15 @@ import { playbackDurationSeconds } from "../lib/transport";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
+  consumeStagedPlayNext,
+  insertQueueNext,
   navTitleFor,
   type PlayQueueItem,
   queueForPlaying,
   queueNeighbours,
   queueOfClass,
   readPlayerNavState,
+  setActivePlayNextHandler,
   withQueueClasses,
 } from "../lib/watchQueue";
 import { readWatchPartyIntent } from "../lib/watchTogether";
@@ -93,6 +97,7 @@ import {
   modesReorder,
   nextRepeat,
   type PlayModes,
+  pinNextInShuffleOrder,
   readPlayModes,
   upcomingItems,
   writePlayModes,
@@ -393,13 +398,57 @@ function FeaturePlayer({
   // state, with the siblings it was shown with as the play queue. The media(id)
   // read below fills in the title for a deep link, plus artwork and credits.
   const navState = serverQueueRun ? {} : readPlayerNavState(entry.state, identity);
-  const queueIdentity = navState.queueIdentity;
+  const [localQueueOverride, setLocalQueueOverride] = useState<{
+    identity: string | null;
+    queue: PlayQueueItem[];
+  } | null>(null);
+  useEffect(() => {
+    setLocalQueueOverride(null);
+  }, [entry.state, identity]);
+  const activeRawQueue =
+    !serverQueueRun && localQueueOverride && localQueueOverride.identity === identity
+      ? localQueueOverride.queue
+      : navState.queue;
+  const queueIdentity =
+    navState.queueIdentity ?? (activeRawQueue && identity ? identity : undefined);
   // Undocked, a title an older history entry carries shows only once the read
   // for this route has settled on an available item: while it is pending, or
   // after it settles null or fails, the loading / unavailable copy stands in.
   // The mini player names a track it is already playing, so it keeps its title.
   const titleSettled = docked || (mediaReadIsCurrent && !!mediaRead.info);
   const navTitle = titleSettled ? navState.title || media?.title || "" : "";
+  useEffect(() => {
+    if (serverQueueRun || !mediaId || !identity) return;
+    const baseQueue = activeRawQueue ?? [{ id: mediaId, title: navTitle }];
+    const consumed = consumeStagedPlayNext(identity, baseQueue, { id: mediaId, title: navTitle });
+    if (
+      consumed.length !== baseQueue.length ||
+      consumed.some((item, i) => item.id !== baseQueue[i]?.id)
+    ) {
+      setLocalQueueOverride({ identity, queue: consumed });
+      if (onAdvanceDocked) {
+        const baseState = entry.state && typeof entry.state === "object" ? entry.state : {};
+        onAdvanceDocked({
+          ...entry,
+          state: {
+            ...baseState,
+            ...navState,
+            queue: consumed,
+            queueIdentity: identity,
+          },
+        });
+      }
+    }
+  }, [
+    serverQueueRun,
+    mediaId,
+    identity,
+    navTitle,
+    activeRawQueue,
+    onAdvanceDocked,
+    entry,
+    navState,
+  ]);
   // Docked, the browse page under the mini player names the tab (CORE-2322).
   // A Revealed session may be playing a restricted title, which stays out of
   // the browser history (tab titles are kept there).
@@ -415,12 +464,67 @@ function FeaturePlayer({
   // still plays alone once the read says so.
   const playsAloneRead = media?.id === mediaId && media?.playsAlone === true;
   const navQueue = useMemo(() => {
-    if (!navState.queue) return undefined;
+    if (!activeRawQueue) return undefined;
     const queue = playsAloneRead
-      ? navState.queue.map((item) => (item.id === mediaId ? { ...item, playsAlone: true } : item))
-      : navState.queue;
+      ? activeRawQueue.map((item) => (item.id === mediaId ? { ...item, playsAlone: true } : item))
+      : activeRawQueue;
     return queueForPlaying(queue, mediaId || "");
-  }, [navState.queue, mediaId, playsAloneRead]);
+  }, [activeRawQueue, mediaId, playsAloneRead]);
+
+  const handlePlayNextItem = useCallback(
+    async (item: PlayQueueItem, callerIdentity: string | null) => {
+      if (serverQueueRun) {
+        const currentRows = queueRows ?? (await refreshMusicQueue()) ?? [];
+        const currentIndex = mediaId ? currentRows.findIndex((row) => row.id === mediaId) : -1;
+        const existingIndex = currentRows.findIndex((row) => row.id === item.id);
+        const position =
+          currentIndex < 0
+            ? 0
+            : existingIndex >= 0 && existingIndex < currentIndex
+              ? currentIndex
+              : currentIndex + 1;
+        if (mediaId) {
+          pinNextInShuffleOrder(mediaId, item.id);
+        }
+        await queuePlayNextMedia(item.id, position);
+        await refreshMusicQueue(true);
+        return true;
+      }
+      if (!mediaId) return false;
+      const effectiveIdentity = callerIdentity ?? identity;
+      const nextQueue = insertQueueNext(activeRawQueue, mediaId, navTitle, item);
+      setLocalQueueOverride({ identity: effectiveIdentity, queue: nextQueue });
+      if (onAdvanceDocked) {
+        const baseState = entry.state && typeof entry.state === "object" ? entry.state : {};
+        onAdvanceDocked({
+          ...entry,
+          state: {
+            ...baseState,
+            ...navState,
+            queue: nextQueue,
+            ...(effectiveIdentity ? { queueIdentity: effectiveIdentity } : {}),
+          },
+        });
+      }
+      return true;
+    },
+    [
+      serverQueueRun,
+      queueRows,
+      refreshMusicQueue,
+      mediaId,
+      identity,
+      activeRawQueue,
+      navTitle,
+      onAdvanceDocked,
+      entry,
+      navState,
+    ],
+  );
+  useEffect(() => {
+    setActivePlayNextHandler(handlePlayNextItem);
+    return () => setActivePlayNextHandler(null);
+  }, [handlePlayNextItem]);
   const classedQueue = useMemo(
     () => (navQueue ? withQueueClasses(navQueue, learnedClasses) : undefined),
     [navQueue, learnedClasses],
@@ -1269,9 +1373,16 @@ function FeaturePlayer({
     const carried =
       !serverQueueRun && entry.state && typeof entry.state === "object" ? entry.state : {};
     navigate(`${mediaPath("watch", mediaId)}${entry.search}`, {
-      state: { ...carried, skipPrePlay: true, selectPartyTitle: false },
+      state: {
+        ...carried,
+        ...(!serverQueueRun && activeRawQueue
+          ? { queue: activeRawQueue, ...(queueIdentity ? { queueIdentity } : {}) }
+          : {}),
+        skipPrePlay: true,
+        selectPartyTitle: false,
+      },
     });
-  }, [navigate, mediaId, entry.state, entry.search, serverQueueRun]);
+  }, [navigate, mediaId, entry.state, entry.search, serverQueueRun, activeRawQueue, queueIdentity]);
 
   // Queue metadata comes from an uncached read for this route and identity.
   useEffect(() => {

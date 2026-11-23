@@ -7,7 +7,13 @@ import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
-import type { EntityFieldInfo, GenericMediaInfo, SourceItem } from "@/lib/graphql/types";
+import { fetchSubscriptionEntries, fetchSubscriptionFollow } from "@/lib/graphql";
+import type {
+  EntityFieldInfo,
+  GenericMediaInfo,
+  SourceItem,
+  SubscriptionEntry,
+} from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import {
@@ -46,6 +52,7 @@ import {
   sequenceNext,
   useContainerContext,
 } from "../lib/containerContext";
+import { entryAvailabilityKey } from "../lib/feeds";
 import { mediaPath } from "../lib/mediaAddress";
 import {
   fetchMedia,
@@ -53,6 +60,7 @@ import {
   type MediaDetail,
   mediaDetailCacheKey,
   mediaLinkState,
+  readFeedEntryPreview,
   readMediaPreview,
   resumeProgress,
 } from "../lib/mediaDetail";
@@ -133,6 +141,7 @@ export function MediaDetailPage() {
 
   const previewID = pendingID ?? mediaId;
   const preview = readMediaPreview(location.state, identity, previewID);
+  const feedPreview = readFeedEntryPreview(location.state, identity, previewID);
   const card: SourceItem | undefined = preview?.item ?? findCachedSectionItem(identity, previewID);
 
   // `attempt` is a dependency so that Try again re-runs the request.
@@ -184,6 +193,45 @@ export function MediaDetailPage() {
   const media = current?.media;
   useCanonicalMediaAddress("media", media ?? null, confirmed);
   const context = useContainerContext(media, mediaId);
+  const feedSubscriptionID =
+    feedPreview?.subscriptionID ||
+    (context.entity?.audioForm === "feed"
+      ? (context.entity.subscriptionID ?? "")
+      : (context.entity?.subscriptionID ?? ""));
+  const [loadedFeedEntry, setLoadedFeedEntry] = useState<{
+    mediaID: string;
+    entry: SubscriptionEntry;
+  } | null>(null);
+  const [loadedFeedShowTitle, setLoadedFeedShowTitle] = useState<{
+    subscriptionID: string;
+    title: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!feedSubscriptionID || !mediaId) return;
+    let alive = true;
+    if (!feedPreview) {
+      Promise.resolve(fetchSubscriptionEntries?.(feedSubscriptionID))
+        .then((items) => {
+          if (!alive || !Array.isArray(items)) return;
+          const found = items.find((item) => item.mediaID === mediaId);
+          if (found) setLoadedFeedEntry({ mediaID: mediaId, entry: found });
+        })
+        .catch(() => {});
+    }
+    if (!feedPreview?.showTitle && context.parents.length === 0) {
+      Promise.resolve(fetchSubscriptionFollow?.(feedSubscriptionID))
+        .then((info) => {
+          if (alive && info?.title) {
+            setLoadedFeedShowTitle({ subscriptionID: feedSubscriptionID, title: info.title });
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      alive = false;
+    };
+  }, [feedSubscriptionID, mediaId, feedPreview, context.parents.length]);
   // The rows that decide whether the container's items list as numbered rows.
   const siblingRows = useListingRows(context.entity, context.items);
   // Audio names its people under the title, unless a credit carries a headshot
@@ -356,6 +404,15 @@ export function MediaDetailPage() {
   });
   // One quiet meta line (CORE-2930): text facts, then the shown Version's
   // stream badges, each once.
+  const activeFeedEntry =
+    feedPreview ?? (loadedFeedEntry?.mediaID === mediaId ? loadedFeedEntry.entry : null);
+  const feedAvailabilityKey = activeFeedEntry
+    ? entryAvailabilityKey(activeFeedEntry as SubscriptionEntry)
+    : context.entity?.audioForm === "feed" && versions !== null
+      ? versions.length > 0
+        ? "feedsDownloaded"
+        : "feedsNotDownloaded"
+      : null;
   const metaItems: FactItem[] = [
     {
       key: "year",
@@ -368,6 +425,7 @@ export function MediaDetailPage() {
     { key: "runtime", text: facts.runtimeSeconds ? formatRuntime(facts.runtimeSeconds, t) : "" },
     { key: "rating", text: facts.rating ?? "", variant: "rating" as const },
     ...scoreFact(facts.score, locale, t),
+    ...(feedAvailabilityKey ? [{ key: "availability", text: t(feedAvailabilityKey) }] : []),
   ].filter((item) => item.text !== "");
   const version = shownVersion(versions, trackPicks, profileID, mediaId);
   const streamBadges = streamFacts(version, {
@@ -390,6 +448,21 @@ export function MediaDetailPage() {
   const parents = positioned
     ? context.parents.filter((parent) => parent.id !== positioned)
     : context.parents;
+  const feedShowTitle =
+    feedPreview?.showTitle ||
+    (loadedFeedShowTitle?.subscriptionID === feedSubscriptionID ? loadedFeedShowTitle.title : "") ||
+    "";
+  const feedShowPath =
+    feedPreview?.showPath ||
+    (feedSubscriptionID && media?.libraryID
+      ? `/n/library-${encodeURIComponent(media.libraryID)}/feeds/${encodeURIComponent(feedSubscriptionID)}`
+      : feedSubscriptionID
+        ? `/feeds/${encodeURIComponent(feedSubscriptionID)}`
+        : "");
+  const feedShowLink =
+    parents.length === 0 && !ordered && !series && feedShowTitle && feedShowPath
+      ? { title: feedShowTitle, to: feedShowPath }
+      : null;
   // The nearest container's other items, in its order (CORE-2469).
   const moreIn = context.items.filter((item) => item.id !== mediaId);
   // A container the Entity page lists as numbered rows is listed the same way
@@ -431,6 +504,15 @@ export function MediaDetailPage() {
                           </Link>
                         </li>
                       ))}
+                    </ol>
+                  </nav>
+                )}
+                {feedShowLink && (
+                  <nav className="bf-detail-parents" aria-label={t("mediaDetailPartOf")}>
+                    <ol>
+                      <li>
+                        <Link to={feedShowLink.to}>{feedShowLink.title}</Link>
+                      </li>
                     </ol>
                   </nav>
                 )}

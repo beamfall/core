@@ -11,6 +11,7 @@ import {
   fetchRelatedMedia,
   fetchSimilarMedia,
   fetchSourceItems,
+  fetchSubscriptionEntries,
 } from "@/lib/graphql";
 import type { GenericMediaInfo, Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
@@ -57,6 +58,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   fetchRelatedMedia: vi.fn(),
   fetchSimilarMedia: vi.fn(),
   fetchSourceItems: vi.fn(),
+  fetchSubscriptionEntries: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
   fetchItemState: vi.fn(async () => mocks.itemState),
   fetchPlaybackMarkers: vi.fn(async () => []),
@@ -1821,6 +1823,54 @@ describe("MediaDetailPage", () => {
       expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
       expect(navState()).toEqual({ title: "Server title" });
+    });
+
+    it("links a feed entry detail page back to its show and shows availability (CORE-3249)", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue({
+        ...media,
+        id: "m1",
+        title: "Episode 1",
+        mediaClass: "audio",
+        credits: [
+          {
+            entityID: "show-1",
+            title: "Morning Notes",
+            kind: "show",
+            archetype: "container",
+            relation: "member",
+          },
+        ],
+      });
+      vi.mocked(fetchMediaForEntity).mockResolvedValue([
+        { id: "m1", kind: "media", title: "Episode 1", mediaClass: "audio" },
+      ]);
+      vi.mocked(fetchEntity).mockResolvedValue({
+        id: "show-1",
+        kind: "show",
+        title: "Morning Notes",
+        archetype: "container",
+        audioForm: "feed",
+        subscriptionID: "sub-1",
+        fields: [],
+      });
+      vi.mocked(fetchSubscriptionEntries).mockResolvedValue([
+        {
+          mediaID: "m1",
+          title: "Episode 1",
+          feedPosition: 0,
+          enclosureLength: 25_000_000,
+          downloadState: "none",
+          availability: "not-downloaded",
+          played: false,
+        },
+      ]);
+
+      renderAt(["/media/m1"]);
+      expect(await screen.findByRole("link", { name: "Morning Notes" })).toHaveAttribute(
+        "href",
+        "/entity/show-1",
+      );
+      expect(await screen.findByText("Not downloaded")).toBeInTheDocument();
     });
   });
 });

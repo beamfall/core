@@ -187,6 +187,50 @@ export interface MediaPreview {
   sectionID?: string;
 }
 
+export interface FeedEntryPreview {
+  mediaID: string;
+  subscriptionID?: string;
+  showTitle?: string;
+  showPath?: string;
+  availability: string;
+  downloadState: string;
+}
+
+interface FeedEntryLinkState {
+  feedEntryPreview?: {
+    identity?: unknown;
+    entry?: unknown;
+  };
+}
+
+export function feedEntryLinkState(
+  entry: FeedEntryPreview,
+  identity: string | null | undefined,
+): FeedEntryLinkState | undefined {
+  if (!identity) return undefined;
+  return { feedEntryPreview: { identity, entry } };
+}
+
+export function readFeedEntryPreview(
+  state: unknown,
+  identity: string | null | undefined,
+  mediaID: string,
+): FeedEntryPreview | null {
+  if (!identity || !state || typeof state !== "object") return null;
+  const raw = (state as FeedEntryLinkState).feedEntryPreview;
+  if (!raw || raw.identity !== identity || !raw.entry || typeof raw.entry !== "object") return null;
+  const entry = raw.entry as Partial<FeedEntryPreview>;
+  if (entry.mediaID !== mediaID || typeof entry.availability !== "string") return null;
+  return {
+    mediaID,
+    subscriptionID: typeof entry.subscriptionID === "string" ? entry.subscriptionID : undefined,
+    showTitle: typeof entry.showTitle === "string" ? entry.showTitle : undefined,
+    showPath: typeof entry.showPath === "string" ? entry.showPath : undefined,
+    availability: entry.availability,
+    downloadState: typeof entry.downloadState === "string" ? entry.downloadState : "none",
+  };
+}
+
 /** Builds the navigation state for a link to /media/:id (see MediaDetailPage). */
 export function mediaLinkState(
   item: SourceItem,

@@ -224,7 +224,12 @@ export function FeedCataloguePage() {
 
   const subscription = state.kind === "ready" ? state.subscription : null;
   const follow = state.kind === "ready" ? state.follow : null;
-  const heading = subscription?.title || displayString(node.title, displayLocale);
+  const heading = subscription?.title || follow?.title || displayString(node.title, displayLocale);
+  const cataloguePath = nodePath(
+    node.id,
+    `/feeds/${encodeURIComponent(subscriptionId)}`,
+    node.libraryID,
+  );
   return (
     <AppShell actions={<ViewerActions />}>
       <div className="flex flex-col gap-5">
@@ -280,7 +285,12 @@ export function FeedCataloguePage() {
           </p>
         )}
         {state.kind === "ready" && state.entries.length > 0 && (
-          <FeedCatalogue entries={state.entries} />
+          <FeedCatalogue
+            entries={state.entries}
+            subscriptionID={subscriptionId}
+            showTitle={subscription?.title || follow?.title || undefined}
+            showPath={cataloguePath}
+          />
         )}
       </div>
     </AppShell>

@@ -269,3 +269,102 @@ function readStartTracks(raw: unknown): StartTracks | undefined {
     ? undefined
     : tracks;
 }
+
+import { pinNextInShuffleOrder } from "../player/nowPlaying";
+
+/**
+ * Inserts `item` immediately after `currentID` in `queue`, removing any other
+ * occurrence of `item.id` so the item plays next once (CORE-3250).
+ */
+export function insertQueueNext(
+  queue: readonly PlayQueueItem[] | undefined,
+  currentID: string,
+  currentTitle: string | undefined,
+  item: PlayQueueItem,
+  options?: { pinShuffle?: boolean },
+): PlayQueueItem[] {
+  if (options?.pinShuffle !== false && currentID && item.id && currentID !== item.id) {
+    pinNextInShuffleOrder(currentID, item.id);
+  }
+  const base =
+    queue && queue.some((entry) => entry.id === currentID)
+      ? [...queue]
+      : currentID
+        ? [{ id: currentID, title: currentTitle ?? "" }, ...(queue ?? [])]
+        : [...(queue ?? [])];
+  const currentIndex = base.findIndex((entry) => entry.id === currentID);
+  if (currentIndex < 0) {
+    return [item, ...base.filter((entry) => entry.id !== item.id)];
+  }
+  if (item.id === currentID) return base;
+  const before = base
+    .slice(0, currentIndex + 1)
+    .filter((entry, index) => index === currentIndex || entry.id !== item.id);
+  const after = base.slice(currentIndex + 1).filter((entry) => entry.id !== item.id);
+  return [...before, item, ...after];
+}
+
+export type PlayNextHandler = (
+  item: PlayQueueItem,
+  identity: string | null,
+) => Promise<boolean> | boolean;
+
+let activePlayNextHandler: PlayNextHandler | null = null;
+const stagedByIdentity = new Map<string, PlayQueueItem[]>();
+
+export function setActivePlayNextHandler(handler: PlayNextHandler | null): void {
+  activePlayNextHandler = handler;
+}
+
+export function stagePlayNext(identity: string | null | undefined, item: PlayQueueItem): void {
+  if (!identity) return;
+  const current = stagedByIdentity.get(identity) ?? [];
+  stagedByIdentity.set(identity, [item, ...current.filter((entry) => entry.id !== item.id)]);
+}
+
+export function applyStagedPlayNext(
+  identity: string | null | undefined,
+  queue: readonly PlayQueueItem[],
+  startItem: { id: string; title: string },
+  consume = false,
+): PlayQueueItem[] {
+  if (!identity) return [...queue];
+  const staged = stagedByIdentity.get(identity);
+  if (!staged || staged.length === 0) return [...queue];
+  if (consume) {
+    stagedByIdentity.delete(identity);
+  }
+  let next = [...queue];
+  // Insert in reverse so the most recently chosen Play next item sits immediately after startItem.
+  for (let i = staged.length - 1; i >= 0; i--) {
+    next = insertQueueNext(next, startItem.id, startItem.title, staged[i]!, {
+      pinShuffle: consume,
+    });
+  }
+  return next;
+}
+
+export function consumeStagedPlayNext(
+  identity: string | null | undefined,
+  queue: readonly PlayQueueItem[],
+  startItem: { id: string; title: string },
+): PlayQueueItem[] {
+  return applyStagedPlayNext(identity, queue, startItem, true);
+}
+
+export function resetPlayNextForTest(): void {
+  activePlayNextHandler = null;
+  stagedByIdentity.clear();
+}
+
+/**
+ * Dispatches a Play next request to the active player (catalogue or server
+ * queue); returns true when an active player handled it in place (CORE-3250).
+ */
+export async function dispatchPlayNextToActivePlayer(
+  item: PlayQueueItem,
+  identity: string | null | undefined,
+): Promise<boolean> {
+  if (!activePlayNextHandler) return false;
+  return await activePlayNextHandler(item, identity ?? null);
+}

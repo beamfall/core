@@ -1,9 +1,12 @@
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 import type { Locator } from "@playwright/test";
 import {
   applyLargeText,
   collectFatalErrors,
   expectLargeTextApplied,
   expectNoHorizontalDocumentOverflow,
+  harnessState,
 } from "./lib/spec";
 import { expect, test } from "./lib/test";
 import { coverUiStates } from "./lib/ui-state-coverage";
@@ -462,6 +465,116 @@ test.describe("viewer", () => {
     await expect(page).toHaveURL(/\/notifications$/);
     await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
+  });
+
+  test("smoke: followed feed catalogue exercises filter, sort, Mark played, and route change", async ({
+    page,
+  }) => {
+    const errors = collectFatalErrors(page);
+    const { dataDir } = harnessState();
+    expect(dataDir, "self-booted harness dataDir").toBeTruthy();
+    const catalogDB = join(dataDir!, "db", "catalog.db");
+
+    const runCatalogSQL = (sql: string) =>
+      execFileSync("python3", [
+        "-c",
+        "import sqlite3, sys; c = sqlite3.connect(sys.argv[1], timeout=5); c.executescript(sys.argv[2]); c.commit(); c.close()",
+        catalogDB,
+        sql,
+      ]);
+
+    runCatalogSQL(`
+      INSERT OR REPLACE INTO subscription (
+        id, library_id, feed_url, root, title, added_at_ms, last_polled_at_ms,
+        etag, last_modified, download_policy, download_latest_n
+      ) VALUES (
+        'sub-e2e-daily', 'library-local', 'https://feeds.example.test/daily.xml',
+        '/media/feeds', 'Daily Dispatch', 1763625600000, 1763625600000,
+        '', '', 'latest', 3
+      );
+      INSERT OR REPLACE INTO media (
+        id, library_id, title, summary, duration_seconds, container, codec, media_class, mutated_by
+      ) VALUES
+        ('ep-e2e-1', 'library-local', 'Episode One', '', 1800, 'mp3', 'mp3', 'audio', 'scan'),
+        ('ep-e2e-2', 'library-local', 'Episode Two', '', 2400, 'mp3', 'mp3', 'audio', 'scan');
+      INSERT OR REPLACE INTO subscription_entry (
+        subscription_id, guid, media_id, feed_position, published_at_ms, first_seen_at_ms,
+        enclosure_url, enclosure_type, enclosure_length, download_state, download_path
+      ) VALUES
+        ('sub-e2e-daily', 'guid-1', 'ep-e2e-1', 1, 1763452800000, 1763452800000,
+         'https://feeds.example.test/ep1.mp3', 'audio/mpeg', 1048576, 'downloaded', ''),
+        ('sub-e2e-daily', 'guid-2', 'ep-e2e-2', 0, 1763625600000, 1763625600000,
+         'https://feeds.example.test/ep2.mp3', 'audio/mpeg', 2097152, 'none', '');
+    `);
+
+    try {
+      await page.goto("/web/");
+      const followed = await page.evaluate(async () => {
+        const res = await fetch("/api/graphql", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Beamfall-Csrf": "1",
+          },
+          body: JSON.stringify({
+            query:
+              "mutation SetFollow($subscriptionID: String!, $on: Boolean!) { setFollow(subscriptionID: $subscriptionID, on: $on) { id title followed newEntryRoute } }",
+            variables: { subscriptionID: "sub-e2e-daily", on: true },
+          }),
+        });
+        return res.json();
+      });
+      expect(followed?.data?.setFollow).toMatchObject({
+        id: "sub-e2e-daily",
+        followed: true,
+        newEntryRoute: "new",
+      });
+
+      await page.goto("/web/n/library-local/feeds/sub-e2e-daily");
+      await expect(page.getByRole("heading", { level: 1, name: "Daily Dispatch" })).toBeVisible();
+
+      const rows = page.locator("li[data-entry]");
+      await expect(rows).toHaveCount(2);
+      // Default sort is Newest first: ep-e2e-2 (Nov 20) before ep-e2e-1 (Nov 18).
+      await expect(rows.nth(0)).toHaveAttribute("data-entry", "ep-e2e-2");
+      await expect(rows.nth(1)).toHaveAttribute("data-entry", "ep-e2e-1");
+
+      // Sort: Oldest first flips order to ep-e2e-1 before ep-e2e-2.
+      await page.getByRole("combobox", { name: "Sort" }).selectOption("oldest");
+      await expect(rows.nth(0)).toHaveAttribute("data-entry", "ep-e2e-1");
+      await expect(rows.nth(1)).toHaveAttribute("data-entry", "ep-e2e-2");
+
+      // Mark Episode One played against the real server.
+      await page.getByRole("button", { name: "Mark Episode One played" }).click();
+      await expect(page.getByRole("button", { name: "Mark Episode One unplayed" })).toBeVisible();
+
+      // Filter: Unplayed shows only Episode Two.
+      await page.getByRole("combobox", { name: "Show" }).selectOption("unplayed");
+      await expect(rows).toHaveCount(1);
+      await expect(rows.nth(0)).toHaveAttribute("data-entry", "ep-e2e-2");
+
+      // Route change: New entries go to -> Add to end of queue ("queue-end").
+      const routeSelect = page.getByRole("combobox", { name: "New entries go to" });
+      await expect(routeSelect).toHaveValue("new");
+      await routeSelect.selectOption("queue-end");
+      await expect(routeSelect).toHaveValue("queue-end");
+
+      // Reload from the real server to prove both played state and newEntryRoute persisted.
+      await page.reload();
+      await expect(page.getByRole("heading", { level: 1, name: "Daily Dispatch" })).toBeVisible();
+      await expect(page.getByRole("combobox", { name: "New entries go to" })).toHaveValue(
+        "queue-end",
+      );
+      await expect(page.getByRole("button", { name: "Mark Episode One unplayed" })).toBeVisible();
+
+      expect(errors, errors.join("\n")).toEqual([]);
+    } finally {
+      runCatalogSQL(`
+        DELETE FROM subscription_entry WHERE subscription_id = 'sub-e2e-daily';
+        DELETE FROM subscription WHERE id = 'sub-e2e-daily';
+        DELETE FROM media WHERE id IN ('ep-e2e-1', 'ep-e2e-2');
+      `);
+    }
   });
 
   test("player route loads playback-info and mounts the transport or an honest message", async ({

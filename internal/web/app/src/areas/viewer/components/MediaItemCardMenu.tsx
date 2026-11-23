@@ -18,13 +18,18 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Menu } from "@/components/ui/astryx-primitives";
-import { fetchMedia } from "@/lib/graphql";
+import { fetchMedia, queuePlayNextMedia } from "@/lib/graphql";
 import type { ItemTarget, MediaCredit } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { removeFromContinueWatching, useItemActions, useItemHide } from "../actions";
 import { entityPath } from "../lib/entityAddress";
 import { moreWithLead } from "../lib/related";
+import {
+  dispatchPlayNextToActivePlayer,
+  type PlayQueueItem,
+  stagePlayNext,
+} from "../lib/watchQueue";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 import { useStartRadio } from "./StartRadio";
 
@@ -181,6 +186,27 @@ export function MediaItemCardMenu({
                 <PrimaryIcon aria-hidden="true" size={15} />
                 {primaryLabel}
               </Menu.Item>
+              {isMedia && "mediaID" in target && (
+                <Menu.Item
+                  className="bf-card-menu-item"
+                  onClick={() => {
+                    const nextItem: PlayQueueItem = {
+                      id: target.mediaID,
+                      title,
+                      ...(isAudio ? { mediaClass: "audio" } : {}),
+                    };
+                    void dispatchPlayNextToActivePlayer(nextItem, identity).then((handled) => {
+                      if (!handled) {
+                        stagePlayNext(identity, nextItem);
+                        void queuePlayNextMedia?.(target.mediaID)?.catch?.(() => {});
+                      }
+                    });
+                  }}
+                >
+                  <ListPlus aria-hidden="true" size={15} />
+                  {t("cardPlayNext")}
+                </Menu.Item>
+              )}
               {onDetails && (
                 <Menu.Item className="bf-card-menu-item" onClick={onDetails}>
                   <SquareArrowOutUpRight aria-hidden="true" size={15} />

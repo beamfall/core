@@ -7,6 +7,7 @@ import type {
   SourceItem,
 } from "@/lib/graphql/types";
 import {
+  applyStagedPlayNext,
   navTitleFor,
   type PlayerNavState,
   type PlayQueueItem,
@@ -342,8 +343,10 @@ export function playState(
   identity: string | null | undefined,
   queue: readonly PlayQueueItem[],
   item: { id: string; title: string },
+  options?: { consumeStaged?: boolean },
 ): PlayerNavState {
   const title = navTitleFor(identity ?? null, item.title);
   if (!identity || queue.length === 0) return { title };
-  return { title, queue: queueWindow(queue, item.id), queueIdentity: identity };
+  const merged = applyStagedPlayNext(identity, queue, item, options?.consumeStaged === true);
+  return { title, queue: queueWindow(merged, item.id), queueIdentity: identity };
 }

@@ -221,4 +221,326 @@ describe("MusicQueuePanel", () => {
       }
     }
   });
+
+  it("reorders with drag and keyboard using positions among all visible server rows and refuses dragging across current into played history (CORE-2846)", async () => {
+    const initial = [
+      { id: "history-1", title: "History", mediaClass: "audio" },
+      { id: "film", title: "Film", mediaClass: "video" },
+      { id: "track-202", title: "Current", mediaClass: "audio" },
+      { id: "track-a", title: "Alpha", mediaClass: "audio" },
+      { id: "locked-1", title: "Hidden", mediaClass: "audio", locked: true },
+      { id: "track-b", title: "Beta", mediaClass: "audio" },
+    ];
+    const reordered = [
+      initial[0]!,
+      initial[1]!,
+      initial[2]!,
+      initial[5]!,
+      initial[3]!,
+      initial[4]!,
+    ];
+    let serverRows = [...initial];
+    const mutations: Array<{ query: string; variables: Record<string, unknown> }> = [];
+    const requests = vi.fn(async (_path: string, request: RequestInit) => {
+      const body = JSON.parse(String(request.body));
+      if (String(body.query).includes("queueMove")) {
+        mutations.push({ query: body.query, variables: body.variables });
+        serverRows = [...reordered];
+        return new Response(
+          JSON.stringify({ data: { queueMove: [{ id: body.variables.mediaID }] } }),
+        );
+      }
+      return page(serverRows);
+    });
+    vi.stubGlobal("fetch", requests);
+
+    const view = render(
+      <I18nProvider initialLocale="en">
+        <QueueButton onPlay={vi.fn()} />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueTitle }));
+    expect(await screen.findByText("Beta")).toBeInTheDocument();
+
+    // Dragging an upcoming track (Beta) onto played history (History, before Current) is refused.
+    fireEvent.dragStart(screen.getByText("Beta"));
+    fireEvent.dragOver(screen.getByText("History"));
+    fireEvent.drop(screen.getByText("History"));
+    expect(mutations).toHaveLength(0);
+
+    // Keyboard reorder on Beta (visible index 5) up to Alpha (visible index 3).
+    fireEvent.keyDown(screen.getByText("Beta"), { key: "ArrowUp" });
+    await waitFor(() => expect(mutations).toHaveLength(1));
+    expect(mutations[0]?.variables).toEqual({
+      mediaID: "track-b",
+      position: 3,
+      expectedProfileID: "profile-a",
+    });
+    const keyboardOrder = screen.getAllByRole("listitem").map((li) => li.textContent);
+
+    // Reset and perform the same reorder via drag and drop onto Alpha (visible index 3).
+    serverRows = [...initial];
+    view.unmount();
+    renderQueuePanel();
+    expect(await screen.findByText("Beta")).toBeInTheDocument();
+    const beta = screen.getByText("Beta");
+    const alpha = screen.getByText("Alpha");
+    fireEvent.dragStart(beta);
+    fireEvent.dragOver(alpha);
+    fireEvent.drop(alpha);
+    await waitFor(() => expect(mutations).toHaveLength(2));
+    expect(mutations[1]?.variables).toEqual(mutations[0]?.variables);
+    const dragOrder = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(dragOrder).toEqual(keyboardOrder);
+  });
+
+  it("removes and clears upcoming while keeping current, video, locked and concurrent additions, and rereads on lost response or partial failure (CORE-2846)", async () => {
+    let serverRows = [
+      { id: "film", title: "Film", mediaClass: "video" },
+      { id: "track-202", title: "Current", mediaClass: "audio" },
+      { id: "track-a", title: "Alpha", mediaClass: "audio" },
+      { id: "locked-1", title: "Locked", mediaClass: "audio", locked: true },
+      { id: "track-b", title: "Beta", mediaClass: "audio" },
+      { id: "track-c", title: "Gamma", mediaClass: "audio" },
+    ];
+    let serverEntries = [
+      "film",
+      "track-202",
+      "track-a",
+      "locked-1",
+      "track-b",
+      "track-b",
+      "track-c",
+    ];
+    let removeCount = 0;
+    const removedIDs: string[] = [];
+    const requests = vi.fn(async (_path: string, request: RequestInit) => {
+      const body = JSON.parse(String(request.body));
+      if (String(body.query).includes("queueRemove")) {
+        removeCount++;
+        const id = String(body.variables.mediaID);
+        removedIDs.push(id);
+        const removeFirstEntry = (target: string) => {
+          const idx = serverEntries.indexOf(target);
+          if (idx >= 0) serverEntries.splice(idx, 1);
+          if (!serverEntries.includes(target)) {
+            serverRows = serverRows.filter((row) => row.id !== target);
+          }
+        };
+        if (removeCount === 1) {
+          // Committed remove whose HTTP response is lost.
+          removeFirstEntry(id);
+          throw new Error("connection lost after commit");
+        }
+        if (removeCount === 2 || removeCount === 3) {
+          // Duplicate Beta entries are both removed; on the second Beta removal another device adds Delta.
+          removeFirstEntry(id);
+          if (removeCount === 3) {
+            serverRows = [...serverRows, { id: "track-d", title: "Delta", mediaClass: "audio" }];
+            serverEntries = [...serverEntries, "track-d"];
+          }
+          return new Response(JSON.stringify({ data: { queueRemove: [] } }));
+        }
+        // Final clear-upcoming removal (Gamma) fails on the server.
+        throw new Error("final clear removal failed");
+      }
+      return new Response(
+        JSON.stringify({
+          data: {
+            currentSession: { profileID: viewer.profileID, revealed: viewer.revealed },
+            sourceItems: serverRows,
+            playQueue: {
+              currentEntryID: "e-track-202",
+              entries: serverEntries.map((mediaID, index) => ({
+                id: `e-${mediaID}-${index}`,
+                mediaID,
+              })),
+            },
+          },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", requests);
+
+    renderQueuePanel();
+    expect(await screen.findByText("Alpha")).toBeInTheDocument();
+
+    // 1. Committed remove of Alpha whose response is lost -> rereads server state without Alpha.
+    fireEvent.click(screen.getByRole("button", { name: "Remove Alpha" }));
+    await waitFor(() => expect(screen.queryByText("Alpha")).toBeNull());
+    expect(screen.getByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueWriteFailed);
+
+    // 2. Clear upcoming captures [Beta, Beta, Gamma] from playQueue.entries; both Beta entries are removed, Gamma fails, concurrent Delta survives.
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueClearUpcoming }));
+    await waitFor(() => expect(screen.queryByText("Beta")).toBeNull());
+    expect(removedIDs).toEqual(["track-a", "track-b", "track-b", "track-c"]);
+    const remaining = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(remaining).toEqual([
+      "Film",
+      "Current",
+      STRINGS.en.musicQueueLockedItem,
+      "Gamma",
+      "Delta",
+    ]);
+  });
+
+  it("saves 201 queued tracks as a playlist in order and reuses the created playlist on retry (CORE-2847)", async () => {
+    const firstPage = Array.from({ length: 200 }, (_, i) => ({
+      id: `track-${i + 1}`,
+      title: `Track ${i + 1}`,
+      mediaClass: "audio",
+      libraryID: "lib-music",
+    }));
+    const secondPage = [
+      firstPage[199]!,
+      { id: "track-201", title: "Track 201", mediaClass: "audio", libraryID: "lib-music" },
+    ];
+    let createCalls = 0;
+    let addCalls = 0;
+    let addedMediaIDs: string[] = [];
+    const requests = vi.fn(async (_path: string, request: RequestInit) => {
+      const body = JSON.parse(String(request.body));
+      const query = String(body.query);
+      if (query.includes("createCollection(")) {
+        createCalls++;
+        return new Response(
+          JSON.stringify({
+            data: {
+              createCollection: {
+                id: "pl-201",
+                libraryID: body.variables.libraryID,
+                name: body.variables.name,
+                sortOrder: 1,
+                memberCount: 0,
+                members: [],
+              },
+            },
+          }),
+        );
+      }
+      if (query.includes("addCollectionMedia(")) {
+        addCalls++;
+        if (addCalls === 1) {
+          throw new Error("member add failed");
+        }
+        addedMediaIDs = body.variables.mediaIDs;
+        return new Response(
+          JSON.stringify({
+            data: {
+              addCollectionMedia: {
+                id: body.variables.collectionID,
+                libraryID: "lib-music",
+                name: "Evening Mix",
+                sortOrder: 1,
+                memberCount: addedMediaIDs.length,
+                members: [],
+              },
+            },
+          }),
+        );
+      }
+      return page(body.variables.offset === 0 ? firstPage : secondPage);
+    });
+    vi.stubGlobal("fetch", requests);
+
+    renderQueuePanel();
+    expect(await screen.findByText("Track 201")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: STRINGS.en.musicQueuePlaylistName }), {
+      target: { value: "Evening Mix" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueSaveAsPlaylist }));
+
+    // First attempt: playlist created, member add failed.
+    expect(await screen.findByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueSaveFailed);
+    expect(createCalls).toBe(1);
+    expect(addCalls).toBe(1);
+
+    // Retry: reuses pl-201 without creating a second playlist.
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueSaveAsPlaylist }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved playlist Evening Mix.");
+    expect(createCalls).toBe(1);
+    expect(addCalls).toBe(2);
+    expect(addedMediaIDs).toEqual(Array.from({ length: 201 }, (_, i) => `track-${i + 1}`));
+  });
+
+  it("refuses saving on pending or failed queue read, mixed libraries, or repeated tracks [A,B,A] without creating a playlist (CORE-2847)", async () => {
+    let createCalls = 0;
+    // 1. Pending read
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>(() => {
+            /* stays pending */
+          }),
+      ),
+    );
+    const pendingView = render(
+      <I18nProvider initialLocale="en">
+        <QueueButton onPlay={vi.fn()} />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueTitle }));
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueSaveAsPlaylist }));
+    expect(screen.getByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueSaveReadPending);
+    pendingView.unmount();
+
+    // 2. Mixed libraries
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_path: string, request: RequestInit) => {
+        const body = JSON.parse(String(request.body));
+        if (String(body.query).includes("createCollection(")) createCalls++;
+        return page([
+          { id: "a", title: "A", mediaClass: "audio", libraryID: "lib-1" },
+          { id: "b", title: "B", mediaClass: "audio", libraryID: "lib-2" },
+        ]);
+      }),
+    );
+    const mixedView = render(
+      <I18nProvider initialLocale="en">
+        <QueueButton onPlay={vi.fn()} />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueTitle }));
+    expect(await screen.findByText("B")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueSaveAsPlaylist }));
+    expect(screen.getByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueSaveMixedLibraries);
+    expect(createCalls).toBe(0);
+    mixedView.unmount();
+
+    // 3. Repeated track [A, B, A]: legacy sourceItems deduplicates to [A, B] while playQueue.entries carries [A, B, A].
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_path: string, request: RequestInit) => {
+        const body = JSON.parse(String(request.body));
+        if (String(body.query).includes("createCollection(")) createCalls++;
+        return new Response(
+          JSON.stringify({
+            data: {
+              currentSession: { profileID: viewer.profileID, revealed: viewer.revealed },
+              sourceItems: [
+                { id: "a", title: "A", mediaClass: "audio", libraryID: "lib-1" },
+                { id: "b", title: "B", mediaClass: "audio", libraryID: "lib-1" },
+              ],
+              playQueue: {
+                currentEntryID: "entry-1",
+                entries: [
+                  { id: "entry-1", mediaID: "a" },
+                  { id: "entry-2", mediaID: "b" },
+                  { id: "entry-3", mediaID: "a" },
+                ],
+              },
+            },
+          }),
+        );
+      }),
+    );
+    renderQueuePanel();
+    expect(await screen.findByText("B")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueSaveAsPlaylist }));
+    expect(screen.getByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueSaveDuplicateTrack);
+    expect(createCalls).toBe(0);
+  });
 });

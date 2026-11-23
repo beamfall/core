@@ -34,24 +34,155 @@ export function modesReorder(modes: PlayModes): boolean {
   return modes.shuffle || modes.repeat === "all";
 }
 
+interface ShuffleSession {
+  seed: number;
+  anchor: string;
+  orderIDs: string[];
+  inputIDs: string[];
+  seen: Set<string>;
+  pinnedIDs: Set<string>;
+  cursorIndex: number;
+  random: () => number;
+}
+
+let activeShuffle: ShuffleSession | null = null;
+const pendingPinnedNext: Array<{ currentID: string; nextID: string }> = [];
+
+/**
+ * Pins `nextID` immediately after `currentID` in the active (or next) shuffle
+ * order when the listener explicitly chooses "Play next" (CORE-3250).
+ */
+export function pinNextInShuffleOrder(currentID: string, nextID: string): void {
+  if (!currentID || !nextID || currentID === nextID) return;
+  if (activeShuffle) {
+    applyPinToSession(activeShuffle, currentID, nextID);
+  }
+  pendingPinnedNext.push({ currentID, nextID });
+  if (pendingPinnedNext.length > 32) {
+    pendingPinnedNext.shift();
+  }
+}
+
+function applyPinToSession(session: ShuffleSession, currentID: string, nextID: string): void {
+  if (!currentID || !nextID || currentID === nextID) return;
+  const curIdx = session.orderIDs.indexOf(currentID);
+  if (curIdx < 0) return;
+  const filtered = session.orderIDs.filter((id) => id !== nextID);
+  const newCurIdx = filtered.indexOf(currentID);
+  filtered.splice(newCurIdx + 1, 0, nextID);
+  session.orderIDs = filtered;
+  session.seen.add(nextID);
+  session.pinnedIDs.add(nextID);
+}
+
+function shuffleInPlace<T>(items: T[], random: () => number): void {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [items[i], items[j]] = [items[j]!, items[i]!];
+  }
+}
+
 /**
  * The order the queue plays in: as given, or shuffled by the seed with the
  * anchor first, so turning shuffle on keeps the playing item and plays every
- * other one once before any repeats.
+ * other one once before any repeats. When the queue grows (a radio top-up,
+ * CORE-3177), the already-played prefix through the current item stays put and
+ * only the new items shuffle into the unplayed remainder.
  */
 export function playOrder<T extends { id: string }>(
   queue: readonly T[],
   modes: PlayModes,
+  currentID?: string,
 ): readonly T[] {
   if (!modes.shuffle || queue.length < 2) return queue;
-  const rest = queue.filter((item) => item.id !== modes.anchor);
-  const random = mulberry32(modes.seed);
-  for (let i = rest.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [rest[i], rest[j]] = [rest[j]!, rest[i]!];
+  const byID = new Map(queue.map((item) => [item.id, item]));
+  const inputIDs = queue.map((item) => item.id);
+  const session = activeShuffle;
+  const canExtend =
+    session !== null &&
+    session.seed === modes.seed &&
+    session.anchor === modes.anchor &&
+    queue.length >= session.orderIDs.length &&
+    session.orderIDs.every((id) => byID.has(id));
+
+  if (!canExtend) {
+    const rest = queue.filter((item) => item.id !== modes.anchor);
+    const random = mulberry32(modes.seed);
+    shuffleInPlace(rest, random);
+    const anchor = queue.find((item) => item.id === modes.anchor);
+    const ordered = anchor ? [anchor, ...rest] : rest;
+    const orderIDs = ordered.map((item) => item.id);
+    const cursor = currentID ? orderIDs.indexOf(currentID) : 0;
+    const newSession: ShuffleSession = {
+      seed: modes.seed,
+      anchor: modes.anchor,
+      orderIDs,
+      inputIDs,
+      seen: new Set(orderIDs),
+      pinnedIDs: new Set<string>(),
+      cursorIndex: cursor >= 0 ? cursor : 0,
+      random,
+    };
+    if (pendingPinnedNext.length > 0) {
+      for (const pin of pendingPinnedNext.splice(0)) {
+        if (byID.has(pin.currentID) && byID.has(pin.nextID)) {
+          applyPinToSession(newSession, pin.currentID, pin.nextID);
+        }
+      }
+    }
+    activeShuffle = newSession;
+    return newSession.orderIDs.map((id) => byID.get(id)!).filter(Boolean);
   }
-  const anchor = queue.find((item) => item.id === modes.anchor);
-  return anchor ? [anchor, ...rest] : rest;
+
+  if (currentID) {
+    const idx = session.orderIDs.indexOf(currentID);
+    if (idx >= 0) session.cursorIndex = idx;
+  }
+
+  if (pendingPinnedNext.length > 0) {
+    for (const pin of pendingPinnedNext.splice(0)) {
+      if (byID.has(pin.currentID) && byID.has(pin.nextID)) {
+        applyPinToSession(session, pin.currentID, pin.nextID);
+      }
+    }
+  }
+
+  // Detect an explicit insertion or move immediately after currentID in the
+  // underlying queue (distinct from a tail append / radio top-up).
+  const activeCurrent = currentID || session.orderIDs[session.cursorIndex];
+  if (activeCurrent) {
+    const curQIdx = inputIDs.indexOf(activeCurrent);
+    const prevQIdx = session.inputIDs.indexOf(activeCurrent);
+    const nextInQ = curQIdx >= 0 ? inputIDs[curQIdx + 1] : undefined;
+    const prevNextInQ = prevQIdx >= 0 ? session.inputIDs[prevQIdx + 1] : undefined;
+    const isTailAppend =
+      prevQIdx === session.inputIDs.length - 1 &&
+      inputIDs.length > session.inputIDs.length &&
+      session.inputIDs.every((id, i) => inputIDs[i] === id);
+    if (nextInQ && nextInQ !== prevNextInQ && !isTailAppend) {
+      applyPinToSession(session, activeCurrent, nextInQ);
+    }
+  }
+
+  const added = queue.filter((item) => !session.seen.has(item.id)).map((item) => item.id);
+  if (added.length > 0) {
+    let split = Math.min(Math.max(0, session.cursorIndex), session.orderIDs.length - 1);
+    // Keep any unplayed explicitly pinned Play-next tracks directly after the
+    // current track in place rather than reshuffling them into a radio top-up.
+    while (
+      split + 1 < session.orderIDs.length &&
+      session.pinnedIDs.has(session.orderIDs[split + 1]!)
+    ) {
+      split++;
+    }
+    const playedPrefix = session.orderIDs.slice(0, split + 1);
+    const unplayedRemainder = [...session.orderIDs.slice(split + 1), ...added];
+    shuffleInPlace(unplayedRemainder, session.random);
+    session.orderIDs = [...playedPrefix, ...unplayedRemainder];
+    for (const id of added) session.seen.add(id);
+  }
+  session.inputIDs = inputIDs;
+  return session.orderIDs.map((id) => byID.get(id)!).filter(Boolean);
 }
 
 /**
@@ -92,7 +223,7 @@ function stepFrom<T extends { id: string }>(
   direction: 1 | -1,
 ): T[] {
   if (!queue || !id) return [];
-  const order = playOrder(queue, modes);
+  const order = playOrder(queue, modes, id);
   const index = order.findIndex((item) => item.id === id);
   if (index < 0) return [];
   const steps =

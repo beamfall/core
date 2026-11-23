@@ -10,6 +10,8 @@ import {
   fetchMedia,
   fetchMediaForEntity,
   fetchSourceItems,
+  fetchSubscriptionFollow,
+  setFollow,
 } from "@/lib/graphql";
 import { fetchMediaRows, type MediaRow } from "@/lib/graphql/browse";
 import type { EntityInfo, Layout, Section, SourceItem } from "@/lib/graphql/types";
@@ -40,6 +42,10 @@ vi.mock("@/lib/graphql", () => ({
   fetchMedia: vi.fn(),
   fetchMediaForEntity: vi.fn(),
   fetchSourceItems: vi.fn(),
+  fetchSubscriptionEntries: vi.fn(),
+  fetchSubscriptionFollow: vi.fn(),
+  setFollow: vi.fn(),
+  setFollowNewEntryRoute: vi.fn(),
 }));
 vi.mock("@/lib/graphql/browse", () => ({
   fetchMediaRow: vi.fn().mockResolvedValue(null),
@@ -1915,5 +1921,67 @@ describe("EntityPage rolled-up Media (CORE-3058)", () => {
     const grid = screen.getByRole("list", { name: "Appears in" });
     expect(within(grid).getByRole("link", { name: /A Whole/ })).toBeInTheDocument();
     expect(fetchSourceItems).not.toHaveBeenCalled();
+  });
+
+  it("shows Follow for an unfollowed feed show, reads back through subscriptionFollow on follow, and shows Play latest unplayed when followed (CORE-3248)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...entity,
+      id: "e1",
+      title: "Morning Notes",
+      archetype: "container",
+      audioForm: "feed",
+      subscriptionID: "sub-1",
+    });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      {
+        id: "ep-2",
+        kind: "media",
+        title: "Episode 2",
+        mediaClass: "audio",
+        engagement: { completed: false },
+      },
+      {
+        id: "ep-1",
+        kind: "media",
+        title: "Episode 1",
+        mediaClass: "audio",
+        engagement: { completed: true },
+      },
+    ]);
+    vi.mocked(fetchSubscriptionFollow)
+      .mockResolvedValueOnce({
+        id: "sub-1",
+        title: "Morning Notes",
+        followed: false,
+        newEntryRoute: "new",
+      })
+      .mockResolvedValueOnce({
+        id: "sub-1",
+        title: "Morning Notes",
+        followed: true,
+        newEntryRoute: "queue-end",
+      });
+    vi.mocked(setFollow).mockResolvedValue({
+      id: "sub-1",
+      title: "Morning Notes",
+      followed: true,
+      newEntryRoute: "new",
+    });
+
+    renderEntity();
+    const followButton = await screen.findByRole("button", { name: "Follow" });
+    expect(screen.queryByRole("button", { name: "Play latest unplayed" })).toBeNull();
+
+    await user.click(followButton);
+    expect(setFollow).toHaveBeenCalledWith("sub-1", true);
+    expect(fetchSubscriptionFollow).toHaveBeenCalledTimes(2);
+    expect(fetchSubscriptionFollow).toHaveBeenLastCalledWith("sub-1");
+
+    const playLatest = await screen.findByRole("button", { name: "Play latest unplayed" });
+    expect(screen.getByLabelText("New entries go to")).toHaveValue("queue-end");
+
+    await user.click(playLatest);
+    expect(screen.getByRole("status", { name: "player" })).toHaveTextContent("ep-2");
   });
 });

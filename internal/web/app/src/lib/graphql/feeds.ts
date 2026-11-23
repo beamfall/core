@@ -25,12 +25,18 @@ const FEED_SUBSCRIPTION_IDS_QUERY =
 const FOLLOW_FEED_MUTATION = `mutation FollowFeed($feedURL: String!, $libraryID: String, $downloadPolicy: String, $latestN: Int) { followFeed(feedURL: $feedURL, libraryID: $libraryID, downloadPolicy: $downloadPolicy, latestN: $latestN) { ${FEED_SUBSCRIPTION_FIELDS} } }`;
 const REFRESH_SUBSCRIPTION_MUTATION = `mutation RefreshSubscription($id: String!) { refreshSubscription(id: $id) { id title healthStatus lastErrorClass failingSince nextPollAt } }`;
 const SET_DOWNLOAD_POLICY_MUTATION = `mutation SetSubscriptionDownloadPolicy($id: String!, $downloadPolicy: String!, $latestN: Int, $confirmEverything: Boolean) { setSubscriptionDownloadPolicy(id: $id, downloadPolicy: $downloadPolicy, latestN: $latestN, confirmEverything: $confirmEverything) { ${FEED_SUBSCRIPTION_FIELDS} } }`;
+const SET_FOLLOW_MUTATION =
+  "mutation SetFollow($subscriptionID: String!, $on: Boolean!) { setFollow(subscriptionID: $subscriptionID, on: $on) { id title followed newEntryRoute } }";
 const SET_FOLLOW_NEW_ENTRY_ROUTE_MUTATION =
   "mutation SetFollowNewEntryRoute($subscriptionID: String!, $route: String!) { setFollowNewEntryRoute(subscriptionID: $subscriptionID, route: $route) { id title followed newEntryRoute } }";
 const SUBSCRIPTION_FOLLOW_QUERY =
   "query SubscriptionFollow($subscriptionID: String!) { subscriptionFollow(subscriptionID: $subscriptionID) { id title followed newEntryRoute } }";
 const SUBSCRIPTION_ENTRIES_QUERY =
   "query SubscriptionEntries($subscriptionID: String!) { subscriptionEntries(subscriptionID: $subscriptionID) { mediaID title publishedAt feedPosition enclosureLength downloadState availability played } }";
+const QUEUE_NEXT_MUTATION =
+  'mutation QueueNext($mediaIDs: [String!]!) { queueAddMany(mediaIDs: $mediaIDs, placement: "next") { currentEntryID } }';
+const QUEUE_ADD_POSITION_MUTATION =
+  "mutation QueueAddAt($mediaID: String!, $position: Int!) { queueAdd(mediaID: $mediaID, position: $position) { id } }";
 
 /** Search the activated plugins' feed directories. Adult Profile or manager device. */
 export async function searchFeeds(query: string): Promise<FeedSearchResult[]> {
@@ -133,4 +139,22 @@ export async function fetchSubscriptionFollow(subscriptionID: string): Promise<F
     subscriptionID,
   });
   return data.subscriptionFollow;
+}
+
+/** Follow or unfollow an existing Subscription for the calling Profile (CORE-3248). */
+export async function setFollow(subscriptionID: string, on: boolean): Promise<FollowInfo> {
+  const data = await graphql<{ setFollow: FollowInfo }>(SET_FOLLOW_MUTATION, {
+    subscriptionID,
+    on,
+  });
+  return data.setFollow;
+}
+
+/** Put one Media right after the current item of the Profile's play queue (CORE-3250). */
+export async function queuePlayNextMedia(mediaID: string, position?: number): Promise<void> {
+  if (position !== undefined) {
+    await graphql<{ queueAdd: unknown }>(QUEUE_ADD_POSITION_MUTATION, { mediaID, position });
+    return;
+  }
+  await graphql<{ queueAddMany: unknown }>(QUEUE_NEXT_MUTATION, { mediaIDs: [mediaID] });
 }

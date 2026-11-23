@@ -1,8 +1,8 @@
-import { Check, Play, RotateCcw } from "lucide-react";
+import { Check, ListPlus, Play, RotateCcw } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
-import { type SubscriptionEntry, setWatched } from "@/lib/graphql";
+import { queuePlayNextMedia, type SubscriptionEntry, setWatched } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import type { StringKey } from "@/strings";
@@ -17,8 +17,13 @@ import {
   parseWireTime,
 } from "../../lib/feeds";
 import { mediaPath } from "../../lib/mediaAddress";
+import { feedEntryLinkState, mediaLinkState } from "../../lib/mediaDetail";
 import { playState } from "../../lib/trackList";
-import type { PlayQueueItem } from "../../lib/watchQueue";
+import {
+  dispatchPlayNextToActivePlayer,
+  type PlayQueueItem,
+  stagePlayNext,
+} from "../../lib/watchQueue";
 import { preloadPlayer } from "../../player/preload";
 
 const SELECT_CLASS =
@@ -41,7 +46,17 @@ type Notice = { kind: "status" | "alert"; text: string } | null;
 // sorted. Play goes through the ordinary watch path for the entry's Media id,
 // downloaded or not (a not-downloaded entry streams), with the visible list as
 // the queue; Mark played toggles the Profile's played state.
-export function FeedCatalogue({ entries }: { entries: readonly SubscriptionEntry[] }) {
+export function FeedCatalogue({
+  entries,
+  subscriptionID,
+  showTitle,
+  showPath,
+}: {
+  entries: readonly SubscriptionEntry[];
+  subscriptionID?: string;
+  showTitle?: string;
+  showPath?: string;
+}) {
   const t = useT();
   const locale = useDisplayLocale();
   const identity = useViewerIdentity();
@@ -63,7 +78,27 @@ export function FeedCatalogue({ entries }: { entries: readonly SubscriptionEntry
   const dates = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "medium" }), [locale]);
 
   function play(item: PlayQueueItem) {
-    navigate(mediaPath("watch", item.id), { state: playState(identity, queue, item) });
+    navigate(mediaPath("watch", item.id), {
+      state: playState(identity, queue, item, { consumeStaged: true }),
+    });
+  }
+
+  async function playNext(item: PlayQueueItem) {
+    if (pending.has(item.id)) return;
+    settle(item.id, true);
+    try {
+      const nextItem: PlayQueueItem = { ...item, mediaClass: "audio" };
+      const handled = await dispatchPlayNextToActivePlayer(nextItem, identity);
+      if (!handled) {
+        stagePlayNext(identity, nextItem);
+        await queuePlayNextMedia(item.id);
+      }
+      setNotice({ kind: "status", text: t("feedsQueuedNext", { title: item.title }) });
+    } catch {
+      setNotice({ kind: "alert", text: t("feedsActionFailed") });
+    } finally {
+      settle(item.id, false);
+    }
   }
 
   // Each row tracks its own request, so acting on another row never
@@ -165,7 +200,36 @@ export function FeedCatalogue({ entries }: { entries: readonly SubscriptionEntry
                   <Play aria-hidden />
                 </button>
                 <div className={`flex min-w-0 flex-1 flex-col ${entry.played ? "opacity-60" : ""}`}>
-                  <span className="break-words font-medium">{item.title}</span>
+                  <Link
+                    to={mediaPath("media", entry.mediaID)}
+                    state={{
+                      ...mediaLinkState(
+                        {
+                          id: entry.mediaID,
+                          kind: "media",
+                          title: item.title,
+                          mediaClass: "audio",
+                          engagement: { completed: entry.played },
+                        },
+                        identity,
+                      ),
+                      ...playState(identity, queue, item),
+                      ...feedEntryLinkState(
+                        {
+                          mediaID: entry.mediaID,
+                          subscriptionID,
+                          showTitle,
+                          showPath,
+                          availability: entry.availability,
+                          downloadState: entry.downloadState,
+                        },
+                        identity,
+                      ),
+                    }}
+                    className="break-words font-medium hover:underline"
+                  >
+                    {item.title}
+                  </Link>
                   <span className="text-sm text-[var(--text-muted)]">
                     {[published && dates.format(published), size, entry.played && t("feedsPlayed")]
                       .filter(Boolean)
@@ -178,6 +242,15 @@ export function FeedCatalogue({ entries }: { entries: readonly SubscriptionEntry
                 >
                   {t(availability)}
                 </Badge>
+                <button
+                  type="button"
+                  className="bf-row-play"
+                  aria-label={t("feedsPlayNextEntry", { title: item.title })}
+                  disabled={busy}
+                  onClick={() => void playNext(item)}
+                >
+                  <ListPlus aria-hidden />
+                </button>
                 <button
                   type="button"
                   className="bf-row-play"

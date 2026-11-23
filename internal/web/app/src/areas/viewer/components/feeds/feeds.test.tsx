@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api";
 import {
   type FeedSubscription,
   followFeed,
+  queuePlayNextMedia,
   refreshSubscription,
   type SubscriptionEntry,
   type SubscriptionHealth,
@@ -17,6 +18,12 @@ import {
 import { I18nProvider } from "@/lib/i18n";
 import { nodePath } from "@/lib/nodePath";
 import { asFeedURL, catalogueView, formatBytes, isForbidden, isRateLimited } from "../../lib/feeds";
+import {
+  insertQueueNext,
+  type PlayQueueItem,
+  resetPlayNextForTest,
+  setActivePlayNextHandler,
+} from "../../lib/watchQueue";
 import { FeedCatalogue } from "./FeedCatalogue";
 import { FeedFollowPanel } from "./FeedFollowPanel";
 import { FeedHealth } from "./FeedHealth";
@@ -31,6 +38,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => {
     ...actual,
     searchFeeds: vi.fn(),
     followFeed: vi.fn(),
+    queuePlayNextMedia: vi.fn(),
     refreshSubscription: vi.fn(),
     setSubscriptionDownloadPolicy: vi.fn(),
     setWatched: vi.fn(),
@@ -41,9 +49,11 @@ vi.mock("@/lib/session", () => ({ useViewerIdentity: () => "viewer-1" }));
 beforeEach(() => {
   vi.mocked(searchFeeds).mockReset();
   vi.mocked(followFeed).mockReset();
+  vi.mocked(queuePlayNextMedia).mockReset();
   vi.mocked(refreshSubscription).mockReset();
   vi.mocked(setSubscriptionDownloadPolicy).mockReset();
   vi.mocked(setWatched).mockReset();
+  resetPlayNextForTest();
 });
 afterEach(cleanup);
 
@@ -495,5 +505,132 @@ describe("FeedCatalogue", () => {
       catalogueView(entries, "all", sort).map((item) => item.mediaID);
     expect(ids("newest")).toEqual(["jan-3", "jan-1", "undated"]);
     expect(ids("oldest")).toEqual(["undated", "jan-1", "jan-3"]);
+  });
+
+  it("links each row title to /media/:id with its show and availability (CORE-3249)", async () => {
+    const user = userEvent.setup();
+    const entries = [
+      entry({
+        mediaID: "m-1",
+        title: "First Episode",
+        feedPosition: 0,
+        availability: "downloaded",
+        downloadState: "downloaded",
+      }),
+    ];
+    wrap(
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <FeedCatalogue
+              entries={entries}
+              subscriptionID="sub-1"
+              showTitle="Morning Notes"
+              showPath="/n/library-lib-1/feeds/sub-1"
+            />
+          }
+        />
+        <Route path="*" element={<Where />} />
+      </Routes>,
+    );
+
+    const link = screen.getByRole("link", { name: "First Episode" });
+    expect(link).toHaveAttribute("href", "/media/m-1");
+    await user.click(link);
+    const where = screen.getByTestId("where").textContent ?? "";
+    expect(where.startsWith("/media/m-1|")).toBe(true);
+    const state = JSON.parse(where.slice(where.indexOf("|") + 1));
+    expect(state.feedEntryPreview.entry).toMatchObject({
+      mediaID: "m-1",
+      subscriptionID: "sub-1",
+      showTitle: "Morning Notes",
+      showPath: "/n/library-lib-1/feeds/sub-1",
+      availability: "downloaded",
+    });
+  });
+
+  it("inserts Play next after the currently playing item during a catalogue-started session (CORE-3250)", async () => {
+    const user = userEvent.setup();
+    const entries = [
+      entry({
+        mediaID: "m-1",
+        title: "First",
+        feedPosition: 0,
+        publishedAt: "2026-11-03T12:00:00Z",
+      }),
+      entry({
+        mediaID: "m-2",
+        title: "Second",
+        feedPosition: 1,
+        publishedAt: "2026-11-02T12:00:00Z",
+      }),
+      entry({
+        mediaID: "m-3",
+        title: "Third",
+        feedPosition: 2,
+        publishedAt: "2026-11-01T12:00:00Z",
+      }),
+    ];
+    let activeQueue: PlayQueueItem[] = [
+      { id: "m-1", title: "First", mediaClass: "audio" },
+      { id: "m-2", title: "Second", mediaClass: "audio" },
+      { id: "m-3", title: "Third", mediaClass: "audio" },
+    ];
+    setActivePlayNextHandler((item) => {
+      activeQueue = insertQueueNext(activeQueue, "m-1", "First", item);
+      return true;
+    });
+
+    wrap(
+      <Routes>
+        <Route path="/" element={<FeedCatalogue entries={entries} />} />
+        <Route path="*" element={<Where />} />
+      </Routes>,
+    );
+    await user.click(screen.getByRole("button", { name: "Play Third next" }));
+
+    expect(activeQueue.map((item) => item.id)).toEqual(["m-1", "m-3", "m-2"]);
+    expect(screen.getByRole("status")).toHaveTextContent("Third plays next.");
+    expect(queuePlayNextMedia).not.toHaveBeenCalled();
+  });
+
+  it("keeps staged Play next items across FeedCatalogue link renders until Play is clicked (CORE-3250)", async () => {
+    const user = userEvent.setup();
+    const entries = [
+      entry({
+        mediaID: "m-1",
+        title: "First",
+        feedPosition: 0,
+        publishedAt: "2026-11-03T12:00:00Z",
+      }),
+      entry({
+        mediaID: "m-2",
+        title: "Second",
+        feedPosition: 1,
+        publishedAt: "2026-11-02T12:00:00Z",
+      }),
+      entry({
+        mediaID: "m-3",
+        title: "Third",
+        feedPosition: 2,
+        publishedAt: "2026-11-01T12:00:00Z",
+      }),
+    ];
+
+    wrap(
+      <Routes>
+        <Route path="/" element={<FeedCatalogue entries={entries} />} />
+        <Route path="*" element={<Where />} />
+      </Routes>,
+    );
+    await user.click(screen.getByRole("button", { name: "Play Third next" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Third plays next.");
+
+    await user.click(screen.getByRole("button", { name: "Play First" }));
+    const where = screen.getByTestId("where").textContent ?? "";
+    expect(where.startsWith("/watch/m-1|")).toBe(true);
+    const state = JSON.parse(where.slice(where.indexOf("|") + 1));
+    expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["m-1", "m-3", "m-2"]);
   });
 });

@@ -4245,6 +4245,26 @@ describe("PlayerPage in a Watch Party (CORE-1766)", () => {
     );
     expect(vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onNextInQueue).toBeTypeOf("function");
   });
+
+  it("inserts Play next after the currently playing item in a catalogue-started session (CORE-3250)", async () => {
+    const { dispatchPlayNextToActivePlayer } = await import("../lib/watchQueue");
+    renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),
+      { title: "Alpha", queue, queueIdentity: "viewer-1" },
+    );
+    expect(vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.nextTitle).toBe("After");
+
+    await act(async () => {
+      const handled = await dispatchPlayNextToActivePlayer(
+        { id: "media-inserted", title: "Inserted", mediaClass: "audio" },
+        "viewer-1",
+      );
+      expect(handled).toBe(true);
+    });
+
+    const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+    expect(props?.nextTitle).toBe("Inserted");
+  });
 });
 
 describe("PlayerPage autoskip.ad and container skip interval", () => {

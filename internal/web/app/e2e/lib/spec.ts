@@ -7,6 +7,7 @@ import { expect, type Page } from "@playwright/test";
 export interface HarnessState {
   baseURL: string;
   adminAvailable: boolean;
+  dataDir?: string;
 }
 
 export function harnessAuthDir(): string {

@@ -6,7 +6,16 @@ import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
-import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
+import {
+  type FollowInfo,
+  fetchEntity,
+  fetchMediaForEntity,
+  fetchSubscriptionEntries,
+  fetchSubscriptionFollow,
+  type SubscriptionEntry,
+  setFollow,
+  setFollowNewEntryRoute,
+} from "@/lib/graphql";
 import type { EntityInfo, Layout, Section, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
@@ -22,6 +31,7 @@ import { CastRow } from "../components/CastRow";
 import { ContainerMediaRows } from "../components/ContainerMediaRows";
 import { DetailBackdrop, DetailOverview } from "../components/DetailStage";
 import { EntityMediaBrowse } from "../components/EntityMediaBrowse";
+import { FeedRouteSelect } from "../components/feeds/FeedRouteSelect";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
 import { MediaItemCard } from "../components/MediaItemCard";
@@ -63,6 +73,7 @@ import {
   withItemCount,
 } from "../lib/entityHero";
 import { entityLinkState, readEntityPreview } from "../lib/entityPreview";
+import { catalogueView } from "../lib/feeds";
 import {
   entityPeople,
   layoutListsOnlyMedia,
@@ -321,6 +332,90 @@ export function EntityPage() {
   );
   const [similar, setSimilar] = useState<{ id: string; items: SourceItem[] } | null>(null);
   const similarItems = similar?.id === entityId ? similar.items : [];
+  // The Entity read carries related-Entity engagement, so it reloads with it.
+  const engagementEpoch = useEngagementEpoch();
+  const feedSubscriptionID =
+    entity?.id === entityId
+      ? entity?.audioForm === "feed"
+        ? (entity.subscriptionID ?? "")
+        : (entity?.subscriptionID ?? "")
+      : "";
+  const [feedFollow, setFeedFollow] = useState<{ id: string; info: FollowInfo } | null>(null);
+  const [feedEntries, setFeedEntries] = useState<{
+    id: string;
+    items: SubscriptionEntry[];
+  } | null>(null);
+  const [followingFeed, setFollowingFeed] = useState(false);
+  const currentFollow =
+    feedSubscriptionID && feedFollow?.id === feedSubscriptionID ? feedFollow.info : null;
+  const currentFeedEntries =
+    feedSubscriptionID && feedEntries?.id === feedSubscriptionID ? feedEntries.items : null;
+  const feedSortedEntries = useMemo(
+    () => (currentFeedEntries ? catalogueView(currentFeedEntries, "all", "newest") : []),
+    [currentFeedEntries],
+  );
+  const feedLatestEntry = useMemo(
+    () => feedSortedEntries.find((entry) => !entry.played) ?? feedSortedEntries[0] ?? null,
+    [feedSortedEntries],
+  );
+  useEffect(() => {
+    if (!feedSubscriptionID) return;
+    let alive = true;
+    Promise.resolve(fetchSubscriptionFollow(feedSubscriptionID))
+      .then((info) => {
+        if (alive && info) setFeedFollow({ id: feedSubscriptionID, info });
+      })
+      .catch(() => {});
+    Promise.resolve(fetchSubscriptionEntries?.(feedSubscriptionID))
+      .then((items) => {
+        if (alive && Array.isArray(items)) setFeedEntries({ id: feedSubscriptionID, items });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [feedSubscriptionID, identity, engagementEpoch]);
+
+  async function followShow() {
+    if (!feedSubscriptionID || followingFeed) return;
+    setFollowingFeed(true);
+    try {
+      const updated = await setFollow?.(feedSubscriptionID, true);
+      const refreshed = await Promise.resolve(fetchSubscriptionFollow(feedSubscriptionID)).catch(
+        () => null,
+      );
+      setFeedFollow({
+        id: feedSubscriptionID,
+        info: refreshed ??
+          updated ?? {
+            id: feedSubscriptionID,
+            title: entity?.title ?? previewTitle,
+            followed: true,
+            newEntryRoute: "new",
+          },
+      });
+    } catch {
+      // Follow state remains unfollowed so the listener can try again.
+    } finally {
+      setFollowingFeed(false);
+    }
+  }
+
+  function playFeedLatest() {
+    if (feedLatestEntry) {
+      const queue = feedSortedEntries.map((entry) => ({
+        id: entry.mediaID,
+        title: entry.title || t("feedsUntitled"),
+      }));
+      const target = {
+        id: feedLatestEntry.mediaID,
+        title: feedLatestEntry.title || t("feedsUntitled"),
+      };
+      navigate(mediaPath("watch", target.id), { state: playState(identity, queue, target) });
+      return;
+    }
+    playNext();
+  }
   // A detail Layout that only lists a container's own video Media renders as
   // rows that open each item's detail page (CORE-2510).
   const listsOwnMedia = !!detailLayout && layoutListsOnlyMedia(detailLayout) && listens === false;
@@ -329,8 +424,6 @@ export function EntityPage() {
     ? displayString(detailLayout.sections[0]?.title, displayLocale)
     : "";
 
-  // The Entity read carries related-Entity engagement, so it reloads with it.
-  const engagementEpoch = useEngagementEpoch();
   useEffect(() => {
     if (!entityId) return;
     let alive = true;
@@ -634,63 +727,118 @@ export function EntityPage() {
                   </ul>
                 )}
                 {!entity && <Skeleton aria-hidden className="bf-shimmer h-10 w-80 max-w-full" />}
-                {nextUp && (
-                  <div className="bf-detail-actions">
-                    {/* The one accent-filled action: the next-up child. */}
-                    <button
-                      type="button"
-                      className={`${buttonVariants({ size: "lg" })} bf-detail-play`}
-                      // The name starts with the visible label, so voice control
-                      // finds the button by what it shows in every locale, then
-                      // adds the title it plays.
-                      aria-label={
-                        nextUpOrdinalText
-                          ? `${t(nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", { title: nextUpOrdinalText })}, ${nextUp.item.title}`
-                          : t(nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", {
-                              title: nextUp.item.title,
-                            })
-                      }
-                      onClick={playNext}
-                      onPointerEnter={preloadPlayer}
-                      onFocus={preloadPlayer}
-                    >
-                      <Play aria-hidden />
-                      {nextUpOrdinalText
-                        ? t(nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", {
-                            title: nextUpOrdinalText,
-                          })
-                        : nextUp.resume
-                          ? t("mediaDetailResume")
-                          : t("play")}
-                    </button>
-                    {listeningTracks && listeningTracks.length > 1 && (
-                      <button
-                        type="button"
-                        className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
-                        onClick={shuffleAll}
-                        onPointerEnter={preloadPlayer}
-                        onFocus={preloadPlayer}
-                      >
-                        <Shuffle aria-hidden />
-                        {t("libraryBrowseShuffle")}
-                      </button>
+                {feedSubscriptionID
+                  ? currentFollow && (
+                      <div className="bf-detail-actions">
+                        {currentFollow.followed ? (
+                          <>
+                            <button
+                              type="button"
+                              className={`${buttonVariants({ size: "lg" })} bf-detail-play`}
+                              disabled={!feedLatestEntry && !nextUp}
+                              onClick={playFeedLatest}
+                              onPointerEnter={preloadPlayer}
+                              onFocus={preloadPlayer}
+                            >
+                              <Play aria-hidden />
+                              {t("feedsPlayLatestUnplayed")}
+                            </button>
+                            <FeedRouteSelect
+                              route={currentFollow.newEntryRoute || "new"}
+                              onChange={async (route) => {
+                                const saved = await setFollowNewEntryRoute(currentFollow.id, route);
+                                setFeedFollow((prev) =>
+                                  prev?.id === feedSubscriptionID && prev.info.id === saved.id
+                                    ? { id: feedSubscriptionID, info: saved }
+                                    : prev,
+                                );
+                              }}
+                            />
+                            {(feedLatestEntry || nextUp) && (
+                              <p className="bf-entity-next">
+                                <span className="bf-entity-ondeck">{t("entityDetailUpNext")}</span>
+                                <span>
+                                  {feedLatestEntry
+                                    ? feedLatestEntry.title || t("feedsUntitled")
+                                    : nextUp
+                                      ? nextUpName(nextUp.item, displayLocale)
+                                      : ""}
+                                </span>
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`${buttonVariants({ size: "lg" })} bf-detail-play`}
+                            disabled={followingFeed}
+                            onClick={() => void followShow()}
+                          >
+                            {t("feedsFollow")}
+                          </button>
+                        )}
+                      </div>
+                    )
+                  : nextUp && (
+                      <div className="bf-detail-actions">
+                        {/* The one accent-filled action: the next-up child. */}
+                        <button
+                          type="button"
+                          className={`${buttonVariants({ size: "lg" })} bf-detail-play`}
+                          // The name starts with the visible label, so voice control
+                          // finds the button by what it shows in every locale, then
+                          // adds the title it plays.
+                          aria-label={
+                            nextUpOrdinalText
+                              ? `${t(nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", { title: nextUpOrdinalText })}, ${nextUp.item.title}`
+                              : t(
+                                  nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel",
+                                  {
+                                    title: nextUp.item.title,
+                                  },
+                                )
+                          }
+                          onClick={playNext}
+                          onPointerEnter={preloadPlayer}
+                          onFocus={preloadPlayer}
+                        >
+                          <Play aria-hidden />
+                          {nextUpOrdinalText
+                            ? t(nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", {
+                                title: nextUpOrdinalText,
+                              })
+                            : nextUp.resume
+                              ? t("mediaDetailResume")
+                              : t("play")}
+                        </button>
+                        {listeningTracks && listeningTracks.length > 1 && (
+                          <button
+                            type="button"
+                            className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
+                            onClick={shuffleAll}
+                            onPointerEnter={preloadPlayer}
+                            onFocus={preloadPlayer}
+                          >
+                            <Shuffle aria-hidden />
+                            {t("libraryBrowseShuffle")}
+                          </button>
+                        )}
+                        {/* Radio plays on from this Entity with related music (CORE-2772). */}
+                        {isAudio && entity && <StartRadioButton entityID={entity.id} />}
+                        <p className="bf-entity-next">
+                          <span className="bf-entity-ondeck">
+                            {t(isAudio ? "entityDetailUpNext" : "entityDetailOnDeck")}
+                          </span>
+                          <span>
+                            {isAudio
+                              ? nextUpName(nextUp.item, displayLocale)
+                              : t("entityDetailNextUp", {
+                                  title: nextUpName(nextUp.item, displayLocale),
+                                })}
+                          </span>
+                        </p>
+                      </div>
                     )}
-                    {/* Radio plays on from this Entity with related music (CORE-2772). */}
-                    {isAudio && entity && <StartRadioButton entityID={entity.id} />}
-                    <p className="bf-entity-next">
-                      <span className="bf-entity-ondeck">
-                        {t(isAudio ? "entityDetailUpNext" : "entityDetailOnDeck")}
-                      </span>
-                      <span>
-                        {isAudio
-                          ? nextUpName(nextUp.item, displayLocale)
-                          : t("entityDetailNextUp", {
-                              title: nextUpName(nextUp.item, displayLocale),
-                            })}
-                      </span>
-                    </p>
-                  </div>
-                )}
                 {entity && (
                   <ItemActions
                     target={{ entityID: entityId }}

@@ -4,10 +4,19 @@ import {
   Suspense,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { queuePlayNextMedia } from "@/lib/graphql";
+import { MUSIC_QUEUE_PARAM } from "../lib/musicQueue";
+import {
+  insertQueueNext,
+  type PlayQueueItem,
+  readPlayerNavState,
+  setActivePlayNextHandler,
+} from "../lib/watchQueue";
 import { LazyHostedPlayer } from "./LazyPlayerPage";
 import "./mini-player.css";
 
@@ -35,6 +44,8 @@ export interface PlayerHostControls {
   detach: () => void;
   /** Ends playback (a pre-play queue starting, the mini player's Stop, a terminal block). */
   stop: () => void;
+  /** Inserts an item immediately after the currently playing item (CORE-3250). */
+  playNext?: (item: PlayQueueItem, identity: string | null) => Promise<boolean>;
 }
 
 /** What the host hands the player it mounts. */
@@ -60,24 +71,64 @@ export function PlayerHost({ children }: { children: ReactNode }) {
   const [entry, setEntry] = useState<WatchEntry | null>(null);
   const [attached, setAttached] = useState(false);
   const audioRef = useRef(false);
+  const entryRef = useRef<WatchEntry | null>(null);
+  entryRef.current = entry;
 
   const attach = useCallback((next: WatchEntry) => {
+    entryRef.current = next;
     setEntry(next);
     setAttached(true);
   }, []);
   const stop = useCallback(() => {
     audioRef.current = false;
+    entryRef.current = null;
     setEntry(null);
     setAttached(false);
   }, []);
   const detach = useCallback(() => {
     setAttached(false);
-    if (!audioRef.current) setEntry(null);
+    if (!audioRef.current) {
+      entryRef.current = null;
+      setEntry(null);
+    }
   }, []);
   const onAudioChange = useCallback((audio: boolean) => {
     audioRef.current = audio;
   }, []);
-  const controls = useMemo(() => ({ attach, detach, stop }), [attach, detach, stop]);
+  const playNext = useCallback(async (item: PlayQueueItem, identity: string | null) => {
+    const current = entryRef.current;
+    if (!current) return false;
+    const isServerQueue = new URLSearchParams(current.search).has(MUSIC_QUEUE_PARAM);
+    if (isServerQueue) {
+      await queuePlayNextMedia(item.id);
+      return true;
+    }
+    const navState = readPlayerNavState(current.state, identity);
+    const nextQueue = insertQueueNext(navState.queue, current.mediaId, navState.title, item);
+    const baseState = current.state && typeof current.state === "object" ? current.state : {};
+    const updated: WatchEntry = {
+      ...current,
+      state: {
+        ...baseState,
+        ...navState,
+        queue: nextQueue,
+        ...(identity ? { queueIdentity: identity } : {}),
+      },
+    };
+    entryRef.current = updated;
+    setEntry(updated);
+    return true;
+  }, []);
+
+  useEffect(() => {
+    setActivePlayNextHandler(playNext);
+    return () => setActivePlayNextHandler(null);
+  }, [playNext]);
+
+  const controls = useMemo(
+    () => ({ attach, detach, stop, playNext }),
+    [attach, detach, stop, playNext],
+  );
   const docked = !!entry && !attached;
 
   return (
