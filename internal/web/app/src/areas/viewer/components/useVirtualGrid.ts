@@ -212,7 +212,8 @@ function windowRows(
   // on screen: the cap bounds off-screen work and must never leave a visible
   // card unmounted (interpolating a capped window across a short scroll range
   // skips rows outright).
-  if (lastRow - firstRow > maxRows) return { startRow: firstRow, endRow: Math.min(totalRows, lastRow) };
+  if (lastRow - firstRow > maxRows)
+    return { startRow: firstRow, endRow: Math.min(totalRows, lastRow) };
   const startRow = Math.max(0, firstRow - VIRTUAL_GRID_OVERSCAN_ROWS, lastRow - maxRows);
   const endRow = Math.min(totalRows, lastRow + VIRTUAL_GRID_OVERSCAN_ROWS, startRow + maxRows);
   return { startRow, endRow };
@@ -275,14 +276,7 @@ function variableGridWindow(
   let lastRow = firstRow + 1;
   while (lastRow < totalRows && offsets[lastRow] < bottom) lastRow += 1;
 
-  const { startRow, endRow } = windowRows(
-    totalRows,
-    columns,
-    maxItems,
-    maxTop,
-    firstRow,
-    lastRow,
-  );
+  const { startRow, endRow } = windowRows(totalRows, columns, maxItems, maxTop, firstRow, lastRow);
   const startIndex = startRow * columns;
   return {
     startIndex,

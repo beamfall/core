@@ -263,8 +263,12 @@ describe("useVirtualGrid", () => {
     const pendingB = document.createElement("li");
     pendingB.setAttribute("data-pending", "true");
     // CSS grid stretches all items in the mixed row to the pending card's height.
-    const rectA = vi.spyOn(realA, "getBoundingClientRect").mockReturnValue({ height: 400 } as DOMRect);
-    const rectB = vi.spyOn(realB, "getBoundingClientRect").mockReturnValue({ height: 400 } as DOMRect);
+    const rectA = vi
+      .spyOn(realA, "getBoundingClientRect")
+      .mockReturnValue({ height: 400 } as DOMRect);
+    const rectB = vi
+      .spyOn(realB, "getBoundingClientRect")
+      .mockReturnValue({ height: 400 } as DOMRect);
     vi.spyOn(pendingA, "getBoundingClientRect").mockReturnValue({ height: 400 } as DOMRect);
     vi.spyOn(pendingB, "getBoundingClientRect").mockReturnValue({ height: 400 } as DOMRect);
     grid.append(realA, realB, pendingA, pendingB);
@@ -418,7 +422,12 @@ describe("useVirtualGrid", () => {
     }
     try {
       const view = renderHook(() =>
-        useVirtualGrid({ gridRef: { current: grid }, itemCount: items.length, enabled: true, variableRows: items }),
+        useVirtualGrid({
+          gridRef: { current: grid },
+          itemCount: items.length,
+          enabled: true,
+          variableRows: items,
+        }),
       );
       for (const offset of [0, 1]) {
         scroll = offset;
@@ -454,7 +463,12 @@ describe("useVirtualGrid", () => {
     try {
       for (const variableRows of [items, undefined]) {
         const view = renderHook(() =>
-          useVirtualGrid({ gridRef: { current: grid }, itemCount: items.length, enabled: true, variableRows }),
+          useVirtualGrid({
+            gridRef: { current: grid },
+            itemCount: items.length,
+            enabled: true,
+            variableRows,
+          }),
         );
         await waitFor(() => {
           expect(view.result.current?.startIndex).toBe(0);
