@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
-import { fetchFolderTree, fetchLibraries } from "@/lib/graphql";
+import { fetchFolderTree, fetchLibraries, fetchPathPicker } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { batchRenameManagedPaths, undoBatchRename } from "../lib/powertools";
 import { RenamePage } from "./RenamePage";
@@ -175,5 +175,52 @@ describe("RenamePage", () => {
     expect(undoBtn).toBeEnabled();
     await user.click(undoBtn);
     await waitFor(() => expect(undoBatchRename).toHaveBeenCalledWith("batch-7"));
+  });
+
+  it("browses source folders with incomingFolder so library folders are selectable", async () => {
+    vi.mocked(fetchPathPicker).mockImplementation(async ({ role, path }) => ({
+      runtime: "bare",
+      roles: ["libraryRoot", "incomingFolder"],
+      role,
+      purposeKey: `pathPicker.${role}`,
+      previewTimeoutMs: 75,
+      maxPreviewEntries: 5,
+      roots: [{ name: "srv", path: "/srv", entryClass: "ordinary" }],
+      entries: path
+        ? [
+            {
+              name: "Movies",
+              path,
+              kind: "folder",
+              accessError: "none",
+              entryClass: "ordinary",
+              selectable: role !== "libraryRoot",
+              reasonCode: role === "libraryRoot" ? "overlaps-library-root" : undefined,
+              mediaCount: 2,
+              previewTimeoutMs: 75,
+              maxPreviewEntries: 5,
+              truncated: false,
+              children: [],
+            },
+          ]
+        : [],
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("Batch rename");
+
+    await user.type(screen.getByLabelText("Folder"), "/srv/Movies");
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+
+    const browser = await screen.findByRole("group", { name: "Folder browser" });
+    const useBtn = await within(browser).findByRole("button", { name: "Use this folder" });
+    expect(useBtn).toBeEnabled();
+    expect(fetchPathPicker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "incomingFolder",
+        libraryID: "library-local",
+        path: "/srv/Movies",
+      }),
+    );
   });
 });

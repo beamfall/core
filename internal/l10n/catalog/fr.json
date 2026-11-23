@@ -14,6 +14,7 @@
   "library_root.cant_open": "Le serveur ne peut pas ouvrir {path}.",
   "library_root.missing": "Le dossier {path} n’existe pas sur le serveur.",
   "library_root.not_folder": "{path} est un fichier, pas un dossier.",
+  "library_root.overlaps": "Le dossier {path} fait déjà partie d’une bibliothèque.",
   "library_root.unreadable": "Le serveur n’a pas l’autorisation de lire {path}.",
   "manifest.shelf.next_up": "À suivre",
   "media_relation.invalid_input": "Vérifiez le média, le type d’entité, la relation et les attributs.",

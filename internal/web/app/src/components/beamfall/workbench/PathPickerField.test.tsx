@@ -326,6 +326,50 @@ describe("PathPickerField", () => {
     expect(screen.getByLabelText("libraryRoot path")).toHaveValue("/elsewhere");
   });
 
+  it("explains an overlapping library folder and keeps subfolders browsable", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchPathPicker).mockImplementation(({ role, path }) => {
+      if (!path) return Promise.resolve(answer(role));
+      if (path === "/mnt/user") {
+        return Promise.resolve({
+          ...answer(role, path),
+          entries: [
+            entry(path, {
+              selectable: false,
+              reasonCode: "overlaps-library-root",
+              children: tree["/mnt/user"],
+            }),
+          ],
+        });
+      }
+      if (path === "/mnt/user/tv") {
+        return Promise.resolve({
+          ...answer(role, path),
+          entries: [
+            entry(path, {
+              selectable: false,
+              reasonCode: "overlaps-library-root",
+              children: [],
+            }),
+          ],
+        });
+      }
+      return Promise.resolve(answer(role, path));
+    });
+    renderField("libraryRoot", { libraryID: "lib-films" });
+
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+    await user.click(await row("/mnt"));
+    await user.click(await row("user"));
+
+    expect(
+      await within(browser()).findByText("This folder is already part of a library."),
+    ).toBeVisible();
+    expect(within(browser()).getByRole("button", { name: "Use this folder" })).toBeDisabled();
+    await user.click(await row(/movies/));
+    expect(within(browser()).getByRole("button", { name: "Use this folder" })).toBeEnabled();
+  });
+
   it("explains a folder the server cannot find", async () => {
     const user = userEvent.setup();
     renderField();

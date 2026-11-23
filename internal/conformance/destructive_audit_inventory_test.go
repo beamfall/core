@@ -46,6 +46,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"CapabilityStates":                      {},
 	"ChannelByID":                           {},
 	"Channels":                              {},
+	"CheckLibraryRootsOverlap":              {},
 	"ClearMutes":                            {},
 	"ClearProfileCertificationCeiling":      {},
 	"ClearUnmatched":                        {},

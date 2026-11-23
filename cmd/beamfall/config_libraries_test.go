@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -130,8 +131,8 @@ func TestApplyConfigOfflineAddsRootsWithoutRemoving(t *testing.T) {
 
 func TestApplyConfigOfflineMatchesTitleCaseSensitively(t *testing.T) {
 	dataDir := offlineConfigDataDir(t)
-	root := t.TempDir()
 	for _, title := range []string{"Music", "music"} {
+		root := t.TempDir()
 		if _, err := applyOffline(t, dataDir, libraryDoc("2", libraryEntry(title, "music", root))); err != nil {
 			t.Fatal(err)
 		}
@@ -244,5 +245,65 @@ func TestParseConfigDocumentRejectsInvalidLibraries(t *testing.T) {
 				t.Fatalf("parseConfigDocument accepted invalid document: %s", doc)
 			}
 		})
+	}
+}
+
+func TestApplyConfigOfflineRefusesOverlappingLibraryRoots(t *testing.T) {
+	dataDir := offlineConfigDataDir(t)
+	before := exportOffline(t, dataDir).BackgroundWorkers
+	shared := filepath.Join(t.TempDir(), "media")
+	doc := libraryDoc(strconv.Itoa(before+3),
+		libraryEntry("Music", "music", shared),
+		libraryEntry("Films", "music", filepath.Join(shared, "films")))
+
+	if _, err := applyOffline(t, dataDir, doc); err == nil {
+		t.Fatal("apply-config accepted two libraries with overlapping folders")
+	}
+	if got := len(liveLibraries(t, dataDir)); got != 0 {
+		t.Fatalf("overlapping apply wrote %d libraries before refusing, want 0", got)
+	}
+	if got := exportOffline(t, dataDir).BackgroundWorkers; got != before {
+		t.Fatalf("overlapping apply changed background workers %d -> %d before refusing", before, got)
+	}
+}
+
+// recordingConfigBackend stands in for a remote server: it reports one live
+// Library and records the writes apply issues.
+type recordingConfigBackend struct {
+	live   configLiveLibrary
+	writes []string
+}
+
+func (b *recordingConfigBackend) snapshot(context.Context) (configSnapshot, error) {
+	return configSnapshot{Plugins: []configPluginDocItem{{ID: "music", Active: true}}, Libraries: []configLiveLibrary{b.live}}, nil
+}
+
+func (b *recordingConfigBackend) setBackgroundWorkers(context.Context, int) error { return nil }
+
+func (b *recordingConfigBackend) setPluginActive(context.Context, string, bool) error { return nil }
+
+func (b *recordingConfigBackend) createLibrary(_ context.Context, lib configLibraryDocItem) error {
+	b.writes = append(b.writes, "create "+lib.Title)
+	return nil
+}
+
+func (b *recordingConfigBackend) setLibraryRoots(context.Context, string, []string) error {
+	return nil
+}
+
+func TestApplyConfigRemoteBackendLeavesRootOverlapToTheServer(t *testing.T) {
+	backend := &recordingConfigBackend{live: configLiveLibrary{
+		configLibraryDocItem: configLibraryDocItem{Title: "Music", Plugin: "music", Roots: []string{"/srv/remote/media"}},
+		ID:                   "library-music",
+	}}
+	desired := configDocument{Version: configDocumentVersion, Libraries: []configLibraryDocItem{
+		{Title: "Music", Plugin: "music", Roots: []string{"/srv/remote/media"}},
+		{Title: "Films", Plugin: "music", Roots: []string{"/srv/remote/media/films"}},
+	}}
+	if _, err := applyConfigDocument(context.Background(), backend, desired); err != nil {
+		t.Fatalf("remote apply resolved folders on the CLI host: %v", err)
+	}
+	if !reflect.DeepEqual(backend.writes, []string{"create Films"}) {
+		t.Fatalf("remote apply wrote %v, want the create left to the server's own check", backend.writes)
 	}
 }

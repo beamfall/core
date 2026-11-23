@@ -110,7 +110,7 @@ function ConvertEnqueueSection() {
         <PathPickerField
           id="convert-source"
           label={t("convertSourceLabel")}
-          role="libraryRoot"
+          role="incomingFolder"
           value={srcPath}
           onChange={setSrcPath}
           libraryID={libraryID || undefined}
