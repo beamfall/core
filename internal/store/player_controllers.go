@@ -35,6 +35,7 @@ type PlayerDisplay struct {
 type PlayerControlGuard struct {
 	PlayerProfileID   ProfileID
 	CallerProfileID   ProfileID
+	CallerSessionID   SessionID
 	BindingGeneration int
 }
 

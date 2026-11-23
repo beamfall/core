@@ -429,6 +429,10 @@ type InfoResponse struct {
 	// (the streams then play unadjusted). Stream positions are then song
 	// positions divided by the tempo; Timeline stays in song positions.
 	Adjustment *PlaybackAdjustment `json:"adjustment,omitempty"`
+	// GrantID is the server-issued playback grant ID for player-bound displays
+	// (ADR-0240 D5). Displays pass it back on progress/completion reports so
+	// reports are fenced per grant and attributed server-side.
+	GrantID string `json:"grantID,omitempty"`
 }
 
 // CaptionTrack is one caption track surfaced in playbackInfo. Sidecar tracks use
@@ -632,6 +636,7 @@ type Timeline struct {
 // Service owns playbackInfo decisions.
 type Service struct {
 	store         *store.Store
+	auth          *auth.Service
 	tokens        *streamtoken.Service
 	now           func() time.Time
 	sessions      *Sessions
@@ -742,6 +747,12 @@ func (s *Service) SetPartyRoster(roster PartyRoster) {
 	s.roster = roster
 }
 
+// SetAuth wires the auth service for becoming-current originator playback
+// authorization checks on Player displays (ADR-0240 D4, D5).
+func (s *Service) SetAuth(authService *auth.Service) {
+	s.auth = authService
+}
+
 // SetQuirks installs a device-quirks database, replacing the
 // release-embedded baseline. It VALIDATES its argument with the same rules
 // ParseQuirkDB applies and installs a deep clone, so no path can bypass the
@@ -849,6 +860,9 @@ type decision struct {
 	// adjustment is the pitch shift and tempo change the streams encode; zero
 	// when none was requested or it does not apply to this decision.
 	adjustment ffmpeg.AudioAdjust
+	// grantID is the server-issued playback_grant ID when serving a player
+	// display (ADR-0240 D5).
+	grantID string
 }
 
 // PartInfo is one ordered Part of the negotiated Version. Parts play
@@ -952,6 +966,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		// item it fetched.
 		BehaviorFlags: ov.flags,
 		Adjustment:    playbackAdjustment(main.adjustment),
+		GrantID:       main.grantID,
 	}
 	if main.overlayApplied {
 		resp.AppliedQuirks = ov.overrideIDs
@@ -1078,13 +1093,33 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 // adjust is the requested pitch shift and tempo change; it applies only to an
 // audio Media served through a transcode, which it then forces.
 func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
-	media, err := s.decisionLookup.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
+	lookupFilter := scope.LibraryFilter()
+	if scope.IsPlayerBound() {
+		lookupFilter = scope.PlaybackFilter()
+	}
+	media, err := s.decisionLookup.Media(ctx, store.MediaID(mediaID), lookupFilter)
 	if err != nil {
 		var validation store.ValidationError
 		if errors.As(err, &validation) {
 			return unavailableDecision(), nil
 		}
 		return decision{}, err
+	}
+	resumeProfileID := scope.ProfileID
+	var playerGrant *store.PlaybackGrant
+	if scope.IsPlayerBound() {
+		resumeProfileID = ""
+		if suffix == mainSuffix {
+			grant, resumeID, allowed, err := s.preparePlayerPlaybackGrant(ctx, scope, media)
+			if err != nil {
+				return decision{}, err
+			}
+			if !allowed {
+				return unavailableDecision(), nil
+			}
+			resumeProfileID = resumeID
+			playerGrant = grant
+		}
 	}
 	parent := ctx
 	var op *libraryOperation
@@ -1100,8 +1135,11 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 		ctx = s.sessions.libraryProbeContext(op)
 	}
 	batch := &decisionGrants{}
+	if playerGrant != nil {
+		batch.grantID = playerGrant.GrantID
+	}
 	ctx = context.WithValue(ctx, decisionGrantsKey{}, batch)
-	dec, err = s.decideMedia(ctx, op, batch, scope, media, suffix, profile, policy, priority, selectedSubtitleIndex, selectedAudioIndex, selectedVersion, ov, adjust)
+	dec, err = s.decideMedia(ctx, op, batch, scope, resumeProfileID, media, suffix, profile, policy, priority, selectedSubtitleIndex, selectedAudioIndex, selectedVersion, ov, adjust)
 	if err == nil {
 		dec.loudnessInfo = s.loudnessInfo(dec, profile)
 		if suffix == mainSuffix && dec.media.ID != "" {
@@ -1126,6 +1164,19 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	if suffix != mainSuffix && dec.verdict == "unavailable" {
 		return dec, nil
 	}
+	if playerGrant != nil && dec.verdict != "unavailable" && dec.media.Class != store.MediaClassImage && s.store != nil {
+		now := s.now().UTC()
+		tokenLifetime := max(time.Hour, 2*time.Duration(dec.media.DurationSeconds)*time.Second)
+		grantToSave := *playerGrant
+		grantToSave.LastPositionSeconds = dec.timeline.PositionSeconds
+		grantToSave.LastDurationSeconds = dec.timeline.DurationSeconds
+		grantToSave.CreatedAt = now
+		grantToSave.ExpiresAt = now.Add(tokenLifetime)
+		if err := s.store.CreatePlaybackGrant(parent, grantToSave); err != nil {
+			return decision{}, err
+		}
+		dec.grantID = grantToSave.GrantID
+	}
 	for _, record := range batch.records {
 		record(parent)
 	}
@@ -1135,7 +1186,120 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	return dec, nil
 }
 
-func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *decisionGrants, scope auth.Scope, media store.Media, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
+func (s *Service) preparePlayerPlaybackGrant(ctx context.Context, scope auth.Scope, media store.Media) (*store.PlaybackGrant, store.ProfileID, bool, error) {
+	if s.store == nil {
+		return nil, "", true, nil
+	}
+	now := s.now().UTC()
+	var originatorProfileID store.ProfileID
+	var originatorSessionID store.SessionID
+	walkUp := false
+
+	attr, hasAttr, err := s.store.ActivePlayerCommandedAttribution(ctx, scope.SessionID, media.ID, now)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if hasAttr {
+		if attr.PlayerBindingGeneration != scope.PlayerBindingGeneration {
+			_ = s.store.SkipPlayerCommandedAttribution(ctx, scope.SessionID, media.ID)
+			return nil, "", false, nil
+		}
+		if attr.OriginatorProfileID != "" {
+			ok, err := s.originatorPlaybackAllowed(ctx, scope.PlayerProfileID, attr.OriginatorProfileID, attr.OriginatorSessionID, media.ID)
+			if err != nil {
+				return nil, "", false, err
+			}
+			if !ok {
+				_ = s.store.SkipPlayerCommandedAttribution(ctx, scope.SessionID, media.ID)
+				return nil, "", false, nil
+			}
+			originatorProfileID = attr.OriginatorProfileID
+			originatorSessionID = attr.OriginatorSessionID
+		}
+	} else {
+		commanded, err := s.store.IsPlayerCommandedMedia(ctx, scope.SessionID, media.ID, now)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if !commanded && !scope.WalkUpEnabled {
+			return nil, "", false, nil
+		}
+		if !commanded && scope.WalkUpEnabled {
+			walkUp = true
+		}
+	}
+
+	grantID, err := store.NewPlaybackGrantID()
+	if err != nil {
+		return nil, "", false, err
+	}
+	return &store.PlaybackGrant{
+		GrantID:                 grantID,
+		SessionID:               scope.SessionID,
+		DeviceID:                scope.DeviceID,
+		ProfileID:               scope.ProfileID,
+		MediaID:                 media.ID,
+		OriginatorProfileID:     originatorProfileID,
+		OriginatorSessionID:     originatorSessionID,
+		PlayerBindingGeneration: scope.PlayerBindingGeneration,
+		WalkUp:                  walkUp,
+	}, originatorProfileID, true, nil
+}
+
+func (s *Service) originatorPlaybackAllowed(ctx context.Context, playerProfileID, originatorProfileID store.ProfileID, originatorSessionID store.SessionID, mediaID store.MediaID) (bool, error) {
+	if s.store == nil || originatorProfileID == "" {
+		return false, nil
+	}
+	isCtrl, err := s.store.IsPlayerController(ctx, playerProfileID, originatorProfileID)
+	if err != nil || !isCtrl {
+		return false, err
+	}
+	var filter store.LibraryFilter
+	if s.auth != nil {
+		f, err := s.auth.OriginatorPlaybackFilter(ctx, originatorProfileID, originatorSessionID)
+		if err != nil {
+			var verr store.ValidationError
+			if errors.As(err, &verr) || errors.Is(err, store.ErrProfileDisabled) || errors.Is(err, auth.ErrAccessOutsideSchedule) {
+				return false, nil
+			}
+			return false, err
+		}
+		filter = f
+	} else {
+		p, err := s.store.Profile(ctx, originatorProfileID)
+		if err != nil {
+			var verr store.ValidationError
+			if errors.As(err, &verr) {
+				return false, nil
+			}
+			return false, err
+		}
+		if p.Disabled || p.Kind == store.ProfilePlayer {
+			return false, nil
+		}
+		origScope := auth.Scope{
+			ProfileID:  p.ID,
+			Profile:    p.Kind,
+			Revealed:   false,
+			LibraryIDs: p.Library,
+		}
+		filter = origScope.PlaybackFilter()
+	}
+	m, err := s.decisionLookup.Media(ctx, mediaID, filter)
+	if err != nil {
+		var verr store.ValidationError
+		if errors.As(err, &verr) {
+			return false, nil
+		}
+		return false, err
+	}
+	if s.sealed != nil && s.sealed(m.LibraryID) {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *decisionGrants, scope auth.Scope, resumeProfileID store.ProfileID, media store.Media, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
 	// A Sealed Library gets no stream, no selector-bearing Parts, and no asset
 	// advertisement (ADR-0098 area 2). Indistinguishable from unavailable on the
 	// wire, exactly like a Library the scope cannot see (Reveal contract).
@@ -1143,8 +1307,10 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 		return unavailableDecision(), nil
 	}
 	timeline := Timeline{DurationSeconds: media.DurationSeconds}
-	if progress, ok, err := s.store.PlaybackProgressFor(ctx, scope.ProfileID, media.ID); err == nil && ok && !progress.Watched {
-		timeline.PositionSeconds = progress.PositionSeconds
+	if resumeProfileID != "" {
+		if progress, ok, err := s.store.PlaybackProgressFor(ctx, resumeProfileID, media.ID); err == nil && ok && !progress.Watched {
+			timeline.PositionSeconds = progress.PositionSeconds
+		}
 	}
 	// 1:N files: fetch every available file, group into Versions
 	// (alternate encodes) and Parts (timeline segments), then negotiate the best

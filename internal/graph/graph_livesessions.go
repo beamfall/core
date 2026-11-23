@@ -143,6 +143,11 @@ func (h *Handler) endPlayback(ctx context.Context, scope auth.Scope, req request
 	// The transcodes are detached under the binding lock, and their teardown,
 	// which waits for the encoder to exit, is joined after it is released so a
 	// slow encoder does not stall every Profile switch.
+	var origProfileID store.ProfileID
+	var hasOrig bool
+	if scope.IsPlayerBound() {
+		origProfileID, hasOrig = h.store.ActiveGrantOriginatorForSession(ctx, scope.SessionID, store.MediaID(mediaID), time.Now().UTC())
+	}
 	wait := func() {}
 	if err := h.whileScopeProfile(ctx, scope, func() error {
 		if err := h.store.EndPlayback(ctx, scope.SessionID, store.MediaID(mediaID)); err != nil {
@@ -158,6 +163,9 @@ func (h *Handler) endPlayback(ctx context.Context, scope auth.Scope, req request
 	wait()
 	h.clearPlaybackPaused(scope, store.MediaID(mediaID))
 	h.flushPlaybackInvalidation(ctx, scope)
+	if hasOrig {
+		h.flushPlaybackInvalidation(ctx, auth.Scope{ProfileID: origProfileID})
+	}
 	return nil
 }
 

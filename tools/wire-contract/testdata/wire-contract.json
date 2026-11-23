@@ -56574,6 +56574,13 @@
                   }
                 },
                 "omitempty": true
+              },
+              {
+                "name": "grantID",
+                "shape": {
+                  "type": "string"
+                },
+                "omitempty": true
               }
             ]
           }
@@ -56637,6 +56644,20 @@
                 "name": "playbackID",
                 "shape": {
                   "type": "string"
+                },
+                "omitempty": true
+              },
+              {
+                "name": "grantID",
+                "shape": {
+                  "type": "string"
+                },
+                "omitempty": true
+              },
+              {
+                "name": "sequence",
+                "shape": {
+                  "type": "integer"
                 },
                 "omitempty": true
               },
@@ -59746,6 +59767,13 @@
           }
         },
         {
+          "name": "grantID",
+          "shape": {
+            "type": "string",
+            "optional": true
+          }
+        },
+        {
           "name": "systemSurfaceDisclosure",
           "shape": {
             "type": "object",
@@ -59991,6 +60019,13 @@
           "name": "tempo",
           "shape": {
             "type": "number",
+            "optional": true
+          }
+        },
+        {
+          "name": "grantID",
+          "shape": {
+            "type": "string",
             "optional": true
           }
         },

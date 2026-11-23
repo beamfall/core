@@ -333,11 +333,35 @@ func (s *Store) controlRendererSession(
 		}
 	}
 
+	if guard != nil && payload.Command == SessionCommandPlayMedia && payload.PositionMs == nil {
+		if posSec, ok, err := playbackResumePositionSQL(ctx, tx, guard.CallerProfileID, payload.MediaID); err != nil {
+			return RendererSessionControlResult{}, err
+		} else if ok {
+			posMS := int64(posSec) * 1000
+			payload.PositionMs = &posMS
+			if rawPayload, err = sessionControlPayloadJSON(target, payload); err != nil {
+				return RendererSessionControlResult{}, err
+			}
+		}
+	}
+
 	if err := appendSessionControlEventSQL(ctx, tx, target, rawPayload, now); err != nil {
 		return RendererSessionControlResult{}, err
 	}
-	if playerBound {
+	if guard != nil && payload.Command == SessionCommandPlayMedia {
+		if err := recordPlayerCommandedMediaWithOriginatorSQL(
+			ctx, tx, target, payload.MediaID,
+			guard.CallerProfileID, guard.CallerSessionID, guard.BindingGeneration, now,
+		); err != nil {
+			return RendererSessionControlResult{}, err
+		}
+	} else if playerBound {
 		if err := recordPlayerCommandedMediaSQL(ctx, tx, target, payload.MediaID, now); err != nil {
+			return RendererSessionControlResult{}, err
+		}
+	}
+	if guard != nil && payload.Command == SessionCommandStop {
+		if err := stopPlayerSessionPlaybackSQL(ctx, tx, target, now); err != nil {
 			return RendererSessionControlResult{}, err
 		}
 	}

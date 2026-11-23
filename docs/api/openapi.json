@@ -193,7 +193,8 @@
           "streams": { "type": "array", "items": { "$ref": "#/components/schemas/PlaybackStream" }, "maxItems": 16 },
           "durationSeconds": { "type": "integer" },
           "positionSeconds": { "type": "integer", "description": "The resume position for the device Session's Profile." },
-          "captionTracks": { "type": "array", "items": { "$ref": "#/components/schemas/CaptionTrack" }, "maxItems": 64 }
+          "captionTracks": { "type": "array", "items": { "$ref": "#/components/schemas/CaptionTrack" }, "maxItems": 64 },
+          "grantID": { "type": "string", "description": "Server-issued playback grant identifier for player-display reporting." }
         },
         "required": ["mediaID", "decision", "streamTokenRequired", "streams", "durationSeconds"]
       },
@@ -244,6 +245,16 @@
             "type": "string",
             "maxLength": 64,
             "description": "The client's random ID for this play, new each time the player starts the Media and kept across pauses, seeks and reloads. Play history groups a play's reports by it. At most 64 characters, checked as sent: an ID with leading or trailing whitespace is refused."
+          },
+          "grantID": {
+            "type": "string",
+            "description": "Server-issued playback grant identifier returned by playback-info for player-display attribution."
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Non-negative per-grant report sequence number used to deduplicate retried reports."
           },
           "paused": { "type": "boolean", "description": "Whether the player was paused when it observed the position. Omitted reads as playing." },
           "playedMS": {

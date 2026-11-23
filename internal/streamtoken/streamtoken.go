@@ -198,9 +198,12 @@ type Grant struct {
 	// adjustment: the audio is pitch shifted by whole semitones and played at
 	// Tempo times its recorded speed (0 means 1). Meaningful only for
 	// TargetMediaHLS; omitted when unadjusted, so other tokens are unchanged.
-	PitchShiftSemitones int       `json:"pitchShiftSemitones,omitempty"`
-	Tempo               float64   `json:"tempo,omitempty"`
-	ExpiresAt           time.Time `json:"expiresAt"`
+	PitchShiftSemitones int     `json:"pitchShiftSemitones,omitempty"`
+	Tempo               float64 `json:"tempo,omitempty"`
+	// GrantID binds a player-display playback grant to its server-side
+	// playback_grant row (ADR-0240 D5). Omitted for ordinary non-player grants.
+	GrantID   string    `json:"grantID,omitempty"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 // HasResolvedProfileCapability reports whether the grant carries a capability

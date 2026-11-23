@@ -482,6 +482,7 @@ func (h *Handler) authorizePlayerSessionControl(
 	guard := &store.PlayerControlGuard{
 		PlayerProfileID:   target.ProfileID,
 		CallerProfileID:   scope.ProfileID,
+		CallerSessionID:   scope.SessionID,
 		BindingGeneration: dev.PlayerBindingGeneration,
 	}
 

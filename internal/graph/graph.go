@@ -4840,6 +4840,15 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 	if err := store.ValidatePlaybackID(playbackID); err != nil {
 		return PlaybackReport{}, clientError(err.Error())
 	}
+	grantID := trimmedVariable(req, "grantID")
+	var sequence *int64
+	if raw, ok := req.Variables["sequence"]; ok && raw != nil {
+		v, ok := playedMSVar(raw)
+		if !ok {
+			return PlaybackReport{}, clientError("sequence must be a non-negative integer")
+		}
+		sequence = &v
+	}
 	media, err := h.store.Media(ctx, store.MediaID(mediaID), scope.PlaybackFilter())
 	if err != nil {
 		return PlaybackReport{}, clientError("unknown media")
@@ -4853,6 +4862,9 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 		// EXISTING stored state for the Media unchanged — an ambient play never
 		// creates, advances, or clears a progress row. With no prior row the
 		// zero value (unwatched, position 0) is returned.
+		if scope.IsPlayerBound() {
+			return PlaybackReport{MediaID: string(media.ID)}, nil
+		}
 		progress, _, err := h.store.PlaybackProgressFor(ctx, scope.ProfileID, media.ID)
 		if err != nil {
 			return PlaybackReport{}, err
@@ -4863,13 +4875,15 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 			Watched:         progress.Watched,
 		}, nil
 	}
-	progress, err := h.recordPlaybackProgress(ctx, scope, media, store.PlaybackProgress{
+	progress, err := h.reportPlaybackForScope(ctx, scope, media, store.PlaybackProgress{
 		PositionSeconds: positionSeconds,
 		DurationSeconds: durationSeconds,
 		EventTimeMS:     eventTimeMS,
 		Paused:          paused,
 		PlaybackID:      playbackID,
 		PlayedMS:        playedMS,
+		GrantID:         grantID,
+		ReportSequence:  sequence,
 	}, finished)
 	if err != nil {
 		return PlaybackReport{}, err
@@ -4896,7 +4910,51 @@ func (h *Handler) RecordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		report.DurationSeconds = media.DurationSeconds
 	}
 	h.notePlaybackActivity(ctx, scope, media.ID)
-	return h.recordPlaybackProgress(ctx, scope, media, report, finished)
+	return h.reportPlaybackForScope(ctx, scope, media, report, finished)
+}
+
+func (h *Handler) reportPlaybackForScope(ctx context.Context, scope auth.Scope, media store.Media, report store.PlaybackProgress, finished bool) (store.PlaybackProgress, error) {
+	if !scope.IsPlayerBound() {
+		return h.recordPlaybackProgress(ctx, scope, media, report, finished)
+	}
+	grantID := strings.TrimSpace(report.GrantID)
+	if strings.Contains(grantID, ".") && h.tokens != nil {
+		for _, target := range []streamtoken.Target{streamtoken.TargetMediaDirect, streamtoken.TargetMediaHLS} {
+			if tokGrant, err := h.tokens.UnverifiedGrant(grantID, target); err == nil && tokGrant.GrantID != "" {
+				grantID = tokGrant.GrantID
+				break
+			}
+		}
+	}
+	res, err := h.store.ResolvePlayerPlaybackReport(
+		ctx,
+		scope.SessionID,
+		scope.DeviceID,
+		scope.ProfileID,
+		scope.PlayerBindingGeneration,
+		media.ID,
+		grantID,
+		report.ReportSequence,
+		report.PositionSeconds,
+		report.DurationSeconds,
+		finished,
+		h.now().UTC(),
+	)
+	if err != nil {
+		return store.PlaybackProgress{}, err
+	}
+	if !res.Accepted {
+		if res.Ended {
+			h.clearPlaybackPaused(scope, media.ID)
+		}
+		return store.PlaybackProgress{MediaID: media.ID}, nil
+	}
+	attributionScope := auth.Scope{
+		ProfileID: res.OriginatorProfileID,
+		DeviceID:  scope.DeviceID,
+		SessionID: scope.SessionID,
+	}
+	return h.recordPlaybackProgress(ctx, attributionScope, media, report, finished)
 }
 
 // notePlaybackActivity keeps the calling session's playback of a Media on the

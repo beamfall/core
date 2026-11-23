@@ -19,6 +19,7 @@ type decisionGrants struct {
 	records    []func(context.Context)
 	observe    func(decision)
 	restricted *bool
+	grantID    string
 }
 
 func unavailableDecision() decision {
@@ -40,6 +41,9 @@ func (s *Service) decisionRestricted(ctx context.Context, library store.LibraryI
 
 func (s *Service) issueDecisionGrant(ctx context.Context, grant streamtoken.Grant) (string, error) {
 	batch, _ := ctx.Value(decisionGrantsKey{}).(*decisionGrants)
+	if batch != nil && batch.grantID != "" && grant.GrantID == "" {
+		grant.GrantID = batch.grantID
+	}
 	if batch == nil {
 		return s.tokens.Issue(ctx, grant)
 	}

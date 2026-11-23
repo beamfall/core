@@ -40,6 +40,9 @@ func (s *Store) SetContinueWatchingHidden(ctx context.Context, profileID Profile
 	if err := s.guardLocked(); err != nil {
 		return ItemState{}, err
 	}
+	if err := s.ensureNotPlayerProfileLocked(ctx, profileID); err != nil {
+		return ItemState{}, err
+	}
 	if err := s.itemTargetVisibleLocked(ctx, target, filter); err != nil {
 		return ItemState{}, err
 	}

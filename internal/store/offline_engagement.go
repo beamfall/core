@@ -62,6 +62,9 @@ func (s *Store) ApplyOfflineEngagementEvent(ctx context.Context, ev OfflineEngag
 	if err := s.guardLocked(); err != nil {
 		return OfflineEngagementOutcome{}, err
 	}
+	if err := s.ensureNotPlayerProfileLocked(ctx, ev.Progress.ProfileID); err != nil {
+		return OfflineEngagementOutcome{}, err
+	}
 	// UnixMilli, not UnixNano: a far-future device clock must clamp, not
 	// overflow past the bound below.
 	now := s.serverNow().UnixMilli()
