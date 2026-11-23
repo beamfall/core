@@ -391,7 +391,8 @@ export function LibraryBrowseEmpty({
 // new value from elsewhere (a chip, Clear all, Back) replaces the draft. Leaving
 // commits so a pending draft lands before the control that took focus acts, and
 // never lands after it (a Clear all clicked mid-typing stays cleared).
-function BrowseSearch({
+/** A debounced search box; History reuses it (CORE-3333). */
+export function BrowseSearch({
   value,
   label,
   onCommit,

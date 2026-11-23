@@ -20,14 +20,23 @@ type MediaEntityLink struct {
 // already decided the Media are visible; an Entity always shares its Media's
 // Library, so no wider visibility applies. Every open catalog plane is read.
 func (s *Store) MediaEntityLinks(ctx context.Context, ids []MediaID) (map[MediaID][]MediaEntityLink, error) {
-	links := map[MediaID][]MediaEntityLink{}
 	if len(ids) == 0 {
-		return links, nil
+		return map[MediaID][]MediaEntityLink{}, nil
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return nil, err
+	}
+	return s.mediaEntityLinksLocked(ctx, ids)
+}
+
+// mediaEntityLinksLocked is MediaEntityLinks for a caller already holding the
+// read lock.
+func (s *Store) mediaEntityLinksLocked(ctx context.Context, ids []MediaID) (map[MediaID][]MediaEntityLink, error) {
+	links := map[MediaID][]MediaEntityLink{}
+	if len(ids) == 0 {
+		return links, nil
 	}
 	for _, reader := range s.openCatalogReadersLocked() {
 		for start := 0; start < len(ids); start += engagementChunkSize {

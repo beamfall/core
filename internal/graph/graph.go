@@ -1991,6 +1991,35 @@ func (h *Handler) genreRollUp(kind string, entityFilter *store.EntityFilter) *st
 	return &store.ContainerRollUp{MemberRelations: members, ParentRelations: parents}
 }
 
+// playedFilterVars reads the History filters for the played Source kinds:
+// the search text and the RFC 3339 bounds on the last play, playedAfter
+// inclusive and playedBefore exclusive. A malformed bound is a client error
+// rather than a silently widened feed.
+func playedFilterVars(req request, queryText string) (store.PlayedFilter, error) {
+	after, err := playedBound("playedAfter", trimmedVariable(req, "playedAfter"))
+	if err != nil {
+		return store.PlayedFilter{}, err
+	}
+	before, err := playedBound("playedBefore", trimmedVariable(req, "playedBefore"))
+	if err != nil {
+		return store.PlayedFilter{}, err
+	}
+	return store.PlayedFilter{Query: queryText, PlayedAfter: after, PlayedBefore: before}, nil
+}
+
+// playedBound parses one RFC 3339 bound to Unix milliseconds; empty is 0,
+// unbounded.
+func playedBound(name, raw string) (int64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	at, err := time.Parse(time.RFC3339, raw)
+	if err != nil || at.UnixMilli() <= 0 {
+		return 0, clientError(name + " must be an RFC 3339 time")
+	}
+	return at.UnixMilli(), nil
+}
+
 func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request) ([]SourceItem, error) {
 	if h.store == nil {
 		return []SourceItem{}, nil
@@ -2049,6 +2078,10 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 			}
 		}
 	}
+	played, err := playedFilterVars(req, queryText)
+	if err != nil {
+		return nil, err
+	}
 	filter := scope.LibraryFilter()
 	if kind == "subscription-new" {
 		// New entries reach Profiles across Libraries, so a Sealed Library's
@@ -2082,6 +2115,8 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 		// availability, ADR-0052 §2.6); echoed back from the manifest like the
 		// other Source parameters. An unrecognized value yields an empty feed.
 		Value: trimmedVariable(req, "value"),
+		// The History page searches and narrows the played kinds (CORE-3333).
+		Played: played,
 	})
 	if err != nil {
 		return nil, err
