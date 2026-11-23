@@ -2,13 +2,13 @@
   "source": {
     "repo": "oscillux",
     "paths": {
-      "shaders/manifest.json": "df873883811271f466df229936f24ad589e041ef5d4b96f9c63778cc793c4973",
-      "shaders/originals/manifest.json": "56e6459e66aaea416f62338c63e03f52c3723f2a67909a4b7ce46c79dd2c067a"
+      "shaders/manifest.json": "c86a85897ff275f8c7cc74b7e6a875d90fd5974f07663f740428bfdbc64ea585",
+      "shaders/originals/manifest.json": "34aa8beec2a33d7ea8ea75c51438843ad298f56c0e131154287212f223ce7118"
     },
-    "rev": "21e0cb17062d431f7655cfd4fab95103e9f66542",
-    "release": "v0.2.18",
+    "rev": "bb2f05c631f6d3a894fa95c3f3212a70fb22950c",
+    "release": "v0.2.20",
     "license": "AGPL-3.0-only",
-    "note": "The release set the v0.2.18 shader legs ship (tools/shader/manifest.mjs loadReleaseSet at the pinned rev), in catalogOrder. A visual a rebuilt original overrides takes the original's header, palette, trailDecay and params and its post as the release set resolves it, and keeps the catalog's name, tier and calm flag; the paths map gives each manifest's SHA-256. Data only: the shader bytes are in glsl300/."
+    "note": "The release set the v0.2.20 shader legs ship (tools/shader/manifest.mjs loadReleaseSet at the pinned rev), in catalogOrder. A visual a rebuilt original overrides takes the original's header, palette, trailDecay and params and its post as the release set resolves it, and keeps the catalog's name, tier and calm flag; the paths map gives each manifest's SHA-256. Data only: the shader bytes are in glsl300/."
   },
   "visuals": [
     {
@@ -3661,6 +3661,66 @@
           "step": 0.01,
           "curve": "linear",
           "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0,
+        "bloomThreshold": 1,
+        "chroma": 0,
+        "vignette": 0,
+        "grain": 0
+      }
+    },
+    {
+      "id": "disco-floor",
+      "name": "Disco Floor",
+      "header": "// Disco Floor: Neon-edged dancers sway their hips out on every beat and change moves every eight on an LED floor that changes colour, under a mirror ball that throws its spots across the room and moving heads that sweep coloured beams through the haze.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        8,
+        0,
+        8,
+        0
+      ],
+      "trailDecay": 0,
+      "params": [
+        {
+          "id": "glow",
+          "uniform": "param0",
+          "label": "Glow",
+          "labelKey": "visual.disco-floor.glow",
+          "min": 0,
+          "max": 1,
+          "default": 0.7,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        },
+        {
+          "id": "sway",
+          "uniform": "param1",
+          "label": "Sway",
+          "labelKey": "visual.disco-floor.sway",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "sparkle",
+          "uniform": "param2",
+          "label": "Sparkle",
+          "labelKey": "visual.disco-floor.sparkle",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
         }
       ],
       "post": {

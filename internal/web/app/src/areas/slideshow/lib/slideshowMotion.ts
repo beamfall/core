@@ -39,7 +39,7 @@ function reducedMotion(): boolean {
 }
 
 /**
- * The one seam where Oscillux motion plugs in. Oscillux v0.2.18 (vendored)
+ * The one seam where Oscillux motion plugs in. Oscillux v0.2.20 (vendored)
  * ships the calm photo-slideshow pass, which drives "calm" through WebGL2.
  * Without WebGL2 every mode is a hard cut, and a calm driver that loses its
  * context or cannot run the pass hard-cuts from then on. "visualiser" waits

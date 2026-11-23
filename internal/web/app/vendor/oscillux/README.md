@@ -1,14 +1,14 @@
-# Vendored Oscillux v0.2.18 (web)
+# Vendored Oscillux v0.2.20 (web)
 
 The Web Viewer's audio visualizer (CORE-1309) and photo slideshow (CORE-2980) run Oscillux, the only source of visual effects
-in Beamfall (ADR-0228). These files are copied unchanged from the Oscillux v0.2.18 release, cut
-from rev `21e0cb17062d431f7655cfd4fab95103e9f66542` under `AGPL-3.0-only` (ADR-0233). Core adds no
+in Beamfall (ADR-0228). These files are copied unchanged from the Oscillux v0.2.20 release, cut
+from rev `bb2f05c631f6d3a894fa95c3f3212a70fb22950c` under `AGPL-3.0-only` (ADR-0233). Core adds no
 licence terms to them. `pin.json` records the release assets and their SHA-256 sums.
 
 - `wasm/`: the `oscillux-wasm.tgz` package as released (`@oscillux/core`), with its licence,
   notices and third-party licences.
 - `glsl300/`: the subset of `oscillux-glsl300.zip` the viewer draws: `index.json` (the bundle's
-  own SHA-256 list for every file kept here), the shared vertex shader, every visual (all 61 `.web.frag` legs), the
+  own SHA-256 list for every file kept here), the shared vertex shader, every visual (all 62 `.web.frag` legs), the
   present pass, the switch pass, the six frame flash limiter passes, the photo slideshow pass
   (`slideshow/slideshow.frag`) and `legal/`.
 - `visuals.json`: the fields of every visual in the release set the shader legs ship, in the
