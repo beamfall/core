@@ -312,6 +312,7 @@ func (h *Handler) describeSearchCards(ctx context.Context, filter store.LibraryF
 		items[i].AudienceScoreVotes = card.AudienceScoreVotes
 		items[i].PlaysAlone = card.PlaysAlone
 		items[i].PlaceholderIcon = card.PlaceholderIcon
+		items[i].SelectPlays = card.SelectPlays
 	}
 	return nil
 }

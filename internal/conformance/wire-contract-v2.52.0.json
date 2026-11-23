@@ -923,17 +923,7 @@
       "tier": "session"
     },
     {
-      "field": "partyscreenadddisplay",
-      "effect": "write",
-      "tier": "session"
-    },
-    {
       "field": "partyscreendrop",
-      "effect": "write",
-      "tier": "session"
-    },
-    {
-      "field": "partyscreenlead",
       "effect": "write",
       "tier": "session"
     },
@@ -2880,15 +2870,6 @@
                 }
               },
               {
-                "name": "kindPluralDisplayName",
-                "kind": "map",
-                "optional": true,
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
                 "name": "relation",
                 "kind": "scalar"
               },
@@ -2932,15 +2913,6 @@
             },
             {
               "name": "kindDisplayName",
-              "kind": "map",
-              "optional": true,
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "kindPluralDisplayName",
               "kind": "map",
               "optional": true,
               "nullable": true,
@@ -3024,11 +2996,6 @@
               "kind": "scalar"
             }
           ]
-        },
-        {
-          "name": "placeholderIcon",
-          "kind": "scalar",
-          "optional": true
         },
         {
           "name": "playsAlone",
@@ -3615,11 +3582,6 @@
         },
         {
           "name": "muted",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
-          "name": "placeholderIcon",
           "kind": "scalar",
           "optional": true
         },
@@ -7595,15 +7557,6 @@
                 }
               },
               {
-                "name": "kindPluralDisplayName",
-                "kind": "map",
-                "optional": true,
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
                 "name": "relation",
                 "kind": "scalar"
               },
@@ -7647,15 +7600,6 @@
             },
             {
               "name": "kindDisplayName",
-              "kind": "map",
-              "optional": true,
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "kindPluralDisplayName",
               "kind": "map",
               "optional": true,
               "nullable": true,
@@ -7739,11 +7683,6 @@
               "kind": "scalar"
             }
           ]
-        },
-        {
-          "name": "placeholderIcon",
-          "kind": "scalar",
-          "optional": true
         },
         {
           "name": "playsAlone",
@@ -9578,11 +9517,6 @@
                       "optional": true
                     },
                     {
-                      "name": "placeholderIcon",
-                      "kind": "scalar",
-                      "optional": true
-                    },
-                    {
                       "name": "playsAlone",
                       "kind": "scalar",
                       "optional": true
@@ -9784,11 +9718,6 @@
                   },
                   {
                     "name": "muted",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "placeholderIcon",
                     "kind": "scalar",
                     "optional": true
                   },
@@ -10085,11 +10014,6 @@
                     "optional": true
                   },
                   {
-                    "name": "placeholderIcon",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
                     "name": "playsAlone",
                     "kind": "scalar",
                     "optional": true
@@ -10291,11 +10215,6 @@
                 },
                 {
                   "name": "muted",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "placeholderIcon",
                   "kind": "scalar",
                   "optional": true
                 },
@@ -10630,15 +10549,6 @@
                     }
                   },
                   {
-                    "name": "kindPluralDisplayName",
-                    "kind": "map",
-                    "optional": true,
-                    "nullable": true,
-                    "elem": {
-                      "kind": "scalar"
-                    }
-                  },
-                  {
                     "name": "relation",
                     "kind": "scalar"
                   },
@@ -10682,15 +10592,6 @@
                 },
                 {
                   "name": "kindDisplayName",
-                  "kind": "map",
-                  "optional": true,
-                  "nullable": true,
-                  "elem": {
-                    "kind": "scalar"
-                  }
-                },
-                {
-                  "name": "kindPluralDisplayName",
                   "kind": "map",
                   "optional": true,
                   "nullable": true,
@@ -10774,11 +10675,6 @@
                   "kind": "scalar"
                 }
               ]
-            },
-            {
-              "name": "placeholderIcon",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "playsAlone",
@@ -11063,15 +10959,6 @@
                 }
               },
               {
-                "name": "kindPluralDisplayName",
-                "kind": "map",
-                "optional": true,
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
                 "name": "relation",
                 "kind": "scalar"
               },
@@ -11115,15 +11002,6 @@
             },
             {
               "name": "kindDisplayName",
-              "kind": "map",
-              "optional": true,
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "kindPluralDisplayName",
               "kind": "map",
               "optional": true,
               "nullable": true,
@@ -11207,11 +11085,6 @@
               "kind": "scalar"
             }
           ]
-        },
-        {
-          "name": "placeholderIcon",
-          "kind": "scalar",
-          "optional": true
         },
         {
           "name": "playsAlone",
@@ -11939,15 +11812,6 @@
                 }
               },
               {
-                "name": "kindPluralDisplayName",
-                "kind": "map",
-                "optional": true,
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
                 "name": "relation",
                 "kind": "scalar"
               },
@@ -11991,15 +11855,6 @@
             },
             {
               "name": "kindDisplayName",
-              "kind": "map",
-              "optional": true,
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "kindPluralDisplayName",
               "kind": "map",
               "optional": true,
               "nullable": true,
@@ -12083,11 +11938,6 @@
               "kind": "scalar"
             }
           ]
-        },
-        {
-          "name": "placeholderIcon",
-          "kind": "scalar",
-          "optional": true
         },
         {
           "name": "playsAlone",
@@ -13840,11 +13690,6 @@
                 ]
               },
               {
-                "name": "placeholderIcon",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "playsAlone",
                 "kind": "scalar",
                 "optional": true
@@ -14112,11 +13957,6 @@
                   "kind": "scalar"
                 }
               ]
-            },
-            {
-              "name": "placeholderIcon",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "playsAlone",
@@ -14518,11 +14358,6 @@
                 "optional": true
               },
               {
-                "name": "placeholderIcon",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "playsAlone",
                 "kind": "scalar",
                 "optional": true
@@ -14724,11 +14559,6 @@
             },
             {
               "name": "muted",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "placeholderIcon",
               "kind": "scalar",
               "optional": true
             },
@@ -15267,11 +15097,6 @@
                 "optional": true
               },
               {
-                "name": "placeholderIcon",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "playsAlone",
                 "kind": "scalar",
                 "optional": true
@@ -15473,11 +15298,6 @@
             },
             {
               "name": "muted",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "placeholderIcon",
               "kind": "scalar",
               "optional": true
             },
@@ -16578,15 +16398,6 @@
                 }
               },
               {
-                "name": "kindPluralDisplayName",
-                "kind": "map",
-                "optional": true,
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
                 "name": "relation",
                 "kind": "scalar"
               },
@@ -16630,15 +16441,6 @@
             },
             {
               "name": "kindDisplayName",
-              "kind": "map",
-              "optional": true,
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "kindPluralDisplayName",
               "kind": "map",
               "optional": true,
               "nullable": true,
@@ -16722,11 +16524,6 @@
               "kind": "scalar"
             }
           ]
-        },
-        {
-          "name": "placeholderIcon",
-          "kind": "scalar",
-          "optional": true
         },
         {
           "name": "playsAlone",
@@ -17034,11 +16831,6 @@
           "optional": true
         },
         {
-          "name": "placeholderIcon",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
           "name": "playsAlone",
           "kind": "scalar",
           "optional": true
@@ -17318,15 +17110,6 @@
                     }
                   },
                   {
-                    "name": "kindPluralDisplayName",
-                    "kind": "map",
-                    "optional": true,
-                    "nullable": true,
-                    "elem": {
-                      "kind": "scalar"
-                    }
-                  },
-                  {
                     "name": "relation",
                     "kind": "scalar"
                   },
@@ -17370,15 +17153,6 @@
                 },
                 {
                   "name": "kindDisplayName",
-                  "kind": "map",
-                  "optional": true,
-                  "nullable": true,
-                  "elem": {
-                    "kind": "scalar"
-                  }
-                },
-                {
-                  "name": "kindPluralDisplayName",
                   "kind": "map",
                   "optional": true,
                   "nullable": true,
@@ -17462,11 +17236,6 @@
                   "kind": "scalar"
                 }
               ]
-            },
-            {
-              "name": "placeholderIcon",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "playsAlone",
@@ -21304,74 +21073,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -21399,16 +21100,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -21480,16 +21171,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -21551,16 +21232,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -21747,16 +21418,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -21818,16 +21479,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -21899,16 +21550,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -21970,16 +21611,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -22051,16 +21682,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -22122,16 +21743,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -22207,16 +21818,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -22254,16 +21855,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -22305,16 +21896,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -22378,16 +21959,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -22458,74 +22029,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -22553,16 +22056,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -22634,16 +22127,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -22705,16 +22188,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -22901,16 +22374,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -22972,16 +22435,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -23053,16 +22506,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -23124,16 +22567,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -23205,16 +22638,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -23276,16 +22699,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -23361,16 +22774,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -23408,16 +22811,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -23459,16 +22852,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -23532,16 +22915,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -23626,74 +22999,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -23721,16 +23026,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -23802,16 +23097,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -23873,16 +23158,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -24069,16 +23344,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -24140,16 +23405,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -24221,16 +23476,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -24292,16 +23537,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -24373,16 +23608,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -24444,16 +23669,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -24529,16 +23744,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -24576,16 +23781,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -24627,16 +23822,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -24700,16 +23885,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -24801,74 +23976,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -24896,16 +24003,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -24977,16 +24074,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -25048,16 +24135,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -25244,16 +24321,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -25315,16 +24382,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -25396,16 +24453,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -25467,16 +24514,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -25548,16 +24585,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -25619,16 +24646,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -25704,16 +24721,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -25751,16 +24758,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -25802,16 +24799,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -25875,16 +24862,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -25954,74 +24931,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -26049,16 +24958,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -26130,16 +25029,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -26201,16 +25090,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -26397,16 +25276,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -26468,16 +25337,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -26549,16 +25408,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -26620,16 +25469,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -26701,16 +25540,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -26772,16 +25601,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -26857,16 +25676,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -26904,16 +25713,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -26955,16 +25754,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -27028,16 +25817,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -27107,74 +25886,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -27202,16 +25913,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -27283,16 +25984,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -27354,16 +26045,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -27550,16 +26231,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -27621,16 +26292,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -27702,16 +26363,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -27773,16 +26424,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -27854,16 +26495,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -27925,16 +26556,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -28010,16 +26631,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -28057,16 +26668,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -28108,16 +26709,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -28181,16 +26772,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -28260,74 +26841,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -28355,16 +26868,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -28436,16 +26939,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -28507,16 +27000,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -28703,16 +27186,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -28774,16 +27247,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -28855,16 +27318,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -28926,16 +27379,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -29007,16 +27450,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -29078,16 +27511,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -29163,16 +27586,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -29210,16 +27623,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -29261,16 +27664,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -29334,16 +27727,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -29417,74 +27800,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -29512,16 +27827,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -29593,16 +27898,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -29664,16 +27959,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -29860,16 +28145,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -29931,16 +28206,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -30012,16 +28277,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -30083,16 +28338,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -30164,16 +28409,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -30235,16 +28470,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -30320,16 +28545,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -30367,16 +28582,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -30418,16 +28623,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -30491,16 +28686,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -30566,74 +28751,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -30661,16 +28778,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -30742,16 +28849,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -30813,16 +28910,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -31009,16 +29096,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -31080,16 +29157,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -31161,16 +29228,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -31232,16 +29289,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -31313,16 +29360,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -31384,16 +29421,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -31469,16 +29496,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -31516,16 +29533,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -31567,16 +29574,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -31642,16 +29639,6 @@
               "kind": "scalar"
             },
             {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
               "name": "lastPlayedAt",
               "kind": "scalar"
             },
@@ -31696,1239 +29683,6 @@
         {
           "name": "startedAt",
           "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "partyscreenadddisplay",
-      "kind": "object",
-      "arguments": [
-        {
-          "name": "carrier",
-          "kind": "string",
-          "optional": true,
-          "enum": [
-            "local",
-            "relay"
-          ]
-        },
-        {
-          "name": "expectedProfileID",
-          "kind": "string",
-          "optional": true
-        },
-        {
-          "name": "handle",
-          "kind": "string"
-        }
-      ],
-      "children": [
-        {
-          "name": "coversLibraries",
-          "kind": "scalar"
-        },
-        {
-          "name": "missingLibraryIDs",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "scalar"
-          }
-        },
-        {
-          "name": "screen",
-          "kind": "object",
-          "children": [
-            {
-              "name": "carrier",
-              "kind": "scalar"
-            },
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "kind",
-              "kind": "scalar"
-            },
-            {
-              "name": "lead",
-              "kind": "scalar"
-            },
-            {
-              "name": "name",
-              "kind": "scalar"
-            },
-            {
-              "name": "offsetMS",
-              "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "reportedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "rttMS",
-              "kind": "scalar"
-            },
-            {
-              "name": "ticker",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "session",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "autoAdd",
-              "kind": "scalar"
-            },
-            {
-              "name": "availableDisplays",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "object",
-                "children": [
-                  {
-                    "name": "coversLibraries",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "displayName",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "handle",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "joined",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "missingLibraryIDs",
-                    "kind": "list",
-                    "nullable": true,
-                    "elem": {
-                      "kind": "scalar"
-                    }
-                  },
-                  {
-                    "name": "presence",
-                    "kind": "scalar"
-                  }
-                ]
-              },
-              "children": [
-                {
-                  "name": "coversLibraries",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "displayName",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "handle",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "joined",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "missingLibraryIDs",
-                  "kind": "list",
-                  "nullable": true,
-                  "elem": {
-                    "kind": "scalar"
-                  }
-                },
-                {
-                  "name": "presence",
-                  "kind": "scalar"
-                }
-              ]
-            },
-            {
-              "name": "changeoverSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "current",
-              "kind": "object",
-              "nullable": true,
-              "children": [
-                {
-                  "name": "addedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "artworkURL",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "durationSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "etaSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "id",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "ineligible",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "label",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "lastPlayedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "mediaID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantName",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pinned",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pitchSemitones",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "position",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "state",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "subtitle",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "title",
-                  "kind": "scalar"
-                }
-              ]
-            },
-            {
-              "name": "entries",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "object",
-                "children": [
-                  {
-                    "name": "addedAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "artworkURL",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "durationSeconds",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "etaSeconds",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "id",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "ineligible",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "label",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "lastPlayedAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "mediaID",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "participantID",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "participantName",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "pinned",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "pitchSemitones",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "position",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "state",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "subtitle",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "title",
-                    "kind": "scalar"
-                  }
-                ]
-              },
-              "children": [
-                {
-                  "name": "addedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "artworkURL",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "durationSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "etaSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "id",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "ineligible",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "label",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "lastPlayedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "mediaID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantName",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pinned",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pitchSemitones",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "position",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "state",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "subtitle",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "title",
-                  "kind": "scalar"
-                }
-              ]
-            },
-            {
-              "name": "expiresAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "fairness",
-              "kind": "scalar"
-            },
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "joinCode",
-              "kind": "scalar"
-            },
-            {
-              "name": "joinOpen",
-              "kind": "scalar"
-            },
-            {
-              "name": "joinPath",
-              "kind": "scalar"
-            },
-            {
-              "name": "libraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "participants",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "object",
-                "children": [
-                  {
-                    "name": "guest",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "id",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "lastTurnAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "name",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "waiting",
-                    "kind": "scalar"
-                  }
-                ]
-              },
-              "children": [
-                {
-                  "name": "guest",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "id",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "lastTurnAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "name",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "waiting",
-                  "kind": "scalar"
-                }
-              ]
-            },
-            {
-              "name": "playback",
-              "kind": "object",
-              "nullable": true,
-              "children": [
-                {
-                  "name": "anchorAtMS",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "entryID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pitchSemitones",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "positionMS",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "state",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "tempo",
-                  "kind": "scalar"
-                }
-              ]
-            },
-            {
-              "name": "recent",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "object",
-                "children": [
-                  {
-                    "name": "addedAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "artworkURL",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "durationSeconds",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "etaSeconds",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "id",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "ineligible",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "label",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "lastPlayedAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "mediaID",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "participantID",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "participantName",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "pinned",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "pitchSemitones",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "position",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "state",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "subtitle",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "title",
-                    "kind": "scalar"
-                  }
-                ]
-              },
-              "children": [
-                {
-                  "name": "addedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "artworkURL",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "durationSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "etaSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "id",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "ineligible",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "label",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "lastPlayedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "mediaID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantName",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pinned",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pitchSemitones",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "position",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "state",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "subtitle",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "title",
-                  "kind": "scalar"
-                }
-              ]
-            },
-            {
-              "name": "removed",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "object",
-                "children": [
-                  {
-                    "name": "addedAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "artworkURL",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "durationSeconds",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "etaSeconds",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "id",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "ineligible",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "label",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "lastPlayedAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "mediaID",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "participantID",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "participantName",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "pinned",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "pitchSemitones",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "position",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "state",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "subtitle",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "title",
-                    "kind": "scalar"
-                  }
-                ]
-              },
-              "children": [
-                {
-                  "name": "addedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "artworkURL",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "durationSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "etaSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "id",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "ineligible",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "label",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "lastPlayedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "mediaID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantName",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pinned",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pitchSemitones",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "position",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "state",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "subtitle",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "title",
-                  "kind": "scalar"
-                }
-              ]
-            },
-            {
-              "name": "requests",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "object",
-                "children": [
-                  {
-                    "name": "addedAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "artworkURL",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "durationSeconds",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "etaSeconds",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "id",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "ineligible",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "label",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "lastPlayedAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "mediaID",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "participantID",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "participantName",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "pinned",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "pitchSemitones",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "position",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "state",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "subtitle",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "title",
-                    "kind": "scalar"
-                  }
-                ]
-              },
-              "children": [
-                {
-                  "name": "addedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "artworkURL",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "durationSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "etaSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "id",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "ineligible",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "label",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "lastPlayedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "mediaID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantName",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pinned",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pitchSemitones",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "position",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "state",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "subtitle",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "title",
-                  "kind": "scalar"
-                }
-              ]
-            },
-            {
-              "name": "screens",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "object",
-                "children": [
-                  {
-                    "name": "carrier",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "id",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "kind",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "lead",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "name",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "offsetMS",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "playerDisplay",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "playerDisplayHandle",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "reportedAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "rttMS",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "ticker",
-                    "kind": "scalar"
-                  }
-                ]
-              },
-              "children": [
-                {
-                  "name": "carrier",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "id",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "kind",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "lead",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "name",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "offsetMS",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "playerDisplay",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "playerDisplayHandle",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "reportedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "rttMS",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "ticker",
-                  "kind": "scalar"
-                }
-              ]
-            },
-            {
-              "name": "skipped",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "object",
-                "children": [
-                  {
-                    "name": "addedAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "artworkURL",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "durationSeconds",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "etaSeconds",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "id",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "ineligible",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "label",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
-                    "name": "lastPlayedAt",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "mediaID",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "participantID",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "participantName",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "pinned",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "pitchSemitones",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "position",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "state",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "subtitle",
-                    "kind": "scalar"
-                  },
-                  {
-                    "name": "title",
-                    "kind": "scalar"
-                  }
-                ]
-              },
-              "children": [
-                {
-                  "name": "addedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "artworkURL",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "durationSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "etaSeconds",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "id",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "ineligible",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "label",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
-                  "name": "lastPlayedAt",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "mediaID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantID",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "participantName",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pinned",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "pitchSemitones",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "position",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "state",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "subtitle",
-                  "kind": "scalar"
-                },
-                {
-                  "name": "title",
-                  "kind": "scalar"
-                }
-              ]
-            },
-            {
-              "name": "startedAt",
-              "kind": "scalar"
-            }
-          ]
         }
       ]
     },
@@ -32952,74 +29706,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -33047,16 +29733,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -33128,16 +29804,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -33199,16 +29865,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -33395,16 +30051,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -33466,16 +30112,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -33547,16 +30183,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -33618,16 +30244,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -33699,16 +30315,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -33770,16 +30376,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -33855,16 +30451,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -33902,16 +30488,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -33955,16 +30531,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -34026,1169 +30592,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "lastPlayedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantName",
-              "kind": "scalar"
-            },
-            {
-              "name": "pinned",
-              "kind": "scalar"
-            },
-            {
-              "name": "pitchSemitones",
-              "kind": "scalar"
-            },
-            {
-              "name": "position",
-              "kind": "scalar"
-            },
-            {
-              "name": "state",
-              "kind": "scalar"
-            },
-            {
-              "name": "subtitle",
-              "kind": "scalar"
-            },
-            {
-              "name": "title",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "startedAt",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "partyscreenlead",
-      "kind": "object",
-      "arguments": [
-        {
-          "name": "expectedProfileID",
-          "kind": "string",
-          "optional": true
-        },
-        {
-          "name": "screenID",
-          "kind": "string"
-        }
-      ],
-      "children": [
-        {
-          "name": "autoAdd",
-          "kind": "scalar"
-        },
-        {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "changeoverSeconds",
-          "kind": "scalar"
-        },
-        {
-          "name": "current",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "addedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "artworkURL",
-              "kind": "scalar"
-            },
-            {
-              "name": "durationSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "etaSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "lastPlayedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantName",
-              "kind": "scalar"
-            },
-            {
-              "name": "pinned",
-              "kind": "scalar"
-            },
-            {
-              "name": "pitchSemitones",
-              "kind": "scalar"
-            },
-            {
-              "name": "position",
-              "kind": "scalar"
-            },
-            {
-              "name": "state",
-              "kind": "scalar"
-            },
-            {
-              "name": "subtitle",
-              "kind": "scalar"
-            },
-            {
-              "name": "title",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "entries",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "addedAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "artworkURL",
-                "kind": "scalar"
-              },
-              {
-                "name": "durationSeconds",
-                "kind": "scalar"
-              },
-              {
-                "name": "etaSeconds",
-                "kind": "scalar"
-              },
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "lastPlayedAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              },
-              {
-                "name": "participantID",
-                "kind": "scalar"
-              },
-              {
-                "name": "participantName",
-                "kind": "scalar"
-              },
-              {
-                "name": "pinned",
-                "kind": "scalar"
-              },
-              {
-                "name": "pitchSemitones",
-                "kind": "scalar"
-              },
-              {
-                "name": "position",
-                "kind": "scalar"
-              },
-              {
-                "name": "state",
-                "kind": "scalar"
-              },
-              {
-                "name": "subtitle",
-                "kind": "scalar"
-              },
-              {
-                "name": "title",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "addedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "artworkURL",
-              "kind": "scalar"
-            },
-            {
-              "name": "durationSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "etaSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "lastPlayedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantName",
-              "kind": "scalar"
-            },
-            {
-              "name": "pinned",
-              "kind": "scalar"
-            },
-            {
-              "name": "pitchSemitones",
-              "kind": "scalar"
-            },
-            {
-              "name": "position",
-              "kind": "scalar"
-            },
-            {
-              "name": "state",
-              "kind": "scalar"
-            },
-            {
-              "name": "subtitle",
-              "kind": "scalar"
-            },
-            {
-              "name": "title",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "expiresAt",
-          "kind": "scalar"
-        },
-        {
-          "name": "fairness",
-          "kind": "scalar"
-        },
-        {
-          "name": "id",
-          "kind": "scalar"
-        },
-        {
-          "name": "joinCode",
-          "kind": "scalar"
-        },
-        {
-          "name": "joinOpen",
-          "kind": "scalar"
-        },
-        {
-          "name": "joinPath",
-          "kind": "scalar"
-        },
-        {
-          "name": "libraryIDs",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "scalar"
-          }
-        },
-        {
-          "name": "participants",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "guest",
-                "kind": "scalar"
-              },
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "lastTurnAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "name",
-                "kind": "scalar"
-              },
-              {
-                "name": "waiting",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "guest",
-              "kind": "scalar"
-            },
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "lastTurnAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "name",
-              "kind": "scalar"
-            },
-            {
-              "name": "waiting",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "playback",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "anchorAtMS",
-              "kind": "scalar"
-            },
-            {
-              "name": "entryID",
-              "kind": "scalar"
-            },
-            {
-              "name": "pitchSemitones",
-              "kind": "scalar"
-            },
-            {
-              "name": "positionMS",
-              "kind": "scalar"
-            },
-            {
-              "name": "state",
-              "kind": "scalar"
-            },
-            {
-              "name": "tempo",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "recent",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "addedAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "artworkURL",
-                "kind": "scalar"
-              },
-              {
-                "name": "durationSeconds",
-                "kind": "scalar"
-              },
-              {
-                "name": "etaSeconds",
-                "kind": "scalar"
-              },
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "lastPlayedAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              },
-              {
-                "name": "participantID",
-                "kind": "scalar"
-              },
-              {
-                "name": "participantName",
-                "kind": "scalar"
-              },
-              {
-                "name": "pinned",
-                "kind": "scalar"
-              },
-              {
-                "name": "pitchSemitones",
-                "kind": "scalar"
-              },
-              {
-                "name": "position",
-                "kind": "scalar"
-              },
-              {
-                "name": "state",
-                "kind": "scalar"
-              },
-              {
-                "name": "subtitle",
-                "kind": "scalar"
-              },
-              {
-                "name": "title",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "addedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "artworkURL",
-              "kind": "scalar"
-            },
-            {
-              "name": "durationSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "etaSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "lastPlayedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantName",
-              "kind": "scalar"
-            },
-            {
-              "name": "pinned",
-              "kind": "scalar"
-            },
-            {
-              "name": "pitchSemitones",
-              "kind": "scalar"
-            },
-            {
-              "name": "position",
-              "kind": "scalar"
-            },
-            {
-              "name": "state",
-              "kind": "scalar"
-            },
-            {
-              "name": "subtitle",
-              "kind": "scalar"
-            },
-            {
-              "name": "title",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "removed",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "addedAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "artworkURL",
-                "kind": "scalar"
-              },
-              {
-                "name": "durationSeconds",
-                "kind": "scalar"
-              },
-              {
-                "name": "etaSeconds",
-                "kind": "scalar"
-              },
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "lastPlayedAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              },
-              {
-                "name": "participantID",
-                "kind": "scalar"
-              },
-              {
-                "name": "participantName",
-                "kind": "scalar"
-              },
-              {
-                "name": "pinned",
-                "kind": "scalar"
-              },
-              {
-                "name": "pitchSemitones",
-                "kind": "scalar"
-              },
-              {
-                "name": "position",
-                "kind": "scalar"
-              },
-              {
-                "name": "state",
-                "kind": "scalar"
-              },
-              {
-                "name": "subtitle",
-                "kind": "scalar"
-              },
-              {
-                "name": "title",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "addedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "artworkURL",
-              "kind": "scalar"
-            },
-            {
-              "name": "durationSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "etaSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "lastPlayedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantName",
-              "kind": "scalar"
-            },
-            {
-              "name": "pinned",
-              "kind": "scalar"
-            },
-            {
-              "name": "pitchSemitones",
-              "kind": "scalar"
-            },
-            {
-              "name": "position",
-              "kind": "scalar"
-            },
-            {
-              "name": "state",
-              "kind": "scalar"
-            },
-            {
-              "name": "subtitle",
-              "kind": "scalar"
-            },
-            {
-              "name": "title",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "requests",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "addedAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "artworkURL",
-                "kind": "scalar"
-              },
-              {
-                "name": "durationSeconds",
-                "kind": "scalar"
-              },
-              {
-                "name": "etaSeconds",
-                "kind": "scalar"
-              },
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "lastPlayedAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              },
-              {
-                "name": "participantID",
-                "kind": "scalar"
-              },
-              {
-                "name": "participantName",
-                "kind": "scalar"
-              },
-              {
-                "name": "pinned",
-                "kind": "scalar"
-              },
-              {
-                "name": "pitchSemitones",
-                "kind": "scalar"
-              },
-              {
-                "name": "position",
-                "kind": "scalar"
-              },
-              {
-                "name": "state",
-                "kind": "scalar"
-              },
-              {
-                "name": "subtitle",
-                "kind": "scalar"
-              },
-              {
-                "name": "title",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "addedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "artworkURL",
-              "kind": "scalar"
-            },
-            {
-              "name": "durationSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "etaSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "lastPlayedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantID",
-              "kind": "scalar"
-            },
-            {
-              "name": "participantName",
-              "kind": "scalar"
-            },
-            {
-              "name": "pinned",
-              "kind": "scalar"
-            },
-            {
-              "name": "pitchSemitones",
-              "kind": "scalar"
-            },
-            {
-              "name": "position",
-              "kind": "scalar"
-            },
-            {
-              "name": "state",
-              "kind": "scalar"
-            },
-            {
-              "name": "subtitle",
-              "kind": "scalar"
-            },
-            {
-              "name": "title",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "screens",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "carrier",
-                "kind": "scalar"
-              },
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "kind",
-                "kind": "scalar"
-              },
-              {
-                "name": "lead",
-                "kind": "scalar"
-              },
-              {
-                "name": "name",
-                "kind": "scalar"
-              },
-              {
-                "name": "offsetMS",
-                "kind": "scalar"
-              },
-              {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "reportedAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "rttMS",
-                "kind": "scalar"
-              },
-              {
-                "name": "ticker",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "carrier",
-              "kind": "scalar"
-            },
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "kind",
-              "kind": "scalar"
-            },
-            {
-              "name": "lead",
-              "kind": "scalar"
-            },
-            {
-              "name": "name",
-              "kind": "scalar"
-            },
-            {
-              "name": "offsetMS",
-              "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "reportedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "rttMS",
-              "kind": "scalar"
-            },
-            {
-              "name": "ticker",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "skipped",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "addedAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "artworkURL",
-                "kind": "scalar"
-              },
-              {
-                "name": "durationSeconds",
-                "kind": "scalar"
-              },
-              {
-                "name": "etaSeconds",
-                "kind": "scalar"
-              },
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "lastPlayedAt",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              },
-              {
-                "name": "participantID",
-                "kind": "scalar"
-              },
-              {
-                "name": "participantName",
-                "kind": "scalar"
-              },
-              {
-                "name": "pinned",
-                "kind": "scalar"
-              },
-              {
-                "name": "pitchSemitones",
-                "kind": "scalar"
-              },
-              {
-                "name": "position",
-                "kind": "scalar"
-              },
-              {
-                "name": "state",
-                "kind": "scalar"
-              },
-              {
-                "name": "subtitle",
-                "kind": "scalar"
-              },
-              {
-                "name": "title",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "addedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "artworkURL",
-              "kind": "scalar"
-            },
-            {
-              "name": "durationSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "etaSeconds",
-              "kind": "scalar"
-            },
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -35298,16 +30701,6 @@
           "kind": "scalar"
         },
         {
-          "name": "playerDisplay",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
-          "name": "playerDisplayHandle",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
           "name": "reportedAt",
           "kind": "scalar"
         },
@@ -35368,74 +30761,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -35463,16 +30788,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -35544,16 +30859,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -35615,16 +30920,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -35811,16 +31106,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -35882,16 +31167,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -35963,16 +31238,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -36034,16 +31299,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -36115,16 +31370,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -36186,16 +31431,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -36271,16 +31506,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -36318,16 +31543,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -36369,16 +31584,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -36442,16 +31647,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -36510,74 +31705,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -36605,16 +31732,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -36686,16 +31803,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -36757,16 +31864,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -36953,16 +32050,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -37024,16 +32111,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -37105,16 +32182,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -37176,16 +32243,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -37257,16 +32314,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -37328,16 +32375,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -37413,16 +32450,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -37460,16 +32487,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -37511,16 +32528,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -37584,16 +32591,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -37684,16 +32681,6 @@
               "kind": "scalar"
             },
             {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
               "name": "lastPlayedAt",
               "kind": "scalar"
             },
@@ -37741,10 +32728,6 @@
         },
         {
           "name": "joinPath",
-          "kind": "scalar"
-        },
-        {
-          "name": "lead",
           "kind": "scalar"
         },
         {
@@ -37818,16 +32801,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -37889,16 +32862,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -37981,74 +32944,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -38076,16 +32971,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -38157,16 +33042,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -38228,16 +33103,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -38424,16 +33289,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -38495,16 +33350,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -38576,16 +33421,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -38647,16 +33482,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -38728,16 +33553,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -38799,16 +33614,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -38884,16 +33689,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -38931,16 +33726,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -38982,16 +33767,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -39055,16 +33830,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -39149,74 +33914,6 @@
           "kind": "scalar"
         },
         {
-          "name": "availableDisplays",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "coversLibraries",
-                "kind": "scalar"
-              },
-              {
-                "name": "displayName",
-                "kind": "scalar"
-              },
-              {
-                "name": "handle",
-                "kind": "scalar"
-              },
-              {
-                "name": "joined",
-                "kind": "scalar"
-              },
-              {
-                "name": "missingLibraryIDs",
-                "kind": "list",
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
-                "name": "presence",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "coversLibraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "displayName",
-              "kind": "scalar"
-            },
-            {
-              "name": "handle",
-              "kind": "scalar"
-            },
-            {
-              "name": "joined",
-              "kind": "scalar"
-            },
-            {
-              "name": "missingLibraryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "presence",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "changeoverSeconds",
           "kind": "scalar"
         },
@@ -39244,16 +33941,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -39325,16 +34012,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -39396,16 +34073,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -39592,16 +34259,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -39663,16 +34320,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -39744,16 +34391,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -39815,16 +34452,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -39896,16 +34523,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "lastPlayedAt",
                 "kind": "scalar"
               },
@@ -39967,16 +34584,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -40052,16 +34659,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "playerDisplay",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "playerDisplayHandle",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "reportedAt",
                 "kind": "scalar"
               },
@@ -40099,16 +34696,6 @@
             {
               "name": "offsetMS",
               "kind": "scalar"
-            },
-            {
-              "name": "playerDisplay",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "playerDisplayHandle",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "reportedAt",
@@ -40150,16 +34737,6 @@
               {
                 "name": "id",
                 "kind": "scalar"
-              },
-              {
-                "name": "ineligible",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
-                "name": "label",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "lastPlayedAt",
@@ -40223,16 +34800,6 @@
             {
               "name": "id",
               "kind": "scalar"
-            },
-            {
-              "name": "ineligible",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "label",
-              "kind": "scalar",
-              "optional": true
             },
             {
               "name": "lastPlayedAt",
@@ -40750,11 +35317,6 @@
         {
           "name": "handle",
           "kind": "scalar"
-        },
-        {
-          "name": "inParty",
-          "kind": "scalar",
-          "optional": true
         },
         {
           "name": "lastSeenAt",
@@ -42002,11 +36564,6 @@
           "optional": true
         },
         {
-          "name": "placeholderIcon",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
           "name": "playsAlone",
           "kind": "scalar",
           "optional": true
@@ -42288,11 +36845,6 @@
           "optional": true
         },
         {
-          "name": "placeholderIcon",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
           "name": "playsAlone",
           "kind": "scalar",
           "optional": true
@@ -42497,11 +37049,6 @@
         },
         {
           "name": "muted",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
-          "name": "placeholderIcon",
           "kind": "scalar",
           "optional": true
         },
@@ -42838,11 +37385,6 @@
         },
         {
           "name": "muted",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
-          "name": "placeholderIcon",
           "kind": "scalar",
           "optional": true
         },
@@ -43620,11 +38162,6 @@
         },
         {
           "name": "muted",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
-          "name": "placeholderIcon",
           "kind": "scalar",
           "optional": true
         },
@@ -46755,11 +41292,6 @@
           "optional": true
         },
         {
-          "name": "placeholderIcon",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
           "name": "playsAlone",
           "kind": "scalar",
           "optional": true
@@ -46971,11 +41503,6 @@
         },
         {
           "name": "muted",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
-          "name": "placeholderIcon",
           "kind": "scalar",
           "optional": true
         },
@@ -47283,11 +41810,6 @@
                 "optional": true
               },
               {
-                "name": "placeholderIcon",
-                "kind": "scalar",
-                "optional": true
-              },
-              {
                 "name": "playsAlone",
                 "kind": "scalar",
                 "optional": true
@@ -47526,11 +42048,6 @@
             },
             {
               "name": "muted",
-              "kind": "scalar",
-              "optional": true
-            },
-            {
-              "name": "placeholderIcon",
               "kind": "scalar",
               "optional": true
             },
@@ -50087,15 +44604,6 @@
                 }
               },
               {
-                "name": "kindPluralDisplayName",
-                "kind": "map",
-                "optional": true,
-                "nullable": true,
-                "elem": {
-                  "kind": "scalar"
-                }
-              },
-              {
                 "name": "relation",
                 "kind": "scalar"
               },
@@ -50139,15 +44647,6 @@
             },
             {
               "name": "kindDisplayName",
-              "kind": "map",
-              "optional": true,
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
-            },
-            {
-              "name": "kindPluralDisplayName",
               "kind": "map",
               "optional": true,
               "nullable": true,
@@ -50231,11 +44730,6 @@
               "kind": "scalar"
             }
           ]
-        },
-        {
-          "name": "placeholderIcon",
-          "kind": "scalar",
-          "optional": true
         },
         {
           "name": "playsAlone",
@@ -56539,11 +51033,6 @@
           "optional": true
         },
         {
-          "name": "placeholderIcon",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
           "name": "playsAlone",
           "kind": "scalar",
           "optional": true
@@ -56946,11 +51435,6 @@
         },
         {
           "name": "muted",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
-          "name": "placeholderIcon",
           "kind": "scalar",
           "optional": true
         },
@@ -57631,11 +52115,6 @@
         },
         {
           "name": "muted",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
-          "name": "placeholderIcon",
           "kind": "scalar",
           "optional": true
         },
@@ -62095,13 +56574,6 @@
                   }
                 },
                 "omitempty": true
-              },
-              {
-                "name": "grantID",
-                "shape": {
-                  "type": "string"
-                },
-                "omitempty": true
               }
             ]
           }
@@ -62165,20 +56637,6 @@
                 "name": "playbackID",
                 "shape": {
                   "type": "string"
-                },
-                "omitempty": true
-              },
-              {
-                "name": "grantID",
-                "shape": {
-                  "type": "string"
-                },
-                "omitempty": true
-              },
-              {
-                "name": "sequence",
-                "shape": {
-                  "type": "integer"
                 },
                 "omitempty": true
               },
@@ -65288,13 +59746,6 @@
           }
         },
         {
-          "name": "grantID",
-          "shape": {
-            "type": "string",
-            "optional": true
-          }
-        },
-        {
           "name": "systemSurfaceDisclosure",
           "shape": {
             "type": "object",
@@ -65544,13 +59995,6 @@
           }
         },
         {
-          "name": "grantID",
-          "shape": {
-            "type": "string",
-            "optional": true
-          }
-        },
-        {
           "name": "expiresAt",
           "shape": {
             "type": "timestamp"
@@ -65618,8 +60062,7 @@
       "PROFILE_MISMATCH",
       "ACCESS_SCHEDULE_ENDED",
       "UPDATE_REQUIRED",
-      "DISPLAY_OFFLINE",
-      "DISPLAY_IN_PARTY"
+      "DISPLAY_OFFLINE"
     ],
     "notes": [
       "Every entry in a GraphQL response's errors array carries extensions.code from the closed vocabulary in codes. Clients branch on the code, never on the message text; growing the vocabulary is a deliberate wire-contract change.",
