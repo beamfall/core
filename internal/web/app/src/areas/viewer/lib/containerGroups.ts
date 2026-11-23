@@ -20,8 +20,10 @@ export function groupsNewByContainer(section: Section): boolean {
  * Folds items that share a container into one card for the container (CORE-2524):
  * three new episodes of a show read as the show with "3 new" instead of three
  * near-identical cards. The card opens the container's page and keeps the
- * position of the container's first item; an item alone in its container, or
- * held by none, stays as it is. The count is the card's subtitle, so it leads
+ * position of the container's first item. A lone new video folds too, so a
+ * single new episode shows its show's poster and opens the show rather than the
+ * episode; any other item alone in its container (a lone album track), or held
+ * by none, stays as it is. The count is the card's subtitle, so it leads
  * under the title and is part of the card's accessible name (CORE-2553). It
  * counts the items the Profile has not finished (CORE-2823), and falls back to
  * all of them when every one is finished.
@@ -43,7 +45,7 @@ export function groupByContainer(
   for (const item of items) {
     const container = item.container;
     const count = container ? (counts.get(container.id) ?? 0) : 0;
-    if (!container || count < 2) {
+    if (!container || (count < 2 && item.mediaClass !== "video")) {
       grouped.push(item);
       continue;
     }
@@ -69,4 +71,14 @@ export function foldNewShelf(
   countLabel: (count: number) => string,
 ): SourceItem[] {
   return groupByContainer(items, countLabel).slice(0, NEW_SHELF_CARDS);
+}
+
+/**
+ * Draws an item with its container's poster when it has one: a Continue
+ * Watching episode reads as its show, not as a frame from the episode.
+ */
+export function withContainerPoster(item: SourceItem): SourceItem {
+  const poster = item.container?.artwork?.poster;
+  if (!poster) return item;
+  return { ...item, artworkSlots: { ...item.artworkSlots, poster } };
 }

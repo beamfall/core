@@ -16,7 +16,7 @@ import {
   useContinueWatchingRemoved,
 } from "../actions/continueWatching";
 import { useEngagementEpoch } from "../actions/engagementSync";
-import { foldNewShelf, groupsNewByContainer } from "../lib/containerGroups";
+import { foldNewShelf, groupsNewByContainer, withContainerPoster } from "../lib/containerGroups";
 import { fetchSectionItems } from "../lib/sections";
 import { Hero } from "./Hero";
 import { SectionView, type SeeAllTarget } from "./SectionView";
@@ -180,6 +180,7 @@ export function HydratedSection({
       items && continueRow && removed.size
         ? items.filter((item) => !continueWatchingKeepsOut(removed, item.id, readSeq))
         : items;
+    if (kept && continueRow) return kept.map(withContainerPoster);
     return kept && !entityID && groupsNewByContainer(section)
       ? foldNewShelf(kept, (count) => t("cardNewCount", { count }))
       : kept;

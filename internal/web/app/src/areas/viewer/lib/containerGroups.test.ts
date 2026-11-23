@@ -6,6 +6,7 @@ import {
   groupsNewByContainer,
   NEW_SHELF_CARDS,
   NEW_SHELF_FETCH,
+  withContainerPoster,
 } from "./containerGroups";
 
 function episode(id: string, show?: string): SourceItem {
@@ -34,7 +35,7 @@ describe("groupByContainer (CORE-2524)", () => {
       ],
       label,
     );
-    expect(grouped.map((item) => item.id)).toEqual(["show-Alpha", "film", "b1"]);
+    expect(grouped.map((item) => item.id)).toEqual(["show-Alpha", "film", "show-Beta"]);
     expect(grouped[0]).toMatchObject({
       kind: "entity",
       title: "Alpha",
@@ -43,9 +44,32 @@ describe("groupByContainer (CORE-2524)", () => {
     });
   });
 
-  it("leaves a lone item and items without a container as they are", () => {
-    const items = [episode("b1", "Beta"), episode("film")];
+  it("leaves a lone non-video item and items without a container as they are", () => {
+    const track = { ...episode("t1", "Album"), mediaClass: "audio" };
+    const items = [track, episode("film")];
     expect(groupByContainer(items, label)).toEqual(items);
+  });
+
+  it("folds a lone episode into its show and leaves items without a container", () => {
+    const grouped = groupByContainer([episode("b1", "Beta"), episode("film")], label);
+    expect(grouped.map((item) => item.id)).toEqual(["show-Beta", "film"]);
+    expect(grouped[0]).toMatchObject({
+      kind: "entity",
+      subtitle: "1 new",
+      artwork: { poster: "/art/Beta" },
+    });
+  });
+});
+
+describe("withContainerPoster", () => {
+  it("draws an episode with its show's poster", () => {
+    const item = { ...episode("b1", "Beta"), artworkSlots: { poster: "/still", thumb: "/t" } };
+    expect(withContainerPoster(item).artworkSlots).toEqual({ poster: "/art/Beta", thumb: "/t" });
+  });
+
+  it("leaves an item without a container poster as it is", () => {
+    const film = episode("film");
+    expect(withContainerPoster(film)).toBe(film);
   });
 });
 
