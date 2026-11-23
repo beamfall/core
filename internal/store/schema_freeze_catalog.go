@@ -138,4 +138,6 @@ package store
 // entity-query hot path.
 // CORE-2968 adds 0135_subscription_seen_feed_position for Subscription
 // retention ranking and audit recovery, off the entity-query hot path.
-const schemaFreezeCatalogMigrations = 131
+// CORE-3310 adds 0136_player_profile_binding for durable Device player bindings
+// and Player Profile walk-up policy, off the entity-query hot path.
+const schemaFreezeCatalogMigrations = 132

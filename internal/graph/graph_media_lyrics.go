@@ -35,6 +35,9 @@ func (h *Handler) mediaLyrics(ctx context.Context, scope auth.Scope, req request
 	if mediaID == "" {
 		return empty, clientError("mediaID is required")
 	}
+	if err := h.requireWalkUpOrCommandedMedia(ctx, scope, mediaID); err != nil {
+		return empty, err
+	}
 	media, err := h.store.Media(ctx, mediaID, scope.LibraryFilter())
 	if err != nil {
 		return empty, clientError("unknown media")

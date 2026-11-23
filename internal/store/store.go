@@ -150,6 +150,9 @@ type Profile struct {
 	// when the request does not come from the LAN. 0 means no per-Profile
 	// cap; the server-wide remote cap still applies.
 	RemoteMaxBitrate int
+	// WalkUpEnabled allows a player-bound display Session to browse and play
+	// under this Player Profile's Library access list (ADR-0240 D7). Default false.
+	WalkUpEnabled bool
 }
 
 // ProfileCertificationCeiling pins a Profile's ceiling on one plugin's
@@ -172,6 +175,9 @@ const (
 	ProfileAdult ProfileKind = "adult"
 	// ProfileManaged has no reveal path.
 	ProfileManaged ProfileKind = "managed"
+	// ProfilePlayer is a satellite display policy class with no reveal path, no PIN,
+	// no picker presence, and fixed kind (ADR-0240 D1).
+	ProfilePlayer ProfileKind = "player"
 )
 
 // SubtitleMode is the closed subtitle-policy vocabulary for track pre-selection.
@@ -231,8 +237,8 @@ func (settings ProfileSettings) validate() error {
 	if settings.Name != nil && strings.TrimSpace(*settings.Name) == "" {
 		return ValidationError("profile name is required")
 	}
-	if settings.Kind != nil && *settings.Kind != ProfileAdult && *settings.Kind != ProfileManaged {
-		return ValidationError("profile kind must be adult or managed")
+	if settings.Kind != nil && *settings.Kind != ProfileAdult && *settings.Kind != ProfileManaged && *settings.Kind != ProfilePlayer {
+		return ValidationError("profile kind must be adult, managed, or player")
 	}
 	if settings.MaxConcurrentStreams != nil && *settings.MaxConcurrentStreams < 0 {
 		return ValidationError("maxConcurrentStreams must be non-negative")
@@ -350,13 +356,16 @@ func decodeIntegrationScopes(encoded string) ([]IntegrationScope, error) {
 
 // Device is an enrolled client device.
 type Device struct {
-	ID                DeviceID
-	Name              string
-	Role              DeviceRole
-	DistributionClass DeviceDistributionClass
-	Surface           DeviceSurface
-	SecretHash        string
-	Revoked           bool
+	ID                      DeviceID
+	Name                    string
+	Role                    DeviceRole
+	DistributionClass       DeviceDistributionClass
+	Surface                 DeviceSurface
+	SecretHash              string
+	Revoked                 bool
+	PlayerProfileID         ProfileID
+	PlayerDisplayName       string
+	PlayerBindingGeneration int
 }
 
 // DeviceSurface is the persisted first-party client surface bound to a device.
@@ -1454,10 +1463,18 @@ func (s *Store) EnrollDevice(ctx context.Context, device Device, session Session
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	if disabled, err := profileDisabled(ctx, s.catalogR, session.ProfileID); err != nil {
+	profile, err := s.profileSQL(ctx, session.ProfileID)
+	if err != nil {
 		return err
-	} else if disabled {
+	}
+	if profile.Disabled {
 		return ErrProfileDisabled
+	}
+	if device.PlayerProfileID != "" && profile.Kind != ProfilePlayer {
+		return ValidationError("player binding requires a player profile")
+	}
+	if device.PlayerProfileID == "" && profile.Kind == ProfilePlayer {
+		return ValidationError("player profile requires device player binding")
 	}
 	return s.insertDeviceSession(ctx, device, session)
 }
@@ -1492,6 +1509,20 @@ func normalizeEnrollment(device Device, session Session) (Device, Session, error
 	}
 	if session.DeviceID != device.ID {
 		return Device{}, Session{}, errors.New("session device mismatch")
+	}
+	if device.PlayerProfileID != "" {
+		// A bound device's Session always issues on its bound Player Profile.
+		session.ProfileID = device.PlayerProfileID
+		session.Revealed = false
+		session.AdminUntil = time.Time{}
+		if device.PlayerBindingGeneration <= 0 {
+			device.PlayerBindingGeneration = 1
+		}
+		if strings.TrimSpace(device.PlayerDisplayName) == "" {
+			device.PlayerDisplayName = device.Name
+		} else {
+			device.PlayerDisplayName = strings.TrimSpace(device.PlayerDisplayName)
+		}
 	}
 	if session.ProfileID == "" {
 		return Device{}, Session{}, errors.New("session profile is required")
@@ -1594,7 +1625,7 @@ func (s *Store) ListDevices(ctx context.Context) ([]Device, error) {
 		return nil, err
 	}
 	rows, err := s.catalogR.QueryContext(ctx,
-		"SELECT id, name, role, distribution_class, device_surface, secret_hash, revoked FROM device ORDER BY name, id",
+		"SELECT id, name, role, distribution_class, device_surface, secret_hash, revoked, COALESCE(player_profile_id, ''), player_display_name, player_binding_generation FROM device ORDER BY name, id",
 	)
 	if err != nil {
 		return nil, err
@@ -1604,9 +1635,11 @@ func (s *Store) ListDevices(ctx context.Context) ([]Device, error) {
 	for rows.Next() {
 		var d Device
 		var revoked int
-		if err := rows.Scan(&d.ID, &d.Name, &d.Role, &d.DistributionClass, &d.Surface, &d.SecretHash, &revoked); err != nil {
+		var playerProfileID string
+		if err := rows.Scan(&d.ID, &d.Name, &d.Role, &d.DistributionClass, &d.Surface, &d.SecretHash, &revoked, &playerProfileID, &d.PlayerDisplayName, &d.PlayerBindingGeneration); err != nil {
 			return nil, err
 		}
+		d.PlayerProfileID = ProfileID(playerProfileID)
 		d.Revoked = revoked != 0
 		devices = append(devices, d)
 	}
@@ -2061,9 +2094,24 @@ func (s *Store) SetSessionProfile(ctx context.Context, id SessionID, profileID P
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	var boundProfileID string
+	err := s.catalogR.QueryRowContext(ctx, `
+		SELECT COALESCE(d.player_profile_id, '')
+		FROM auth_session s
+		JOIN device d ON d.id = s.device_id
+		WHERE s.id = ?`, id).Scan(&boundProfileID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if boundProfileID != "" {
+		return ValidationError("bound player device cannot switch profiles")
+	}
 	profile, err := s.profileSQL(ctx, profileID)
 	if err != nil {
 		return err
+	}
+	if profile.Kind == ProfilePlayer {
+		return ValidationError("profile not found")
 	}
 	if profile.Disabled {
 		return ErrProfileDisabled
@@ -4480,8 +4528,8 @@ func (s *Store) CreateProfile(ctx context.Context, name string, kind ProfileKind
 	if name == "" {
 		return Profile{}, ValidationError("profile name is required")
 	}
-	if kind != ProfileAdult && kind != ProfileManaged {
-		return Profile{}, ValidationError("profile kind must be adult or managed")
+	if kind != ProfileAdult && kind != ProfileManaged && kind != ProfilePlayer {
+		return Profile{}, ValidationError("profile kind must be adult, managed, or player")
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -4497,7 +4545,7 @@ func (s *Store) CreateProfile(ctx context.Context, name string, kind ProfileKind
 		if !libraryVisible(library, creator) {
 			continue
 		}
-		if kind == ProfileManaged && library.IsRestricted {
+		if (kind == ProfileManaged || kind == ProfilePlayer) && library.IsRestricted {
 			continue
 		}
 		grants = append(grants, library.ID)
@@ -4830,6 +4878,12 @@ func (s *Store) UpdateProfileSettings(ctx context.Context, id ProfileID, setting
 		profile.Name = strings.TrimSpace(*settings.Name)
 	}
 	if settings.Kind != nil {
+		if profile.Kind == ProfilePlayer && *settings.Kind != ProfilePlayer {
+			return Profile{}, ValidationError("player profile kind cannot be changed")
+		}
+		if profile.Kind != ProfilePlayer && *settings.Kind == ProfilePlayer {
+			return Profile{}, ValidationError("profile kind cannot be changed to player")
+		}
 		if *settings.Kind != ProfileAdult && profile.IsOwner {
 			return Profile{}, ValidationError("cannot change owner profile to managed; transfer ownership to another adult profile first")
 		}
@@ -4911,6 +4965,9 @@ func (s *Store) SetProfileLibraries(ctx context.Context, id ProfileID, libraryID
 		}
 		if profile.Kind == ProfileManaged && library.IsRestricted {
 			return Profile{}, ValidationError("managed profile cannot be granted restricted libraries")
+		}
+		if profile.Kind == ProfilePlayer && library.IsRestricted {
+			return Profile{}, ValidationError("player profile cannot be granted restricted libraries")
 		}
 	}
 	tx, err := s.catalogW.BeginTx(ctx, nil)

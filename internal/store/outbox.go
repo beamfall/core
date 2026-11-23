@@ -625,6 +625,27 @@ func (s *Store) AppendSessionControlEvent(ctx context.Context, target SessionID,
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	playerBound := false
+	if payload.Command == SessionCommandPlayMedia && payload.MediaID != "" {
+		playerBound, err = s.sessionDevicePlayerBoundLocked(ctx, target)
+		if err != nil {
+			return err
+		}
+	}
+	if playerBound {
+		tx, err := s.eventsW.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if err := appendSessionControlEventSQL(ctx, tx, target, raw, now); err != nil {
+			return err
+		}
+		if err := recordPlayerCommandedMediaSQL(ctx, tx, target, payload.MediaID, now); err != nil {
+			return err
+		}
+		return s.commitOutboxTx(tx)
+	}
 	if err := appendSessionControlEventSQL(ctx, s.eventsW, target, raw, now); err != nil {
 		return err
 	}
@@ -651,6 +672,13 @@ func (s *Store) AppendSessionControlEventWithActivity(ctx context.Context, targe
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	playerBound := false
+	if payload.Command == SessionCommandPlayMedia && payload.MediaID != "" {
+		playerBound, err = s.sessionDevicePlayerBoundLocked(ctx, target)
+		if err != nil {
+			return err
+		}
+	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -658,6 +686,11 @@ func (s *Store) AppendSessionControlEventWithActivity(ctx context.Context, targe
 	defer tx.Rollback()
 	if err := appendSessionControlEventSQL(ctx, tx, target, raw, now); err != nil {
 		return err
+	}
+	if playerBound {
+		if err := recordPlayerCommandedMediaSQL(ctx, tx, target, payload.MediaID, now); err != nil {
+			return err
+		}
 	}
 	if err := appendActivitySQL(ctx, tx, activity); err != nil {
 		return err

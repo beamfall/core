@@ -548,6 +548,22 @@
       ]
     },
     {
+      "field": "cleardeviceplayerbinding",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "current",
+        "deviceID",
+        "name",
+        "playerBindingGeneration",
+        "playerDisplayName",
+        "playerProfileID",
+        "revoked",
+        "role",
+        "signedIn"
+      ]
+    },
+    {
       "field": "clearmediaordinal",
       "effect": "write",
       "tier": "session"
@@ -815,7 +831,8 @@
         "remoteMaxBitrate",
         "subtitleLanguages",
         "subtitleMode",
-        "transcodeAllowed"
+        "transcodeAllowed",
+        "walkUpEnabled"
       ]
     },
     {
@@ -1057,6 +1074,9 @@
         "current",
         "deviceID",
         "name",
+        "playerBindingGeneration",
+        "playerDisplayName",
+        "playerProfileID",
         "revoked",
         "role",
         "signedIn"
@@ -2775,6 +2795,19 @@
       ]
     },
     {
+      "field": "playerbinding",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "bound",
+        "displayName",
+        "generation",
+        "profileID",
+        "updateRequired",
+        "walkUpEnabled"
+      ]
+    },
+    {
       "field": "playhistory",
       "effect": "read",
       "tier": "admin",
@@ -4173,7 +4206,8 @@
         "remoteMaxBitrate",
         "subtitleLanguages",
         "subtitleMode",
-        "transcodeAllowed"
+        "transcodeAllowed",
+        "walkUpEnabled"
       ]
     },
     {
@@ -4217,6 +4251,22 @@
       ]
     },
     {
+      "field": "setdeviceplayerbinding",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "current",
+        "deviceID",
+        "name",
+        "playerBindingGeneration",
+        "playerDisplayName",
+        "playerProfileID",
+        "revoked",
+        "role",
+        "signedIn"
+      ]
+    },
+    {
       "field": "setdevicerole",
       "effect": "write",
       "tier": "admin",
@@ -4224,6 +4274,9 @@
         "current",
         "deviceID",
         "name",
+        "playerBindingGeneration",
+        "playerDisplayName",
+        "playerProfileID",
         "revoked",
         "role",
         "signedIn"
@@ -4467,6 +4520,27 @@
       ]
     },
     {
+      "field": "setplayerwalkup",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "audioLanguages",
+        "certificationCeilings",
+        "disabled",
+        "id",
+        "kind",
+        "libraryIDs",
+        "maxConcurrentStreams",
+        "name",
+        "preferSDH",
+        "remoteMaxBitrate",
+        "subtitleLanguages",
+        "subtitleMode",
+        "transcodeAllowed",
+        "walkUpEnabled"
+      ]
+    },
+    {
       "field": "setpluginactive",
       "effect": "write",
       "tier": "admin",
@@ -4568,7 +4642,8 @@
         "remoteMaxBitrate",
         "subtitleLanguages",
         "subtitleMode",
-        "transcodeAllowed"
+        "transcodeAllowed",
+        "walkUpEnabled"
       ]
     },
     {
@@ -5422,7 +5497,8 @@
         "remoteMaxBitrate",
         "subtitleLanguages",
         "subtitleMode",
-        "transcodeAllowed"
+        "transcodeAllowed",
+        "walkUpEnabled"
       ]
     },
     {

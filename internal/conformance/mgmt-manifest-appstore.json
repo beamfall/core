@@ -90,6 +90,10 @@
       "effect": "write"
     },
     {
+      "field": "cleardeviceplayerbinding",
+      "effect": "write"
+    },
+    {
       "field": "commitscanpreview",
       "effect": "write"
     },
@@ -378,6 +382,10 @@
       "effect": "write"
     },
     {
+      "field": "setdeviceplayerbinding",
+      "effect": "write"
+    },
+    {
       "field": "setdevicerole",
       "effect": "write"
     },
@@ -407,6 +415,10 @@
     },
     {
       "field": "setlibraryshowonhome",
+      "effect": "write"
+    },
+    {
+      "field": "setplayerwalkup",
       "effect": "write"
     },
     {

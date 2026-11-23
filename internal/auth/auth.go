@@ -178,6 +178,47 @@ type Scope struct {
 	// AccessGrants for. Populated at scope resolution
 	// time for managed Profiles; nil for adults and non-Profile scopes.
 	GrantedMediaIDs []store.MediaID
+	// DeviceSurface is the persisted client surface of the enrolled Device.
+	DeviceSurface store.DeviceSurface
+	// PlayerProfileID, PlayerDisplayName, and PlayerBindingGeneration carry the
+	// Device's durable player binding when bound to a Player Profile (ADR-0240 D2).
+	PlayerProfileID         store.ProfileID
+	PlayerDisplayName       string
+	PlayerBindingGeneration int
+	// WalkUpEnabled mirrors the Player Profile's walk-up browsing policy (ADR-0240 D7).
+	WalkUpEnabled bool
+	// ClientCapabilities holds the client capabilities declared for the current
+	// connection (from its compatibility contract).
+	ClientCapabilities []string
+}
+
+type clientCapabilitiesContextKey struct{}
+
+// WithClientCapabilities attaches the connection's declared client capabilities
+// to ctx for per-request Scope resolution.
+func WithClientCapabilities(ctx context.Context, capabilities []string) context.Context {
+	return context.WithValue(ctx, clientCapabilitiesContextKey{}, slices.Clone(capabilities))
+}
+
+// ClientCapabilitiesFromContext returns the declared client capabilities
+// attached to ctx, if any.
+func ClientCapabilitiesFromContext(ctx context.Context) ([]string, bool) {
+	caps, ok := ctx.Value(clientCapabilitiesContextKey{}).([]string)
+	if !ok {
+		return nil, false
+	}
+	return slices.Clone(caps), true
+}
+
+// IsPlayerBound reports whether the Scope belongs to a player-bound Device or
+// a Player Profile Session.
+func (s Scope) IsPlayerBound() bool {
+	return s.PlayerProfileID != "" || s.Profile == store.ProfilePlayer
+}
+
+// HasClientCapability reports whether the connection declared capability.
+func (s Scope) HasClientCapability(capability string) bool {
+	return slices.Contains(s.ClientCapabilities, capability)
 }
 
 // Service resolves sessions.
@@ -456,6 +497,9 @@ func (s *Service) ReauthorizeProfileScope(ctx context.Context, scope Scope, prof
 		return Scope{}, err
 	}
 	scope.Profile = profile.Kind
+	if profile.Kind == store.ProfilePlayer {
+		scope.WalkUpEnabled = profile.WalkUpEnabled
+	}
 	if profile.Kind != store.ProfileAdult {
 		scope.Revealed = false
 		scope.Admin = false
@@ -551,6 +595,10 @@ func (s *Service) scope(ctx context.Context, sessionID store.SessionID, credenti
 		noteCredentialRefusal(ctx, RefusalDeviceRevoked)
 		return Scope{}, errors.New("device revoked")
 	}
+	if device.PlayerProfileID != "" && session.ProfileID != device.PlayerProfileID {
+		noteCredentialRefusal(ctx, RefusalSessionInvalid)
+		return Scope{}, errors.New("session profile does not match device player binding")
+	}
 	profile, err := s.store.Profile(ctx, session.ProfileID)
 	if err != nil {
 		noteCredentialRefusal(ctx, RefusalProfileUnavailable)
@@ -593,21 +641,31 @@ func (s *Service) scope(ctx context.Context, sessionID store.SessionID, credenti
 	if profile.Kind == store.ProfileManaged {
 		grantedIDs, _ = s.store.GrantedMediaIDsForProfile(ctx, profile.ID)
 	}
+	var clientCaps []string
+	if caps, ok := ClientCapabilitiesFromContext(ctx); ok {
+		clientCaps = caps
+	}
 	return Scope{
-		SessionID:         session.ID,
-		SessionKind:       session.Kind,
-		DeviceID:          session.DeviceID,
-		DeviceRole:        device.Role,
-		DistributionClass: device.DistributionClass,
-		ProfileID:         profile.ID,
-		Profile:           profile.Kind,
-		Revealed:          revealed,
-		Admin:             !adminUntil.IsZero(),
-		AdminUntil:        adminUntil,
-		ExpiresAt:         session.ExpiresAt,
-		LibraryIDs:        profile.Library,
-		Certification:     s.CertificationConstraints(profile.CertificationCeilings),
-		GrantedMediaIDs:   grantedIDs,
+		SessionID:               session.ID,
+		SessionKind:             session.Kind,
+		DeviceID:                session.DeviceID,
+		DeviceRole:              device.Role,
+		DistributionClass:       device.DistributionClass,
+		DeviceSurface:           device.Surface,
+		PlayerProfileID:         device.PlayerProfileID,
+		PlayerDisplayName:       device.PlayerDisplayName,
+		PlayerBindingGeneration: device.PlayerBindingGeneration,
+		WalkUpEnabled:           profile.WalkUpEnabled,
+		ClientCapabilities:      clientCaps,
+		ProfileID:               profile.ID,
+		Profile:                 profile.Kind,
+		Revealed:                revealed,
+		Admin:                   !adminUntil.IsZero(),
+		AdminUntil:              adminUntil,
+		ExpiresAt:               session.ExpiresAt,
+		LibraryIDs:              profile.Library,
+		Certification:           s.CertificationConstraints(profile.CertificationCeilings),
+		GrantedMediaIDs:         grantedIDs,
 	}, nil
 }
 

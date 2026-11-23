@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/observability"
 	"github.com/beamfall/core/internal/store"
 )
@@ -129,6 +130,8 @@ func requestedField(fields map[string]bool, names ...string) string {
 
 func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchOrder) response {
 	var gate fieldRoleGate
+	playerBound := dispatch.scope.IsPlayerBound()
+	missingPlayerDisplay := playerBound && !dispatch.scope.HasClientCapability(string(capabilities.CapabilityPlayerDisplay))
 	for field, requested := range dispatch.fields {
 		if !requested {
 			continue
@@ -137,10 +140,49 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 		if !ok {
 			continue
 		}
+		matchedOrder := false
 		for _, candidate := range handler.run {
 			if candidate == order {
 				gate |= handler.roleGate
+				matchedOrder = true
 				break
+			}
+		}
+		if !matchedOrder {
+			continue
+		}
+		if missingPlayerDisplay && field != "playerbinding" && field != "serverinfo" {
+			refusal := newGraphError(ErrorCodeForbidden, "update required")
+			refusal.Extensions.Reason = ErrorReasonUpdateRequired
+			return response{
+				Errors:               []graphError{refusal},
+				authorizationRefused: true,
+			}
+		}
+		if playerBound {
+			if field == "profiles" {
+				return response{
+					Errors:               []graphError{newGraphError(ErrorCodeForbidden, "player display cannot list profiles")},
+					authorizationRefused: true,
+				}
+			}
+			if field == "switchprofile" {
+				return response{
+					Errors:               []graphError{newGraphError(ErrorCodeForbidden, "bound player device cannot switch profiles")},
+					authorizationRefused: true,
+				}
+			}
+			if playerBlockedSettingsFields[field] {
+				return response{
+					Errors:               []graphError{newGraphError(ErrorCodeForbidden, "player display cannot modify profile settings")},
+					authorizationRefused: true,
+				}
+			}
+			if !dispatch.scope.WalkUpEnabled && walkUpBlockedFields[field] {
+				return response{
+					Errors:               []graphError{newGraphError(ErrorCodeForbidden, "walk-up browsing is disabled")},
+					authorizationRefused: true,
+				}
 			}
 		}
 	}
@@ -150,7 +192,7 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 			authorizationRefused: true,
 		}
 	}
-	if gate&roleAdultProfile != 0 && dispatch.scope.Profile == store.ProfileManaged {
+	if gate&roleAdultProfile != 0 && dispatch.scope.Profile != store.ProfileAdult {
 		return response{
 			Errors:               []graphError{newGraphError(ErrorCodeForbidden, "adult profile required")},
 			authorizationRefused: true,
@@ -171,7 +213,7 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 // another Profile's ID keeps the Admin Session requirement.
 func ownTrackPreferenceWrite(dispatch *fieldDispatchContext) bool {
 	scope := dispatch.scope
-	if !scope.IsEnrolledDeviceSession() || scope.ProfileID == "" {
+	if !scope.IsEnrolledDeviceSession() || scope.ProfileID == "" || scope.IsPlayerBound() {
 		return false
 	}
 	for field, requested := range dispatch.fields {
@@ -488,6 +530,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"bulktrashbrokenselected":            newFieldHandler("bulkTrashBrokenSelected", "bulkTrashBrokenSelected", fieldMutation, roleSession|roleAdmin, 74),
 	"capabilitystates":                   newFieldHandler("capabilityStates", "capabilityStates", fieldRead, roleSession|roleAdmin, 67),
 	"clearallmutes":                      newFieldHandler("clearAllMutes", "clearAllMutes", fieldMutation, roleSession, 125),
+	"cleardeviceplayerbinding":           newFieldHandler("clearDevicePlayerBinding", "clearDevicePlayerBinding", fieldMutation, roleSession|roleAdmin, 145),
 	"clearmute":                          newFieldHandler("clearMute", "clearMute", fieldMutation, roleSession, 124),
 	"clientprefs":                        newFieldHandler("clientPrefs", "client preferences", fieldRead, roleSession, 43),
 	"homelayout":                         newFieldHandler("homeLayout", "homeLayout", fieldRead, roleSession, 158),
@@ -614,6 +657,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"pendingaitagqueue":                  newFieldHandler("pendingAITagQueue", "pendingAITagQueue", fieldRead, roleSession|roleAdmin, 77),
 	"pinartworkcandidate":                newFieldHandler("pinArtworkCandidate", "pinArtworkCandidate", fieldMutation, roleSession|roleManager|roleAdultProfile, 16),
 	"playbackrenditioncache":             newFieldHandler("playbackRenditionCache", "playbackRenditionCache", fieldRead, roleSession|roleAdmin, 75),
+	"playerbinding":                      newFieldHandler("playerBinding", "playerBinding", fieldRead, roleSession, 1),
 	"plugins":                            newFieldHandler("plugins", "", fieldRead, roleSession, 5),
 	"pluginworker":                       newFieldHandler("pluginWorker", "pluginWorker", fieldRead, roleSession|roleAdmin, 66),
 	"precomputeplaybackrenditions":       newFieldHandler("precomputePlaybackRenditions", "precomputePlaybackRenditions", fieldMutation, roleSession|roleAdmin, 75),
@@ -731,6 +775,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setclientpref":                      newFieldHandler("setClientPref", "setClientPref", fieldMutation, roleSession, 42),
 	"setcontinuewatchinghidden":          newFieldHandler("setContinueWatchingHidden", "setContinueWatchingHidden", fieldMutation, roleSession, 146),
 	"setconsoleconfig":                   newFieldHandler("setConsoleConfig", "setConsoleConfig", fieldMutation, roleSession|roleAdmin, 66),
+	"setdeviceplayerbinding":             newFieldHandler("setDevicePlayerBinding", "setDevicePlayerBinding", fieldMutation, roleSession|roleAdmin, 145),
 	"setdevicerole":                      newFieldHandler("setDeviceRole", "setDeviceRole", fieldMutation, roleSession|roleAdmin, 145),
 	"setextensionpreauthorization":       newFieldHandler("setExtensionPreauthorization", "setExtensionPreauthorization", fieldMutation, roleSession|roleAdmin, 96),
 	"setfavorite":                        newFieldHandler("setFavorite", "setFavorite", fieldMutation, roleSession, 34),
@@ -753,6 +798,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setpluginactive":                    newFieldHandler("setPluginActive", "setPluginActive", fieldMutation, roleSession|roleAdmin, 66),
 	"setpluginconfig":                    newFieldHandler("setPluginConfig", "setPluginConfig", fieldMutation, roleSession|roleAdmin, 66),
 	"setpluginupdatesource":              newFieldHandler("setPluginUpdateSource", "setPluginUpdateSource", fieldMutation, roleSession|roleAdmin, 66),
+	"setplayerwalkup":                    newFieldHandler("setPlayerWalkUp", "setPlayerWalkUp", fieldMutation, roleSession|roleAdmin, 38),
 	"setprofilelibraries":                newFieldHandler("setProfileLibraries", "setProfileLibraries", fieldMutation, roleSession|roleAdmin, 39),
 	"setjellyfincompat":                  newFieldHandler("setJellyfinCompat", "setJellyfinCompat", fieldMutation, roleSession|roleAdmin, 155),
 	"setprofileintegrationsignin":        newFieldHandler("setProfileIntegrationSignIn", "setProfileIntegrationSignIn", fieldMutation, roleSession|roleAdmin, 155),
@@ -887,6 +933,9 @@ func dispatchFieldBlock001(dispatch *fieldDispatchContext) response {
 			}
 		}
 		setField(dispatch, "currentsession", session)
+	}
+	if fields["playerbinding"] {
+		setField(dispatch, "playerbinding", h.playerBinding(scope))
 	}
 	return response{}
 }
@@ -1662,6 +1711,12 @@ func dispatchFieldBlock038(dispatch *fieldDispatchContext) response {
 	if fields["setprofileavatar"] {
 		profile, err := h.setProfileAvatar(ctx, scope, req)
 		if resp := resolveField(dispatch, "setprofileavatar", profile, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setplayerwalkup"] {
+		profile, err := h.setPlayerWalkUp(ctx, scope, req)
+		if resp := resolveField(dispatch, "setplayerwalkup", profile, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
@@ -4332,7 +4387,8 @@ func dispatchFieldBlock145(dispatch *fieldDispatchContext) response {
 		}
 	}
 	if fields["livesessions"] || fields["terminatesession"] || fields["revokedevice"] ||
-		fields["devices"] || fields["revokealldevices"] || fields["setdevicerole"] {
+		fields["devices"] || fields["revokealldevices"] || fields["setdevicerole"] ||
+		fields["setdeviceplayerbinding"] || fields["cleardeviceplayerbinding"] {
 		if fields["livesessions"] {
 			sessions, err := h.liveSessions(ctx, scope)
 			if resp := resolveField(dispatch, "livesessions", sessions, err); len(resp.Errors) > 0 {
@@ -4366,6 +4422,18 @@ func dispatchFieldBlock145(dispatch *fieldDispatchContext) response {
 		if fields["setdevicerole"] {
 			result, err := h.setDeviceRole(ctx, scope, req)
 			if resp := resolveField(dispatch, "setdevicerole", result, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["setdeviceplayerbinding"] {
+			result, err := h.setDevicePlayerBinding(ctx, scope, req)
+			if resp := resolveField(dispatch, "setdeviceplayerbinding", result, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["cleardeviceplayerbinding"] {
+			result, err := h.clearDevicePlayerBinding(ctx, scope, req)
+			if resp := resolveField(dispatch, "cleardeviceplayerbinding", result, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}

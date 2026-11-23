@@ -2373,6 +2373,9 @@ type ProfileInfo struct {
 	// CertificationCeilings are the Profile's per-plugin certification
 	// ceilings.
 	CertificationCeilings []CertificationCeilingInfo `json:"certificationCeilings"`
+	// WalkUpEnabled reports whether a Player Profile allows walk-up browsing
+	// on bound display Sessions (ADR-0240 D7).
+	WalkUpEnabled bool `json:"walkUpEnabled"`
 }
 
 // CertificationCeilingInfo is the wire shape for one Profile certification
@@ -2414,6 +2417,7 @@ func profileInfo(profile store.Profile) ProfileInfo {
 		PreferSDH:             profile.PreferSDH,
 		RemoteMaxBitrate:      profile.RemoteMaxBitrate,
 		CertificationCeilings: ceilings,
+		WalkUpEnabled:         profile.WalkUpEnabled,
 	}
 }
 
@@ -2466,7 +2470,9 @@ func profilePictureURL(id store.ProfileID, version int64) string {
 // Profiles are hidden — they refuse new sessions and profile switches alike.
 // The list is in the manager-chosen picker order (CORE-2477).
 func (h *Handler) profiles(ctx context.Context) ([]ProfileSummary, error) {
-	return h.profileSummaries(ctx, func(profile store.Profile) bool { return !profile.Disabled })
+	return h.profileSummaries(ctx, func(profile store.Profile) bool {
+		return !profile.Disabled && profile.Kind != store.ProfilePlayer
+	})
 }
 
 // profileSummaries builds the picker shape for every Profile include accepts,
@@ -2577,6 +2583,9 @@ func (h *Handler) setProfileAvatar(ctx context.Context, scope auth.Scope, req re
 // switch), and the returned session reflects the new binding so clients can
 // re-render without a second round trip.
 func (h *Handler) switchProfile(ctx context.Context, scope auth.Scope, req request) (SessionInfo, error) {
+	if scope.IsPlayerBound() {
+		return SessionInfo{}, clientError("bound player device cannot switch profiles")
+	}
 	profileID := trimmedVariable(req, "profileID")
 	if profileID == "" {
 		return SessionInfo{}, clientError("profileID is required")
@@ -2585,6 +2594,9 @@ func (h *Handler) switchProfile(ctx context.Context, scope auth.Scope, req reque
 	profile, err := h.store.Profile(ctx, targetID)
 	if err != nil {
 		return SessionInfo{}, err
+	}
+	if profile.Kind == store.ProfilePlayer {
+		return SessionInfo{}, store.ValidationError("profile not found")
 	}
 	adult := profile.Kind == store.ProfileAdult
 	attemptKey := pinAttemptKey(targetID, scope.DeviceID)
@@ -5573,6 +5585,9 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 	if mediaID == "" {
 		return MediaInfo{}, clientError("id is required")
 	}
+	if err := h.requireWalkUpOrCommandedMedia(ctx, scope, mediaID); err != nil {
+		return MediaInfo{}, err
+	}
 	media, err := h.store.Media(ctx, mediaID, scope.LibraryFilter())
 	if err != nil {
 		return MediaInfo{}, clientError("unknown media")
@@ -6020,6 +6035,9 @@ func (h *Handler) entitiesForMedia(ctx context.Context, scope auth.Scope, req re
 	if mediaID == "" {
 		return nil, clientError("mediaID is required")
 	}
+	if err := h.requireWalkUpOrCommandedMedia(ctx, scope, mediaID); err != nil {
+		return nil, err
+	}
 	related, err := h.store.EntitiesForMedia(ctx, mediaID, relation, scope.LibraryFilter())
 	if err != nil {
 		return nil, clientError("unknown media")
@@ -6052,6 +6070,9 @@ func (h *Handler) mediaFieldsQuery(ctx context.Context, scope auth.Scope, req re
 	mediaID := trimmedVariable(req, "mediaID")
 	if mediaID == "" {
 		return nil, clientError("mediaID is required")
+	}
+	if err := h.requireWalkUpOrCommandedMedia(ctx, scope, store.MediaID(mediaID)); err != nil {
+		return nil, err
 	}
 	fields, err := h.store.MediaFields(ctx, store.MediaID(mediaID), scope.LibraryFilter())
 	if err != nil {
@@ -6270,6 +6291,9 @@ func (h *Handler) markersQuery(ctx context.Context, scope auth.Scope, req reques
 	mediaID := trimmedVariable(req, "mediaID")
 	if mediaID == "" {
 		return nil, clientError("mediaID is required")
+	}
+	if err := h.requireWalkUpOrCommandedMedia(ctx, scope, store.MediaID(mediaID)); err != nil {
+		return nil, err
 	}
 	markers, err := h.store.MarkersForMedia(ctx, store.MediaID(mediaID), scope.LibraryFilter())
 	if err != nil {
@@ -6992,6 +7016,7 @@ var queryFields = map[string]bool{
 	// filesystem browse for the first-run wizard's root field.
 	"browseserverfolders": true,
 	"pathpicker":          true,
+	"playerbinding":       true,
 }
 
 // mutationFields are the scoped top-level fields that write or command state.
@@ -7192,6 +7217,9 @@ var mutationFields = map[string]bool{
 	"revokedevice":                       true,
 	"revokealldevices":                   true,
 	"setdevicerole":                      true,
+	"setdeviceplayerbinding":             true,
+	"cleardeviceplayerbinding":           true,
+	"setplayerwalkup":                    true,
 	"controlsession":                     true,
 	// Ambient Group Conductor: session-scoped, same-Profile-
 	// gated group lifecycle + sync. NOT admin-gated — like controlSession these
@@ -7363,6 +7391,7 @@ var adminFields = map[string]bool{
 	"reorderprofiles":         true,
 	"setprofileavatar":        true,
 	"setprofilelibraries":     true,
+	"setplayerwalkup":         true,
 	"setcertificationceiling": true,
 	"accessschedule":          true,
 	"setaccessschedule":       true,
@@ -7418,9 +7447,11 @@ var adminFields = map[string]bool{
 	// Operations — device-key revocation propagation
 	"revokedevice": true,
 	// Device administration — list + revoke-all
-	"devices":          true,
-	"revokealldevices": true,
-	"setdevicerole":    true,
+	"devices":                  true,
+	"revokealldevices":         true,
+	"setdevicerole":            true,
+	"setdeviceplayerbinding":   true,
+	"cleardeviceplayerbinding": true,
 	// Operations — remote access / watcher / ingest status (§4 server settings
 	// + §5 real-time monitoring)
 	"remoteaccess":                  true,

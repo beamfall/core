@@ -121,7 +121,10 @@ package store
 // in the owning Library plane.
 // Events 0029 (CORE-2958) adds the per-follow new-entry route, read by the
 // subscription-new Source and the poller, without changing entity queries.
+// Events 0030 (CORE-3310) adds player_commanded_media for play-media command
+// authorization on player-bound Sessions with walk-up disabled, off the
+// entity-query hot path.
 const (
-	schemaFreezeEventsMigrations           = 29
+	schemaFreezeEventsMigrations           = 30
 	schemaFreezeEncryptedLibraryMigrations = 13
 )

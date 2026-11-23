@@ -384,6 +384,7 @@ func (s *Store) TerminateSession(ctx context.Context, id SessionID) error {
 	// failure here does not un-terminate the session (the auth row is already
 	// gone), and the lazy sweep removes the rows at expiry regardless.
 	_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE session_id = ?`, id)
+	_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM player_commanded_media WHERE session_id = ?`, id)
 	return nil
 }
 

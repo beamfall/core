@@ -139,6 +139,9 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 		// with any session, so every target is "unknown" to it.
 		return ControlSessionResult{}, clientError("unknown session")
 	}
+	if scope.IsPlayerBound() {
+		return ControlSessionResult{}, clientError("session not controllable")
+	}
 
 	// Gate 1 — same Profile. Resolve the target session's Profile; a missing or
 	// cross-Profile session is reported identically as "unknown session" so the
