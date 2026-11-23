@@ -79,7 +79,7 @@ describe("fadeAdvance", () => {
     const advance = vi.fn();
     fadeAdvance(video, advance);
     vi.advanceTimersByTime(TRACK_FADE_MS / 2);
-    cancelFadeAdvance(video);
+    cancelFadeAdvance();
     vi.advanceTimersByTime(LOAD_WAIT_MS * 4);
     expect(advance).not.toHaveBeenCalled();
     expect(video.volume).toBe(0.8);
@@ -87,11 +87,19 @@ describe("fadeAdvance", () => {
 
   it("keeps fading in after its own skip changes the track", () => {
     const video = playingElement();
-    fadeAdvance(video, () => cancelFadeAdvance(video));
+    fadeAdvance(video, () => cancelFadeAdvance());
     vi.advanceTimersByTime(TRACK_FADE_MS * 2);
     video.dispatchEvent(new Event("playing"));
     vi.advanceTimersByTime(TRACK_FADE_MS * 2);
     expect(video.volume).toBeCloseTo(0.8);
+  });
+
+  it("saves a level the listener sets while the next track loads", () => {
+    const video = playingElement();
+    fadeAdvance(video, () => {});
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
+    video.volume = 0.3;
+    expect(fadeBaseVolume(video)).toBe(0.3);
   });
 
   it("advances at once when nothing is audible", () => {

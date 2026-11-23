@@ -688,6 +688,8 @@ function FeaturePlayer({
   // browsing.
   const playItem = useCallback(
     (id: string, title: string, selectPartyTitle = true, musicProfile?: string) => {
+      // A newer choice drops a Play now still fading out (its own advance has left that state).
+      cancelFadeAdvance();
       const search = musicProfile
         ? `?${new URLSearchParams({ [MUSIC_QUEUE_PARAM]: musicProfile })}`
         : "";
@@ -852,6 +854,7 @@ function FeaturePlayer({
 
   const runQueueAction = useCallback(
     async (action: QueueAction, pick?: string) => {
+      cancelFadeAdvance();
       if (
         !profileID ||
         (action !== "start" && !queueMatchesProfile) ||
@@ -1009,8 +1012,11 @@ function FeaturePlayer({
   const playNow = playNext
     ? () => {
         playingNext.dismiss();
+        const chosenUnder = getIdentityEpochSignal();
         const advance = playNowTarget
           ? () => {
+              // A relock mid-fade voids a choice made under the revealed session.
+              if (chosenUnder?.aborted) return;
               endedWithoutNext.current = null;
               playItemRef.current(playNowTarget, "", true, profileID);
             }
@@ -1018,12 +1024,10 @@ function FeaturePlayer({
         fadeAdvance(videoRef.current, advance);
       }
     : undefined;
-  // A track change that is not the fading skip (Back, another item, leaving)
-  // drops the skip, so it never overrides the listener's newer choice.
-  useEffect(() => {
-    const video = videoRef.current;
-    return () => cancelFadeAdvance(video);
-  }, [mediaId, videoRef]);
+  // Anything else that changes what plays (another item, Back docking the
+  // player, a relock, leaving) drops the skip, so it never overrides the
+  // listener's newer choice.
+  useEffect(() => () => cancelFadeAdvance(), [mediaId, docked, stageOwner, epoch]);
   // The Up next drawer lists a card queue; a server queue keeps its own panel.
   const drawerQueue = !serverQueueRun && queue && queue.length > 1 ? queue : undefined;
   const [upNextOpen, setUpNextOpen] = useState(false);

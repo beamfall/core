@@ -14,17 +14,19 @@ export const PLAY_WAIT_MS = 5_000;
 // A volume the listener sets mid-fade is theirs: the fade stops and keeps it,
 // and the skip still happens.
 
-type Run = { base: number; supersede: () => void; cancel: () => void };
+type Run = { level: () => number; supersede: () => void; cancel: () => void };
 const runs = new WeakMap<HTMLMediaElement, Run>();
+// Skips still fading out, on any element: a retried track mounts a new one.
+const fadingOut = new Set<Run>();
 
 /** The listener's volume while a skip fade holds the element lower, for saving. */
 export function fadeBaseVolume(video: HTMLMediaElement): number {
-  return runs.get(video)?.base ?? video.volume;
+  return runs.get(video)?.level() ?? video.volume;
 }
 
-/** Drops a skip still fading out, without moving on: something else changed the track first. */
-export function cancelFadeAdvance(video: HTMLMediaElement | null) {
-  if (video) runs.get(video)?.cancel();
+/** Drops every skip still fading out, without moving on: the listener chose something else first. */
+export function cancelFadeAdvance() {
+  for (const run of [...fadingOut]) run.cancel();
 }
 
 /** Runs `advance` after a short fade out, then fades the element back in once it plays again. */
@@ -50,14 +52,17 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     video.removeEventListener("loadstart", loading);
     video.removeEventListener("playing", fadeIn);
     if (restore && !theirs()) video.volume = base;
+    fadingOut.delete(run);
     if (runs.get(video) === run) runs.delete(video);
   };
   const go = () => {
     advanced = true;
+    fadingOut.delete(run);
     advance();
   };
   const run: Run = {
-    base,
+    // A level the listener set while the next track loads is theirs.
+    level: () => (theirs() ? video.volume : base),
     supersede: () => done(true),
     cancel: () => {
       if (!advanced) done(true);
@@ -93,6 +98,7 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     wait = setTimeout(fadeIn, PLAY_WAIT_MS);
   }
   runs.set(video, run);
+  fadingOut.add(run);
   ramp(Math.cos, () => {
     video.addEventListener("loadstart", loading);
     video.addEventListener("playing", fadeIn);
