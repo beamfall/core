@@ -405,7 +405,7 @@ func TestFeedStreamRegistrarSameSiteScopingAndMissingSecret(t *testing.T) {
 	secrets := secretFiles{dir: filepath.Join(dataDir, "secrets"), dataDir: dataDir}
 	registrar := feedStreamRegistrar{tee: tee, secrets: secrets}
 
-	const secretHeader = "Bearer same-site-secret"
+	const secretHeader = "Bearer same-site-tok"
 	sub1, err := st.AddSubscription(ctx, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   "https://feeds.example.test/private.xml",
@@ -554,7 +554,7 @@ func TestFeedStreamRegistrarSameSiteScopingAndMissingSecret(t *testing.T) {
 
 func TestRemovedSubscriptionRevokesUnexpiredProxyTokenAuth(t *testing.T) {
 	const (
-		authHeader  = "Bearer core3001-removal-secret"
+		authHeader  = "Bearer removal-tok"
 		privateBody = "PRIVATE-ENCLOSURE-BYTES-0123456789ABCDEF"
 	)
 

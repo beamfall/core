@@ -244,7 +244,7 @@ func TestRevokeSubscriptionStopsCachedAuthRangeRequests(t *testing.T) {
 		Class:      store.MediaClassAudio,
 		OriginURL:  "https://feeds.example.test/enclosure.mp3",
 		FeedURL:    "https://feeds.example.test/private.xml",
-		AuthHeader: "Bearer cached-subscription-secret",
+		AuthHeader: "Bearer cached-sub-tok",
 	}
 	mediaID, err := svc.EnsureRegistered(ctx, reg)
 	if err != nil || mediaID != seededID {
@@ -259,7 +259,7 @@ func TestRevokeSubscriptionStopsCachedAuthRangeRequests(t *testing.T) {
 	req.Header.Set("Range", "bytes=0-9")
 	rec := httptest.NewRecorder()
 	svc.ServeProxy(rec, req)
-	if rec.Code != http.StatusPartialContent || opener.lastAuth != "Bearer cached-subscription-secret" {
+	if rec.Code != http.StatusPartialContent || opener.lastAuth != "Bearer cached-sub-tok" {
 		t.Fatalf("before revoke: status=%d auth=%q, want 206 with secret", rec.Code, opener.lastAuth)
 	}
 
@@ -332,7 +332,7 @@ func TestRevokeSubscriptionStopsCachedAuthRangeRequests(t *testing.T) {
 		Class:      store.MediaClassAudio,
 		OriginURL:  "https://feeds.example.test/in-flight.mp3",
 		FeedURL:    "https://feeds.example.test/in-flight.xml",
-		AuthHeader: "Bearer in-flight-secret",
+		AuthHeader: "Bearer in-flight-tok",
 	}); !errors.Is(err, store.ErrSubscriptionNotFound) {
 		t.Fatalf("EnsureRegistered with mid-flight removal = %v, want %v", err, store.ErrSubscriptionNotFound)
 	}
