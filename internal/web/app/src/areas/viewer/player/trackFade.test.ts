@@ -108,7 +108,10 @@ describe("fadeAdvance", () => {
       expect(video.volume).toBe(0.8);
       // Until the item changes, the outgoing track's end does not advance again.
       expect(finishFadeAdvance()).toBe(true);
+      // A level the listener sets now, even the fade's own last one, stays theirs.
+      video.volume = 0.5;
       vi.advanceTimersByTime(LOAD_WAIT_MS);
+      expect(video.volume).toBe(0.5);
       expect(finishFadeAdvance()).toBe(false);
       hidden.mockReturnValue(false);
       document.dispatchEvent(new Event("visibilitychange"));
@@ -144,7 +147,7 @@ describe("fadeAdvance", () => {
     vi.advanceTimersByTime(50);
     expect(advance).toHaveBeenCalledOnce();
     // Skipped early, it still owns what plays next: the outgoing track's end must not skip again.
-    expect(skipFadingOut()).toBe(true);
+    expect(finishFadeAdvance()).toBe(true);
     vi.advanceTimersByTime(LOAD_WAIT_MS * 4);
     expect(advance).toHaveBeenCalledOnce();
     expect(video.volume).toBe(0.3);

@@ -2506,14 +2506,17 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
   }
   const playingNow = () => vi.mocked(usePlayer).mock.calls.at(-1)?.[0];
 
-  it("leaves the advance to a Play now still fading out when the track ends under it", async () => {
+  it("moves a Play now still fading out on at once, once, when the track ends under it", async () => {
     const video = await playNowAudibly();
     act(() => {
       video.dispatchEvent(new Event("ended"));
     });
-    // The fade, not the natural end, moves on: the skip keeps its fade in.
-    expect(playingNow()).toBe("media-alpha");
+    // The end moves the listener's skip on, not the queue's own next.
     await waitFor(() => expect(playingNow()).toBe("media-next"));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 600)));
+    const ids = vi.mocked(usePlayer).mock.calls.map(([id]) => id);
+    expect(ids.slice(ids.indexOf("media-next"))).not.toContain("media-alpha");
+    expect(playingNow()).toBe("media-next");
   });
 
   it("plays the named item once when the tab hides during a Play now and the track ends (CORE-3356)", async () => {
@@ -3297,7 +3300,6 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     const card = await screen.findByRole("region", { name: /Playing next/ });
     fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
     act(() => {
-      video.dispatchEvent(new Event("ended"));
       void go("/search");
     });
     await waitFor(() =>

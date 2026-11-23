@@ -136,6 +136,8 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     video?.removeEventListener("loadstart", loading);
     video?.removeEventListener("playing", fadeIn);
     document.removeEventListener("visibilitychange", hide);
+    // The volume is the listener's again: the fade writes and restores nothing more.
+    written = Number.NaN;
     if (!advanced) go();
     wait = setTimeout(stop, LOAD_WAIT_MS);
   }
