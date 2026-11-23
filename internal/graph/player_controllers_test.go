@@ -393,12 +393,26 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 		t.Fatalf("viewer ready playerDisplays = %+v", viewerDisplays)
 	}
 
-	// Start playback of media-alpha with stored progress on player profile.
+	// Start playback of media-alpha with an active playback grant attributed to originator profile-default.
 	if err := st.RecordStreamToken(ctx, displaySess, player.ID, "device-karaoke-tv", "media-direct", "media-alpha", false, clock.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.CreatePlaybackGrant(ctx, store.PlaybackGrant{
+		GrantID:                 "pg-observation-alpha",
+		SessionID:               displaySess,
+		DeviceID:                "device-karaoke-tv",
+		ProfileID:               player.ID,
+		MediaID:                 "media-alpha",
+		OriginatorProfileID:     "profile-default",
+		OriginatorSessionID:     "session-default",
+		PlayerBindingGeneration: 1,
+		CreatedAt:               clock,
+		ExpiresAt:               clock.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
-		ProfileID: player.ID, MediaID: "media-alpha", PositionSeconds: 42, DurationSeconds: 120,
+		ProfileID: "profile-default", MediaID: "media-alpha", PositionSeconds: 42, DurationSeconds: 120,
 	}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
 		t.Fatal(err)
 	}

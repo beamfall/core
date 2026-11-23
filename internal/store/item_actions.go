@@ -312,6 +312,9 @@ func (s *Store) SetItemWatched(ctx context.Context, profileID ProfileID, target 
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
+	if err := s.ensureNotPlayerProfileLocked(ctx, profileID); err != nil {
+		return nil, err
+	}
 	media, err := s.itemTargetMediaLocked(ctx, target, filter)
 	if err != nil {
 		return nil, err
@@ -416,6 +419,9 @@ func (s *Store) SetItemWatchlisted(ctx context.Context, profileID ProfileID, tar
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	if err := s.ensureNotPlayerProfileLocked(ctx, profileID); err != nil {
+		return err
+	}
 	if err := s.itemTargetVisibleLocked(ctx, target, filter); err != nil {
 		return err
 	}
@@ -456,6 +462,9 @@ func (s *Store) SetItemRating(ctx context.Context, profileID ProfileID, target I
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	if err := s.ensureNotPlayerProfileLocked(ctx, profileID); err != nil {
 		return err
 	}
 	if err := s.itemTargetVisibleLocked(ctx, target, filter); err != nil {

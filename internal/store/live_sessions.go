@@ -204,7 +204,7 @@ func (s *Store) ledgerSessions(ctx context.Context, now time.Time, filter Librar
 		if entry.Title == "" {
 			continue // hidden Media: do not leak a position either
 		}
-		pos, dur, ok, err := s.playbackPosition(ctx, entry.ProfileID, entry.MediaID)
+		pos, dur, ok, err := playbackPositionFromGrantOrOriginatorSQL(ctx, s.eventsR, entry.SessionID, entry.ProfileID, entry.MediaID, now)
 		if err != nil {
 			return nil, err
 		}
@@ -331,23 +331,6 @@ func (s *Store) profileNames(ctx context.Context, rows []activeLedgerRow) (map[P
 	return out, nil
 }
 
-// playbackPosition reads the session Profile's resume projection for one Media.
-// ok is false when no progress row exists yet (playback just started).
-func (s *Store) playbackPosition(ctx context.Context, profileID ProfileID, mediaID MediaID) (position, duration int, ok bool, err error) {
-	row := s.eventsR.QueryRowContext(ctx, `
-		SELECT position_seconds, duration_seconds
-		FROM playback_progress
-		WHERE profile_id = ? AND media_id = ?
-	`, profileID, mediaID)
-	if scanErr := row.Scan(&position, &duration); scanErr != nil {
-		if errors.Is(scanErr, sql.ErrNoRows) {
-			return 0, 0, false, nil
-		}
-		return 0, 0, false, scanErr
-	}
-	return position, duration, true, nil
-}
-
 // TerminateSession ends one active Session (ADR-0007 §4 "kill session"): it
 // deletes the auth_session row so the next request from that session fails
 // auth (every request re-resolves the session via Store.Session, which returns
@@ -385,6 +368,11 @@ func (s *Store) TerminateSession(ctx context.Context, id SessionID) error {
 	// gone), and the lazy sweep removes the rows at expiry regardless.
 	_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE session_id = ?`, id)
 	_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM player_commanded_media WHERE session_id = ?`, id)
+	_, _ = s.eventsW.ExecContext(ctx, `
+		UPDATE playback_grant
+		SET cancelled_at_ms = ?
+		WHERE session_id = ? AND ended_at_ms IS NULL AND cancelled_at_ms IS NULL
+	`, timeToMillis(time.Now().UTC()), id)
 	return nil
 }
 
@@ -429,9 +417,24 @@ func (s *Store) EndPlayback(ctx context.Context, sessionID SessionID, mediaID Me
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	_, err := s.eventsW.ExecContext(ctx, `
+	nowMS := timeToMillis(time.Now().UTC())
+	if _, err := s.eventsW.ExecContext(ctx, `
 		UPDATE stream_token_ledger SET last_active_ms = ?
 		WHERE session_id = ? AND media_id = ? AND target IN ('media-direct', 'media-hls')
-	`, ledgerPlaybackEndedMS, sessionID, mediaID)
+	`, ledgerPlaybackEndedMS, sessionID, mediaID); err != nil {
+		return err
+	}
+	if _, err := s.eventsW.ExecContext(ctx, `
+		UPDATE playback_grant
+		SET ended_at_ms = ?
+		WHERE session_id = ? AND media_id = ? AND ended_at_ms IS NULL AND cancelled_at_ms IS NULL
+	`, nowMS, sessionID, mediaID); err != nil {
+		return err
+	}
+	_, err := s.eventsW.ExecContext(ctx, `
+		UPDATE player_commanded_media
+		SET active_for_attribution = 0
+		WHERE session_id = ? AND media_id = ?
+	`, sessionID, mediaID)
 	return err
 }

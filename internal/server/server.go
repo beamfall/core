@@ -273,6 +273,9 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	}
 	defaultCapabilities := capabilities.EnabledIDs(nil)
 	report := capabilities.Current()
+	if playbackInfo != nil && authService != nil {
+		playbackInfo.SetAuth(authService)
+	}
 	s := &Server{
 		mux:             http.NewServeMux(),
 		accessClasses:   make(map[string]AccessClass),

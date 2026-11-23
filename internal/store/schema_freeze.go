@@ -127,7 +127,11 @@ package store
 // Events 0031 (CORE-3310) adds player_commanded_media for play-media command
 // authorization on player-bound Sessions with walk-up disabled, off the
 // entity-query hot path.
+// Events 0032 (CORE-3312) extends player_commanded_media with originator/generation
+// attribution and adds playback_grant + playback_grant_report for server-bound
+// display playback attribution and idempotent report handling, off the
+// entity-query hot path.
 const (
-	schemaFreezeEventsMigrations           = 31
+	schemaFreezeEventsMigrations           = 32
 	schemaFreezeEncryptedLibraryMigrations = 13
 )

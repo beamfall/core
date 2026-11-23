@@ -835,6 +835,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// ledger never authorizes bytes — that stays the signed grant's job.
 	tokenService.SetRecorder(st)
 	playbackInfo := playback.NewService(st, tokenService, readClock)
+	playbackInfo.SetAuth(authService)
 	// Console resource graphs: an in-memory ring of host samples, never persisted.
 	hostSampler := hostmetrics.New(hostmetrics.DefaultInterval, hostmetrics.DefaultWindow)
 	var hlsSessions *playback.Sessions

@@ -102,6 +102,9 @@ func (s *Store) AppendEngagementEvent(ctx context.Context, event EngagementEvent
 	if err := s.guardLocked(); err != nil {
 		return EngagementEvent{}, err
 	}
+	if err := s.ensureNotPlayerProfileLocked(ctx, event.ProfileID); err != nil {
+		return EngagementEvent{}, err
+	}
 
 	id, err := randomEngagementEventID()
 	if err != nil {
