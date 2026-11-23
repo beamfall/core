@@ -17,6 +17,7 @@
   "library_root.overlaps": "La carpeta {path} ya forma parte de una biblioteca.",
   "library_root.unreadable": "El servidor no tiene permiso para leer {path}.",
   "manifest.shelf.next_up": "A continuación",
+  "manifest.shelf.continue_listening": "Seguir escuchando",
   "media_relation.invalid_input": "Comprueba el contenido, el tipo de entidad, la relación y los atributos.",
   "media_relation.undo_conflict": "No se puede deshacer la fusión porque después se editó una relación.",
   "notification.access_request.title": "Acceso solicitado",

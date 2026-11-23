@@ -31,6 +31,11 @@ vi.mock("@/lib/session", () => ({
     manifest: {
       navigation: [
         { id: "films", view: "layout", layoutID: "l", libraryID: "lib", title: { en: "Films" } },
+        { id: "songs", view: "layout", layoutID: "k", libraryID: "lib-k", title: { en: "Songs" } },
+      ],
+      libraries: [
+        { id: "lib", pluginID: "films" },
+        { id: "lib-k", pluginID: "karaoke" },
       ],
     },
   }),
@@ -971,5 +976,35 @@ describe("Library browse", { timeout: 20_000 }, () => {
       resolvePaused?.();
     });
     expect(screen.getByRole("link", { name: "Item 0, Finished" })).toBeInTheDocument();
+  });
+});
+
+// CORE-3362: a karaoke Library has no Library pivot, so a remembered or bare
+// "/all" opens its Songbook; a filtered link keeps the full browse.
+describe("karaoke Library browse", () => {
+  function renderAt(entry: string) {
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+            <Route path="/n/:nodeId" element={<p>songbook</p>} />
+          </Routes>
+          <Where />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+  }
+
+  it("sends a bare /all to the Songbook", async () => {
+    renderAt("/n/songs/all");
+    expect(await screen.findByText("songbook")).toBeInTheDocument();
+    expect(screen.getByTestId("where").textContent).not.toContain("/all");
+  });
+
+  it("keeps a filtered /all on the full browse", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    renderAt("/n/songs/all?sort=year");
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
   });
 });

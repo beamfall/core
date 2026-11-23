@@ -17,6 +17,7 @@
   "library_root.overlaps": "Der Ordner {path} gehört bereits zu einer Bibliothek.",
   "library_root.unreadable": "Der Server hat keine Berechtigung, {path} zu lesen.",
   "manifest.shelf.next_up": "Als Nächstes",
+  "manifest.shelf.continue_listening": "Weiter hören",
   "media_relation.invalid_input": "Prüfen Sie das Medium, den Entitätstyp, die Beziehung und die Attribute.",
   "media_relation.undo_conflict": "Diese Zusammenführung kann nicht rückgängig gemacht werden, da danach eine Beziehung bearbeitet wurde.",
   "notification.access_request.title": "Zugriff angefragt",

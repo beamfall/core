@@ -858,6 +858,18 @@ func TestValidateValuedSources(t *testing.T) {
 	if err := ValidateSource(SourceSpec{Kind: "recently-added", Value: "in-progress"}); err == nil {
 		t.Fatal("value on a non-valued source accepted")
 	}
+	// next-up's media class is optional: empty, video and audio validate,
+	// anything else is rejected (CORE-3341).
+	for _, value := range []string{"", "video", "audio"} {
+		if err := ValidateSource(SourceSpec{Kind: "next-up", Value: value}); err != nil {
+			t.Fatalf("next-up value %q rejected: %v", value, err)
+		}
+	}
+	for _, value := range []string{"image", " ", "in-progress"} {
+		if err := ValidateSource(SourceSpec{Kind: "next-up", Value: value}); err == nil {
+			t.Fatalf("next-up value %q accepted", value)
+		}
+	}
 }
 
 // FieldFilters: declarative typed filters keyed by declared Media fields,

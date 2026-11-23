@@ -11,6 +11,7 @@ import {
   stepSpeed,
   subtitleToggleId,
 } from "./playerShortcuts";
+import { fadeBaseVolume } from "./trackFade";
 import type { MenuOption } from "./useLiveTracks";
 
 // The player's window keydown listener (CORE-1682). Keys resolve through the
@@ -139,9 +140,9 @@ function apply(
     case "skipForward":
       return h.seekBy(h.skipInterval);
     case "volumeUp":
-      return h.setVolume((video?.volume ?? 0) + 0.05);
+      return h.setVolume((video ? fadeBaseVolume(video) : 0) + 0.05);
     case "volumeDown":
-      return h.setVolume((video?.volume ?? 0) - 0.05);
+      return h.setVolume((video ? fadeBaseVolume(video) : 0) - 0.05);
     case "toggleMute":
       return h.toggleMute();
     case "toggleFullscreen":

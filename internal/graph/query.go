@@ -232,6 +232,18 @@ func trimmedVariable(req request, name string) string {
 	return strings.TrimSpace(stringVar(req, name))
 }
 
+// sourceValueVar reads sourceItems' value variable, trimmed. A value of only
+// whitespace stays as sent rather than trimming to empty: an empty value means
+// "no band" (every Media class on next-up), while a blank one is unrecognized
+// and must yield an empty feed like any other unknown value (CORE-3342).
+func sourceValueVar(req request) string {
+	value := stringVar(req, "value")
+	if trimmed := strings.TrimSpace(value); trimmed != "" {
+		return trimmed
+	}
+	return value
+}
+
 // boolVar reads a boolean variable.
 func boolVar(req request, name string) bool {
 	value, _ := req.Variables[name].(bool)

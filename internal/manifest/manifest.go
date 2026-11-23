@@ -507,7 +507,15 @@ func homeLayout() Layout {
 				Kind:        "shelf",
 				Title:       catalogTitle(l10n.ManifestShelfNextUp),
 				ArtworkSlot: "poster",
-				Source:      SourceSpec{Kind: "next-up"},
+				// Video only: tracks get their own shelf below (CORE-3331).
+				Source: SourceSpec{Kind: "next-up", Value: "video"},
+			},
+			{
+				ID:          "continue-listening",
+				Kind:        "shelf",
+				Title:       catalogTitle(l10n.ManifestShelfContinueListening),
+				ArtworkSlot: "poster",
+				Source:      SourceSpec{Kind: "next-up", Value: "audio"},
 			},
 			{
 				ID:          "watchlist",

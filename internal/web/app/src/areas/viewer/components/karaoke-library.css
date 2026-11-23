@@ -1,0 +1,338 @@
+/* The karaoke Library's Songbook pivot (CORE-3362). Theme tokens only. */
+
+.bf-karaoke {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  align-items: start;
+  gap: 32px;
+}
+
+.bf-karaoke-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* Beside the songbook, the rail stays in view while the host scrolls. */
+@media (min-width: 1101px) {
+  .bf-karaoke-rail {
+    position: sticky;
+    top: 72px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .bf-karaoke {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* The party comes first on a narrow screen: it is what the host runs. */
+  .bf-karaoke-rail {
+    order: -1;
+  }
+}
+
+.bf-karaoke-full {
+  align-self: flex-start;
+}
+
+.bf-karaoke-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--state-direct);
+}
+
+.bf-karaoke-live::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--state-direct);
+}
+
+.bf-karaoke-code {
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.bf-karaoke-stage {
+  border-color: var(--accent);
+}
+
+.bf-karaoke-singer {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.bf-karaoke-song {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* Songbook */
+
+.bf-songbook {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.bf-songbook-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.bf-songbook-search input {
+  height: 48px;
+  padding-inline: 44px 44px;
+  font-size: 1rem;
+}
+
+.bf-songbook-search-icon {
+  position: absolute;
+  left: 14px;
+  width: 18px;
+  height: 18px;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.bf-songbook-search-clear {
+  position: absolute;
+  right: 6px;
+}
+
+.bf-songbook-kbd {
+  position: absolute;
+  right: 12px;
+  min-width: 22px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  text-align: center;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.bf-songbook-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.bf-songbook-count {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.bf-songbook-sorts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.bf-songbook-sort {
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-songbook-sort:hover {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
+
+.bf-songbook-sort[aria-pressed="true"] {
+  border-color: var(--border-subtle);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.bf-songbook-sort:focus-visible,
+.bf-singer-chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-songbook-hint {
+  color: var(--text-secondary);
+}
+
+.bf-songbook-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 32px 0;
+  color: var(--text-secondary);
+}
+
+.bf-songbook-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.bf-songbook-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.bf-songbook-more {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.bf-songbook-letter {
+  position: sticky;
+  top: 56px;
+  z-index: 1;
+  padding: 16px 0 4px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-root);
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--accent);
+}
+
+.bf-songbook-artist {
+  padding: 14px 12px 4px;
+}
+
+.bf-songbook-artist h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bf-song {
+  border-radius: var(--radius-control);
+  scroll-margin-top: 120px;
+}
+
+.bf-song:hover,
+.bf-song:focus-within,
+.bf-song[data-adding] {
+  background: var(--bg-surface);
+}
+
+.bf-song-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 4px 4px 4px 12px;
+}
+
+.bf-song-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bf-song-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.bf-song-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.bf-song-time {
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.bf-song-actions {
+  display: flex;
+  gap: 4px;
+}
+
+@media (max-width: 520px) {
+  .bf-song-action-text,
+  .bf-song-time {
+    display: none;
+  }
+}
+
+.bf-singer-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 12px 14px;
+}
+
+.bf-singer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bf-singer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-singer-chip:hover {
+  border-color: var(--accent);
+}
+
+.bf-singer-chip:disabled {
+  opacity: 0.6;
+}
+
+.bf-singer-waiting {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.bf-singer-new {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bf-singer-new input {
+  flex: 1 1 180px;
+  min-width: 0;
+}

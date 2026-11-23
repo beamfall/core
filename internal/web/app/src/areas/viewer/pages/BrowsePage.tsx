@@ -11,11 +11,13 @@ import { findNodeBySlug, HOME_NODE_ID, nodePath, nodeSlug } from "@/lib/nodePath
 import { useSession } from "@/lib/session";
 import { HomeEditor } from "../components/HomeEditor";
 import { SectionSkeleton } from "../components/HydratedSection";
+import { KaraokeLibraryView } from "../components/KaraokeLibraryView";
 import { LayoutView } from "../components/LayoutView";
 import { LibraryHeader } from "../components/LibraryPivots";
 import { PosterSizeControl } from "../components/PosterSizeControl";
 import type { SeeAllTarget } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
+import { isKaraokeLibrary } from "../lib/karaoke";
 import { type HomeLibrarySeeAllState, seeAllTargetFor } from "../lib/seeall";
 
 // Browse view, ported from the vanilla renderNavigation / selectEntry /
@@ -64,6 +66,8 @@ export function BrowsePage() {
   const home = node?.id === HOME_NODE_ID;
   const layout = (manifest?.layouts || []).find((l) => l.id === node?.layoutID) || null;
   const libraryID = node?.libraryID || "";
+  // A karaoke Library's own address is its Songbook (CORE-3362), not a hub.
+  const karaoke = isKaraokeLibrary(manifest, libraryID);
 
   function buildSeeAll(section: Section, homeShelfLibraryID?: string): SeeAllTarget {
     if (home && homeShelfLibraryID) {
@@ -91,8 +95,8 @@ export function BrowsePage() {
             nodeID={node.id}
             libraryID={libraryID}
             heading={displayString(node.title, displayLocale)}
-            aside={emptyNode !== node.id && <PosterSizeControl className="ml-auto" />}
-            pivots={emptyNode !== node.id}
+            aside={!karaoke && emptyNode !== node.id && <PosterSizeControl className="ml-auto" />}
+            pivots={karaoke || emptyNode !== node.id}
           />
         </div>
       ) : (
@@ -109,6 +113,8 @@ export function BrowsePage() {
       )}
       {home && editingHome ? (
         <HomeEditor onSaved={requestManifestRefresh} onClose={() => setEditingHome(false)} />
+      ) : karaoke ? (
+        <KaraokeLibraryView libraryID={libraryID} />
       ) : (
         <LayoutView
           layout={layout}

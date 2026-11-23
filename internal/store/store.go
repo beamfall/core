@@ -880,6 +880,9 @@ type SourceQuery struct {
 	// value yields an empty feed (never an error), like a missing entity.
 	// Ignored on every other kind.
 	Value string
+	// Played narrows the "recently-played" and "most-played" kinds by text and
+	// last-played time (History search, CORE-3333). Ignored on every other kind.
+	Played PlayedFilter
 }
 
 // ContainerRollUp names the plugin-declared relations an "all-items" feed
@@ -3874,17 +3877,25 @@ func (s *Store) sourceItemsForKind(ctx context.Context, filter LibraryFilter, qu
 		if query.ProfileID == "" {
 			return []SourceItem{}, nil
 		}
-		return s.nextUpSQL(ctx, query.ProfileID, filter, limit, offset)
+		// The value names one media class (CORE-3331): Home's Up Next reads
+		// video and Continue Listening audio. No value offers every class.
+		class := MediaClass(query.Value)
+		switch class {
+		case "", MediaClassVideo, MediaClassAudio:
+		default:
+			return []SourceItem{}, nil
+		}
+		return s.nextUpSQL(ctx, query.ProfileID, filter, class, limit, offset)
 	case "recently-played":
 		if query.ProfileID == "" {
 			return []SourceItem{}, nil
 		}
-		return s.playedItemsSQL(ctx, query.ProfileID, filter, "last_played_at_ms DESC, media_id", limit, offset)
+		return s.playedItemsSQL(ctx, query.ProfileID, filter, query.Played, "last_played_at_ms DESC, media_id", limit, offset)
 	case "most-played":
 		if query.ProfileID == "" {
 			return []SourceItem{}, nil
 		}
-		return s.playedItemsSQL(ctx, query.ProfileID, filter, "play_count DESC, last_played_at_ms DESC, media_id", limit, offset)
+		return s.playedItemsSQL(ctx, query.ProfileID, filter, query.Played, "play_count DESC, last_played_at_ms DESC, media_id", limit, offset)
 	case "watchlist":
 		if query.ProfileID == "" {
 			return []SourceItem{}, nil

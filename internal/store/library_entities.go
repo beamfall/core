@@ -161,7 +161,7 @@ func (s *Store) LibraryEntities(ctx context.Context, filter LibraryFilter, query
 	}
 	sortLibraryBrowse(candidates, query.Browse)
 	if query.Browse.Sort == "" || query.Browse.Sort == LibraryBrowseSortTitle {
-		result.Letters = libraryBrowseLetters(candidates)
+		result.Letters = libraryBrowseLetters(candidates, libraryBrowseCandidate.titleKey)
 	}
 	result.Total = len(candidates)
 	index := map[EntityID]int{}

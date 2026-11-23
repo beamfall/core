@@ -33,6 +33,9 @@ const (
 	LibraryBrowseSortAudienceScore = "audience-score"
 	// LibraryBrowseSortPlays orders by the requesting Profile's play count.
 	LibraryBrowseSortPlays = "plays"
+	// LibraryBrowseSortField orders by the text Media field SortField names,
+	// then by title; items without a value sort last (CORE-3362).
+	LibraryBrowseSortField = "field"
 )
 
 // releaseDateField is the core-conventional Media date field a client renders
@@ -50,9 +53,13 @@ const (
 // LibraryBrowseQuery selects, filters, sorts and pages every Media of one
 // Library the caller may see.
 type LibraryBrowseQuery struct {
-	LibraryID  LibraryID
-	ProfileID  ProfileID
-	Sort       string
+	LibraryID LibraryID
+	ProfileID ProfileID
+	Sort      string
+	// SortField is the text Media field a "field" sort orders and
+	// letter-indexes by. The caller checks the Library's plugin declares it
+	// Sortable; the store reads it as stored.
+	SortField  string
 	Descending bool
 	// Seed keys the "random" sort; the same seed always yields the same order.
 	Seed string
@@ -71,6 +78,10 @@ type LibraryBrowseQuery struct {
 	// Text keeps only items whose title or sort title holds every word of
 	// it, ignoring case, accents and punctuation (CORE-2568); "" keeps all.
 	Text string
+	// TextFields names text Media fields Text also matches: an item matches
+	// when every word is in its title, or in its title and these fields'
+	// values together (CORE-3362). The caller passes only Searchable fields.
+	TextFields []string
 	// FacetEntityKinds names the Entity Kinds whose titles are reported as
 	// facet values, in this order. Empty reports none.
 	FacetEntityKinds []string
@@ -106,7 +117,8 @@ type LibraryBrowseResult struct {
 	Items  []SourceItem
 	Facets LibraryBrowseFacets
 	// Letters is where each title initial starts in the filtered set, for a
-	// title sort only; any other order leaves it empty.
+	// title sort, or each field-value initial for a field sort; any other
+	// order leaves it empty.
 	Letters []LibraryBrowseLetter
 }
 
@@ -129,6 +141,10 @@ type libraryBrowseCandidate struct {
 	plays    int64
 	// sortTitle is the admin- or provider-set sort title, "" when none is set.
 	sortTitle string
+	// field is the SortField value, "" when the item has none; fieldText the
+	// TextFields values Text also matches.
+	field     string
+	fieldText []string
 }
 
 // titleKey is the title a candidate sorts and letter-indexes by: its sort
@@ -146,7 +162,7 @@ func ValidLibraryBrowseSort(sortKey string) bool {
 	case "", LibraryBrowseSortTitle, LibraryBrowseSortYear, LibraryBrowseSortAdded,
 		LibraryBrowseSortDuration, LibraryBrowseSortLastWatched, LibraryBrowseSortRandom,
 		LibraryBrowseSortRating, LibraryBrowseSortReleaseDate, LibraryBrowseSortAudienceScore,
-		LibraryBrowseSortPlays:
+		LibraryBrowseSortPlays, LibraryBrowseSortField:
 		return true
 	}
 	return false
@@ -213,6 +229,9 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 		result.Facets.Entities = append(result.Facets.Entities, facet)
 	}
 
+	if err := libraryBrowseTextFields(ctx, reader, visible, query, candidates); err != nil {
+		return empty, err
+	}
 	candidates = filterLibraryBrowseText(candidates, query.Text)
 	for i := range query.EntityFilters {
 		related, err := libraryBrowseCandidates(ctx, reader, certify, visible, &query.EntityFilters[i], nil)
@@ -232,8 +251,13 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 		return !libraryBrowseMatches(c, query)
 	})
 	sortLibraryBrowse(candidates, query)
-	if query.Sort == "" || query.Sort == LibraryBrowseSortTitle {
-		result.Letters = libraryBrowseLetters(candidates)
+	switch query.Sort {
+	case "", LibraryBrowseSortTitle:
+		result.Letters = libraryBrowseLetters(candidates, libraryBrowseCandidate.titleKey)
+	case LibraryBrowseSortField:
+		// Items without a value trail the order and open no bucket.
+		valued := candidates[:len(candidates)-countBlankField(candidates)]
+		result.Letters = libraryBrowseLetters(valued, func(c libraryBrowseCandidate) string { return c.field })
 	}
 
 	result.Total = len(candidates)
@@ -685,7 +709,10 @@ func filterLibraryBrowseText(candidates []libraryBrowseCandidate, text string) [
 		return true
 	}
 	return slices.DeleteFunc(candidates, func(c libraryBrowseCandidate) bool {
-		return !holdsAll(c.item.Title) && (c.sortTitle == "" || !holdsAll(c.sortTitle))
+		if holdsAll(c.item.Title) || (c.sortTitle != "" && holdsAll(c.sortTitle)) {
+			return false
+		}
+		return len(c.fieldText) == 0 || !holdsAll(c.item.Title+" "+strings.Join(c.fieldText, " "))
 	})
 }
 
@@ -768,6 +795,9 @@ func sortLibraryBrowse(candidates []libraryBrowseCandidate, query LibraryBrowseQ
 		key = func(c libraryBrowseCandidate) int64 { return c.audience }
 	case LibraryBrowseSortPlays:
 		key = func(c libraryBrowseCandidate) int64 { return c.plays }
+	case LibraryBrowseSortField:
+		sortLibraryBrowseField(candidates, query.Descending, byTitle)
+		return
 	}
 	slices.SortFunc(candidates, func(a, b libraryBrowseCandidate) int {
 		if key == nil {
@@ -892,4 +922,89 @@ func (s *Store) libraryVisibleSetLocked(ctx context.Context, filter LibraryFilte
 	}
 	set.candidates = candidates
 	return set, nil
+}
+
+// libraryBrowseTextFields attaches the text Media field values a field sort
+// orders by and a text filter also matches. It reads nothing when the query
+// needs neither.
+func libraryBrowseTextFields(ctx context.Context, reader *sql.DB, visible []LibraryID, query LibraryBrowseQuery, candidates []libraryBrowseCandidate) error {
+	at := make(map[MediaID]int, len(candidates))
+	for i, c := range candidates {
+		at[c.item.ID] = i
+	}
+	if query.Sort == LibraryBrowseSortField && query.SortField != "" {
+		err := libraryBrowseFieldRows(ctx, reader, "media_field_text", "value", query.SortField, visible, func(rows *sql.Rows) error {
+			var id MediaID
+			var value string
+			if err := rows.Scan(&id, &value); err != nil {
+				return err
+			}
+			if i, ok := at[id]; ok {
+				candidates[i].field = strings.TrimSpace(value)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(query.Text) == "" {
+		return nil
+	}
+	for _, field := range query.TextFields {
+		err := libraryBrowseFieldRows(ctx, reader, "media_field_text", "value", field, visible, func(rows *sql.Rows) error {
+			var id MediaID
+			var value string
+			if err := rows.Scan(&id, &value); err != nil {
+				return err
+			}
+			if i, ok := at[id]; ok && value != "" {
+				candidates[i].fieldText = append(candidates[i].fieldText, value)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sortLibraryBrowseField orders candidates by their field value, ignoring
+// case, then by title in the same direction. Items without a value sort last
+// in both directions, by title.
+func sortLibraryBrowseField(candidates []libraryBrowseCandidate, descending bool, byTitle func(a, b libraryBrowseCandidate) int) {
+	keys := make(map[MediaID]string, len(candidates))
+	for _, c := range candidates {
+		keys[c.item.ID] = strings.ToLower(c.field)
+	}
+	slices.SortFunc(candidates, func(a, b libraryBrowseCandidate) int {
+		ka, kb := keys[a.item.ID], keys[b.item.ID]
+		switch {
+		case ka == "" && kb == "":
+			return byTitle(a, b)
+		case ka == "":
+			return 1
+		case kb == "":
+			return -1
+		}
+		cmp := strings.Compare(ka, kb)
+		if cmp == 0 {
+			cmp = byTitle(a, b)
+		}
+		if descending {
+			return -cmp
+		}
+		return cmp
+	})
+}
+
+func countBlankField(candidates []libraryBrowseCandidate) int {
+	n := 0
+	for _, c := range candidates {
+		if c.field == "" {
+			n++
+		}
+	}
+	return n
 }

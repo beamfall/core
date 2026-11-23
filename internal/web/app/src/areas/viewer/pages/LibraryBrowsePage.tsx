@@ -26,6 +26,7 @@ import { LETTER_RAIL_MIN_ITEMS, useLetterJump } from "../components/useLetterJum
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
+import { isKaraokeLibrary } from "../lib/karaoke";
 import {
   browseFollowsEngagement,
   browseStateParams,
@@ -83,6 +84,11 @@ export function LibraryBrowsePage() {
         replace
       />
     );
+  }
+  // A karaoke Library has no Library pivot (CORE-3362): a remembered or bare
+  // "/all" opens the Songbook. A filtered link still opens the full browse.
+  if (!location.search && isKaraokeLibrary(manifest, node.libraryID)) {
+    return <Navigate to={nodePath(node.id, "", node.libraryID)} replace />;
   }
   const { libraryID } = node;
   return (

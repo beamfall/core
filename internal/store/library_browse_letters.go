@@ -35,11 +35,11 @@ func libraryBrowseInitial(title string) string {
 // and item count of each title initial in candidates, which must already be in
 // browse order. A bucket the order visits twice (punctuation that sorts after
 // "z") keeps its first offset and counts every item.
-func libraryBrowseLetters(candidates []libraryBrowseCandidate) []LibraryBrowseLetter {
+func libraryBrowseLetters(candidates []libraryBrowseCandidate, key func(libraryBrowseCandidate) string) []LibraryBrowseLetter {
 	letters := []LibraryBrowseLetter{}
 	at := map[string]int{}
 	for offset, c := range candidates {
-		initial := libraryBrowseInitial(c.titleKey())
+		initial := libraryBrowseInitial(key(c))
 		if i, ok := at[initial]; ok {
 			letters[i].Count++
 			continue

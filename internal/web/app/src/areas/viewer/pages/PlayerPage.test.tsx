@@ -44,6 +44,7 @@ import { RegisterProvider } from "@/lib/register";
 import { clearViewerCache } from "@/lib/viewerCache";
 import { STRINGS } from "@/strings";
 import { TrackList } from "../components/TrackList";
+import { mediaPath } from "../lib/mediaAddress";
 import {
   fetchMedia as fetchAddressMedia,
   fetchMediaDetailFields,
@@ -61,7 +62,7 @@ import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { attachCaptionElements, captionElement, showCaptionElement } from "../player/streamTracks";
-import { useGaplessAudio } from "../player/useGaplessAudio";
+import { skipJoin, useGaplessAudio } from "../player/useGaplessAudio";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
 import {
@@ -148,7 +149,12 @@ vi.mock("../player/usePlayer", async (importOriginal) => ({
 vi.mock("../player/PlayerTransport", () => ({ PlayerTransport: vi.fn(() => null) }));
 vi.mock("../player/useGaplessAudio", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../player/useGaplessAudio")>();
-  return { ...actual, useGaplessAudio: vi.fn(actual.useGaplessAudio) };
+  return {
+    ...actual,
+    handBack: vi.fn(actual.handBack),
+    skipJoin: vi.fn(actual.skipJoin),
+    useGaplessAudio: vi.fn(actual.useGaplessAudio),
+  };
 });
 vi.mock("../player/watchPartyStore", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../player/watchPartyStore")>()),
@@ -234,6 +240,19 @@ function presentFirstFrame(): HTMLVideoElement {
   const video = stageVideo();
   fireEvent.loadedData(video);
   return video;
+}
+
+// Plays the element, heard, into the last seconds of a 200 s track, where the
+// Playing next card shows and Play now fades out before it skips. The page is
+// muted under test (jsdom makes no sound); the fade reads the element's volume.
+function playAudibly(video: HTMLMediaElement) {
+  Object.defineProperty(video, "paused", { configurable: true, get: () => false });
+  Object.defineProperty(video, "duration", { configurable: true, value: 200 });
+  video.volume = 0.8;
+  act(() => {
+    video.currentTime = 195;
+    video.dispatchEvent(new Event("timeupdate"));
+  });
 }
 
 describe("PlayerPage timestamp links", () => {
@@ -1740,12 +1759,96 @@ describe("PlayerPage server Play Queue", () => {
     expect(within(card).getByText("Cee")).toBeInTheDocument();
 
     queueHangs = true;
+    vi.mocked(skipJoin).mockClear();
     fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
     expect(screen.queryByRole("region", { name: /Playing next/ })).toBeNull();
+    // A gapless join already scheduled for C's start would play B out first
+    // (CORE-3352): the skip retires it and takes the sound back to the element.
+    expect(skipJoin).toHaveBeenCalledWith(video, b.id);
     await waitFor(() => expect(playingID()).toBe(c.id));
     await screen.findByRole("heading", { name: "C" });
     // The stage, and the visuals on it, stay mounted across the advance.
     expect(document.querySelector(".bf-audio-stage")).toBe(stage);
+  });
+
+  it("drops a Play now still fading out when the identity relocks under it", async () => {
+    graphql.mockImplementation(async (query, variables) => {
+      if (!query.startsWith("query MusicQueueMedia")) return readQueue();
+      const id = (variables as { id: string }).id;
+      return {
+        media: { id, title: id === c.id ? "C" : "B", favorited: false, credits: [] },
+        currentSession: serverSession,
+      };
+    });
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    renderQueue();
+    await screen.findByRole("heading", { name: "B" });
+    const video = stageVideo();
+    playAudibly(video);
+    const card = await screen.findByRole("region", { name: /Playing next: C/ });
+    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    // The relock lands mid-fade, before anything renders again.
+    epoch.abort();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    expect(playingID()).toBe(b.id);
+    setIdentityEpochSignal();
+  });
+
+  it("reads the card afresh each time it shows, and the held title links to its own track (CORE-3353)", async () => {
+    const reads: string[] = [];
+    let holdC: Promise<never> | null = null;
+    graphql.mockImplementation(async (query, variables) => {
+      if (!query.startsWith("query MusicQueueMedia")) return readQueue();
+      const id = (variables as { id: string }).id;
+      reads.push(id);
+      if (id === c.id && holdC) return holdC;
+      return {
+        media: {
+          id,
+          title: id === c.id ? "C" : "B",
+          favorited: false,
+          artworkSlots: { poster: `/art/${id}.jpg` },
+          credits: [],
+        },
+        currentSession: serverSession,
+      };
+    });
+    renderQueue();
+    await screen.findByRole("heading", { name: "B" });
+    const video = document.querySelector("video");
+    if (!video) throw new Error("no media element");
+    const art = () => document.querySelector(".bf-playing-next-art");
+    Object.defineProperty(video, "duration", { configurable: true, value: 200 });
+    const seek = (to: number) =>
+      act(() => {
+        video.currentTime = to;
+        video.dispatchEvent(new Event("timeupdate"));
+      });
+    seek(195);
+    await screen.findByRole("region", { name: /Playing next: C/ });
+    await waitFor(() => expect(art()).toHaveAttribute("src", `/art/${c.id}.jpg`));
+    seek(100);
+    await waitFor(() => expect(screen.queryByRole("region", { name: /Playing next/ })).toBeNull());
+    // The card comes back with its read still out: it shows no earlier read's picture.
+    holdC = new Promise<never>(() => {});
+    seek(195);
+    await screen.findByRole("region", { name: /Playing next: C/ });
+    await waitFor(() => expect(reads.filter((id) => id === c.id)).toHaveLength(2));
+    expect(art()).toBeNull();
+
+    // C's own read never returns: the stage keeps B, and B's title still leads to B.
+    fireEvent.click(
+      within(screen.getByRole("region", { name: /Playing next: C/ })).getByRole("button", {
+        name: "Play now",
+      }),
+    );
+    await waitFor(() => expect(playingID()).toBe(c.id));
+    const title = document.querySelector(".bf-audio-title a");
+    expect(title).toHaveAccessibleName("B");
+    expect(title).toHaveAttribute("href", mediaPath("media", b.id));
   });
 
   it("waits for scoped metadata when starting a queue on the currently playing track", async () => {
@@ -2303,7 +2406,11 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
         : Promise.resolve(track("media-alpha", "Alpha", "Ann")),
     );
   });
-  afterEach(() => vi.mocked(fetchMedia).mockResolvedValue(null));
+  afterEach(() => {
+    vi.mocked(fetchMedia).mockResolvedValue(null);
+    // Shuffle and repeat persist: a test that toggles them must not reorder the next one's queue.
+    window.localStorage.clear();
+  });
 
   // The queue reports no classes, so only the playing item's info names it a track.
   function renderAdvance() {
@@ -2384,6 +2491,109 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
     });
     rerender();
     expect(document.querySelector(".bf-audio-stage")).toBeNull();
+  });
+
+  async function playNowAudibly(): Promise<HTMLVideoElement> {
+    renderAdvance();
+    const stage = document.querySelector<HTMLElement>(".bf-audio-stage");
+    if (!stage) throw new Error("no audio stage");
+    expect(await within(stage).findByText("Ann")).toBeInTheDocument();
+    const video = presentFirstFrame();
+    playAudibly(video);
+    const card = await screen.findByRole("region", { name: /Playing next/ });
+    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    return video;
+  }
+  const playingNow = () => vi.mocked(usePlayer).mock.calls.at(-1)?.[0];
+
+  it("moves a Play now still fading out on at once, once, when the track ends under it", async () => {
+    const video = await playNowAudibly();
+    act(() => {
+      video.dispatchEvent(new Event("ended"));
+    });
+    // The end moves the listener's skip on, not the queue's own next.
+    await waitFor(() => expect(playingNow()).toBe("media-next"));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 600)));
+    const ids = vi.mocked(usePlayer).mock.calls.map(([id]) => id);
+    expect(ids.slice(ids.indexOf("media-next"))).not.toContain("media-alpha");
+    expect(playingNow()).toBe("media-next");
+  });
+
+  it("plays the named item once when the tab hides during a Play now and the track ends (CORE-3356)", async () => {
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.3);
+    try {
+      const video = await playNowAudibly();
+      // Shuffle mid-fade (this seed) would make the outgoing track's end play media-prev.
+      act(() => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.shuffle?.onToggle());
+      // A hidden tab runs no animation frames: the skip cannot wait for them.
+      hidden.mockReturnValue(true);
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+        video.dispatchEvent(new Event("ended"));
+      });
+      await waitFor(() => expect(playingNow()).toBe("media-next"));
+      hidden.mockReturnValue(false);
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 600)));
+      const ids = vi.mocked(usePlayer).mock.calls.map(([id]) => id);
+      expect(ids.slice(ids.indexOf("media-next"))).not.toContain("media-alpha");
+      expect(playingNow()).toBe("media-next");
+      expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-prev")).toBe(false);
+    } finally {
+      random.mockRestore();
+      hidden.mockRestore();
+    }
+  });
+
+  it("drops a Play now when a Watch Party takes the lead under it (CORE-3352)", async () => {
+    const rerender = renderAdvance();
+    const stage = document.querySelector<HTMLElement>(".bf-audio-stage");
+    if (!stage) throw new Error("no audio stage");
+    expect(await within(stage).findByText("Ann")).toBeInTheDocument();
+    const video = presentFirstFrame();
+    playAudibly(video);
+    const card = await screen.findByRole("region", { name: /Playing next/ });
+    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    await waitFor(() => expect(video.volume).toBeLessThan(0.8));
+    // Joining a party mid-fade withdraws the player's own Up next: the item
+    // stays, back at the listener's level at once.
+    vi.mocked(watchPartyDefersUpNext).mockReturnValue(true);
+    try {
+      rerender();
+      expect(video.volume).toBe(0.8);
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 600)));
+      expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-next")).toBe(false);
+    } finally {
+      vi.mocked(watchPartyDefersUpNext).mockReturnValue(false);
+    }
+  });
+
+  it("plays the item the card named when the order changes under a Play now (CORE-3352)", async () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.3);
+    try {
+      await playNowAudibly();
+      // Shuffle mid-fade (this seed) puts media-prev next; the skip keeps the one named.
+      act(() => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.shuffle?.onToggle());
+      await waitFor(() => expect(playingNow()).toBe("media-next"));
+      expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-prev")).toBe(false);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("drops a Play now still fading out when the identity relocks under it", async () => {
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    await playNowAudibly();
+    epoch.abort();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    expect(playingNow()).toBe("media-alpha");
+    setIdentityEpochSignal();
   });
 
   it("shows a small cue, not a cover, while an audio item loads", () => {
@@ -3079,6 +3289,26 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     expect(within(miniPlayer() as HTMLElement).getByText("Track Two")).toBeInTheDocument();
   });
 
+  it("keeps a Play now still fading out when the player docks under it (CORE-3352)", async () => {
+    renderHosted({ mediaClass: "audio" });
+    const video = await waitFor(() => {
+      const found = stageVideo();
+      if (!found) throw new Error("no stage");
+      return found;
+    });
+    playAudibly(video);
+    const card = await screen.findByRole("region", { name: /Playing next/ });
+    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    act(() => {
+      void go("/search");
+    });
+    await waitFor(() =>
+      expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-next")).toBe(true),
+    );
+    expect(screen.getByText("search route")).toBeInTheDocument();
+    expect(within(miniPlayer() as HTMLElement).getByText("Track Two")).toBeInTheDocument();
+  });
+
   it("stops and closes on the mini player's Stop", async () => {
     renderHosted({ mediaClass: "audio" });
     await waitFor(() => stageVideo());
@@ -3409,6 +3639,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     } finally {
       resetWatchPartyForTest();
       stream.mockRestore();
+      vi.mocked(calibrateWatchPartyClock).mockRejectedValue(new Error("not on the home network"));
     }
   });
 
