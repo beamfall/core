@@ -74,3 +74,71 @@ func TestLibraryItemsFieldSortOnAnUnseenLibraryAnswersEmpty(t *testing.T) {
 		}
 	}
 }
+
+// TestLibraryItemsFieldFiltersNeedADeclaredFilterableTextField covers
+// CORE-3369: fieldFilters and facetFields take only a plugin's Filterable text
+// Media fields that are not Sensitive, a malformed, blank or oversized filter
+// is refused rather than dropped, and repeated facet fields are reported once.
+func TestLibraryItemsFieldFiltersNeedADeclaredFilterableTextField(t *testing.T) {
+	bundle := plugin.Bundle{MediaFields: []plugin.FieldSpec{
+		{Name: "class", Type: "text", Filterable: true},
+		{Name: "singers", Type: "text", Filterable: true},
+		{Name: "lyrics-sync", Type: "text"},
+		{Name: "bpm", Type: "number", Filterable: true},
+		{Name: "owner-note", Type: "text", Filterable: true, Sensitive: true},
+	}}
+	parse := func(vars map[string]any) (store.LibraryBrowseQuery, error) {
+		vars["libraryID"] = "lib"
+		req := request{Variables: vars}
+		query, err := libraryItemsQuery(auth.Scope{}, req)
+		if err != nil {
+			return query, err
+		}
+		return query, libraryItemsFieldQuery(req, &query)
+	}
+	for name, vars := range map[string]map[string]any{
+		"blank value":     {"fieldFilters": map[string]any{"class": " "}},
+		"blank field":     {"fieldFilters": map[string]any{" ": "cdg"}},
+		"non-string":      {"fieldFilters": map[string]any{"class": 1}},
+		"padded field":    {"fieldFilters": map[string]any{" class": "cdg"}},
+		"padded value":    {"fieldFilters": map[string]any{"class": " cdg"}},
+		"list filters":    {"fieldFilters": []any{"class"}},
+		"text facets":     {"facetFields": "class"},
+		"blank facet":     {"facetFields": []any{"class", " "}},
+		"padded facet":    {"facetFields": []any{"class "}},
+		"number facet":    {"facetFields": []any{1}},
+		"too many facets": {"facetFields": []any{"a", "b", "c", "d", "e", "f", "g", "h", "i"}},
+		"too many": {"fieldFilters": map[string]any{
+			"a": "1", "b": "1", "c": "1", "d": "1", "e": "1", "f": "1", "g": "1", "h": "1", "i": "1",
+		}},
+	} {
+		if _, err := parse(vars); err == nil {
+			t.Errorf("%s parsed; want a client error", name)
+		}
+	}
+	for name, tc := range map[string]struct {
+		vars map[string]any
+		ok   bool
+	}{
+		"filterable filter":   {map[string]any{"fieldFilters": map[string]any{"class": "cdg", "singers": "duet"}}, true},
+		"filterable facets":   {map[string]any{"facetFields": []any{"class", "singers", "class"}}, true},
+		"unfilterable filter": {map[string]any{"fieldFilters": map[string]any{"lyrics-sync": "word"}}, false},
+		"number filter":       {map[string]any{"fieldFilters": map[string]any{"bpm": "120"}}, false},
+		"unknown facet":       {map[string]any{"facetFields": []any{"ghost"}}, false},
+		"sensitive filter":    {map[string]any{"fieldFilters": map[string]any{"owner-note": "x"}}, false},
+		"sensitive facet":     {map[string]any{"facetFields": []any{"owner-note"}}, false},
+		"null arguments":      {map[string]any{"fieldFilters": nil, "facetFields": nil}, true},
+	} {
+		query, err := parse(tc.vars)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		err = libraryBrowseMediaFields(bundle, &query)
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: err = %v, want accepted %v", name, err, tc.ok)
+		}
+		if name == "filterable facets" && !slices.Equal(query.FacetFields, []string{"class", "singers"}) {
+			t.Errorf("facet fields = %v, want each once in request order", query.FacetFields)
+		}
+	}
+}

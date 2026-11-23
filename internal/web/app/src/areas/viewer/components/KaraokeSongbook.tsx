@@ -15,6 +15,7 @@ import {
   fetchLibraryItems,
   LIBRARY_BROWSE_PAGE,
   type LibraryBrowseState,
+  type LibraryItemsField,
   type LibraryItemsLetter,
   limitBrowseQuery,
 } from "../lib/libraryBrowse";
@@ -40,6 +41,26 @@ const SORTS: { value: SongSort; label: StringKey }[] = [
 /** The plugin's Sortable text field that holds a song's artist. */
 const ARTIST_FIELD = "artist";
 const SEARCH_DEBOUNCE_MS = 200;
+
+/**
+ * The filter chips (CORE-3369): the plugin's Filterable text fields and the
+ * values that get a chip, in chip order. A value the Library lacks gets none.
+ */
+const FILTERS: { field: string; value: string; label: StringKey }[] = [
+  { field: "singers", value: "duet", label: "karaokeFilterDuet" },
+  { field: "vocals", value: "guide", label: "karaokeFilterGuide" },
+  { field: "class", value: "cdg", label: "karaokeFormatCdg" },
+  { field: "class", value: "lrc", label: "karaokeFormatLrc" },
+  { field: "class", value: "video", label: "karaokeFormatVideo" },
+  { field: "class", value: "ultrastar", label: "karaokeFormatUltrastar" },
+];
+const FACET_FIELDS = [...new Set(FILTERS.map((filter) => filter.field))];
+
+function facetCount(fields: LibraryItemsField[], field: string, value: string): number {
+  const facet = fields.find((entry) => entry.field === field);
+  const index = facet ? facet.values.indexOf(value) : -1;
+  return index < 0 ? 0 : (facet?.counts[index] ?? 0);
+}
 const RECENT_SINGERS = 6;
 
 function browseState(sort: SongSort, query: string): LibraryBrowseState {
@@ -56,6 +77,9 @@ interface SongWindow {
   total: number;
   letters: LibraryItemsLetter[];
 }
+
+// The app header's height: a row tucked under it is not "showing".
+const STICKY_TOP = 72;
 
 export function KaraokeSongbook({
   libraryID,
@@ -82,6 +106,18 @@ export function KaraokeSongbook({
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  // One value per field; choosing a field's other value replaces it.
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const filtered = Object.keys(filters).length > 0;
+  // Counted before the field filters and kept across their reloads, so the
+  // chips hold still (and keep the focus) while the list changes under them.
+  const [fields, setFields] = useState<LibraryItemsField[]>([]);
+  // The Library's song count, read with no search or filter. Facets count the
+  // whole Library, so a chip whose count equals it filters nothing and is left
+  // out; a search's total is not comparable.
+  const [librarySongs, setLibrarySongs] = useState<{ libraryID: string; total: number } | null>(
+    null,
+  );
   const loadRef = useRef<AbortController | null>(null);
   const focusOffsetRef = useRef<number | null>(null);
 
@@ -122,6 +158,8 @@ export function KaraokeSongbook({
         libraryID,
         state: browseState(sort, query),
         fieldSort: sort === "artist" ? ARTIST_FIELD : undefined,
+        fieldFilters: filters,
+        facetFields: mode === "replace" ? FACET_FIELDS : undefined,
         limit: mode === "prepend" ? offset - start : limit,
         offset: start,
       },
@@ -130,6 +168,10 @@ export function KaraokeSongbook({
       .then((page) => {
         if (controller.signal.aborted) return;
         setFailed(false);
+        if (mode === "replace") {
+          setFields(page.facets.fields ?? []);
+          if (!filtered && !query) setLibrarySongs({ libraryID, total: page.total });
+        }
         setResult((current) => {
           if (mode === "replace" || !current) {
             return { start, items: page.items, total: page.total, letters: page.letters };
@@ -153,7 +195,7 @@ export function KaraokeSongbook({
     setAdding(null);
     load(0, "replace");
     return () => loadRef.current?.abort();
-  }, [libraryID, query, sort, retry]);
+  }, [libraryID, query, sort, filters, retry]);
 
   const end = result ? result.start + result.items.length : 0;
   const more = result !== null && end < result.total;
@@ -183,6 +225,40 @@ export function KaraokeSongbook({
     row.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
   });
 
+  // The rail highlights the letter of the first song showing below the sticky
+  // header, so it follows the scroll rather than the loaded window's start.
+  // Rows are in scroll order, so a binary search measures a handful of them
+  // rather than every row in the window.
+  const [topOffset, setTopOffset] = useState<number | null>(null);
+  const showRail = (sort === "artist" || sort === "title") && (result?.letters.length ?? 0) > 0;
+  useEffect(() => {
+    if (!result || !showRail) return;
+    let frame = 0;
+    const rows = listRef.current?.querySelectorAll<HTMLElement>("li[data-offset]") ?? [];
+    const measure = () => {
+      frame = 0;
+      let low = 0;
+      let high = rows.length;
+      while (low < high) {
+        const mid = (low + high) >> 1;
+        if (rows[mid].getBoundingClientRect().bottom > STICKY_TOP) high = mid;
+        else low = mid + 1;
+      }
+      setTopOffset(low < rows.length ? Number(rows[low].dataset.offset) : null);
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    measure();
+    window.addEventListener("scroll", schedule, { capture: true, passive: true });
+    window.addEventListener("resize", schedule, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", schedule, { capture: true });
+      window.removeEventListener("resize", schedule);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [result, showRail]);
+
   function jump(offset: number, focusItem: boolean) {
     if (!result) return;
     if (offset >= result.start && offset < end) {
@@ -202,9 +278,23 @@ export function KaraokeSongbook({
   // which the wire does not carry.
   const grouped = sort === "artist";
   const headingOf = (item: SourceItem) => (sort === "artist" ? artistOf(item) : item.title);
-  const currentLetter = result
-    ? (result.letters.findLast((entry) => entry.offset <= result.start)?.letter ?? null)
+  // The artist order reads the letter off the song itself, so songs with no
+  // artist (sorted last, outside the index) mark nothing. A title's index
+  // letter follows its sort title, so that order looks it up in the index, as
+  // does an artist initial the index spells differently.
+  const topItem = result?.items[(topOffset ?? result.start) - result.start];
+  const indexLetter = result
+    ? (result.letters.findLast((entry) => entry.offset <= (topOffset ?? result.start))?.letter ??
+      null)
     : null;
+  const artistLetter = topItem && artistOf(topItem) ? karaokeInitial(artistOf(topItem)) : null;
+  const currentLetter = !grouped
+    ? indexLetter
+    : !artistLetter
+      ? null
+      : result?.letters.some((entry) => entry.letter === artistLetter)
+        ? artistLetter
+        : indexLetter;
   const partyHere = session ? session.libraryIDs.includes(libraryID) : false;
 
   const onSearchSubmit = (event: FormEvent) => {
@@ -260,7 +350,7 @@ export function KaraokeSongbook({
       <div className="bf-songbook-bar">
         <p className="bf-songbook-count" aria-live="polite">
           {result
-            ? query
+            ? query || filtered
               ? t("karaokeMatchCount", { count: result.total })
               : t("karaokeSongCount", { count: result.total })
             : ""}
@@ -280,6 +370,21 @@ export function KaraokeSongbook({
           ))}
         </fieldset>
       </div>
+      {fields.length > 0 && (
+        <FilterChips
+          fields={fields}
+          filters={filters}
+          everySong={librarySongs?.libraryID === libraryID ? librarySongs.total : undefined}
+          onToggle={(field, value) =>
+            setFilters((current) => {
+              const next = { ...current };
+              if (next[field] === value) delete next[field];
+              else next[field] = value;
+              return next;
+            })
+          }
+        />
+      )}
       {session !== undefined && !partyHere && (
         <p className="bf-songbook-hint">{session ? t("karaokeOtherParty") : t("karaokeNoParty")}</p>
       )}
@@ -299,9 +404,20 @@ export function KaraokeSongbook({
           ))}
         </div>
       ) : result.total === 0 ? (
-        <p className="bf-songbook-empty">
-          {query ? t("karaokeNoMatch", { query }) : t("karaokeLibraryEmpty")}
-        </p>
+        <div className="bf-songbook-empty">
+          <p>
+            {query
+              ? t("karaokeNoMatch", { query })
+              : filtered
+                ? t("karaokeFilterNoMatch")
+                : t("karaokeLibraryEmpty")}
+          </p>
+          {filtered && (
+            <Button variant="outline" size="sm" onClick={() => setFilters({})}>
+              {t("karaokeFilterClear")}
+            </Button>
+          )}
+        </div>
       ) : (
         <div className="bf-songbook-body">
           <div className="min-w-0 flex-1">
@@ -385,7 +501,7 @@ export function KaraokeSongbook({
               </p>
             )}
           </div>
-          {(sort === "artist" || sort === "title") && result.letters.length > 0 && (
+          {showRail && (
             <LibraryLetterRail letters={result.letters} current={currentLetter} onJump={jump} />
           )}
         </div>
@@ -551,5 +667,46 @@ function SingerPicker({
         </Button>
       </form>
     </div>
+  );
+}
+
+function FilterChips({
+  fields,
+  filters,
+  everySong,
+  onToggle,
+}: {
+  fields: LibraryItemsField[];
+  filters: Record<string, string>;
+  /** The Library's song count, when known. */
+  everySong?: number;
+  onToggle: (field: string, value: string) => void;
+}) {
+  const t = useT();
+  const chips = FILTERS.map((filter) => ({
+    ...filter,
+    count: facetCount(fields, filter.field, filter.value),
+    pressed: filters[filter.field] === filter.value,
+  })).filter((chip) => chip.pressed || (chip.count > 0 && chip.count !== everySong));
+  if (chips.length === 0) return null;
+  return (
+    <fieldset className="bf-songbook-filters">
+      <legend className="sr-only">{t("karaokeFilterLabel")}</legend>
+      {chips.map((chip) => (
+        <button
+          key={`${chip.field}:${chip.value}`}
+          type="button"
+          className="bf-songbook-filter"
+          aria-pressed={chip.pressed}
+          aria-label={t("karaokeFilterChip", { label: t(chip.label), count: chip.count })}
+          onClick={() => onToggle(chip.field, chip.value)}
+        >
+          {t(chip.label)}
+          <span className="bf-songbook-filter-count" aria-hidden>
+            {chip.count}
+          </span>
+        </button>
+      ))}
+    </fieldset>
   );
 }

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"testing"
 )
@@ -70,5 +71,81 @@ func TestLibraryBrowseSortsAndSearchesByMediaField(t *testing.T) {
 	}
 	if got := mustLibraryBrowse(t, st, LibraryBrowseQuery{Text: "abba"}); got.Total != 0 {
 		t.Errorf("text without TextFields matched %v; fields are opt-in", ids(got))
+	}
+}
+
+// TestLibraryBrowseFiltersAndFacetsByMediaField covers CORE-3369: field facets
+// count each value over the whole Library, most items first, and field filters
+// keep only the items holding every named value.
+func TestLibraryBrowseFiltersAndFacetsByMediaField(t *testing.T) {
+	st := openDemo(t)
+	ctx := context.Background()
+	tx, err := st.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, fields := range map[MediaID][]MediaField{
+		"media-demo-steel":  {{Name: "class", Type: EntityFieldText, Text: "cdg"}, {Name: "singers", Type: EntityFieldText, Text: "duet"}},
+		"media-demo-bunny":  {{Name: "class", Type: EntityFieldText, Text: "lrc"}, {Name: "singers", Type: EntityFieldText, Text: "duet"}},
+		"media-demo-sintel": {{Name: "class", Type: EntityFieldText, Text: "cdg"}},
+	} {
+		if err := insertMediaFields(ctx, tx, id, fields); err != nil {
+			_ = tx.Rollback()
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	ids := func(result LibraryBrowseResult) []MediaID {
+		out := make([]MediaID, len(result.Items))
+		for i, item := range result.Items {
+			out[i] = item.ID
+		}
+		slices.Sort(out)
+		return out
+	}
+
+	all := mustLibraryBrowse(t, st, LibraryBrowseQuery{FacetFields: []string{"class", "singers"}, FieldFilters: map[string]string{"singers": "duet"}, Limit: 200})
+	want := []LibraryBrowseFieldFacet{
+		{Field: "class", Values: []string{"cdg", "lrc"}, Counts: []int{2, 1}},
+		{Field: "singers", Values: []string{"duet"}, Counts: []int{2}},
+	}
+	if len(all.Facets.Fields) != len(want) {
+		t.Fatalf("field facets = %+v, want %+v", all.Facets.Fields, want)
+	}
+	for i, facet := range all.Facets.Fields {
+		if facet.Field != want[i].Field || !slices.Equal(facet.Values, want[i].Values) || !slices.Equal(facet.Counts, want[i].Counts) {
+			t.Errorf("facet %d = %+v, want %+v", i, facet, want[i])
+		}
+	}
+	if got := ids(all); !slices.Equal(got, []MediaID{"media-demo-bunny", "media-demo-steel"}) {
+		t.Errorf("duet filter = %v", got)
+	}
+	both := mustLibraryBrowse(t, st, LibraryBrowseQuery{FieldFilters: map[string]string{"singers": "duet", "class": "cdg"}})
+	if got := ids(both); !slices.Equal(got, []MediaID{"media-demo-steel"}) {
+		t.Errorf("duet+cdg filter = %v", got)
+	}
+	if got := mustLibraryBrowse(t, st, LibraryBrowseQuery{FieldFilters: map[string]string{"class": "CDG"}}); got.Total != 0 {
+		t.Errorf("filter matched a different case: %v", ids(got))
+	}
+	if got := mustLibraryBrowse(t, st, LibraryBrowseQuery{}); len(got.Facets.Fields) != 0 {
+		t.Errorf("unrequested field facets = %+v", got.Facets.Fields)
+	}
+}
+
+// TestLibraryBrowseFieldFacetKeepsTheMostCommonValues: a free-text field
+// cannot make a facet Library-sized; it reports the most common values only.
+func TestLibraryBrowseFieldFacetKeepsTheMostCommonValues(t *testing.T) {
+	counts := map[string]int{"duet": 9, "solo": 9, "trio": 4}
+	for i := range maxLibraryBrowseFieldFacetValues + 20 {
+		counts[fmt.Sprintf("free-%03d", i)] = 1
+	}
+	values, counted := topLibraryBrowseFieldValues(counts)
+	if len(values) != maxLibraryBrowseFieldFacetValues || len(counted) != len(values) {
+		t.Fatalf("kept %d values, %d counts; want %d", len(values), len(counted), maxLibraryBrowseFieldFacetValues)
+	}
+	if !slices.Equal(values[:4], []string{"duet", "solo", "trio", "free-000"}) || !slices.Equal(counted[:3], []int{9, 9, 4}) {
+		t.Errorf("top values = %v %v, want most items first, then by value", values[:4], counted[:4])
 	}
 }

@@ -196,6 +196,15 @@ export interface LibraryItemsFacets {
   groupings: LibraryItemsGrouping[];
   decades: number[];
   qualities: string[];
+  /** The values of each requested plugin field with their item counts, counted before any field filter (CORE-3369). */
+  fields?: LibraryItemsField[];
+}
+
+/** One plugin Filterable text field's values in the Library, most items first. */
+export interface LibraryItemsField {
+  field: string;
+  values: string[];
+  counts: number[];
 }
 
 /** Where one title initial ("A", or "#" for a digit or symbol) starts in the result, and how many items share it. */
@@ -226,12 +235,16 @@ export interface LibraryItemsRequest {
    * songbook's artist order. It replaces the state's sort, not its direction.
    */
   fieldSort?: string;
+  /** Plugin Filterable text fields to match exactly, one value each (CORE-3369). */
+  fieldFilters?: Record<string, string>;
+  /** Plugin Filterable text fields to report under facets.fields. */
+  facetFields?: string[];
   limit: number;
   offset: number;
 }
 
 const LIBRARY_ITEMS_QUERY =
-  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $query: String, $limit: Int, $offset: Int, $categoryCounts: Boolean) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, query: $query, limit: $limit, offset: $offset, categoryCounts: $categoryCounts) { total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } facets { groupings { kind title values counts browseCounts browseLabels } decades qualities } letters { letter offset count } } }";
+  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $query: String, $limit: Int, $offset: Int, $categoryCounts: Boolean, $fieldFilters: Map, $facetFields: [String!]) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, query: $query, limit: $limit, offset: $offset, categoryCounts: $categoryCounts, fieldFilters: $fieldFilters, facetFields: $facetFields) { total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } facets { groupings { kind title values counts browseCounts browseLabels } decades qualities fields { field values counts } } letters { letter offset count } } }";
 
 export function libraryItemsVariables(request: LibraryItemsRequest): Record<string, unknown> {
   const { state } = request;
@@ -247,6 +260,9 @@ export function libraryItemsVariables(request: LibraryItemsRequest): Record<stri
     offset: request.offset,
   };
   if (request.categoryCounts) vars.categoryCounts = true;
+  if (request.fieldFilters && Object.keys(request.fieldFilters).length)
+    vars.fieldFilters = request.fieldFilters;
+  if (request.facetFields?.length) vars.facetFields = request.facetFields;
   if (request.shuffleSeed) vars.seed = request.shuffleSeed;
   if (state.watch) vars.watch = state.watch;
   if (state.quality) vars.quality = state.quality;
@@ -281,6 +297,7 @@ export async function fetchLibraryItems(
       groupings: page?.facets?.groupings ?? [],
       decades: page?.facets?.decades ?? [],
       qualities: page?.facets?.qualities ?? [],
+      fields: page?.facets?.fields ?? [],
     },
     letters: page?.letters ?? [],
   };

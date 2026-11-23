@@ -144,4 +144,104 @@ describe("KaraokeSongbook", () => {
     await op();
     expect(partyAdd).toHaveBeenCalledWith({ mediaID: "m2", participantID: "s1" });
   });
+
+  it("marks the letter of the first song showing, not the window start", async () => {
+    // jsdom lays nothing out: put the ABBA rows above the header and Bonnie Tyler below it.
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const offset = Number(this.dataset.offset ?? -1);
+        const bottom = offset < 0 ? 0 : offset < 2 ? 40 : 400;
+        return { bottom, top: bottom - 60, left: 0, right: 0, width: 0, height: 60 } as DOMRect;
+      });
+    renderSongbook(null);
+    await screen.findByText("Dancing Queen");
+    await waitFor(() =>
+      expect(document.querySelector('[aria-current="true"]')?.textContent).toContain("B"),
+    );
+    rect.mockRestore();
+  });
+
+  it("filters by the duet and format values the Library has (CORE-3369)", async () => {
+    const user = userEvent.setup();
+    const withFacets = (items: SourceItem[]): LibraryItemsPage => ({
+      ...page(items),
+      facets: {
+        groupings: [],
+        decades: [],
+        qualities: [],
+        fields: [
+          { field: "class", values: ["cdg", "lrc"], counts: [2, 1] },
+          { field: "singers", values: ["duet"], counts: [1] },
+          { field: "vocals", values: [], counts: [] },
+        ],
+      },
+    });
+    fetchLibraryItems.mockImplementation(async () => withFacets(SONGS));
+    renderSongbook(null);
+    await screen.findByText("Dancing Queen");
+    expect(lastRequest().facetFields).toEqual(["singers", "vocals", "class"]);
+    expect(screen.getByRole("button", { name: "CDG · 2 songs" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Guide vocal/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Video/ })).toBeNull();
+    cleanup();
+
+    // A value every song has filters nothing, so it gets no chip.
+    fetchLibraryItems.mockImplementation(async () => ({
+      ...withFacets(SONGS),
+      facets: {
+        ...withFacets(SONGS).facets,
+        fields: [{ field: "class", values: ["lrc"], counts: [3] }],
+      },
+    }));
+    renderSongbook(null);
+    await screen.findByText("Dancing Queen");
+    expect(screen.queryByRole("button", { name: /LRC/ })).toBeNull();
+    cleanup();
+
+    fetchLibraryItems.mockImplementation(async () => withFacets(SONGS));
+    renderSongbook(null);
+    await screen.findByText("Dancing Queen");
+    const duet = screen.getByRole("button", { name: "Duet · 1 song" });
+
+    fetchLibraryItems.mockImplementation(async () => withFacets([SONGS[2]]));
+    await user.click(duet);
+    await waitFor(() => expect(lastRequest().fieldFilters).toEqual({ singers: "duet" }));
+    expect(await screen.findByText("1 match")).toBeInTheDocument();
+    expect(duet).toHaveAttribute("aria-pressed", "true");
+    expect(duet).toHaveFocus();
+
+    fetchLibraryItems.mockImplementation(async () => withFacets([]));
+    await user.click(screen.getByRole("button", { name: "LRC · 1 song" }));
+    await waitFor(() =>
+      expect(lastRequest().fieldFilters).toEqual({ singers: "duet", class: "lrc" }),
+    );
+    expect(await screen.findByText("No songs match these filters.")).toBeInTheDocument();
+    fetchLibraryItems.mockImplementation(async () => withFacets(SONGS));
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    await waitFor(() => expect(lastRequest().fieldFilters).toEqual({}));
+    expect(await screen.findByText("3 songs")).toBeInTheDocument();
+  });
+
+  it("compares chip counts with the whole Library, not a search", async () => {
+    const user = userEvent.setup();
+    // Facets count the Library: 2 of its 3 songs are LRC, which a search for
+    // ABBA's 2 songs must not mistake for "every song".
+    const facets = {
+      groupings: [],
+      decades: [],
+      qualities: [],
+      fields: [{ field: "class", values: ["lrc", "cdg"], counts: [2, 1] }],
+    };
+    fetchLibraryItems.mockImplementation(async () => ({ ...page(SONGS), facets }));
+    renderSongbook(null);
+    await screen.findByText("Dancing Queen");
+    fetchLibraryItems.mockImplementation(async () => ({
+      ...page(SONGS.slice(0, 2)),
+      facets,
+    }));
+    await user.type(screen.getByRole("searchbox", { name: "Search songs" }), "abba");
+    expect(await screen.findByText("2 matches")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "LRC · 2 songs" })).toBeInTheDocument();
+  });
 });

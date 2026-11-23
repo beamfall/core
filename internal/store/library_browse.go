@@ -87,16 +87,32 @@ type LibraryBrowseQuery struct {
 	FacetEntityKinds []string
 	// FacetMembers retains membership only for category browse-unit counts.
 	FacetMembers bool
-	Limit        int
-	Offset       int
+	// FieldFilters AND-composes exact text Media field values: an item stays
+	// when, for every named field, one of its values equals the given one
+	// (CORE-3369). The caller passes only Filterable text fields.
+	FieldFilters map[string]string
+	// FacetFields names text Media fields whose values are reported as facet
+	// values, in this order, counted over the Library before any filter.
+	FacetFields []string
+	Limit       int
+	Offset      int
 }
 
 // LibraryBrowseFacets are the filter values present in the Library's visible
 // set, before any filter is applied, so a client offers only choices that exist.
 type LibraryBrowseFacets struct {
 	Entities  []LibraryBrowseEntityFacet
+	Fields    []LibraryBrowseFieldFacet
 	Decades   []int
 	Qualities []string
+}
+
+// LibraryBrowseFieldFacet is one text Media field's values in the Library,
+// most items first then by value, with the item count of each.
+type LibraryBrowseFieldFacet struct {
+	Field  string
+	Values []string
+	Counts []int
 }
 
 // LibraryBrowseEntityFacet is the titles of one Entity Kind that the visible
@@ -227,6 +243,10 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 			return empty, err
 		}
 		result.Facets.Entities = append(result.Facets.Entities, facet)
+	}
+	candidates, result.Facets.Fields, err = libraryBrowseFieldFacets(ctx, reader, visible, query, candidates)
+	if err != nil {
+		return empty, err
 	}
 
 	if err := libraryBrowseTextFields(ctx, reader, visible, query, candidates); err != nil {
@@ -1007,4 +1027,87 @@ func countBlankField(candidates []libraryBrowseCandidate) int {
 		}
 	}
 	return n
+}
+
+// maxLibraryBrowseFieldFacetValues caps the values one field facet reports,
+// most items first, so a free-text field cannot make the facet Library-sized.
+const maxLibraryBrowseFieldFacetValues = 50
+
+// topLibraryBrowseFieldValues orders a field's values most items first, then
+// by value, keeping at most maxLibraryBrowseFieldFacetValues.
+func topLibraryBrowseFieldValues(counts map[string]int) ([]string, []int) {
+	values := make([]string, 0, len(counts))
+	for value := range counts {
+		values = append(values, value)
+	}
+	slices.SortFunc(values, func(a, b string) int {
+		if counts[a] != counts[b] {
+			return counts[b] - counts[a]
+		}
+		return strings.Compare(a, b)
+	})
+	if len(values) > maxLibraryBrowseFieldFacetValues {
+		values = values[:maxLibraryBrowseFieldFacetValues]
+	}
+	counted := make([]int, len(values))
+	for i, value := range values {
+		counted[i] = counts[value]
+	}
+	return values, counted
+}
+
+// libraryBrowseFieldFacets reports query.FacetFields over candidates, then
+// drops the candidates query.FieldFilters rule out. It reads each named
+// field once and nothing when the query names none.
+func libraryBrowseFieldFacets(ctx context.Context, reader *sql.DB, visible []LibraryID, query LibraryBrowseQuery, candidates []libraryBrowseCandidate) ([]libraryBrowseCandidate, []LibraryBrowseFieldFacet, error) {
+	facets := []LibraryBrowseFieldFacet{}
+	if len(query.FacetFields) == 0 && len(query.FieldFilters) == 0 {
+		return candidates, facets, nil
+	}
+	fields := slices.Clone(query.FacetFields)
+	for field := range query.FieldFilters {
+		if !slices.Contains(fields, field) {
+			fields = append(fields, field)
+		}
+	}
+	values := make(map[string]map[MediaID][]string, len(fields))
+	for _, field := range fields {
+		byMedia := map[MediaID][]string{}
+		err := libraryBrowseFieldRows(ctx, reader, "media_field_text", "value", field, visible, func(rows *sql.Rows) error {
+			var id MediaID
+			var value string
+			if err := rows.Scan(&id, &value); err != nil {
+				return err
+			}
+			byMedia[id] = append(byMedia[id], value)
+			return nil
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		values[field] = byMedia
+	}
+	for _, field := range query.FacetFields {
+		counts := map[string]int{}
+		for _, c := range candidates {
+			for _, value := range slices.Compact(slices.Sorted(slices.Values(values[field][c.item.ID]))) {
+				if strings.TrimSpace(value) != "" {
+					counts[value]++
+				}
+			}
+		}
+		ranked, counted := topLibraryBrowseFieldValues(counts)
+		facets = append(facets, LibraryBrowseFieldFacet{Field: field, Values: ranked, Counts: counted})
+	}
+	if len(query.FieldFilters) > 0 {
+		candidates = slices.DeleteFunc(candidates, func(c libraryBrowseCandidate) bool {
+			for field, want := range query.FieldFilters {
+				if !slices.Contains(values[field][c.item.ID], want) {
+					return true
+				}
+			}
+			return false
+		})
+	}
+	return candidates, facets, nil
 }
