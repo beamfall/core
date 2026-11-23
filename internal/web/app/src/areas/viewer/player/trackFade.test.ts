@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { loadSleepMark, noteSleepStop, sleepHoldsAutoplay } from "./sleepStop";
 import {
   cancelFadeAdvance,
   fadeAdvance,
@@ -182,6 +183,9 @@ describe("fadeAdvance", () => {
     fadeAdvance(video, () => false, withdraw);
     vi.advanceTimersByTime(TRACK_FADE_MS + 20);
     expect(withdraw).toHaveBeenCalledOnce();
+    // No load took the declined skip's mark, so a track the listener opens after a sleep stop still plays.
+    noteSleepStop();
+    expect(sleepHoldsAutoplay(loadSleepMark())).toBe(false);
     expect(finishFadeAdvance()).toBe(false);
     vi.advanceTimersByTime(TRACK_FADE_MS * 2);
     expect(video.volume).toBeCloseTo(0.8);

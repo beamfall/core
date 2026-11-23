@@ -1,5 +1,5 @@
 import { listenerMuted } from "./listenerMute";
-import { noteSkip } from "./sleepStop";
+import { dropSkip, noteSkip } from "./sleepStop";
 
 /** How long a listener's skip fades the playing track out, and the next one in. */
 export const TRACK_FADE_MS = 350;
@@ -199,6 +199,8 @@ export function fadeAdvance(
   };
   // Nothing moved on: the track plays on, back at the listener's level, and its end acts as usual.
   const decline = () => {
+    // No load follows, so none takes the skip's mark: a later one must not begin from it.
+    dropSkip();
     fadingOut.delete(run);
     withdraw?.();
     // Settled, cut or already let go, nothing is left to fade back in.
