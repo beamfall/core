@@ -20,6 +20,11 @@ const libraryGroupingArchetype = "category"
 // each one is a further intersection over the Library's candidates.
 const maxLibraryGroupFilters = 8
 
+// libraryFieldSortPrefix opens a sort that names a plugin-declared Sortable
+// text Media field ("field:artist"), so the sort argument stays one string
+// (CORE-3362).
+const libraryFieldSortPrefix = "field:"
+
 // maxLibraryBrowseQueryRunes bounds the title text one browse may narrow by
 // (CORE-2568); a longer one is refused rather than cut.
 const maxLibraryBrowseQueryRunes = 200
@@ -89,6 +94,21 @@ func (h *Handler) libraryItems(ctx context.Context, scope auth.Scope, req reques
 		return LibraryItemsResponse{}, err
 	}
 	query.FacetMembers = boolVar(req, "categoryCounts")
+	if query.Sort == store.LibraryBrowseSortField {
+		// Which fields sort describes the Library's plugin, so a Library the
+		// caller cannot see answers as empty, the same as an unknown one.
+		visible, err := h.store.LibraryVisible(ctx, query.LibraryID, scope.LibraryFilter())
+		if err != nil {
+			return LibraryItemsResponse{}, err
+		}
+		if !visible {
+			return emptyLibraryItems(), nil
+		}
+	}
+	bundle, _ := h.libraryBundle(ctx, query.LibraryID)
+	if err := libraryBrowseMediaFields(bundle, &query); err != nil {
+		return LibraryItemsResponse{}, err
+	}
 	kinds := h.libraryGroupingKinds(ctx, query.LibraryID)
 	for _, kind := range kinds {
 		query.FacetEntityKinds = append(query.FacetEntityKinds, kind.Name)
@@ -113,7 +133,6 @@ func (h *Handler) libraryItems(ctx context.Context, scope auth.Scope, req reques
 		if err != nil {
 			return LibraryItemsResponse{}, err
 		}
-		bundle, _ := h.libraryBundle(ctx, query.LibraryID)
 		labels = libraryBrowsePlanFor(bundle).labels
 	}
 	// A grouping with no reachable value is left out: it could filter
@@ -177,7 +196,13 @@ func libraryItemsQuery(scope auth.Scope, req request) (store.LibraryBrowseQuery,
 		return store.LibraryBrowseQuery{}, clientError("libraryID is required")
 	}
 	sortKey := trimmedVariable(req, "sort")
-	if !store.ValidLibraryBrowseSort(sortKey) {
+	sortField := ""
+	if name, ok := strings.CutPrefix(sortKey, libraryFieldSortPrefix); ok {
+		if sortField = strings.TrimSpace(name); sortField == "" {
+			return store.LibraryBrowseQuery{}, clientError("sort is not a supported library sort")
+		}
+		sortKey = store.LibraryBrowseSortField
+	} else if sortKey == store.LibraryBrowseSortField || !store.ValidLibraryBrowseSort(sortKey) {
 		return store.LibraryBrowseQuery{}, clientError("sort is not a supported library sort")
 	}
 	direction := trimmedVariable(req, "direction")
@@ -227,6 +252,7 @@ func libraryItemsQuery(scope auth.Scope, req request) (store.LibraryBrowseQuery,
 		LibraryID:     store.LibraryID(libraryID),
 		ProfileID:     scope.ProfileID,
 		Sort:          sortKey,
+		SortField:     sortField,
 		Descending:    direction == "desc",
 		Seed:          stringVar(req, "seed"),
 		Watch:         watch,
@@ -288,4 +314,27 @@ func categoryBrowseCounts(facet store.LibraryBrowseEntityFacet, units map[store.
 		}
 	}
 	return counts, names
+}
+
+// libraryBrowseMediaFields checks a field sort against the Library plugin's
+// declarations and lets the text filter also match the plugin's Searchable
+// text Media fields. A field the plugin does not declare Sortable text is a
+// client error, never a silent title sort.
+func libraryBrowseMediaFields(bundle plugin.Bundle, query *store.LibraryBrowseQuery) error {
+	sortable := false
+	for _, field := range bundle.MediaFields {
+		if field.Type != "text" {
+			continue
+		}
+		if field.Searchable {
+			query.TextFields = append(query.TextFields, field.Name)
+		}
+		if field.Name == query.SortField && field.Sortable {
+			sortable = true
+		}
+	}
+	if query.Sort == store.LibraryBrowseSortField && !sortable {
+		return clientError("sort is not a supported library sort")
+	}
+	return nil
 }
