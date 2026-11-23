@@ -5548,10 +5548,13 @@ type MediaCreditInfo struct {
 	Title           string              `json:"title"`
 	Kind            string              `json:"kind"`
 	KindDisplayName plugin.LocaleString `json:"kindDisplayName,omitempty"`
-	Archetype       string              `json:"archetype,omitempty"`
-	Relation        string              `json:"relation"`
-	Attributes      map[string]string   `json:"attributes,omitempty"`
-	ArtworkSlots    map[string]string   `json:"artworkSlots,omitempty"`
+	// KindPluralDisplayName is the kind's declared plural display name, so a
+	// client can head a row of these credits with it (CORE-3337).
+	KindPluralDisplayName plugin.LocaleString `json:"kindPluralDisplayName,omitempty"`
+	Archetype             string              `json:"archetype,omitempty"`
+	Relation              string              `json:"relation"`
+	Attributes            map[string]string   `json:"attributes,omitempty"`
+	ArtworkSlots          map[string]string   `json:"artworkSlots,omitempty"`
 }
 
 func (h *Handler) mediaInfo(ctx context.Context, scope auth.Scope, media store.Media) (MediaInfo, error) {
@@ -5652,14 +5655,15 @@ func (h *Handler) mediaCredits(ctx context.Context, scope auth.Scope, mediaID st
 				seenEntity[id] = true
 				spec := kinds[item.Entity.Kind]
 				credits = append(credits, MediaCreditInfo{
-					EntityID:        id,
-					Title:           item.Entity.Title,
-					Kind:            item.Entity.Kind,
-					KindDisplayName: spec.DisplayName,
-					Archetype:       spec.Archetype,
-					Relation:        relation.Name,
-					Attributes:      nonEmptyAttributes(item.Attributes),
-					ArtworkSlots:    h.entityArtworkSlots(item.Entity.ID),
+					EntityID:              id,
+					Title:                 item.Entity.Title,
+					Kind:                  item.Entity.Kind,
+					KindDisplayName:       spec.DisplayName,
+					KindPluralDisplayName: spec.PluralDisplayName,
+					Archetype:             spec.Archetype,
+					Relation:              relation.Name,
+					Attributes:            nonEmptyAttributes(item.Attributes),
+					ArtworkSlots:          h.entityArtworkSlots(item.Entity.ID),
 				})
 			}
 		}

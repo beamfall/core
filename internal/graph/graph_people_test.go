@@ -30,9 +30,10 @@ func TestMediaCreditsCarryAttributesArtworkAndBillingOrder(t *testing.T) {
 		DisplayName: plugin.L("Reels"),
 		MediaLabel:  plugin.L("Reel"),
 		EntityKinds: []plugin.EntityKind{{
-			Name:        "person",
-			DisplayName: plugin.L("Person"),
-			Archetype:   "person",
+			Name:              "person",
+			DisplayName:       plugin.L("Person"),
+			PluralDisplayName: plugin.L("Folks"),
+			Archetype:         "person",
 			Relations: []plugin.RelationSpec{{
 				Name:       "credited-in",
 				ToKind:     plugin.MediaKindName,
@@ -93,14 +94,14 @@ func TestMediaCreditsCarryAttributesArtworkAndBillingOrder(t *testing.T) {
 	}
 
 	got := graphData[MediaInfo](t, handler, `query($id:String!) { media(id: $id) { id credits } }`, map[string]any{"id": string(media.ID)}, "media").Credits
-	person := plugin.L("Person")
+	person, folks := plugin.L("Person"), plugin.L("Folks")
 	want := []MediaCreditInfo{
-		{EntityID: "entity-lead", Title: "Zed Lead", Kind: "person", KindDisplayName: person, Archetype: "person", Relation: "credited-in",
+		{EntityID: "entity-lead", Title: "Zed Lead", Kind: "person", KindDisplayName: person, KindPluralDisplayName: folks, Archetype: "person", Relation: "credited-in",
 			Attributes:   map[string]string{"character": "The Hero"},
 			ArtworkSlots: map[string]string{artwork.SlotPoster: "/api/entity/artwork/entity-lead/poster?v=" + fakeArtworkVersion}},
-		{EntityID: "entity-support", Title: "Amy Support", Kind: "person", KindDisplayName: person, Archetype: "person", Relation: "credited-in",
+		{EntityID: "entity-support", Title: "Amy Support", Kind: "person", KindDisplayName: person, KindPluralDisplayName: folks, Archetype: "person", Relation: "credited-in",
 			Attributes: map[string]string{"character": "The Friend"}},
-		{EntityID: "entity-uncredited", Title: "Bob Extra", Kind: "person", KindDisplayName: person, Archetype: "person", Relation: "credited-in"},
+		{EntityID: "entity-uncredited", Title: "Bob Extra", Kind: "person", KindDisplayName: person, KindPluralDisplayName: folks, Archetype: "person", Relation: "credited-in"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("credits = %#v\nwant %#v", got, want)
