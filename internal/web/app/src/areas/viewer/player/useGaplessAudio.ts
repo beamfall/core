@@ -319,6 +319,14 @@ export function skipJoin(video: HTMLMediaElement, mediaID: string) {
   handBack(video);
 }
 
+/**
+ * A Play now that let go without moving on (CORE-3360): the item it left joins
+ * its next one again, if the element still plays it.
+ */
+export function rejoinSkip(video: HTMLMediaElement, mediaID: string) {
+  if (skipping.get(video) === mediaID) skipping.delete(video);
+}
+
 // The element shadows a decoded track from its own end on: muted, so only the
 // decoded track is heard.
 function shadow(video: HTMLMediaElement) {

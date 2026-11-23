@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { loadSleepMark, noteSleepStop, sleepHoldsAutoplay } from "./sleepStop";
 import {
   cancelFadeAdvance,
   fadeAdvance,
@@ -134,6 +135,69 @@ describe("fadeAdvance", () => {
     } finally {
       hidden.mockRestore();
     }
+  });
+
+  it("withdraws whenever it lets go, unless a newer skip replaced it (CORE-3360)", () => {
+    const video = playingElement();
+    const withdraw = vi.fn();
+    // Dropped mid-fade, before it skipped.
+    fadeAdvance(video, () => {}, withdraw);
+    vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+    cancelFadeAdvance();
+    expect(withdraw).toHaveBeenCalledOnce();
+
+    // Skipped but nothing loaded: the wait runs out.
+    withdraw.mockClear();
+    fadeAdvance(video, () => {}, withdraw);
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
+    expect(withdraw).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(LOAD_WAIT_MS + TRACK_FADE_MS * 2);
+    expect(withdraw).toHaveBeenCalledOnce();
+    cancelFadeAdvance();
+    expect(withdraw).toHaveBeenCalledOnce();
+
+    // Moved on by the track's end: it lets go at once, after skipping.
+    withdraw.mockClear();
+    const order: string[] = [];
+    fadeAdvance(
+      video,
+      () => {
+        order.push("advance");
+      },
+      () => order.push("withdraw"),
+    );
+    vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+    finishFadeAdvance();
+    expect(order).toEqual(["advance", "withdraw"]);
+
+    // Replaced by a newer skip: no withdraw, the newer one owns the item.
+    fadeAdvance(video, () => {}, withdraw);
+    vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+    fadeAdvance(video, () => {});
+    expect(withdraw).not.toHaveBeenCalled();
+  });
+
+  it("lets go at once when the skip declines, leaving the track's end its own", () => {
+    const video = playingElement();
+    const withdraw = vi.fn();
+    fadeAdvance(video, () => false, withdraw);
+    vi.advanceTimersByTime(TRACK_FADE_MS + 20);
+    expect(withdraw).toHaveBeenCalledOnce();
+    // No load took the declined skip's mark, so a track the listener opens after a sleep stop still plays.
+    noteSleepStop();
+    expect(sleepHoldsAutoplay(loadSleepMark())).toBe(false);
+    expect(finishFadeAdvance()).toBe(false);
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
+    expect(video.volume).toBeCloseTo(0.8);
+
+    // Declined at the track's end: the end is not taken.
+    const ended = vi.fn(() => false);
+    fadeAdvance(video, ended, withdraw);
+    vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+    expect(finishFadeAdvance()).toBe(false);
+    expect(ended).toHaveBeenCalledOnce();
+    expect(video.volume).toBeCloseTo(0.8);
+    expect(withdraw).toHaveBeenCalledTimes(2);
   });
 
   it("fades back in when the skip loads nothing", () => {
