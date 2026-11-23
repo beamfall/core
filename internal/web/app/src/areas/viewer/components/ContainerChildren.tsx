@@ -17,7 +17,7 @@ import {
   useSpoilerGuard,
 } from "../lib/spoilerGuard";
 import { runtimeParts } from "../lib/viewerFields";
-import { type PlayQueueItem, playQueueOf, queueWindow } from "../lib/watchQueue";
+import { navTitleFor, type PlayQueueItem, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 import { SpoilerContainerToggle, SpoilerRevealButton, SpoilerStill } from "./SpoilerGuard";
@@ -139,7 +139,7 @@ function ChildRow({
   }
   function play() {
     navigate(mediaPath("watch", item.id), {
-      state: { title: item.title, ...queueState() },
+      state: { title: navTitleFor(identity, item.title), ...queueState() },
     });
   }
   const thumb = childThumbURL(item);

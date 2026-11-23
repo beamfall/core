@@ -21,7 +21,7 @@ import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import { fetchCollection, fetchCollectionItems, memberOrder, moveEntry } from "../lib/collections";
 import { mediaPath } from "../lib/mediaAddress";
-import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
+import { navTitleFor, type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 
 // One ordered Collection's own page (/collections/:libraryId/:collectionId,
 // CORE-1684): a playlist or a box set, its entries in curated order. Play all
@@ -101,9 +101,10 @@ export function CollectionPage() {
   function playAll() {
     const first = queue[0];
     if (!first) return;
+    const title = navTitleFor(identity, first.title);
     const state: PlayerNavState = identity
-      ? { title: first.title, queue: queueWindow(queue, first.id), queueIdentity: identity }
-      : { title: first.title };
+      ? { title, queue: queueWindow(queue, first.id), queueIdentity: identity }
+      : { title };
     navigate(mediaPath("watch", first.id), { state });
   }
 

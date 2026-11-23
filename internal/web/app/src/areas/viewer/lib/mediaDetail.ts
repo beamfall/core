@@ -164,7 +164,7 @@ export async function fetchMediaLyrics(
   };
 }
 
-function isUnknownMedia(err: unknown): boolean {
+export function isUnknownMedia(err: unknown): boolean {
   return (
     err instanceof ApiError &&
     err.status === 200 &&

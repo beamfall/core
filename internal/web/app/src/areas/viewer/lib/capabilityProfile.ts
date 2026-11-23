@@ -127,7 +127,8 @@ function canPlayTypeSupported(
   video: Pick<HTMLVideoElement, "canPlayType"> | null,
   contentType: string,
 ): boolean {
-  return video?.canPlayType(contentType) !== "";
+  if (!video) return false;
+  return video.canPlayType(contentType) !== "";
 }
 
 async function mediaCapabilitiesSupports(
@@ -249,11 +250,20 @@ async function downstreamAudioHint(clientPrefs: ClientPref[] | null | undefined)
 }
 
 export async function probeCapabilityProfile(deps: ProbeDeps = {}): Promise<CapabilityProfile> {
-  const doc = deps.document ?? (typeof document !== "undefined" ? document : null);
-  const nav = deps.navigator ?? (typeof navigator !== "undefined" ? navigator : null);
+  const doc =
+    deps.document !== undefined ? deps.document : typeof document !== "undefined" ? document : null;
+  const nav =
+    deps.navigator !== undefined
+      ? deps.navigator
+      : typeof navigator !== "undefined"
+        ? navigator
+        : null;
   const client = deps.client ?? "beamfall-web";
-  const video = deps.video ?? doc?.createElement("video") ?? null;
-  const mediaCapabilities = deps.mediaCapabilities ?? nav?.mediaCapabilities ?? null;
+  const video = deps.video !== undefined ? deps.video : (doc?.createElement("video") ?? null);
+  const mediaCapabilities =
+    deps.mediaCapabilities !== undefined
+      ? deps.mediaCapabilities
+      : (nav?.mediaCapabilities ?? null);
 
   const containers = CONTAINER_CANDIDATES.filter((candidate) =>
     canPlayTypeSupported(video, candidate.contentType),
@@ -261,7 +271,9 @@ export async function probeCapabilityProfile(deps: ProbeDeps = {}): Promise<Capa
 
   const videoCodecs: VideoCodecCap[] = [];
   const directCodecs: string[] = [];
-  for (const candidate of VIDEO_CANDIDATES) {
+  // No media element means nothing can be played: probe no codec, even when
+  // mediaCapabilities would report decode support.
+  for (const candidate of video ? VIDEO_CANDIDATES : []) {
     const cap = await probeVideoCodec(candidate, video, mediaCapabilities);
     if (cap) {
       videoCodecs.push(cap);
@@ -270,7 +282,7 @@ export async function probeCapabilityProfile(deps: ProbeDeps = {}): Promise<Capa
   }
 
   const audioCodecs: AudioCodecCap[] = [];
-  for (const candidate of AUDIO_CANDIDATES) {
+  for (const candidate of video ? AUDIO_CANDIDATES : []) {
     const cap = await probeAudioCodec(candidate, video, mediaCapabilities);
     if (cap) {
       audioCodecs.push(cap);

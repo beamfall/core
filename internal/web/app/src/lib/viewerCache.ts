@@ -22,6 +22,17 @@ export function viewerIdentityKey(session: SessionInfo | null): string | null {
   return JSON.stringify([session.deviceRole, session.profileID, session.profile, session.revealed]);
 }
 
+/** Whether the identity key was minted for a Revealed session (false for no identity). */
+export function viewerIdentityRevealed(identity: string | null): boolean {
+  if (!identity) return false;
+  try {
+    const parts: unknown = JSON.parse(identity);
+    return Array.isArray(parts) && parts[3] === true;
+  } catch {
+    return false;
+  }
+}
+
 function entryKey(identity: string, key: string): string {
   return `${identity}\u0000${key}`;
 }

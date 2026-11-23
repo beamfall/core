@@ -19,7 +19,7 @@ import {
 } from "../lib/searchRows";
 import { isSpoilerCandidate, useSpoilerGuard } from "../lib/spoilerGuard";
 import { useLiveSearch, useSearchShortcut } from "../lib/useLiveSearch";
-import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
+import { navTitleFor, type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 
 /** One action on a result row: open the item, or play it. */
@@ -95,7 +95,7 @@ export function HeaderSearch() {
   function activate(cell: Cell) {
     const { item } = cell;
     if (cell.play) {
-      const state: PlayerNavState = { title: item.title };
+      const state: PlayerNavState = { title: navTitleFor(identity, item.title) };
       // A one-item queue still goes, so it ends an earlier Play all queue.
       if (identity && queue.length > 0) {
         state.queue = queueWindow(queue, item.id);
@@ -104,7 +104,10 @@ export function HeaderSearch() {
       navigate(searchRowPlayPath(item), { state });
     } else {
       navigate(searchRowOpenPath(item), {
-        state: item.kind === "media" ? { title: item.title } : entityLinkState(item, identity),
+        state:
+          item.kind === "media"
+            ? { title: navTitleFor(identity, item.title) }
+            : entityLinkState(item, identity),
       });
     }
   }

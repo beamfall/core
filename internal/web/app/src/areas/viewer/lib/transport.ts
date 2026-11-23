@@ -24,6 +24,7 @@ const SKIPPABLE_SEGMENT_KINDS = new Set([
   "intro",
   "recap",
   "credits",
+  "ad",
   "commercial",
   "intermission",
 ]);
@@ -265,15 +266,16 @@ export function buildMarkerStripModel(
   return { ticks, ranges, skip };
 }
 
-// --- Auto-skip (ADR-0048 Decision 6) --------------------------------------
+// --- Auto-skip (ADR-0048 Decision 6, ADR-0193 Decision 2/5) ---------------
 
-/** The three segment kinds the per-profile autoskip.* prefs cover. */
-const AUTO_SKIP_SEGMENT_KINDS = new Set(["intro", "recap", "credits"]);
+/** The four segment kinds the per-profile autoskip.* prefs cover. */
+const AUTO_SKIP_SEGMENT_KINDS = new Set(["intro", "recap", "credits", "ad"]);
 
 export interface AutoSkipPrefs {
   intro: boolean;
   recap: boolean;
   credits: boolean;
+  ad?: boolean;
 }
 
 export interface AutoSkipSegment {
@@ -287,6 +289,7 @@ function autoSkipEnabled(segmentKind: string, prefs: AutoSkipPrefs): boolean {
   if (segmentKind === "intro") return prefs.intro;
   if (segmentKind === "recap") return prefs.recap;
   if (segmentKind === "credits") return prefs.credits;
+  if (segmentKind === "ad") return Boolean(prefs.ad);
   return false;
 }
 

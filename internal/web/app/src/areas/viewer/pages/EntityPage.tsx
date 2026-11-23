@@ -73,7 +73,13 @@ import { mediaPath } from "../lib/mediaAddress";
 import { seeAllTargetFor } from "../lib/seeall";
 import { audioQueue, containerTrackRows, isAudioListing, playState } from "../lib/trackList";
 import { fieldDisplayValue, formatScore } from "../lib/viewerFields";
-import { listsPlaysAlone, type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
+import {
+  listsPlaysAlone,
+  navTitleFor,
+  type PlayerNavState,
+  playQueueOf,
+  queueWindow,
+} from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import "./media-detail.css";
 import "./entity-detail.css";
@@ -475,7 +481,7 @@ export function EntityPage() {
   function playNext() {
     if (!nextUp) return;
     const { item } = nextUp;
-    const state: PlayerNavState = { title: item.title };
+    const state: PlayerNavState = { title: navTitleFor(identity, item.title) };
     // A relation-ordered listing's Media plays alone; the one-item queue also
     // ends an earlier Play all queue, so it never runs on (ADR-0055 §2.4).
     const queue = relationOrdered ? playQueueOf([item]) : fallbackQueue;

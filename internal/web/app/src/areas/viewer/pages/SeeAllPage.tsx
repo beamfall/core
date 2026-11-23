@@ -71,9 +71,11 @@ export function SeeAllPage() {
         }
       : null;
   }, [manifest, state]);
+  // A manifest refresh (Home visibility can change with it) remounts the page,
+  // so every row is read again against the current visibility.
   return (
     <SeeAllResults
-      key={JSON.stringify([location.key, identity, Boolean(ctx)])}
+      key={JSON.stringify([location.key, identity, Boolean(ctx), manifest?.generatedAt])}
       ctx={ctx}
       identity={identity}
     />

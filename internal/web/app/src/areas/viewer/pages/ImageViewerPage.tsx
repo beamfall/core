@@ -45,6 +45,7 @@ import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMe
 import "./image-viewer.css";
 import { fieldDisplayValue, viewerFacingFields } from "../lib/viewerFields";
 import {
+  navTitleFor,
   type PlayerNavState,
   type PlayQueueItem,
   readPlayerNavState,
@@ -192,7 +193,7 @@ export function ImageViewerPage() {
   const wrongClass = !!media && !viewable;
   const stateFor = useCallback(
     (title: string, base = navState.queue): PlayerNavState => {
-      const state: PlayerNavState = { title };
+      const state: PlayerNavState = { title: navTitleFor(identity, title) };
       if (base && navState.queueIdentity) {
         // Trashed items leave the carried queue too, so a reload does not bring them back.
         const gone = removedRef.current;
@@ -201,7 +202,7 @@ export function ImageViewerPage() {
       }
       return state;
     },
-    [navState.queue, navState.queueIdentity],
+    [navState.queue, navState.queueIdentity, identity],
   );
   const step = useCallback(
     (target: PlayQueueItem | undefined, direction: "previous" | "next") => {

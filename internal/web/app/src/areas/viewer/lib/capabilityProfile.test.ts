@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { probeCapabilityProfile } from "./capabilityProfile";
 
@@ -133,5 +133,32 @@ describe("probeCapabilityProfile", () => {
     });
 
     expect(profile.audioCodecs.map((cap) => cap.codec)).toEqual(["aac"]);
+  });
+
+  it("reports every container and codec unsupported when video is null", async () => {
+    const profile = await probeCapabilityProfile({
+      video: null,
+      mediaCapabilities: null,
+      clientPrefs: [],
+    });
+
+    expect(profile.containers).toEqual([]);
+    expect(profile.directCodecs).toEqual([]);
+    expect(profile.videoCodecs).toEqual([]);
+    expect(profile.audioCodecs).toEqual([]);
+  });
+
+  it("advertises no codec for a null video even when mediaCapabilities reports support", async () => {
+    const profile = await probeCapabilityProfile({
+      video: null,
+      mediaCapabilities: {
+        decodingInfo: vi.fn(async () => ({ supported: true })),
+      } as unknown as MediaCapabilities,
+      clientPrefs: [],
+    });
+
+    expect(profile.videoCodecs).toEqual([]);
+    expect(profile.directCodecs).toEqual([]);
+    expect(profile.audioCodecs).toEqual([]);
   });
 });

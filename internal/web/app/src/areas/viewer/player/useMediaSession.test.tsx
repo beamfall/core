@@ -1,6 +1,8 @@
 import { renderHook } from "@testing-library/react";
-import { createRef } from "react";
+import { createRef, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "@/lib/i18n";
+import { type Locale, STRINGS } from "@/strings";
 import type { PlaybackNext } from "../lib/playback";
 import { useMediaSession } from "./useMediaSession";
 import { lastViewerIntent } from "./viewerIntent";
@@ -72,7 +74,7 @@ afterEach(() => {
 
 type Props = Parameters<typeof useMediaSession>[0];
 
-function setup(over: Partial<Props> = {}) {
+function setup(over: Partial<Props> = {}, locale: Locale = "en") {
   const video = new FakeVideo();
   const ref = createRef<HTMLVideoElement>();
   (ref as { current: unknown }).current = video;
@@ -83,8 +85,12 @@ function setup(over: Partial<Props> = {}) {
     next: null,
     ...over,
   } as Props;
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <I18nProvider initialLocale={locale}>{children}</I18nProvider>
+  );
   const view = renderHook((props: Props) => useMediaSession(props), {
     initialProps,
+    wrapper,
   });
   return { video, ref, view, initialProps };
 }
@@ -93,6 +99,19 @@ describe("useMediaSession", () => {
   it("sets metadata from the Media title while active", () => {
     setup();
     expect((fakeSession.metadata as { title: string }).title).toBe("The Episode");
+  });
+
+  it("falls back to the localized brand string when title or album is empty", () => {
+    const spy = vi.spyOn(STRINGS.fr, "brand", "get").mockReturnValue("Beamfall FR");
+    try {
+      setup({ title: "", album: "" }, "fr");
+      expect(fakeSession.metadata).toMatchObject({
+        title: "Beamfall FR",
+        album: "Beamfall FR",
+      });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("is a no-op when the Media Session API is absent", () => {

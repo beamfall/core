@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MediaRow } from "@/lib/graphql/browse";
-import type { RelatedEntityGroup, SourceItem } from "@/lib/graphql/types";
+import type { RelatedEntityGroup, SessionInfo, SourceItem } from "@/lib/graphql/types";
+import { viewerIdentityKey } from "@/lib/viewerCache";
 import {
   albumTrackRows,
   appearsOn,
@@ -332,4 +333,27 @@ describe("rows built from the listing (CORE-2922)", () => {
       },
     ];
   }
+
+  it("writes no top-level title into nav state while the session is revealed", () => {
+    const queue = [
+      { id: "t1", title: "Track One", mediaClass: "audio" },
+      { id: "t2", title: "Track Two", mediaClass: "audio" },
+    ];
+    const session = (revealed: boolean) =>
+      viewerIdentityKey({
+        deviceRole: "viewer",
+        profileID: "p1",
+        profile: "Pat",
+        revealed,
+      } as unknown as SessionInfo);
+    const revealedState = playState(session(true), queue, { id: "t1", title: "Restricted" });
+    expect(revealedState.title).toBeUndefined();
+    const written = JSON.stringify(revealedState);
+    expect(written).not.toContain("Restricted");
+    // The queue keeps its titles so Now Playing can list Up Next.
+    expect(revealedState.queue).toEqual(queue);
+    const plain = playState(session(false), queue, { id: "t1", title: "Plain" });
+    expect(plain.title).toBe("Plain");
+    expect(plain.queue).toEqual(queue);
+  });
 });

@@ -7,7 +7,7 @@ import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
-import { useSession } from "@/lib/session";
+import { useSession, useViewerIdentity } from "@/lib/session";
 import { SlideshowButton } from "../../slideshow/SlideshowButton";
 import {
   HideWatchedToggle,
@@ -43,7 +43,7 @@ import {
 import { LIBRARY_VIEW_PARAM } from "../lib/libraryViews";
 import { mediaPath } from "../lib/mediaAddress";
 import { startPlayQueue } from "../lib/playQueue";
-import { type PlayQueueItem, playQueueOf } from "../lib/watchQueue";
+import { navTitleFor, type PlayQueueItem, playQueueOf } from "../lib/watchQueue";
 import { LibraryViews } from "./LibraryViews";
 
 // A wide viewport shows more cards than the See All cap allows for.
@@ -118,6 +118,7 @@ function LibraryBrowse({
   const t = useT();
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
+  const identity = useViewerIdentity();
   const [searchParams, setSearchParams] = useSearchParams();
   const state = useMemo(() => parseBrowseState(searchParams), [searchParams]);
   const stateKey = browseStateParams(state).toString();
@@ -314,7 +315,9 @@ function LibraryBrowse({
       );
       // The player reads its heading from navigation state.
       if (first) {
-        navigate(mediaPath("watch", first.id), { state: { title: first.title } });
+        navigate(mediaPath("watch", first.id), {
+          state: { title: navTitleFor(identity, first.title) },
+        });
       }
     } catch {
       setFailed(true);

@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getIdentityEpochSignal, graphql } from "@/lib/api";
 import type { GenericMediaInfo, SessionInfo } from "@/lib/graphql/types";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { isUnknownMedia } from "./mediaDetail";
 
 export const MUSIC_QUEUE_PARAM = "playQueue";
 
@@ -194,12 +195,16 @@ export function useMusicQueue() {
           scope,
           request,
         );
-        return current() === read ? media : null;
+        if (current() !== read) throw new Error("media read superseded");
+        return media;
       } catch (error) {
         if (error instanceof QueueIdentityChanged && !request.aborted && current() === read) {
           invalidate(read);
         }
-        return null;
+        // Only "unknown media" means hidden or absent; any other failure is
+        // unknown to the caller, which must not read it as a restriction.
+        if (isUnknownMedia(error)) return null;
+        throw error;
       }
     },
     [scope, current, invalidate],

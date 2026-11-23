@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useT } from "@/lib/i18n";
 import type { PlaybackNext } from "../lib/playback";
 import { resetStillWatching } from "../lib/stillWatching";
 import { markViewerIntent } from "./viewerIntent";
@@ -67,6 +68,8 @@ export function useMediaSession({
   songScale = 1,
   skipSeconds = SEEK_STEP_SECONDS,
 }: MediaSessionOptions): void {
+  const t = useT();
+  const brand = t("brand");
   // Metadata: set when active, cleared when not. Kept in its own effect so a
   // title change updates the OS surface without re-binding the action handlers.
   useEffect(() => {
@@ -77,15 +80,15 @@ export function useMediaSession({
       return;
     }
     ms.metadata = new MediaMetadata({
-      title: title || "Beamfall",
+      title: title || brand,
       artist: artist || "",
-      album: album || "Beamfall",
+      album: album || brand,
       ...(artworkURL ? { artwork: [{ src: artworkURL }] } : {}),
     });
     return () => {
       ms.metadata = null;
     };
-  }, [active, title, artist, album, artworkURL]);
+  }, [active, title, artist, album, artworkURL, brand]);
 
   // Transport action handlers + playbackState/position mirroring.
   useEffect(() => {

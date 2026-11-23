@@ -46,6 +46,7 @@ import type {
 import { useT } from "@/lib/i18n";
 import { playMethodLabel, watched } from "@/lib/playReporting";
 import { useSession } from "@/lib/session";
+import { RevealPinDialog, revealErrorKey } from "../components/RevealControls";
 import { ViewerActions } from "../components/ViewerActions";
 import { mediaPath } from "../lib/mediaAddress";
 
@@ -81,6 +82,9 @@ export function MyDataPage() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [pinDialogOpen, setPinDialogOpen] = useState(false);
+  const [pinDialogBusy, setPinDialogBusy] = useState(false);
+  const [pinDialogError, setPinDialogError] = useState<string | null>(null);
 
   // Summary (ADR-0036 §2.2 layer 1): computed-on-read aggregate over the
   // caller's own reveal-filtered data. Refreshed alongside the delete so the
@@ -149,11 +153,13 @@ export function MyDataPage() {
   function onApplyFilters() {
     const vars: MyEngagementLogVars = {};
     if (draftLibrary !== ALL_LIBRARIES) vars.libraryID = draftLibrary;
-    // <input type="date"> yields YYYY-MM-DD; widen to an RFC3339 instant that
-    // covers the whole day (start-of-day for `from`, end-of-day for `to`) so a
-    // single-day range is inclusive on both ends.
-    if (draftFrom) vars.from = `${draftFrom}T00:00:00Z`;
-    if (draftTo) vars.to = `${draftTo}T23:59:59Z`;
+    // <input type="date"> yields local YYYY-MM-DD; widen to RFC3339 instants in
+    // the viewer's local timezone (start-of-day for `from`, end-of-day for `to`)
+    // so a single-day range covers the full local day.
+    const fromBound = draftFrom ? localDateBound(draftFrom, "start") : undefined;
+    const toBound = draftTo ? localDateBound(draftTo, "end") : undefined;
+    if (fromBound) vars.from = fromBound;
+    if (toBound) vars.to = toBound;
     setApplied(vars);
     setOffset(0);
   }
@@ -178,6 +184,12 @@ export function MyDataPage() {
     }
   }
 
+  async function finishDeleteSuccess() {
+    setDeleteMsg(t("myDataDeleteDone"));
+    setPlaysVersion((v) => v + 1);
+    await Promise.all([refresh(), refreshSummary(), refreshLog()]);
+  }
+
   async function onDeleteAll() {
     setDeleteError(null);
     setDeleteMsg(null);
@@ -188,28 +200,36 @@ export function MyDataPage() {
     }
     try {
       await deleteMyEngagement("all");
-      setDeleteMsg(t("myDataDeleteDone"));
-      setPlaysVersion((v) => v + 1);
-      await Promise.all([refresh(), refreshSummary(), refreshLog()]);
+      await finishDeleteSuccess();
     } catch (err) {
       const needsPin =
-        err instanceof Error &&
-        err.message.toLowerCase().includes("reveal pin required") &&
-        typeof prompt === "function";
-      const pin = needsPin ? prompt(t("myDataDeletePinPrompt")) : null;
-      if (!pin) {
-        setDeleteError(t("myDataDeleteError"));
+        err instanceof Error && err.message.toLowerCase().includes("reveal pin required");
+      if (needsPin) {
+        setPinDialogError(null);
+        setPinDialogOpen(true);
         return;
       }
-      try {
-        await deleteMyEngagement("all", pin);
-        setDeleteMsg(t("myDataDeleteDone"));
-        setPlaysVersion((v) => v + 1);
-        await Promise.all([refresh(), refreshSummary(), refreshLog()]);
-      } catch {
+      setDeleteError(t("myDataDeleteError"));
+    }
+  }
+
+  async function onConfirmDeleteWithPin(pin: string) {
+    setPinDialogError(null);
+    setPinDialogBusy(true);
+    try {
+      await deleteMyEngagement("all", pin);
+      setPinDialogOpen(false);
+      await finishDeleteSuccess();
+    } catch (err) {
+      const message = err instanceof Error ? err.message.toLowerCase() : "";
+      if (message.includes("pin") || message.includes("throttled")) {
+        setPinDialogError(t(revealErrorKey(err)));
+      } else {
+        setPinDialogOpen(false);
         setDeleteError(t("myDataDeleteError"));
       }
-      return;
+    } finally {
+      setPinDialogBusy(false);
     }
   }
 
@@ -304,6 +324,20 @@ export function MyDataPage() {
             {deleteError && <Notice tone="error">{deleteError}</Notice>}
           </div>
         </CollapsibleCard>
+
+        <RevealPinDialog
+          open={pinDialogOpen}
+          onOpenChange={(next) => {
+            setPinDialogOpen(next);
+            setPinDialogError(null);
+          }}
+          title={t("myDataDeleteHeading")}
+          description={t("myDataDeletePinPrompt")}
+          submitLabel={t("myDataDeleteAll")}
+          busy={pinDialogBusy}
+          error={pinDialogError}
+          onSubmitPin={onConfirmDeleteWithPin}
+        />
       </div>
     </AppShell>
   );
@@ -787,7 +821,8 @@ function TokenGroupRow({ group }: { group: StreamTokenGroup }) {
 }
 
 // Triggers a local download of the export JSON without a server-side file or a
-// forward (ADR-0036): the blob is created, clicked, and revoked locally.
+// forward (ADR-0036): the anchor is attached before click and the blob URL is
+// revoked on the next task so async-download browsers can start reading it.
 function downloadJSON(payload: unknown, filename: string) {
   const json = JSON.stringify(payload, null, 2);
   const blob = new Blob([json], { type: "application/json" });
@@ -795,8 +830,28 @@ function downloadJSON(payload: unknown, filename: string) {
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
+  link.hidden = true;
+  document.body.appendChild(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+}
+
+export function localDateBound(value: string, edge: "start" | "end"): string | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date =
+    edge === "start"
+      ? new Date(year, month, day, 0, 0, 0, 0)
+      : new Date(year, month, day, 23, 59, 59, 999);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString().replace(/\.000Z$/, "Z");
 }
 
 // Formats an ISO timestamp via the browser locale, ported from the vanilla

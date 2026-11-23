@@ -18,7 +18,7 @@ import {
   useSpoilerGuard,
 } from "../lib/spoilerGuard";
 import { runtimeParts, serverDurationSummary } from "../lib/viewerFields";
-import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
+import { navTitleFor, type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 import { SpoilerContainerToggle, SpoilerRevealButton, SpoilerStill } from "./SpoilerGuard";
@@ -60,7 +60,7 @@ export function ContainerMediaRows({
   if (media.length === 0) return null;
 
   function play(item: SourceItem) {
-    const state: PlayerNavState = { title: item.title };
+    const state: PlayerNavState = { title: navTitleFor(identity, item.title) };
     if (identity && queue.length > 0) {
       state.queue = queueWindow(queue, item.id);
       state.queueIdentity = identity;

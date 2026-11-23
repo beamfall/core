@@ -71,6 +71,7 @@ import {
   viewerFacingFields,
 } from "../lib/viewerFields";
 import {
+  navTitleFor,
   newStartID,
   type PlayerNavState,
   readPlayerNavState,
@@ -247,7 +248,7 @@ export function MediaDetailPage() {
       : readPlayerNavState(location.state, identity);
     // Every Play or Start over is its own start, so pressing one while the
     // mini player already plays this Media starts it again with these picks.
-    const state: PlayerNavState = { title, startID: newStartID() };
+    const state: PlayerNavState = { title: navTitleFor(identity, title), startID: newStartID() };
     if (identity && queue) {
       state.queue = queue;
       state.queueIdentity = identity;

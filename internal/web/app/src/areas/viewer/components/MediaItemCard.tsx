@@ -20,7 +20,12 @@ import { fetchPreviewInfo } from "../lib/playback";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
 import { isSpoilerCandidate, revealItem, useSpoilerGuard } from "../lib/spoilerGuard";
 import { formatDuration } from "../lib/trackList";
-import { type PlayerNavState, type PlayQueueItem, queueWindow } from "../lib/watchQueue";
+import {
+  navTitleFor,
+  type PlayerNavState,
+  type PlayQueueItem,
+  queueWindow,
+} from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 import { PosterGlyph } from "./PosterGlyph";
@@ -234,7 +239,7 @@ export function MediaItemCard({
   // Carry the title forward so the player's info overlay can name the Media
   // (the playback-info wire does not report it).
   function playState(): PlayerNavState {
-    return { title: item.title, ...queueState() };
+    return { title: navTitleFor(identity, item.title), ...queueState() };
   }
 
   function play() {

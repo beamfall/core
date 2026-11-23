@@ -15,6 +15,7 @@ import { mediaPath } from "../lib/mediaAddress";
 import { rememberRenderFocus } from "../lib/renderFocus";
 import { isSpoilerCandidate, useSpoilerGuard } from "../lib/spoilerGuard";
 import { runtimeParts, serverDurationSummary } from "../lib/viewerFields";
+import { navTitleFor } from "../lib/watchQueue";
 
 // Hero Section, ported from the vanilla buildHero (app.js): one prominent
 // featured item (the Source's first item) — a wide full-bleed frame with a
@@ -82,7 +83,9 @@ export function Hero({
       // Carry the title forward so the player's info overlay can name the Media
       // (the playback-info wire does not report it).
       navigate(mediaPath("watch", item.id), {
-        state: { title: lead && lead !== heading ? `${heading} · ${lead}` : heading },
+        state: {
+          title: navTitleFor(identity, lead && lead !== heading ? `${heading} · ${lead}` : heading),
+        },
       });
     } else {
       navigate(`/entity/${encodeURIComponent(item.id)}`, {
