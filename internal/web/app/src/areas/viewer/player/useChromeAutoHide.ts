@@ -91,3 +91,23 @@ export function useChromeAutoHide({
 
   return { chromeHidden, reveal };
 }
+
+/**
+ * The stage class for the idle state. Video hides its chrome; the music stage
+ * dims it instead (CORE-3351), unless Ambient mode runs its own idle.
+ */
+export function idleChromeClass({
+  playing,
+  chromeHidden,
+  audioStage,
+  ambient,
+}: {
+  playing: boolean;
+  chromeHidden: boolean;
+  audioStage: boolean;
+  ambient: boolean;
+}): string {
+  if (!playing || !chromeHidden) return "";
+  if (!audioStage) return " is-chrome-hidden";
+  return ambient ? "" : " is-chrome-dim";
+}

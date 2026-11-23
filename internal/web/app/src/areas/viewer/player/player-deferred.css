@@ -866,6 +866,70 @@
   }
 }
 
+/* --- Idle dim on the music stage (CORE-3351). The audio stage does not hide
+   its chrome; useChromeAutoHide's idle marks it is-chrome-dim and the controls,
+   the top bar and the artwork recede to translucent. The pointer over a control
+   region or keyboard focus on a control keeps everything up (the idle timer
+   still runs; these selectors decide what the eye sees), and so does any open
+   menu or popover the timer's menuOpen does not see, such as the listening
+   controls' speed and sleep menus (their trigger is aria-expanded). Open lyrics stay
+   readable: only the artwork and the words / listening controls dim. --- */
+main:has(> .bf-player-stage.is-chrome-dim):not(
+    :has(
+        .bf-player-bar:hover,
+        .bf-player-bar :focus-visible,
+        .bf-transport:hover,
+        .bf-transport :focus-visible,
+        .bf-audio-info:hover,
+        .bf-audio-info :focus-visible,
+        [aria-expanded="true"]
+      )
+  ) {
+  --bf-idle-chrome: 0.15;
+  --bf-idle-card: 0.45;
+  --bf-idle-fade: 800ms;
+}
+
+main:has(> .bf-player-stage.is-chrome-dim) > .bf-player-bar,
+.bf-player-stage.is-chrome-dim .bf-transport {
+  opacity: var(--bf-idle-chrome, 1);
+  transition: opacity var(--bf-idle-fade, 140ms) var(--ease-standard);
+}
+
+.bf-player-stage.is-chrome-dim .bf-audio-artwork,
+.bf-player-stage.is-chrome-dim .bf-audio-info {
+  opacity: var(--bf-idle-card, 1);
+  transition: opacity var(--bf-idle-fade, 200ms) var(--ease-standard);
+}
+
+/* Activity brings the artwork and words back quickly (the transport and bar
+   already fade back over 140ms). */
+.bf-audio-artwork,
+.bf-audio-info {
+  transition: opacity 200ms var(--ease-standard);
+}
+
+/* Touch keeps "first tap reveals", as on the hidden video chrome (CORE-2322):
+   a faint control is not tappable until the stage wakes. */
+@media not all and (pointer: fine) {
+  main:has(> .bf-player-stage.is-chrome-dim) > .bf-player-bar > *,
+  .bf-player-stage.is-chrome-dim .bf-transport * {
+    pointer-events: none;
+  }
+}
+
+/* Reduced motion: the opacity changes with no fade. */
+@media (prefers-reduced-motion: reduce) {
+  main:has(> .bf-player-stage.is-chrome-dim) > .bf-player-bar,
+  .bf-player-stage.is-chrome-dim .bf-transport,
+  .bf-player-stage.is-chrome-dim .bf-audio-artwork,
+  .bf-player-stage.is-chrome-dim .bf-audio-info,
+  .bf-audio-artwork,
+  .bf-audio-info {
+    transition: none;
+  }
+}
+
 /* --- Subtitle appearance (native ::cue, CORE-1681). ---
  * useSubtitleAppearance sets these custom properties and the background class
  * on the stage from the Profile's subtitle.* prefs. hls.js renders through
