@@ -355,12 +355,24 @@ function LibraryEntityGrid({
   // Pages painted from the cache whose fresh read has not landed yet.
   const stalePagesRef = useRef(new Set<number>());
   const generationRef = useRef(0);
+  const refreshSeqRef = useRef(0);
+
+  const applyPage = useCallback((pageIndex: number, page: LibraryEntitiesPage) => {
+    pagesRef.current.set(pageIndex, page.items);
+    setTotal(page.total);
+    if (pageIndex === 0) {
+      setLetters(page.letters);
+      setChildKinds(page.childKinds ?? []);
+    }
+    setLoadedTick((tick) => tick + 1);
+  }, []);
 
   const loadPage = useCallback(
     (pageIndex: number) => {
       if (pendingRef.current.has(pageIndex)) return;
       if (pagesRef.current.has(pageIndex) && !stalePagesRef.current.has(pageIndex)) return;
       const generation = generationRef.current;
+      const refreshSeq = refreshSeqRef.current;
       const request = {
         libraryID,
         kind,
@@ -368,31 +380,22 @@ function LibraryEntityGrid({
         limit: LIBRARY_ENTITY_PAGE,
         offset: pageIndex * LIBRARY_ENTITY_PAGE,
       };
-      const show = (page: LibraryEntitiesPage) => {
-        pagesRef.current.set(pageIndex, page.items);
-        setTotal(page.total);
-        if (pageIndex === 0) {
-          setLetters(page.letters);
-          setChildKinds(page.childKinds ?? []);
-        }
-        setLoadedTick((tick) => tick + 1);
-      };
       // A page read before paints at once and is read afresh behind it.
       const cached = pagesRef.current.has(pageIndex) ? undefined : cachedLibraryEntities(request);
       if (cached) {
         stalePagesRef.current.add(pageIndex);
-        show(cached);
+        applyPage(pageIndex, cached);
       }
       pendingRef.current.add(pageIndex);
       fetchLibraryEntities(request)
         .then((page) => {
-          if (generation !== generationRef.current) return;
+          if (generation !== generationRef.current || refreshSeq !== refreshSeqRef.current) return;
           pendingRef.current.delete(pageIndex);
           stalePagesRef.current.delete(pageIndex);
-          show(page);
+          applyPage(pageIndex, page);
         })
         .catch(() => {
-          if (generation !== generationRef.current) return;
+          if (generation !== generationRef.current || refreshSeq !== refreshSeqRef.current) return;
           pendingRef.current.delete(pageIndex);
           setFailed(true);
         });
@@ -400,13 +403,14 @@ function LibraryEntityGrid({
     // `state` is derived from stateKey; keying on the string keeps loadPage
     // stable across unrelated renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [libraryID, kind, stateKey],
+    [applyPage, libraryID, kind, stateKey],
   );
 
   // A new query (or a retry) drops every cached page and starts again; the
   // opening page the Library read already holds paints at once.
   useEffect(() => {
     generationRef.current += 1;
+    refreshSeqRef.current += 1;
     pendingRef.current = new Set();
     stalePagesRef.current = new Set();
     setFailed(false);
@@ -447,8 +451,53 @@ function LibraryEntityGrid({
     if (seenEpochRef.current === engagementEpoch && !toggled && !hid) return;
     seenEpochRef.current = engagementEpoch;
     seenHideRef.current = hideWatched.version;
-    if (followsEngagement || hid || (toggled && unfiltered)) setRetryTick((tick) => tick + 1);
-  }, [engagementEpoch, hideWatched.version, hiddenKey, followsEngagement, unfiltered]);
+    if (!followsEngagement && !hid && !(toggled && unfiltered)) {
+      // Order and membership hold, but the cards' watched marks and progress
+      // are stale: re-read the loaded and in-flight pages and swap them in place.
+      const generation = generationRef.current;
+      refreshSeqRef.current += 1;
+      const refreshSeq = refreshSeqRef.current;
+      const pageIndexes = new Set([...pagesRef.current.keys(), ...pendingRef.current]);
+      for (const pageIndex of pageIndexes) {
+        fetchLibraryEntities({
+          libraryID,
+          kind,
+          state,
+          limit: LIBRARY_ENTITY_PAGE,
+          offset: pageIndex * LIBRARY_ENTITY_PAGE,
+        })
+          .then((page) => {
+            if (generation !== generationRef.current || refreshSeq !== refreshSeqRef.current) {
+              return;
+            }
+            pendingRef.current.delete(pageIndex);
+            stalePagesRef.current.delete(pageIndex);
+            applyPage(pageIndex, page);
+          })
+          .catch(() => {
+            if (generation !== generationRef.current || refreshSeq !== refreshSeqRef.current) {
+              return;
+            }
+            pendingRef.current.delete(pageIndex);
+            if (!pagesRef.current.has(pageIndex)) setFailed(true);
+          });
+      }
+      return;
+    }
+    setRetryTick((tick) => tick + 1);
+    // `state` is derived from `stateKey`; keeping the string avoids extra reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    applyPage,
+    engagementEpoch,
+    hideWatched.version,
+    hiddenKey,
+    followsEngagement,
+    unfiltered,
+    libraryID,
+    kind,
+    stateKey,
+  ]);
 
   const itemCount = total ?? 0;
   const listRef = useRef<HTMLUListElement | null>(null);

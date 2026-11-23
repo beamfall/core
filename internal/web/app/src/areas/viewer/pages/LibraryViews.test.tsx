@@ -520,4 +520,116 @@ describe("Entity kind sort, filters and letter rail (CORE-2440)", () => {
     await screen.findByRole("list", { name: "Makers" });
     expect(screen.queryByRole("navigation", { name: "Jump to letter" })).toBeNull();
   });
+
+  it("refreshes unfiltered entity cards in place when engagement changes", async () => {
+    let finished = false;
+    vi.mocked(fetchLibraryEntities).mockImplementation(async (request) => {
+      const page = entitiesPage(request);
+      return finished
+        ? {
+            ...page,
+            items: page.items.map((entry, idx) =>
+              idx === 0 ? { ...entry, engagement: { completed: true } } : entry,
+            ),
+          }
+        : page;
+    });
+    renderAt("/n/tunes/all?view=maker");
+    const list = await screen.findByRole("list", { name: "Makers" });
+    expect(await within(list).findByRole("link", { name: "Maker A" })).toBeInTheDocument();
+
+    finished = true;
+    act(() => notifyEngagementChanged());
+    expect(
+      await within(list).findByRole("link", { name: "Maker A, Finished" }),
+    ).toBeInTheDocument();
+  });
+
+  it("refreshes a newly-loading entity page when engagement changes in flight", async () => {
+    let finished = false;
+    let releasePreFinish: (() => void) | undefined;
+    vi.mocked(fetchLibraryEntities).mockImplementation((request) => {
+      const page = entitiesPage(request);
+      if (request.kind === "record" && !finished) {
+        return new Promise((resolve) => {
+          releasePreFinish = () => resolve(page);
+        });
+      }
+      return Promise.resolve(
+        finished
+          ? {
+              ...page,
+              items: page.items.map((entry, idx) =>
+                idx === 0 ? { ...entry, engagement: { completed: true } } : entry,
+              ),
+            }
+          : page,
+      );
+    });
+
+    const user = userEvent.setup();
+    renderAt("/n/tunes/all?view=maker");
+    await screen.findByRole("list", { name: "Makers" });
+
+    await user.click(screen.getByRole("button", { name: "Records" }));
+    await waitFor(() => expect(releasePreFinish).toBeDefined());
+
+    finished = true;
+    act(() => notifyEngagementChanged());
+    act(() => releasePreFinish?.());
+
+    const list = await screen.findByRole("list", { name: "Records" });
+    expect(
+      await within(list).findByRole("link", { name: "Record One, Finished" }),
+    ).toBeInTheDocument();
+  });
+
+  it("drops an out-of-order pause refresh that resolves after a finish refresh", async () => {
+    let phase: "initial" | "paused" | "finished" = "initial";
+    let resolvePaused: (() => void) | undefined;
+    vi.mocked(fetchLibraryEntities).mockImplementation((request) => {
+      const page = entitiesPage(request);
+      if (phase === "paused") {
+        const pausedPage: LibraryEntitiesPage = {
+          ...page,
+          items: page.items.map((entry, idx) =>
+            idx === 0
+              ? { ...entry, engagement: { positionSeconds: 60, durationSeconds: 120 } }
+              : entry,
+          ),
+        };
+        return new Promise((resolve) => {
+          resolvePaused = () => resolve(pausedPage);
+        });
+      }
+      if (phase === "finished") {
+        return Promise.resolve({
+          ...page,
+          items: page.items.map((entry, idx) =>
+            idx === 0 ? { ...entry, engagement: { completed: true } } : entry,
+          ),
+        });
+      }
+      return Promise.resolve(page);
+    });
+
+    renderAt("/n/tunes/all?view=maker");
+    const list = await screen.findByRole("list", { name: "Makers" });
+    expect(await within(list).findByRole("link", { name: "Maker A" })).toBeInTheDocument();
+
+    phase = "paused";
+    act(() => notifyEngagementChanged());
+    await waitFor(() => expect(resolvePaused).toBeDefined());
+
+    phase = "finished";
+    act(() => notifyEngagementChanged());
+    expect(
+      await within(list).findByRole("link", { name: "Maker A, Finished" }),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      resolvePaused?.();
+    });
+    expect(within(list).getByRole("link", { name: "Maker A, Finished" })).toBeInTheDocument();
+  });
 });

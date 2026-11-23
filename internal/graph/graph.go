@@ -716,6 +716,15 @@ type Handler struct {
 	// backupKeyEscrow reveals and confirms the backup key (CORE-2032). Nil
 	// means nothing is pending.
 	backupKeyEscrow BackupKeyEscrow
+
+	// playbackInvalidationMu guards playbackInvalidation and playbackPaused so
+	// periodic playback reports are throttled while pause/finish/end transitions
+	// invalidate promptly (CORE-1308).
+	playbackInvalidationMu sync.Mutex
+	playbackInvalidation   map[store.ProfileID]playbackInvalidationState
+	playbackPaused         map[playbackStreamKey]time.Time
+	nowFunc                func() time.Time
+	afterFunc              func(time.Duration, func()) func() bool
 }
 
 // OfflinePackService is the consumer-side seam for the Offline Pack substrate
@@ -4883,7 +4892,8 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 	// TRANSITION below: the scrobble observer must fire exactly
 	// once per item, not on every position report past the threshold. A missing
 	// prior row reads as unwatched (the zero value), which is correct.
-	priorProgress, _, err := h.store.PlaybackProgressFor(ctx, scope.ProfileID, media.ID)
+	seqBefore := h.playbackSeq(scope.ProfileID)
+	priorProgress, priorExists, err := h.store.PlaybackProgressFor(ctx, scope.ProfileID, media.ID)
 	if err != nil {
 		return store.PlaybackProgress{}, err
 	}
@@ -4901,8 +4911,14 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 	}, finished, h.resumePolicy(ctx, media)); err != nil {
 		return store.PlaybackProgress{}, err
 	}
+	paused := report.Paused != nil && *report.Paused && !finished
+	seq, prevDirty := h.stagePlaybackDirty(scope.ProfileID)
 	progress, _, err := h.store.PlaybackProgressFor(ctx, scope.ProfileID, media.ID)
 	if err != nil {
+		if !paused {
+			h.clearPlaybackPaused(scope, media.ID)
+		}
+		h.retainPlaybackDirty(scope.ProfileID, h.now().UTC())
 		return store.PlaybackProgress{}, err
 	}
 	// Scrobble: on the unwatched→watched transition, notify the
@@ -4913,7 +4929,287 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 	if h.watchedObserver != nil && progress.Watched && !priorProgress.Watched {
 		h.notifyWatched(ctx, scope.ProfileID, media)
 	}
+	now := h.now().UTC()
+	pausedEdge := h.notePlaybackPaused(scope, media.ID, paused, now)
+	immediate := finished ||
+		progress.Watched != priorProgress.Watched ||
+		pausedEdge
+	// Another report for this Profile staged between our prior read and our
+	// write: the readback can match the stale prior while other pages already
+	// show that report's value, so this write must still invalidate them.
+	raced := scope.ProfileID != "" && seq != seqBefore+1
+	changed := raced || !priorExists ||
+		progress.PositionSeconds != priorProgress.PositionSeconds ||
+		progress.DurationSeconds != priorProgress.DurationSeconds ||
+		progress.Watched != priorProgress.Watched
+	if !immediate && !changed {
+		h.unstagePlaybackDirty(scope.ProfileID, seq, prevDirty)
+		return progress, nil
+	}
+	if !h.notifyPlaybackProgressAt(ctx, scope, seq, immediate, now) && pausedEdge {
+		h.clearPlaybackPaused(scope, media.ID)
+	}
 	return progress, nil
+}
+
+const (
+	playbackInvalidationCooldown = 60 * time.Second
+	playbackPausedTTL            = time.Hour
+	playbackPausedPruneAt        = 256
+)
+
+type playbackStreamKey struct {
+	profileID store.ProfileID
+	sessionID store.SessionID
+	mediaID   store.MediaID
+}
+
+type playbackInvalidationState struct {
+	lastEmitted time.Time
+	seq         uint64
+	dirtySeq    uint64
+	emittedSeq  uint64
+	inFlight    int
+	timerSeq    uint64
+	stopTimer   func() bool
+}
+
+func (s playbackInvalidationState) dirty() bool {
+	return s.dirtySeq > s.emittedSeq
+}
+
+func (h *Handler) now() time.Time {
+	if h.nowFunc != nil {
+		return h.nowFunc()
+	}
+	return time.Now()
+}
+
+func (h *Handler) scheduleAfter(d time.Duration, fn func()) func() bool {
+	if h.afterFunc != nil {
+		return h.afterFunc(d, fn)
+	}
+	return time.AfterFunc(d, fn).Stop
+}
+
+func (h *Handler) notePlaybackPaused(scope auth.Scope, mediaID store.MediaID, paused bool, now time.Time) bool {
+	if scope.ProfileID == "" {
+		return false
+	}
+	key := playbackStreamKey{
+		profileID: scope.ProfileID,
+		sessionID: scope.SessionID,
+		mediaID:   mediaID,
+	}
+	h.playbackInvalidationMu.Lock()
+	defer h.playbackInvalidationMu.Unlock()
+	if !paused {
+		delete(h.playbackPaused, key)
+		return false
+	}
+	if h.playbackPaused == nil {
+		h.playbackPaused = make(map[playbackStreamKey]time.Time)
+	} else if len(h.playbackPaused) >= playbackPausedPruneAt {
+		for k, at := range h.playbackPaused {
+			if now.Sub(at) > playbackPausedTTL {
+				delete(h.playbackPaused, k)
+			}
+		}
+	}
+	_, wasPaused := h.playbackPaused[key]
+	h.playbackPaused[key] = now
+	return !wasPaused
+}
+
+func (h *Handler) clearPlaybackPaused(scope auth.Scope, mediaID store.MediaID) {
+	if scope.ProfileID == "" {
+		return
+	}
+	h.playbackInvalidationMu.Lock()
+	delete(h.playbackPaused, playbackStreamKey{
+		profileID: scope.ProfileID,
+		sessionID: scope.SessionID,
+		mediaID:   mediaID,
+	})
+	h.playbackInvalidationMu.Unlock()
+}
+
+func cancelPlaybackTimerLocked(state *playbackInvalidationState) {
+	state.timerSeq++
+	if state.stopTimer != nil {
+		state.stopTimer()
+		state.stopTimer = nil
+	}
+}
+
+// playbackSeq reports the Profile's latest staged report sequence.
+func (h *Handler) playbackSeq(profileID store.ProfileID) uint64 {
+	h.playbackInvalidationMu.Lock()
+	defer h.playbackInvalidationMu.Unlock()
+	return h.playbackInvalidation[profileID].seq
+}
+
+// advancePlaybackSeq marks an engagement write outside reportPlayback, without
+// staging dirty state: that write emits its own invalidation.
+func (h *Handler) advancePlaybackSeq(profileID store.ProfileID) {
+	if profileID == "" {
+		return
+	}
+	h.playbackInvalidationMu.Lock()
+	defer h.playbackInvalidationMu.Unlock()
+	if h.playbackInvalidation == nil {
+		h.playbackInvalidation = make(map[store.ProfileID]playbackInvalidationState)
+	}
+	state := h.playbackInvalidation[profileID]
+	state.seq++
+	h.playbackInvalidation[profileID] = state
+}
+
+func (h *Handler) stagePlaybackDirty(profileID store.ProfileID) (uint64, uint64) {
+	if profileID == "" {
+		return 0, 0
+	}
+	h.playbackInvalidationMu.Lock()
+	defer h.playbackInvalidationMu.Unlock()
+	if h.playbackInvalidation == nil {
+		h.playbackInvalidation = make(map[store.ProfileID]playbackInvalidationState)
+	}
+	state := h.playbackInvalidation[profileID]
+	prevDirty := state.dirtySeq
+	state.seq++
+	state.dirtySeq = state.seq
+	h.playbackInvalidation[profileID] = state
+	return state.seq, prevDirty
+}
+
+func (h *Handler) retainPlaybackDirty(profileID store.ProfileID, now time.Time) {
+	if profileID == "" {
+		return
+	}
+	h.playbackInvalidationMu.Lock()
+	if h.playbackInvalidation[profileID].dirty() {
+		h.schedulePlaybackFlushLocked(profileID, now)
+	}
+	h.playbackInvalidationMu.Unlock()
+}
+
+func (h *Handler) unstagePlaybackDirty(profileID store.ProfileID, seq, prevDirty uint64) {
+	if profileID == "" {
+		return
+	}
+	h.playbackInvalidationMu.Lock()
+	state, ok := h.playbackInvalidation[profileID]
+	if ok && state.dirtySeq == seq {
+		state.dirtySeq = prevDirty
+		if !state.dirty() {
+			cancelPlaybackTimerLocked(&state)
+		}
+		h.playbackInvalidation[profileID] = state
+	}
+	h.playbackInvalidationMu.Unlock()
+}
+
+func (h *Handler) schedulePlaybackFlushLocked(profileID store.ProfileID, now time.Time) {
+	state := h.playbackInvalidation[profileID]
+	if !state.dirty() || state.stopTimer != nil {
+		return
+	}
+	delay := playbackInvalidationCooldown
+	if !state.lastEmitted.IsZero() {
+		if remaining := playbackInvalidationCooldown - now.Sub(state.lastEmitted); remaining > 0 {
+			delay = remaining
+		}
+	}
+	state.timerSeq++
+	timerID := state.timerSeq
+	state.stopTimer = h.scheduleAfter(delay, func() {
+		h.playbackInvalidationMu.Lock()
+		st := h.playbackInvalidation[profileID]
+		if st.timerSeq != timerID {
+			h.playbackInvalidationMu.Unlock()
+			return
+		}
+		st.stopTimer = nil
+		h.playbackInvalidation[profileID] = st
+		h.playbackInvalidationMu.Unlock()
+		h.flushPlaybackInvalidation(context.Background(), auth.Scope{ProfileID: profileID})
+	})
+	h.playbackInvalidation[profileID] = state
+}
+
+// notifyPlaybackProgressAt emits a Profile-scoped engagement-changed
+// invalidation after a playback write. Pause/finish/watched-transition edges
+// invalidate immediately; periodic reports are throttled per Profile and
+// schedule a trailing flush so open viewer pages catch up if the client stays
+// paused or silent.
+func (h *Handler) notifyPlaybackProgressAt(ctx context.Context, scope auth.Scope, seq uint64, immediate bool, now time.Time) bool {
+	if scope.ProfileID == "" {
+		return false
+	}
+	h.playbackInvalidationMu.Lock()
+	state := h.playbackInvalidation[scope.ProfileID]
+	if state.emittedSeq >= seq {
+		h.playbackInvalidationMu.Unlock()
+		return true
+	}
+	emit := immediate || (state.inFlight == 0 && (state.lastEmitted.IsZero() || now.Sub(state.lastEmitted) >= playbackInvalidationCooldown))
+	if !emit {
+		h.schedulePlaybackFlushLocked(scope.ProfileID, now)
+		h.playbackInvalidationMu.Unlock()
+		return false
+	}
+	state.inFlight++
+	h.playbackInvalidation[scope.ProfileID] = state
+	h.playbackInvalidationMu.Unlock()
+	return h.emitPlaybackInvalidation(ctx, scope.ProfileID, seq, now)
+}
+
+// flushPlaybackInvalidation emits any engagement invalidation held back by
+// periodic progress throttling or a failed outbox append.
+func (h *Handler) flushPlaybackInvalidation(ctx context.Context, scope auth.Scope) {
+	if scope.ProfileID == "" {
+		return
+	}
+	now := h.now().UTC()
+	h.playbackInvalidationMu.Lock()
+	state, ok := h.playbackInvalidation[scope.ProfileID]
+	if !ok || !state.dirty() {
+		h.playbackInvalidationMu.Unlock()
+		return
+	}
+	seq := state.dirtySeq
+	state.inFlight++
+	h.playbackInvalidation[scope.ProfileID] = state
+	h.playbackInvalidationMu.Unlock()
+	h.emitPlaybackInvalidation(ctx, scope.ProfileID, seq, now)
+}
+
+func (h *Handler) emitPlaybackInvalidation(ctx context.Context, profileID store.ProfileID, seq uint64, now time.Time) bool {
+	err := h.store.AppendInvalidationEvent(ctx, store.InvalidationPayload{
+		ProfileID: profileID,
+		Reason:    store.InvalidationReasonEngagementChanged,
+	}, now)
+
+	h.playbackInvalidationMu.Lock()
+	state := h.playbackInvalidation[profileID]
+	state.inFlight--
+	if err == nil {
+		if state.lastEmitted.IsZero() || now.After(state.lastEmitted) {
+			state.lastEmitted = now
+		}
+		if seq > state.emittedSeq {
+			state.emittedSeq = seq
+		}
+		if !state.dirty() {
+			cancelPlaybackTimerLocked(&state)
+		}
+	}
+	h.playbackInvalidation[profileID] = state
+	if state.dirty() {
+		h.schedulePlaybackFlushLocked(profileID, now)
+	}
+	h.playbackInvalidationMu.Unlock()
+	return err == nil
 }
 
 // heldPlayMethod is the play method the server decided for this session's

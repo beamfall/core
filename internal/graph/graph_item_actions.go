@@ -71,6 +71,9 @@ func (h *Handler) itemActionDone(ctx context.Context, scope auth.Scope, target s
 }
 
 func (h *Handler) notifyEngagementChanged(ctx context.Context, scope auth.Scope) {
+	// Advance the playback sequence so a heartbeat that read its prior state
+	// before this change sees the gap and keeps the Profile dirty.
+	h.advancePlaybackSeq(scope.ProfileID)
 	_ = h.store.AppendInvalidationEvent(ctx, store.InvalidationPayload{
 		ProfileID: scope.ProfileID,
 		Reason:    store.InvalidationReasonEngagementChanged,

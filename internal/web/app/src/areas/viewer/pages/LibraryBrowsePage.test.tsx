@@ -897,4 +897,79 @@ describe("Library browse", { timeout: 20_000 }, () => {
     expect(await screen.findByText("1,200 items")).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Jump to letter" })).toBeNull();
   });
+
+  it("refreshes an unfiltered Media page whose initial fetch is still pending when engagement changes", async () => {
+    let finished = false;
+    let releaseInitial: (() => void) | undefined;
+    vi.mocked(fetchLibraryItems).mockImplementation((request) => {
+      const page = pageFor(request);
+      if (!finished) {
+        return new Promise((resolve) => {
+          releaseInitial = () => resolve(page);
+        });
+      }
+      return Promise.resolve({
+        ...page,
+        items: page.items.map((item, idx) =>
+          idx === 0 ? { ...item, engagement: { completed: true } } : item,
+        ),
+      });
+    });
+
+    renderBrowse("/n/films/all?sort=year");
+    await waitFor(() => expect(releaseInitial).toBeDefined());
+
+    finished = true;
+    act(() => notifyEngagementChanged());
+    act(() => releaseInitial?.());
+
+    expect(await screen.findByRole("link", { name: "Item 0, Finished" })).toBeInTheDocument();
+    expect(screen.getByText("1,200 items")).toBeInTheDocument();
+  });
+
+  it("drops an out-of-order pause refresh that resolves after a finish refresh in the unfiltered Media grid", async () => {
+    let phase: "initial" | "paused" | "finished" = "initial";
+    let resolvePaused: (() => void) | undefined;
+    vi.mocked(fetchLibraryItems).mockImplementation((request) => {
+      const page = pageFor(request);
+      if (phase === "paused") {
+        const pausedPage = {
+          ...page,
+          items: page.items.map((item, idx) =>
+            idx === 0
+              ? { ...item, engagement: { positionSeconds: 60, durationSeconds: 120 } }
+              : item,
+          ),
+        };
+        return new Promise((resolve) => {
+          resolvePaused = () => resolve(pausedPage);
+        });
+      }
+      if (phase === "finished") {
+        return Promise.resolve({
+          ...page,
+          items: page.items.map((item, idx) =>
+            idx === 0 ? { ...item, engagement: { completed: true } } : item,
+          ),
+        });
+      }
+      return Promise.resolve(page);
+    });
+
+    renderBrowse("/n/films/all?sort=year");
+    expect(await screen.findByRole("link", { name: "Item 0" })).toBeInTheDocument();
+
+    phase = "paused";
+    act(() => notifyEngagementChanged());
+    await waitFor(() => expect(resolvePaused).toBeDefined());
+
+    phase = "finished";
+    act(() => notifyEngagementChanged());
+    expect(await screen.findByRole("link", { name: "Item 0, Finished" })).toBeInTheDocument();
+
+    await act(async () => {
+      resolvePaused?.();
+    });
+    expect(screen.getByRole("link", { name: "Item 0, Finished" })).toBeInTheDocument();
+  });
 });

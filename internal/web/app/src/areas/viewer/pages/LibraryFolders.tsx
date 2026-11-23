@@ -1,9 +1,10 @@
 import { ChevronRight, Folder } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
+import { useEngagementEpoch } from "../actions";
 import { LibraryDisplayToggle, useLibraryViewMode } from "../components/LibraryDisplayToggle";
 import { LibraryHeader } from "../components/LibraryPivots";
 import { MediaItemCard } from "../components/MediaItemCard";
@@ -45,24 +46,52 @@ export function LibraryFolders({
   const [loadingMore, setLoadingMore] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const [viewMode, chooseViewMode] = useLibraryViewMode(libraryID);
+  const engagementEpoch = useEngagementEpoch();
+  const folderKey = `${libraryID}\n${path}\n${retryTick}`;
+  const seenFolderKeyRef = useRef(folderKey);
+  const pageRef = useRef<LibraryFolderPage | null>(null);
+  pageRef.current = page;
+  const loadSeqRef = useRef(0);
 
   useEffect(() => {
+    loadSeqRef.current += 1;
+    const sameFolder = seenFolderKeyRef.current === folderKey;
+    seenFolderKeyRef.current = folderKey;
+    const loadedCount = sameFolder ? (pageRef.current?.items.length ?? 0) : 0;
+    if (!sameFolder) {
+      pageRef.current = null;
+      setPage(null);
+      setFailed(false);
+    }
     const controller = new AbortController();
-    setPage(null);
-    setFailed(false);
-    fetchLibraryFolder(
-      { libraryID, path, limit: LIBRARY_FOLDER_PAGE, offset: 0 },
-      controller.signal,
-    )
-      .then(setPage)
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
-      });
+    (async () => {
+      const first = await fetchLibraryFolder(
+        { libraryID, path, limit: LIBRARY_FOLDER_PAGE, offset: 0 },
+        controller.signal,
+      );
+      const items = [...first.items];
+      const target = Math.min(loadedCount, first.total);
+      while (items.length > 0 && items.length < target && !controller.signal.aborted) {
+        const next = await fetchLibraryFolder(
+          { libraryID, path, limit: LIBRARY_FOLDER_PAGE, offset: items.length },
+          controller.signal,
+        );
+        if (next.items.length === 0) break;
+        items.push(...next.items);
+      }
+      if (!controller.signal.aborted) {
+        setPage({ ...first, items });
+        setFailed(false);
+      }
+    })().catch(() => {
+      if (!controller.signal.aborted && !pageRef.current) setFailed(true);
+    });
     return () => controller.abort();
-  }, [libraryID, path, retryTick]);
+  }, [folderKey, libraryID, path, engagementEpoch]);
 
   async function loadMore() {
     if (!page) return;
+    const loadSeq = loadSeqRef.current;
     setLoadingMore(true);
     try {
       const next = await fetchLibraryFolder({
@@ -71,13 +100,14 @@ export function LibraryFolders({
         limit: LIBRARY_FOLDER_PAGE,
         offset: page.items.length,
       });
+      if (loadSeq !== loadSeqRef.current) return;
       setPage((current) =>
         current && current.path === next.path
           ? { ...current, total: next.total, items: [...current.items, ...next.items] }
           : current,
       );
     } catch {
-      setFailed(true);
+      if (loadSeq === loadSeqRef.current) setFailed(true);
     } finally {
       setLoadingMore(false);
     }

@@ -35,6 +35,7 @@ import {
   type LibraryBrowseState,
   type LibraryItemsFacets,
   type LibraryItemsLetter,
+  type LibraryItemsPage,
   type LibraryViewMode,
   libraryViewClass,
   parseBrowseState,
@@ -140,6 +141,17 @@ function LibraryBrowse({
   const [audioOnly, setAudioOnly] = useState<boolean | null>(null);
   const [retryTick, setRetryTick] = useState(0);
 
+  const applyPage = useCallback((pageIndex: number, page: LibraryItemsPage) => {
+    pagesRef.current.set(pageIndex, page.items);
+    setAudioOnly((decided) => decided ?? (page.items.length > 0 ? isAudioOnly(page.items) : null));
+    setTotal(page.total);
+    if (pageIndex === 0) {
+      setFacets(page.facets);
+      setLetters(page.letters);
+    }
+    setLoadedTick((tick) => tick + 1);
+  }, []);
+
   const loadPage = useCallback(
     (pageIndex: number) => {
       if (pagesRef.current.has(pageIndex) || pendingRef.current.has(pageIndex)) return;
@@ -154,16 +166,7 @@ function LibraryBrowse({
         .then((page) => {
           if (generation !== generationRef.current) return;
           pendingRef.current.delete(pageIndex);
-          pagesRef.current.set(pageIndex, page.items);
-          setAudioOnly(
-            (decided) => decided ?? (page.items.length > 0 ? isAudioOnly(page.items) : null),
-          );
-          setTotal(page.total);
-          if (pageIndex === 0) {
-            setFacets(page.facets);
-            setLetters(page.letters);
-          }
-          setLoadedTick((tick) => tick + 1);
+          applyPage(pageIndex, page);
         })
         .catch(() => {
           if (generation !== generationRef.current) return;
@@ -174,7 +177,7 @@ function LibraryBrowse({
     // `state` is derived from stateKey; keying on the string keeps loadPage
     // stable across unrelated renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [libraryID, stateKey],
+    [applyPage, libraryID, stateKey],
   );
 
   // A new query (or a retry) drops every cached page and starts again.
@@ -213,10 +216,12 @@ function LibraryBrowse({
     seenEpochRef.current = engagementEpoch;
     seenHideRef.current = hideWatched.version;
     if (!followsEngagement && !hid && !(toggled && unfiltered)) {
-      // Order and membership hold, but the cards' watched marks are stale:
-      // re-read the pages already loaded and swap them in place.
+      // Order and membership hold, but the cards' watched marks and progress
+      // are stale: re-read the loaded and in-flight pages and swap them in place.
+      generationRef.current += 1;
       const generation = generationRef.current;
-      for (const pageIndex of pagesRef.current.keys()) {
+      const pageIndexes = new Set([...pagesRef.current.keys(), ...pendingRef.current]);
+      for (const pageIndex of pageIndexes) {
         fetchLibraryItems({
           libraryID,
           state,
@@ -225,11 +230,15 @@ function LibraryBrowse({
         })
           .then((page) => {
             if (generation !== generationRef.current) return;
-            pagesRef.current.set(pageIndex, page.items);
-            setLoadedTick((tick) => tick + 1);
+            pendingRef.current.delete(pageIndex);
+            applyPage(pageIndex, page);
           })
-          // The cards keep what they showed; the next change tries again.
-          .catch(() => {});
+          // Loaded cards keep what they showed; an initial read surfaces its error.
+          .catch(() => {
+            if (generation !== generationRef.current) return;
+            pendingRef.current.delete(pageIndex);
+            if (!pagesRef.current.has(pageIndex)) setFailed(true);
+          });
       }
       return;
     }

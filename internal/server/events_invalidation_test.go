@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -154,5 +155,104 @@ func TestInvalidationEventProfileGated(t *testing.T) {
 	bad.Payload = []byte("{not json")
 	if srv.eventPermitted(ctx, bad, "profile-managed", eventsActionUnrevealedFilter()) {
 		t.Fatal("eventPermitted allowed an invalidation with a malformed payload")
+	}
+}
+
+// Pausing or finishing playback on one client must emit a Profile-scoped
+// engagement-changed invalidation so open pages for the same Profile refresh,
+// while periodic progress reports are throttled and other Profiles never see it.
+func TestPlaybackProgressInvalidatesSameProfileSessionsAndThrottles(t *testing.T) {
+	srv, st := newTestServerWithStore(t)
+	ctx := context.Background()
+
+	cursorAfter := func() int64 {
+		events, err := st.ReadEventOutbox(ctx, 0, 1000)
+		if err != nil {
+			t.Fatalf("outbox: %v", err)
+		}
+		if len(events) == 0 {
+			return 0
+		}
+		return events[len(events)-1].Seq
+	}
+	collectFrom := func(authorize func(*http.Request), cursor int64) string {
+		return collectSSE(t, srv, func(req *http.Request) {
+			authorize(req)
+			req.Header.Set("Last-Event-ID", strconv.FormatInt(cursor, 10))
+		})
+	}
+	reportGraphQL := func(variables map[string]any) {
+		t.Helper()
+		payload, err := json.Marshal(map[string]any{
+			"query":     `mutation R($mediaID: String!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean, $paused: Boolean) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, paused: $paused) { mediaID positionSeconds watched } }`,
+			"variables": variables,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := newJSONRequest(http.MethodPost, "/api/graphql", strings.NewReader(string(payload)))
+		authorizeViewer(req)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("reportPlayback status = %d: %s", rec.Code, rec.Body.String())
+		}
+	}
+
+	// Periodic playing reports inside the throttle window produce at most one
+	// invalidation across multiple beats, never one per 15s report.
+	cursor := cursorAfter()
+	for i, pos := range []int{15, 30, 45} {
+		reportGraphQL(map[string]any{
+			"mediaID":         "media-alpha",
+			"positionSeconds": pos,
+			"durationSeconds": 120,
+			"finished":        false,
+			"paused":          false,
+		})
+		if i == 0 {
+			// Verify no Media identity leaks even if the opening report emitted.
+			if body := collectFrom(authorizeRevealed, cursor); strings.Contains(body, "media-alpha") {
+				t.Fatalf("invalidation leaked Media identity: %s", body)
+			}
+		}
+	}
+	periodicBody := collectFrom(authorizeRevealed, cursor)
+	if got := strings.Count(periodicBody, `"reason":"engagement-changed"`); got > 1 {
+		t.Fatalf("3 periodic reports emitted %d engagement invalidations, want throttled <= 1: %s", got, periodicBody)
+	}
+
+	// Pausing on client 1 (even right after periodic reports) must immediately
+	// emit a Profile-scoped invalidation to another session on the same Profile,
+	// and never to another Profile.
+	cursor = cursorAfter()
+	reportGraphQL(map[string]any{
+		"mediaID":         "media-alpha",
+		"positionSeconds": 50,
+		"durationSeconds": 120,
+		"finished":        false,
+		"paused":          true,
+	})
+	pauseBody := collectFrom(authorizeRevealed, cursor)
+	if !strings.Contains(pauseBody, "event: client.invalidate\n") || !strings.Contains(pauseBody, `"reason":"engagement-changed"`) {
+		t.Fatalf("same-Profile session missed pause invalidation: %s", pauseBody)
+	}
+	if managedBody := collectFrom(authorizeManaged, cursor); strings.Contains(managedBody, "client.invalidate") {
+		t.Fatalf("different Profile received pause invalidation: %s", managedBody)
+	}
+
+	// Finishing via /v1/media/{mediaID}/progress must also invalidate the same
+	// Profile and stay invisible to other Profiles.
+	cursor = cursorAfter()
+	rec := v1DeviceRequest(t, srv, http.MethodPut, "/v1/media/media-alpha/progress", `{"positionSeconds":120,"durationSeconds":120,"finished":true}`, "", authorizeViewer)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("v1 progress status = %d: %s", rec.Code, rec.Body.String())
+	}
+	finishBody := collectFrom(authorizeRevealed, cursor)
+	if !strings.Contains(finishBody, "event: client.invalidate\n") || !strings.Contains(finishBody, `"reason":"engagement-changed"`) {
+		t.Fatalf("same-Profile session missed finish invalidation: %s", finishBody)
+	}
+	if managedBody := collectFrom(authorizeManaged, cursor); strings.Contains(managedBody, "client.invalidate") {
+		t.Fatalf("different Profile received finish invalidation: %s", managedBody)
 	}
 }
