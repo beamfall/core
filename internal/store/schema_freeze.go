@@ -124,7 +124,10 @@ package store
 // Events 0030 (CORE-3309) adds renderer_session_revision and the 24h
 // renderer_session_command ledger for revision-checked session control, off the
 // entity-query hot path.
+// Events 0031 (CORE-3310) adds player_commanded_media for play-media command
+// authorization on player-bound Sessions with walk-up disabled, off the
+// entity-query hot path.
 const (
-	schemaFreezeEventsMigrations           = 30
+	schemaFreezeEventsMigrations           = 31
 	schemaFreezeEncryptedLibraryMigrations = 13
 )

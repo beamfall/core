@@ -89,6 +89,10 @@ const (
 	// It equals auth.DenialReasonAccessScheduleEnded, the value REST playback
 	// and media transports carry in their denial-reason header.
 	ErrorReasonAccessScheduleEnded ErrorReason = "ACCESS_SCHEDULE_ENDED"
+	// ErrorReasonUpdateRequired: a player-bound Device Session connected without
+	// declaring the player-display capability (ADR-0240 D2). Only playerBinding
+	// may be read until the display client updates.
+	ErrorReasonUpdateRequired ErrorReason = "UPDATE_REQUIRED"
 )
 
 // ErrorReasons returns the closed reason vocabulary in its documented order.
@@ -99,6 +103,7 @@ func ErrorReasons() []ErrorReason {
 		ErrorReasonRevealPINIncorrect,
 		ErrorReasonProfileMismatch,
 		ErrorReasonAccessScheduleEnded,
+		ErrorReasonUpdateRequired,
 	}
 }
 
@@ -268,6 +273,16 @@ var clientErrorCodes = map[string]ErrorCode{
 	"reveal PIN must be set before exporting your data":              ErrorCodeForbidden,
 	"session not controllable":                                       ErrorCodeForbidden,
 	"retry the offline pack build from the device that requested it": ErrorCodeForbidden,
+	"update required":                                                ErrorCodeForbidden,
+	"walk-up browsing is disabled":                                   ErrorCodeForbidden,
+	"bound player device cannot switch profiles":                     ErrorCodeForbidden,
+	"player display cannot list profiles":                            ErrorCodeForbidden,
+	"player display cannot modify profile settings":                  ErrorCodeForbidden,
+	"target profile must be kind player":                             ErrorCodeInvalid,
+	"player profile kind cannot be changed":                          ErrorCodeInvalid,
+	"profile kind cannot be changed to player":                       ErrorCodeInvalid,
+	"walk-up applies to player profiles only":                        ErrorCodeInvalid,
+	"device is revoked":                                              ErrorCodeInvalid,
 
 	"device revoked":  ErrorCodeUnauthenticated,
 	"invalid session": ErrorCodeUnauthenticated,

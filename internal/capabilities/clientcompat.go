@@ -11,6 +11,37 @@ import (
 // Revision is a machine-comparable client contract revision.
 type Revision int
 
+// ClientCapability is a closed client-declared capability (ADR-0138 / ADR-0240).
+type ClientCapability string
+
+const (
+	// CapabilityPlayerDisplay declares that the client build implements the
+	// ADR-0240 player display shell, ready screen, and update-required flow.
+	CapabilityPlayerDisplay ClientCapability = "player-display"
+)
+
+var knownClientCapabilities = map[ClientCapability]struct{}{
+	CapabilityPlayerDisplay: {},
+}
+
+// KnownClientCapability reports whether capability is in the closed client
+// capability vocabulary.
+func KnownClientCapability(capability string) bool {
+	_, ok := knownClientCapabilities[ClientCapability(capability)]
+	return ok
+}
+
+// ContractHasCapability reports whether contract declares capability.
+func ContractHasCapability(contract ClientContract, capability ClientCapability) bool {
+	target := string(capability)
+	for _, item := range contract.RequestedCapabilities {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
 // Surface is the closed client-surface vocabulary.
 type Surface string
 
@@ -271,7 +302,7 @@ func containsAll(have, required []string) bool {
 
 func hasUnknownCapability(requested []string, known map[string]bool) bool {
 	for _, capability := range requested {
-		if !known[capability] {
+		if !known[capability] && !KnownClientCapability(capability) {
 			return true
 		}
 	}

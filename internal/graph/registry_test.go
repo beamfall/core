@@ -107,6 +107,10 @@ var originalScopedFields = []string{
 	"createmarker",
 	"createprofile",
 	"currentsession",
+	"playerbinding",
+	"setdeviceplayerbinding",
+	"cleardeviceplayerbinding",
+	"setplayerwalkup",
 	"deletelibrary",
 	"trashedlibraries",     // CORE-1201: deleted Libraries that can still be restored
 	"restorelibrary",       // CORE-1201: bring a deleted Library back

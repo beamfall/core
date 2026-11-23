@@ -265,7 +265,7 @@ func (h *Handler) resolveProfileByDisplayName(ctx context.Context, displayName s
 	var matched store.ProfileID
 	count := 0
 	for _, p := range profiles {
-		if p.Name == displayName && !p.Disabled {
+		if p.Name == displayName && !p.Disabled && p.Kind != store.ProfilePlayer {
 			matched = p.ID
 			count++
 		}

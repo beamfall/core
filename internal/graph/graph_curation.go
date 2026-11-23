@@ -60,6 +60,9 @@ func (h *Handler) mediaFiles(ctx context.Context, scope auth.Scope, req request)
 	if mediaID == "" {
 		return nil, clientError("mediaID is required")
 	}
+	if err := h.requireWalkUpOrCommandedMedia(ctx, scope, mediaID); err != nil {
+		return nil, err
+	}
 	files, err := h.store.MediaFilesForMedia(ctx, mediaID, scope.LibraryFilter())
 	if err != nil {
 		return nil, clientError("unknown media")
@@ -78,6 +81,9 @@ func (h *Handler) mediaTracks(ctx context.Context, scope auth.Scope, req request
 	mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
 	if mediaID == "" {
 		return MediaTracksInfo{}, clientError("mediaID is required")
+	}
+	if err := h.requireWalkUpOrCommandedMedia(ctx, scope, mediaID); err != nil {
+		return MediaTracksInfo{}, err
 	}
 	files, err := h.store.MediaFilesForMedia(ctx, mediaID, scope.LibraryFilter())
 	if err != nil {
@@ -157,6 +163,9 @@ func (h *Handler) mediaRelations(ctx context.Context, scope auth.Scope, req requ
 	relation := store.MediaRelationName(trimmedVariable(req, "relation"))
 	if mediaID == "" || relation == "" {
 		return nil, clientError("mediaID and relation are required")
+	}
+	if err := h.requireWalkUpOrCommandedMedia(ctx, scope, mediaID); err != nil {
+		return nil, err
 	}
 	limit := boundedIntVar(req, "limit", curationPageDefault, curationPageMax)
 	offset := boundedNonNegativeInt(nonNegativeIntVar(req, "offset"), curationOffsetMax)

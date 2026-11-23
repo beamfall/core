@@ -162,6 +162,9 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"checkremoteaccessreachability": {},
 	"clearallmutes":                 {},
+	"cleardeviceplayerbinding": {
+		{Name: "deviceID", Kind: "string"},
+	},
 	"clearmute": {
 		{Name: "includeDescendants", Kind: "boolean", Optional: true},
 		{Name: "kind", Kind: "string"},
@@ -625,7 +628,8 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "utcOffsetMinutes", Kind: "int", Optional: true},
 		{Name: "windowDays", Kind: "int", Optional: true},
 	},
-	"plugins": {},
+	"playerbinding": {},
+	"plugins":       {},
 	"pluginworker": {
 		{Name: "actionID", Kind: "string", Optional: true},
 		{Name: "descriptorID", Kind: "string", Optional: true},
@@ -966,6 +970,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "updateCheckEnabled", Kind: "boolean", Optional: true},
 		{Name: "viewerPairingCodesDisabled", Kind: "boolean", Optional: true},
 	},
+	"setdeviceplayerbinding": {
+		{Name: "deviceID", Kind: "string"},
+		{Name: "displayName", Kind: "string", Optional: true},
+		{Name: "profileID", Kind: "string"},
+	},
 	"setdevicerole": {
 		{Name: "deviceID", Kind: "string"},
 		{Name: "role", Kind: "string"},
@@ -1054,6 +1063,10 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "pluginID", Kind: "string"},
 		{Name: "signature", Kind: "string", Optional: true},
 		{Name: "signingKey", Kind: "string", Optional: true},
+	},
+	"setplayerwalkup": {
+		{Name: "enabled", Kind: "boolean"},
+		{Name: "profileID", Kind: "string"},
 	},
 	"setpreplayclips": {
 		{Name: "mediaIDs", Kind: "list"},

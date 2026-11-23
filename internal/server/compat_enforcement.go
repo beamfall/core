@@ -150,29 +150,33 @@ func compatAuthFingerprint(scope auth.Scope) string {
 	}
 	sort.Strings(libraryIDs)
 	canonical := struct {
-		DeviceID          string   `json:"deviceID"`
-		DeviceRole        string   `json:"deviceRole"`
-		DistributionClass string   `json:"distributionClass"`
-		ProfileID         string   `json:"profileID"`
-		Profile           string   `json:"profile"`
-		Revealed          bool     `json:"revealed"`
-		Admin             bool     `json:"admin"`
-		APIKeyID          string   `json:"apiKeyID"`
-		APIScopes         []string `json:"apiScopes"`
-		LibraryIDs        []string `json:"libraryIDs"`
-		AllLibraries      bool     `json:"allLibraries"`
+		DeviceID                string   `json:"deviceID"`
+		DeviceRole              string   `json:"deviceRole"`
+		DistributionClass       string   `json:"distributionClass"`
+		ProfileID               string   `json:"profileID"`
+		Profile                 string   `json:"profile"`
+		Revealed                bool     `json:"revealed"`
+		Admin                   bool     `json:"admin"`
+		APIKeyID                string   `json:"apiKeyID"`
+		APIScopes               []string `json:"apiScopes"`
+		LibraryIDs              []string `json:"libraryIDs"`
+		AllLibraries            bool     `json:"allLibraries"`
+		PlayerProfileID         string   `json:"playerProfileID,omitempty"`
+		PlayerBindingGeneration int      `json:"playerBindingGeneration,omitempty"`
 	}{
-		DeviceID:          string(scope.DeviceID),
-		DeviceRole:        string(scope.DeviceRole),
-		DistributionClass: string(scope.DistributionClass),
-		ProfileID:         string(scope.ProfileID),
-		Profile:           string(scope.Profile),
-		Revealed:          scope.Revealed,
-		Admin:             scope.Admin,
-		APIKeyID:          scope.APIKeyID,
-		APIScopes:         apiScopes,
-		LibraryIDs:        libraryIDs,
-		AllLibraries:      scope.AllLibraries,
+		DeviceID:                string(scope.DeviceID),
+		DeviceRole:              string(scope.DeviceRole),
+		DistributionClass:       string(scope.DistributionClass),
+		ProfileID:               string(scope.ProfileID),
+		Profile:                 string(scope.Profile),
+		Revealed:                scope.Revealed,
+		Admin:                   scope.Admin,
+		APIKeyID:                scope.APIKeyID,
+		APIScopes:               apiScopes,
+		LibraryIDs:              libraryIDs,
+		AllLibraries:            scope.AllLibraries,
+		PlayerProfileID:         string(scope.PlayerProfileID),
+		PlayerBindingGeneration: scope.PlayerBindingGeneration,
 	}
 	encoded, _ := json.Marshal(canonical)
 	sum := sha256.Sum256(encoded)
@@ -228,7 +232,13 @@ func (s *Server) requireCompatDecision(next http.HandlerFunc) http.HandlerFunc {
 		// reusable cache entry keys it on the decision, not just the content
 		// version. An empty generation means no decision record
 		// could be named, and the route falls back to uncacheable.
-		next(w, r.WithContext(mediahttp.WithCompatBinding(r.Context(), generation, subject, record.DecisionID)))
+		ctx := mediahttp.WithCompatBinding(r.Context(), generation, subject, record.DecisionID)
+		if record.DecisionID != "" {
+			ctx = auth.WithClientCapabilities(ctx, record.Contract.RequestedCapabilities)
+		} else {
+			ctx = auth.WithClientCapabilities(ctx, nil)
+		}
+		next(w, r.WithContext(ctx))
 	}
 }
 

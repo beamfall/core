@@ -626,6 +626,10 @@ func (s *Store) AppendSessionControlEvent(ctx context.Context, target SessionID,
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	playerBound, err := s.playMediaTargetsPlayerLocked(ctx, target, payload)
+	if err != nil {
+		return err
+	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -636,6 +640,11 @@ func (s *Store) AppendSessionControlEvent(ctx context.Context, target SessionID,
 	}
 	if _, err := incrementRendererSessionRevisionSQL(ctx, tx, target, now); err != nil {
 		return err
+	}
+	if playerBound {
+		if err := recordPlayerCommandedMediaSQL(ctx, tx, target, payload.MediaID, now); err != nil {
+			return err
+		}
 	}
 	return s.commitOutboxTx(tx)
 }
@@ -662,6 +671,10 @@ func (s *Store) AppendSessionControlEventWithActivity(ctx context.Context, targe
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	playerBound, err := s.playMediaTargetsPlayerLocked(ctx, target, payload)
+	if err != nil {
+		return err
+	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -672,6 +685,11 @@ func (s *Store) AppendSessionControlEventWithActivity(ctx context.Context, targe
 	}
 	if _, err := incrementRendererSessionRevisionSQL(ctx, tx, target, now); err != nil {
 		return err
+	}
+	if playerBound {
+		if err := recordPlayerCommandedMediaSQL(ctx, tx, target, payload.MediaID, now); err != nil {
+			return err
+		}
 	}
 	if err := appendActivitySQL(ctx, tx, activity); err != nil {
 		return err
@@ -1017,4 +1035,14 @@ func (s *Store) AppendGroupSyncEvent(ctx context.Context, payload GroupSyncPaylo
 	}
 	now = normalizeTime(now)
 	return s.appendOutboxRow(ctx, timeToMillis(now), GroupSyncKind, OutboxAggregateGroup, payload.GroupID, string(normalizeJSON(raw)))
+}
+
+// playMediaTargetsPlayerLocked reports whether payload is a play-media command
+// addressed to a player-bound Session, whose Media must then be recorded for
+// the walk-up-off read window (ADR-0240 D7).
+func (s *Store) playMediaTargetsPlayerLocked(ctx context.Context, target SessionID, payload SessionControlPayload) (bool, error) {
+	if payload.Command != SessionCommandPlayMedia || payload.MediaID == "" {
+		return false, nil
+	}
+	return s.sessionDevicePlayerBoundLocked(ctx, target)
 }

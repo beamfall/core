@@ -30,6 +30,25 @@ type DeviceInfo struct {
 	// SignedIn is false once the device has no session left, e.g. a browser
 	// that signed out: it is not revoked but must enroll again (CORE-1607).
 	SignedIn bool `json:"signedIn"`
+	// PlayerProfileID, PlayerDisplayName, and PlayerBindingGeneration expose
+	// the durable player binding for Console administration (ADR-0240 D2).
+	PlayerProfileID         string `json:"playerProfileID,omitempty"`
+	PlayerDisplayName       string `json:"playerDisplayName,omitempty"`
+	PlayerBindingGeneration int    `json:"playerBindingGeneration,omitempty"`
+}
+
+func deviceInfo(d store.Device, current, signedIn bool) DeviceInfo {
+	return DeviceInfo{
+		DeviceID:                string(d.ID),
+		Name:                    d.Name,
+		Role:                    string(d.Role),
+		Revoked:                 d.Revoked,
+		Current:                 current,
+		SignedIn:                signedIn,
+		PlayerProfileID:         string(d.PlayerProfileID),
+		PlayerDisplayName:       d.PlayerDisplayName,
+		PlayerBindingGeneration: d.PlayerBindingGeneration,
+	}
 }
 
 // devices lists every enrolled device for the Console administration list. The
@@ -45,14 +64,7 @@ func (h *Handler) devices(ctx context.Context, scope auth.Scope) ([]DeviceInfo, 
 	}
 	out := make([]DeviceInfo, 0, len(list))
 	for _, d := range list {
-		out = append(out, DeviceInfo{
-			DeviceID: string(d.ID),
-			Name:     d.Name,
-			Role:     string(d.Role),
-			Revoked:  d.Revoked,
-			Current:  d.ID == scope.DeviceID,
-			SignedIn: signedIn[d.ID],
-		})
+		out = append(out, deviceInfo(d, d.ID == scope.DeviceID, signedIn[d.ID]))
 	}
 	return out, nil
 }
@@ -77,14 +89,7 @@ func (h *Handler) setDeviceRole(ctx context.Context, scope auth.Scope, req reque
 	if err != nil {
 		return DeviceInfo{}, err
 	}
-	return DeviceInfo{
-		DeviceID: string(device.ID),
-		Name:     device.Name,
-		Role:     string(device.Role),
-		Revoked:  device.Revoked,
-		Current:  false,
-		SignedIn: signedIn[device.ID],
-	}, nil
+	return deviceInfo(device, false, signedIn[device.ID]), nil
 }
 
 // RevokeAllDevicesResult reports how many devices were revoked and how many

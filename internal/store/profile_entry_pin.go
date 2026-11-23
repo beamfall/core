@@ -244,12 +244,20 @@ func (s *Store) SetSessionProfileWithEntryPIN(ctx context.Context, sessionID Ses
 	}
 	defer tx.Rollback()
 
-	var sessionExists int
-	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM auth_session WHERE id = ?`, sessionID).Scan(&sessionExists); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return errors.New("session not found")
-		}
+	var boundProfileID string
+	err = tx.QueryRowContext(ctx, `
+		SELECT COALESCE(d.player_profile_id, '')
+		FROM auth_session s
+		LEFT JOIN device d ON d.id = s.device_id
+		WHERE s.id = ?`, sessionID).Scan(&boundProfileID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return errors.New("session not found")
+	}
+	if err != nil {
 		return err
+	}
+	if boundProfileID != "" {
+		return ValidationError("bound player device cannot switch profiles")
 	}
 	var (
 		kind     ProfileKind
@@ -267,6 +275,9 @@ func (s *Store) SetSessionProfileWithEntryPIN(ctx context.Context, sessionID Ses
 	}
 	if err != nil {
 		return err
+	}
+	if kind == ProfilePlayer {
+		return ValidationError("profile not found")
 	}
 	if disabled != 0 {
 		return ErrProfileDisabled

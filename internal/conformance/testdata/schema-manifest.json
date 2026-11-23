@@ -220,6 +220,11 @@
     "tier": "session"
   },
   {
+    "field": "cleardeviceplayerbinding",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "clearmediaordinal",
     "effect": "write",
     "tier": "session"
@@ -980,6 +985,11 @@
     "tier": "admin"
   },
   {
+    "field": "playerbinding",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "playhistory",
     "effect": "read",
     "tier": "admin"
@@ -1485,6 +1495,11 @@
     "tier": "session"
   },
   {
+    "field": "setdeviceplayerbinding",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "setdevicerole",
     "effect": "write",
     "tier": "admin"
@@ -1568,6 +1583,11 @@
     "field": "setnavoverride",
     "effect": "write",
     "tier": "session"
+  },
+  {
+    "field": "setplayerwalkup",
+    "effect": "write",
+    "tier": "admin"
   },
   {
     "field": "setpluginactive",

@@ -160,6 +160,23 @@ func (s *Store) SetSessionRevealed(ctx context.Context, id SessionID, revealed b
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	if revealed {
+		var kind ProfileKind
+		err := s.catalogR.QueryRowContext(ctx, `
+			SELECT p.kind
+			FROM auth_session s
+			JOIN profile p ON p.id = s.profile_id
+			WHERE s.id = ?`, id).Scan(&kind)
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("session not found")
+		}
+		if err != nil {
+			return err
+		}
+		if kind != ProfileAdult {
+			return ErrNoRevealPath
+		}
+	}
 	result, err := s.catalogW.ExecContext(ctx,
 		`UPDATE auth_session SET revealed = ? WHERE id = ?`,
 		boolToInt(revealed), id)

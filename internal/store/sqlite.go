@@ -1536,15 +1536,17 @@ func (s *Store) deviceSQL(ctx context.Context, id DeviceID) (Device, error) {
 func readDevice(ctx context.Context, q queryRower, id DeviceID) (Device, error) {
 	var device Device
 	var revoked int
+	var playerProfileID string
 	err := q.QueryRowContext(ctx,
-		"SELECT id, name, role, distribution_class, device_surface, secret_hash, revoked FROM device WHERE id = ?", id,
-	).Scan(&device.ID, &device.Name, &device.Role, &device.DistributionClass, &device.Surface, &device.SecretHash, &revoked)
+		"SELECT id, name, role, distribution_class, device_surface, secret_hash, revoked, COALESCE(player_profile_id, ''), player_display_name, player_binding_generation FROM device WHERE id = ?", id,
+	).Scan(&device.ID, &device.Name, &device.Role, &device.DistributionClass, &device.Surface, &device.SecretHash, &revoked, &playerProfileID, &device.PlayerDisplayName, &device.PlayerBindingGeneration)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, errors.New("device not found")
 	}
 	if err != nil {
 		return Device{}, err
 	}
+	device.PlayerProfileID = ProfileID(playerProfileID)
 	device.Revoked = revoked != 0
 	return device, nil
 }
@@ -1612,16 +1614,16 @@ func (s *Store) profileSQL(ctx context.Context, id ProfileID) (Profile, error) {
 func readProfile(ctx context.Context, q sqlReader, id ProfileID) (Profile, error) {
 	var profile Profile
 	var maxStreams sql.NullInt64
-	var transcodeAllowed, disabled, preferSDH, isOwner, integrationSignIn int
+	var transcodeAllowed, disabled, preferSDH, isOwner, integrationSignIn, walkUpEnabled int
 	var audioLanguages, subtitleLanguages string
 	err := q.QueryRowContext(ctx, `
 		SELECT id, name, kind, max_concurrent_streams, transcode_allowed,
 		       disabled, audio_languages, subtitle_languages, subtitle_mode, prefer_sdh,
-		       created_at_ms, is_owner, integration_sign_in, remote_max_bitrate
+		       created_at_ms, is_owner, integration_sign_in, remote_max_bitrate, walk_up_enabled
 		FROM profile WHERE id = ?`, id,
 	).Scan(&profile.ID, &profile.Name, &profile.Kind, &maxStreams, &transcodeAllowed,
 		&disabled, &audioLanguages, &subtitleLanguages, &profile.SubtitleMode, &preferSDH,
-		&profile.CreatedAtMs, &isOwner, &integrationSignIn, &profile.RemoteMaxBitrate)
+		&profile.CreatedAtMs, &isOwner, &integrationSignIn, &profile.RemoteMaxBitrate, &walkUpEnabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Profile{}, ValidationError("profile not found")
 	}
@@ -1637,6 +1639,7 @@ func readProfile(ctx context.Context, q sqlReader, id ProfileID) (Profile, error
 	profile.PreferSDH = preferSDH != 0
 	profile.IsOwner = isOwner != 0
 	profile.IntegrationSignIn = integrationSignIn != 0
+	profile.WalkUpEnabled = walkUpEnabled != 0
 	if profile.AudioLanguages, err = decodeLanguages(audioLanguages); err != nil {
 		return Profile{}, err
 	}
@@ -2615,9 +2618,13 @@ func (s *Store) insertDeviceSession(ctx context.Context, device Device, session 
 // insertDeviceSessionTx inserts a normalized Device and its enrolled Session
 // inside tx.
 func insertDeviceSessionTx(ctx context.Context, tx *sql.Tx, device Device, session Session) error {
+	var playerProfileID any
+	if device.PlayerProfileID != "" {
+		playerProfileID = string(device.PlayerProfileID)
+	}
 	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO device(id, name, role, distribution_class, device_surface, secret_hash, revoked) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		device.ID, device.Name, device.Role, device.DistributionClass, device.Surface, device.SecretHash, boolInt(device.Revoked),
+		"INSERT INTO device(id, name, role, distribution_class, device_surface, secret_hash, revoked, player_profile_id, player_display_name, player_binding_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		device.ID, device.Name, device.Role, device.DistributionClass, device.Surface, device.SecretHash, boolInt(device.Revoked), playerProfileID, device.PlayerDisplayName, device.PlayerBindingGeneration,
 	); err != nil {
 		return err
 	}
@@ -2709,10 +2716,28 @@ func (s *Store) redeemPairingCode(ctx context.Context, code string, consumedAt t
 		return PairingCode{}, errors.New("device role mismatch")
 	}
 	// A Profile disabled after the code was minted still refuses enrollment.
-	if disabled, err := profileDisabled(ctx, tx, session.ProfileID); err != nil {
+	var profileKind ProfileKind
+	var disabled int
+	err = tx.QueryRowContext(ctx, "SELECT kind, disabled FROM profile WHERE id = ?", session.ProfileID).Scan(&profileKind, &disabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PairingCode{}, errors.New("profile not found")
+	}
+	if err != nil {
 		return PairingCode{}, err
-	} else if disabled {
+	}
+	if disabled != 0 {
 		return PairingCode{}, ErrProfileDisabled
+	}
+	if profileKind == ProfilePlayer {
+		device.PlayerProfileID = session.ProfileID
+		if strings.TrimSpace(device.PlayerDisplayName) == "" {
+			device.PlayerDisplayName = device.Name
+		}
+		if device.PlayerBindingGeneration <= 0 {
+			device.PlayerBindingGeneration = 1
+		}
+		session.Revealed = false
+		session.AdminUntil = time.Time{}
 	}
 	if _, err := tx.ExecContext(ctx,
 		"UPDATE pairing_code SET consumed_at_ms = ? WHERE code = ?",
@@ -2720,9 +2745,13 @@ func (s *Store) redeemPairingCode(ctx context.Context, code string, consumedAt t
 	); err != nil {
 		return PairingCode{}, err
 	}
+	var playerProfileID any
+	if device.PlayerProfileID != "" {
+		playerProfileID = string(device.PlayerProfileID)
+	}
 	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO device(id, name, role, distribution_class, device_surface, secret_hash, revoked) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		device.ID, device.Name, device.Role, device.DistributionClass, device.Surface, device.SecretHash, boolInt(device.Revoked),
+		"INSERT INTO device(id, name, role, distribution_class, device_surface, secret_hash, revoked, player_profile_id, player_display_name, player_binding_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		device.ID, device.Name, device.Role, device.DistributionClass, device.Surface, device.SecretHash, boolInt(device.Revoked), playerProfileID, device.PlayerDisplayName, device.PlayerBindingGeneration,
 	); err != nil {
 		return PairingCode{}, err
 	}
@@ -2749,6 +2778,32 @@ func (s *Store) redeemPairingCodeForDevice(ctx context.Context, code string, con
 		// Leave the code unconsumed: it still grants what it was minted for.
 		return PairingCode{}, ErrPairingCodeRoleMismatch
 	}
+	var boundProfileID string
+	var revoked int
+	err = tx.QueryRowContext(ctx, "SELECT revoked, COALESCE(player_profile_id, '') FROM device WHERE id = ?", deviceID).Scan(&revoked, &boundProfileID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && revoked != 0) {
+		return PairingCode{}, errors.New("device not found or revoked")
+	}
+	if err != nil {
+		return PairingCode{}, err
+	}
+	if boundProfileID != "" {
+		var disabled int
+		var kind ProfileKind
+		err = tx.QueryRowContext(ctx, "SELECT kind, disabled FROM profile WHERE id = ?", boundProfileID).Scan(&kind, &disabled)
+		if err != nil {
+			return PairingCode{}, err
+		}
+		if disabled != 0 {
+			return PairingCode{}, ErrProfileDisabled
+		}
+		if kind != ProfilePlayer {
+			return PairingCode{}, ValidationError("bound profile is not kind player")
+		}
+		newSession.ProfileID = ProfileID(boundProfileID)
+		newSession.Revealed = false
+		newSession.AdminUntil = time.Time{}
+	}
 	if _, err := tx.ExecContext(ctx,
 		"UPDATE pairing_code SET consumed_at_ms = ? WHERE code = ?",
 		timeToMillis(consumedAt), code,
@@ -2770,8 +2825,8 @@ func (s *Store) redeemPairingCodeForDevice(ctx context.Context, code string, con
 		return PairingCode{}, errors.New("device not found or revoked")
 	}
 	result, err = tx.ExecContext(ctx,
-		"DELETE FROM auth_session WHERE id = ? AND device_id = ? AND profile_id = ?",
-		oldSessionID, deviceID, newSession.ProfileID,
+		"DELETE FROM auth_session WHERE id = ? AND device_id = ?",
+		oldSessionID, deviceID,
 	)
 	if err != nil {
 		return PairingCode{}, err

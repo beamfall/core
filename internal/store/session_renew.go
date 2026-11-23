@@ -49,7 +49,8 @@ func (s *Store) RenewDeviceSession(ctx context.Context, deviceID DeviceID, newID
 	}
 	defer tx.Rollback()
 	var revoked int
-	err = tx.QueryRowContext(ctx, `SELECT revoked FROM device WHERE id = ?`, deviceID).Scan(&revoked)
+	var boundPlayerProfileID string
+	err = tx.QueryRowContext(ctx, `SELECT revoked, COALESCE(player_profile_id, '') FROM device WHERE id = ?`, deviceID).Scan(&revoked, &boundPlayerProfileID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, errors.New("device not found")
 	}
@@ -63,20 +64,47 @@ func (s *Store) RenewDeviceSession(ctx context.Context, deviceID DeviceID, newID
 	if err != nil {
 		return Session{}, err
 	}
-	if len(rows) == 0 {
-		return Session{}, ErrNoDeviceSession
+	var targetProfileID ProfileID
+	var latest deviceSessionRow
+	if boundPlayerProfileID != "" {
+		// Bound player devices always issue or renew Sessions for their bound
+		// Player Profile only, even after a rebind ended prior Sessions.
+		var kind ProfileKind
+		var disabled int
+		err = tx.QueryRowContext(ctx, `SELECT kind, disabled FROM profile WHERE id = ?`, boundPlayerProfileID).Scan(&kind, &disabled)
+		if errors.Is(err, sql.ErrNoRows) {
+			return Session{}, errors.New("profile not found")
+		}
+		if err != nil {
+			return Session{}, err
+		}
+		if disabled != 0 {
+			return Session{}, ErrProfileDisabled
+		}
+		if kind != ProfilePlayer {
+			return Session{}, ValidationError("bound profile is not kind player")
+		}
+		targetProfileID = ProfileID(boundPlayerProfileID)
+		if len(rows) > 0 {
+			latest = rows[0]
+		}
+	} else {
+		if len(rows) == 0 {
+			return Session{}, ErrNoDeviceSession
+		}
+		latest = rows[0]
+		disabled, err := profileDisabled(ctx, tx, latest.ProfileID)
+		if err != nil {
+			return Session{}, err
+		}
+		if disabled {
+			return Session{}, ErrProfileDisabled
+		}
+		targetProfileID = latest.ProfileID
 	}
-	latest := rows[0]
-	disabled, err := profileDisabled(ctx, tx, latest.ProfileID)
-	if err != nil {
-		return Session{}, err
-	}
-	if disabled {
-		return Session{}, ErrProfileDisabled
-	}
-	session := Session{ID: newID, DeviceID: deviceID, ProfileID: latest.ProfileID, ExpiresAt: expiresAt, Kind: SessionKindEnrolled}
+	session := Session{ID: newID, DeviceID: deviceID, ProfileID: targetProfileID, ExpiresAt: expiresAt, Kind: SessionKindEnrolled}
 	keep := SessionID("")
-	if latest.Locked && latest.ExpiresAtMs.Valid && !millisToTime(latest.ExpiresAtMs.Int64).Before(expiresAt.Add(-renewConvergeWindow)) {
+	if latest.ID != "" && latest.ProfileID == targetProfileID && latest.Locked && latest.ExpiresAtMs.Valid && !millisToTime(latest.ExpiresAtMs.Int64).Before(expiresAt.Add(-renewConvergeWindow)) {
 		// An overlapping renewal from this device (another tab) committed a
 		// moment ago and nothing has unlocked it since: hand back its session
 		// instead of replacing it, so both callers converge on one live session.

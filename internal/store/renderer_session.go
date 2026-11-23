@@ -239,6 +239,10 @@ func (s *Store) ControlRendererSession(
 		return RendererSessionControlResult{}, err
 	}
 
+	playerBound, err := s.playMediaTargetsPlayerLocked(ctx, target, payload)
+	if err != nil {
+		return RendererSessionControlResult{}, err
+	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
 		return RendererSessionControlResult{}, err
@@ -293,6 +297,11 @@ func (s *Store) ControlRendererSession(
 
 	if err := appendSessionControlEventSQL(ctx, tx, target, rawPayload, now); err != nil {
 		return RendererSessionControlResult{}, err
+	}
+	if playerBound {
+		if err := recordPlayerCommandedMediaSQL(ctx, tx, target, payload.MediaID, now); err != nil {
+			return RendererSessionControlResult{}, err
+		}
 	}
 	if activity != nil {
 		if err := appendActivitySQL(ctx, tx, *activity); err != nil {

@@ -47,6 +47,14 @@ func (h *Handler) itemState(ctx context.Context, scope auth.Scope, req request) 
 }
 
 func (h *Handler) itemStateFor(ctx context.Context, scope auth.Scope, target store.ItemTarget) (ItemStateInfo, error) {
+	if scope.IsPlayerBound() && !scope.WalkUpEnabled {
+		if target.MediaID == "" || target.EntityID != "" {
+			return ItemStateInfo{}, clientError("walk-up browsing is disabled")
+		}
+		if err := h.requireWalkUpOrCommandedMedia(ctx, scope, target.MediaID); err != nil {
+			return ItemStateInfo{}, err
+		}
+	}
 	state, err := h.store.ItemStateFor(ctx, scope.ProfileID, target, scope.LibraryFilter())
 	if err != nil {
 		return ItemStateInfo{}, itemActionError(err)

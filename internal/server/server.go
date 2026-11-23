@@ -120,6 +120,7 @@ type Server struct {
 	compatRefusalDir    string
 	deviceSurfaces      deviceSurfaceStore
 	deviceBuilds        deviceBuildStore
+	playerCommanded     playerCommandedMediaStore
 	// eventStreams counts open /api/events and /v1/events streams for the
 	// per-principal cap and the open-streams gauge.
 	eventStreams eventStreamState
@@ -331,6 +332,9 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	}
 	if uploads, ok := jobStats.(mediaUploadStore); ok {
 		s.mediaUploads = uploads
+	}
+	if commanded, ok := jobStats.(playerCommandedMediaStore); ok {
+		s.playerCommanded = commanded
 	}
 	s.handle(http.MethodGet, "/health", "", s.health)
 	s.handle(http.MethodGet, "/metrics", reveal.Aggregate, s.metrics)
@@ -1297,10 +1301,43 @@ func (s *Server) graphQL(w http.ResponseWriter, r *http.Request) {
 	s.graph.ServeHTTP(w, r)
 }
 
+type playerCommandedMediaStore interface {
+	IsPlayerCommandedMedia(context.Context, store.SessionID, store.MediaID, time.Time) (bool, error)
+}
+
+func (s *Server) rejectMissingPlayerDisplayCapability(w http.ResponseWriter, r *http.Request, scope auth.Scope) bool {
+	if !scope.IsPlayerBound() || scope.HasClientCapability(string(capabilities.CapabilityPlayerDisplay)) {
+		return false
+	}
+	writeJSON(w, http.StatusForbidden, map[string]any{
+		"error":  "update required",
+		"reason": "UPDATE_REQUIRED",
+	})
+	return true
+}
+
+func (s *Server) playerCommandedAllowed(ctx context.Context, scope auth.Scope, mediaID store.MediaID) bool {
+	if !scope.IsPlayerBound() || scope.WalkUpEnabled {
+		return true
+	}
+	if s.playerCommanded == nil || scope.SessionID == "" || mediaID == "" {
+		return false
+	}
+	ok, err := s.playerCommanded.IsPlayerCommandedMedia(ctx, scope.SessionID, mediaID, time.Now().UTC())
+	return err == nil && ok
+}
+
 func (s *Server) manifestDocument(w http.ResponseWriter, r *http.Request) {
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
 		writeScopeError(w, r, err, "invalid session")
+		return
+	}
+	if s.rejectMissingPlayerDisplayCapability(w, r, scope) {
+		return
+	}
+	if scope.IsPlayerBound() && !scope.WalkUpEnabled {
+		writeError(w, r, http.StatusForbidden, "walk-up browsing is disabled")
 		return
 	}
 	document, err := s.manifest.Document(r.Context(), scope)
@@ -1322,6 +1359,9 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		writePlaybackScopeError(w, r, err)
 		return
 	}
+	if s.rejectMissingPlayerDisplayCapability(w, r, scope) {
+		return
+	}
 
 	var req playback.InfoRequest
 	dec := json.NewDecoder(r.Body)
@@ -1329,6 +1369,15 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	if err := dec.Decode(&req); err != nil {
 		writeDecodeError(w, r, err)
 		return
+	}
+	if scope.IsPlayerBound() && !scope.WalkUpEnabled {
+		if !s.playerCommandedAllowed(r.Context(), scope, store.MediaID(req.MediaID)) {
+			writeError(w, r, http.StatusForbidden, "walk-up browsing is disabled")
+			return
+		}
+		if req.NextMediaID != "" && !s.playerCommandedAllowed(r.Context(), scope, store.MediaID(req.NextMediaID)) {
+			req.NextMediaID = ""
+		}
 	}
 	// Proximity comes from the connection, never the body: an off-LAN request
 	// is held to the admin's remote bitrate cap (CORE-1717).
@@ -1352,11 +1401,20 @@ func (s *Server) previewInfo(w http.ResponseWriter, r *http.Request) {
 		writePlaybackScopeError(w, r, err)
 		return
 	}
+	if s.rejectMissingPlayerDisplayCapability(w, r, scope) {
+		return
+	}
 
 	var req playback.PreviewInfoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeDecodeError(w, r, err)
 		return
+	}
+	if scope.IsPlayerBound() && !scope.WalkUpEnabled {
+		if !s.playerCommandedAllowed(r.Context(), scope, store.MediaID(req.MediaID)) {
+			writeError(w, r, http.StatusForbidden, "walk-up browsing is disabled")
+			return
+		}
 	}
 	resp, err := s.playback.PreviewInfo(r.Context(), scope, req)
 	if err != nil {

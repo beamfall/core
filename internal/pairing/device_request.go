@@ -121,9 +121,10 @@ type PendingDeviceRequests struct {
 // viewer: the role the device asked for is untrusted, so manager is granted
 // only when the admin names it.
 type DeviceRequestDecision struct {
-	Code       string `json:"code"`
-	ProfileID  string `json:"profileID,omitempty"`
-	DeviceRole string `json:"deviceRole,omitempty"`
+	Code              string `json:"code"`
+	ProfileID         string `json:"profileID,omitempty"`
+	DeviceRole        string `json:"deviceRole,omitempty"`
+	PlayerDisplayName string `json:"playerDisplayName,omitempty"`
 }
 
 // DeviceRequestDecisionResponse confirms a decision.
@@ -135,20 +136,21 @@ type DeviceRequestDecisionResponse struct {
 }
 
 type deviceRequestEntry struct {
-	code              string
-	secretHash        [sha256.Size]byte
-	name              string
-	platform          string
-	distributionClass store.DeviceDistributionClass
-	role              store.DeviceRole
-	isLAN             bool
-	browser           bool
-	source            string
-	requestedAt       time.Time
-	expiresAt         time.Time
-	status            string
-	approvedProfile   store.ProfileID
-	approvedRole      store.DeviceRole
+	code                      string
+	secretHash                [sha256.Size]byte
+	name                      string
+	platform                  string
+	distributionClass         store.DeviceDistributionClass
+	role                      store.DeviceRole
+	isLAN                     bool
+	browser                   bool
+	source                    string
+	requestedAt               time.Time
+	expiresAt                 time.Time
+	status                    string
+	approvedProfile           store.ProfileID
+	approvedRole              store.DeviceRole
+	approvedPlayerDisplayName string
 }
 
 // deviceRequests is the in-memory pending table, indexed by display code and
@@ -527,12 +529,24 @@ func (s *Service) enrollApprovedRequest(ctx context.Context, entry deviceRequest
 	if err != nil {
 		return EnrollResponse{}, err
 	}
+	profile, err := s.store.Profile(ctx, entry.approvedProfile)
+	if err != nil || profile.Disabled {
+		return EnrollResponse{}, ErrInvalidCode
+	}
 	device := store.Device{
 		ID:                store.DeviceID(deviceID),
 		Name:              entry.name,
 		Role:              entry.approvedRole,
 		DistributionClass: entry.distributionClass,
 		SecretHash:        store.HashDeviceSecret(deviceSecret),
+	}
+	if profile.Kind == store.ProfilePlayer {
+		device.PlayerProfileID = profile.ID
+		device.PlayerDisplayName = entry.approvedPlayerDisplayName
+		if device.PlayerDisplayName == "" {
+			device.PlayerDisplayName = entry.name
+		}
+		device.PlayerBindingGeneration = 1
 	}
 	session := store.Session{
 		ID:        store.SessionID(sessionID),
@@ -672,6 +686,7 @@ func (s *Service) ApproveDeviceRequest(ctx context.Context, scope auth.Scope, re
 	entry.status = DeviceRequestApproved
 	entry.approvedProfile = profileID
 	entry.approvedRole = role
+	entry.approvedPlayerDisplayName = strings.TrimSpace(req.PlayerDisplayName)
 	t.mu.Unlock()
 
 	// Like a minted code, the approval is a grant for a Profile; the code

@@ -305,6 +305,10 @@ func (h *Handler) authorizeSessionControl(
 		// with any session, so every target is "unknown" to it.
 		return store.Session{}, nil, "", clientError("unknown session")
 	}
+	if scope.IsPlayerBound() {
+		// A player-bound display is controlled, never a controller (ADR-0240 D2).
+		return store.Session{}, nil, "", clientError("session not controllable")
+	}
 
 	// Gate 1 — same Profile. Resolve the target session's Profile; a missing or
 	// cross-Profile session is reported identically as "unknown session" so the

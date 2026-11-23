@@ -198,8 +198,10 @@ const (
 	// live transports — its open subscription/event streams self-terminate on
 	// the next per-event scope re-evaluation, and its in-flight transcodes are
 	// aborted at once through the playback termination seam.
-	ActivityDeviceRevoke = "device.revoke"
-	ActivityDeviceRole   = "device.role"
+	ActivityDeviceRevoke        = "device.revoke"
+	ActivityDeviceRole          = "device.role"
+	ActivityDevicePlayerBinding = "device.player_binding"
+	ActivityPlayerWalkUp        = "profile.player_walk_up"
 	// ActivitySessionControl records a cross-device transport command (ADR-0035
 	// §7): a session-authenticated device, admin API token, or scoped API key
 	// controlled an active session. TargetType is "session", TargetID the

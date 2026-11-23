@@ -223,6 +223,11 @@
       "tier": "session"
     },
     {
+      "field": "cleardeviceplayerbinding",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "clearmediaordinal",
       "effect": "write",
       "tier": "session"
@@ -983,6 +988,11 @@
       "tier": "admin"
     },
     {
+      "field": "playerbinding",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "playhistory",
       "effect": "read",
       "tier": "admin"
@@ -1488,6 +1498,11 @@
       "tier": "session"
     },
     {
+      "field": "setdeviceplayerbinding",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "setdevicerole",
       "effect": "write",
       "tier": "admin"
@@ -1571,6 +1586,11 @@
       "field": "setnavoverride",
       "effect": "write",
       "tier": "session"
+    },
+    {
+      "field": "setplayerwalkup",
+      "effect": "write",
+      "tier": "admin"
     },
     {
       "field": "setpluginactive",
@@ -4631,6 +4651,51 @@
       "children": [
         {
           "name": "cleared",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "cleardeviceplayerbinding",
+      "kind": "object",
+      "children": [
+        {
+          "name": "current",
+          "kind": "scalar"
+        },
+        {
+          "name": "deviceID",
+          "kind": "scalar"
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "playerBindingGeneration",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "playerDisplayName",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "playerProfileID",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "revoked",
+          "kind": "scalar"
+        },
+        {
+          "name": "role",
+          "kind": "scalar"
+        },
+        {
+          "name": "signedIn",
           "kind": "scalar"
         }
       ]
@@ -7776,6 +7841,10 @@
         {
           "name": "transcodeAllowed",
           "kind": "scalar"
+        },
+        {
+          "name": "walkUpEnabled",
+          "kind": "scalar"
         }
       ]
     },
@@ -8466,6 +8535,21 @@
         {
           "name": "name",
           "kind": "scalar"
+        },
+        {
+          "name": "playerBindingGeneration",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "playerDisplayName",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "playerProfileID",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "revoked",
@@ -35038,6 +35122,38 @@
       ]
     },
     {
+      "field": "playerbinding",
+      "kind": "object",
+      "children": [
+        {
+          "name": "bound",
+          "kind": "scalar"
+        },
+        {
+          "name": "displayName",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "generation",
+          "kind": "scalar"
+        },
+        {
+          "name": "profileID",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "updateRequired",
+          "kind": "scalar"
+        },
+        {
+          "name": "walkUpEnabled",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "playhistory",
       "kind": "object",
       "children": [
@@ -42109,6 +42225,10 @@
         {
           "name": "transcodeAllowed",
           "kind": "scalar"
+        },
+        {
+          "name": "walkUpEnabled",
+          "kind": "scalar"
         }
       ]
     },
@@ -44053,6 +44173,51 @@
       ]
     },
     {
+      "field": "setdeviceplayerbinding",
+      "kind": "object",
+      "children": [
+        {
+          "name": "current",
+          "kind": "scalar"
+        },
+        {
+          "name": "deviceID",
+          "kind": "scalar"
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "playerBindingGeneration",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "playerDisplayName",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "playerProfileID",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "revoked",
+          "kind": "scalar"
+        },
+        {
+          "name": "role",
+          "kind": "scalar"
+        },
+        {
+          "name": "signedIn",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "setdevicerole",
       "kind": "object",
       "children": [
@@ -44067,6 +44232,21 @@
         {
           "name": "name",
           "kind": "scalar"
+        },
+        {
+          "name": "playerBindingGeneration",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "playerDisplayName",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "playerProfileID",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "revoked",
@@ -45090,6 +45270,113 @@
         },
         {
           "name": "themeAccentColor",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "setplayerwalkup",
+      "kind": "object",
+      "children": [
+        {
+          "name": "audioLanguages",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "certificationCeilings",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "allowUnrated",
+                "kind": "scalar"
+              },
+              {
+                "name": "ceiling",
+                "kind": "scalar"
+              },
+              {
+                "name": "pluginID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "allowUnrated",
+              "kind": "scalar"
+            },
+            {
+              "name": "ceiling",
+              "kind": "scalar"
+            },
+            {
+              "name": "pluginID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "disabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "kind",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryIDs",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "maxConcurrentStreams",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "preferSDH",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
+          "name": "subtitleLanguages",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "subtitleMode",
+          "kind": "scalar"
+        },
+        {
+          "name": "transcodeAllowed",
+          "kind": "scalar"
+        },
+        {
+          "name": "walkUpEnabled",
           "kind": "scalar"
         }
       ]
@@ -49250,6 +49537,10 @@
         },
         {
           "name": "transcodeAllowed",
+          "kind": "scalar"
+        },
+        {
+          "name": "walkUpEnabled",
           "kind": "scalar"
         }
       ]
@@ -54667,6 +54958,10 @@
         {
           "name": "transcodeAllowed",
           "kind": "scalar"
+        },
+        {
+          "name": "walkUpEnabled",
+          "kind": "scalar"
         }
       ]
     },
@@ -56419,6 +56714,10 @@
         "effect": "write"
       },
       {
+        "field": "cleardeviceplayerbinding",
+        "effect": "write"
+      },
+      {
         "field": "commitscanpreview",
         "effect": "write"
       },
@@ -56739,6 +57038,10 @@
         "effect": "write"
       },
       {
+        "field": "setdeviceplayerbinding",
+        "effect": "write"
+      },
+      {
         "field": "setdevicerole",
         "effect": "write"
       },
@@ -56772,6 +57075,10 @@
       },
       {
         "field": "setlibraryshowonhome",
+        "effect": "write"
+      },
+      {
+        "field": "setplayerwalkup",
         "effect": "write"
       },
       {
@@ -59278,7 +59585,8 @@
       "REVEAL_PIN_REQUIRED",
       "REVEAL_PIN_INCORRECT",
       "PROFILE_MISMATCH",
-      "ACCESS_SCHEDULE_ENDED"
+      "ACCESS_SCHEDULE_ENDED",
+      "UPDATE_REQUIRED"
     ],
     "notes": [
       "Every entry in a GraphQL response's errors array carries extensions.code from the closed vocabulary in codes. Clients branch on the code, never on the message text; growing the vocabulary is a deliberate wire-contract change.",
