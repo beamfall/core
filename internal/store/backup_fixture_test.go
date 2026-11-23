@@ -792,6 +792,7 @@ func fixtureSemanticValue(ctx context.Context, db *sql.DB, table, column string)
 		"party_entry.state":                         "waiting",
 		"party_screen.kind":                         "popout",
 		"party_screen.carrier":                      "local",
+		"player_controller.mode":                    "include",
 	}[table+"."+column]; ok {
 		return value, true, nil
 	}
