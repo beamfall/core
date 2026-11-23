@@ -498,7 +498,8 @@ export function PlayerTransport({
       setCurrent(Number.isFinite(video.currentTime) ? video.currentTime * songScale : 0);
       setDuration(playbackDurationSeconds(serverDuration, video.duration * songScale));
       setPaused(video.paused);
-      setVolumeState(video.volume);
+      // A fade holds the element lower for a while; the slider shows the listener's own level.
+      setVolumeState(fadeBaseVolume(video));
       setMuted(listenerMuted(video));
       setPlaybackRate(video.playbackRate);
       setBuffered(bufferedEnd(video) * songScale);
