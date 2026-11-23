@@ -97,6 +97,12 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
   "promote.denied": label("security", "activityEventPromoteDenied"),
   "device.revoke": label("security", "activityEventDeviceRevoke", "activityNounDevice", "device"),
   "device.role": label("security", "activityEventDeviceRole", "activityNounDevice", "device"),
+  "device.player_binding": label(
+    "security",
+    "activityEventDevicePlayerBinding",
+    "activityNounDevice",
+    "device",
+  ),
 
   // Profiles and access.
   "profile.switch": label("access", "activityEventProfileSwitch"),
@@ -117,6 +123,18 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
   "profile.access_schedule": label(
     "access",
     "activityEventProfileAccessSchedule",
+    "activityNounProfile",
+    "profile",
+  ),
+  "profile.player_walk_up": label(
+    "access",
+    "activityEventProfilePlayerWalkUp",
+    "activityNounProfile",
+    "profile",
+  ),
+  "profile.player_controllers": label(
+    "access",
+    "activityEventProfilePlayerControllers",
     "activityNounProfile",
     "profile",
   ),
