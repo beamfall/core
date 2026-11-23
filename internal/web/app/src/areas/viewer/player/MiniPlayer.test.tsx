@@ -49,7 +49,7 @@ describe("MiniPlayer waveform strip (CORE-2404)", () => {
     await loadWaveform("a", "/w/a");
     render(<Mini mediaID="a" waveform={{ infoMediaID: "a", url: "/w/a" }} />);
 
-    const bar = screen.getByRole("progressbar", { name: "Playback position" });
+    const bar = screen.getByRole("slider", { name: "Playback position" });
     expect(bar).toHaveClass("has-waveform");
     expect(screen.getByTestId("scrubber-waveform")).not.toHaveClass("is-placeholder");
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -59,7 +59,7 @@ describe("MiniPlayer waveform strip (CORE-2404)", () => {
     mockWaveformFetch({});
     render(<Mini mediaID="a" waveform={{ infoMediaID: "a", url: "/w/a" }} />);
     await waitFor(() => expect(screen.queryByTestId("scrubber-waveform")).not.toBeInTheDocument());
-    expect(screen.getByRole("progressbar", { name: "Playback position" })).not.toHaveClass(
+    expect(screen.getByRole("slider", { name: "Playback position" })).not.toHaveClass(
       "has-waveform",
     );
   });
