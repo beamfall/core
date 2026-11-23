@@ -29,6 +29,10 @@ function isPartyGone(error: unknown): boolean {
   return error instanceof ApiError && /party session not found/i.test(error.message);
 }
 
+function isScreenGone(error: unknown): boolean {
+  return error instanceof ApiError && error.message === "screen not found";
+}
+
 function storageKey(sessionID: string, kind: PartyScreenKind): string {
   return `beamfall.partyScreen.${kind}.${sessionID}`;
 }
@@ -62,7 +66,8 @@ export function PartyStagePage() {
   const kind: PartyScreenKind = search.get("joined") === "1" ? "joined" : "popout";
   const [screenID, setScreenID] = useState<string | null>(() => readScreenID(sessionID, kind));
   const [registerFailed, setRegisterFailed] = useState(false);
-  const [stage, setStage] = useState<PartyStage | undefined>(undefined);
+  const [stageRead, setStageRead] = useState<{ screenID: string; stage: PartyStage }>();
+  const stage = stageRead?.screenID === screenID ? stageRead.stage : undefined;
   const [stageFailed, setStageFailed] = useState(false);
   // serverClock − localClock: the calibrated estimate, else the poll's serverNowMS.
   const calibratedRef = useRef<number | null>(null);
@@ -75,6 +80,13 @@ export function PartyStagePage() {
     () => localClockMS() + (calibratedRef.current ?? fallbackRef.current),
     [],
   );
+  const forgetScreen = useCallback(() => {
+    setStageRead(undefined);
+    setStageFailed(false);
+    driftRef.current = 0;
+    writeScreenID(sessionID, kind, null);
+    setScreenID(null);
+  }, [sessionID, kind]);
 
   useEffect(() => {
     if (screenID || !sessionID) return;
@@ -114,17 +126,22 @@ export function PartyStagePage() {
       try {
         if (!screenID) return;
         const next = await fetchPartyStage(sessionID, screenID, signal);
+        if (signal.aborted) return;
         const receivedAt = localClockMS();
         fallbackRef.current = next.serverNowMS - (sentAt + receivedAt) / 2;
         if (calibratedRef.current === null) rttRef.current = receivedAt - sentAt;
-        setStage(next);
+        setStageRead({ screenID, stage: next });
         setStageFailed(false);
       } catch (error) {
         if (signal.aborted) throw error;
+        if (isScreenGone(error)) {
+          forgetScreen();
+          return;
+        }
         setStageFailed(true);
         // The session ended or never existed: drop the stage so its player
         // unmounts. Any other failure (a network blip) keeps playing.
-        if (isPartyGone(error)) setStage(undefined);
+        if (isPartyGone(error)) setStageRead(undefined);
         throw error;
       }
     },
@@ -135,24 +152,23 @@ export function PartyStagePage() {
 
   useEffect(() => {
     if (!screenID) return;
+    let live = true;
     const report = () => {
       partyScreenReport(screenID, driftRef.current, rttRef.current)
         .then((known) => {
           // The server no longer knows this screen (dropped or expired): register again.
-          if (!known) {
-            writeScreenID(sessionID, kind, null);
-            setScreenID(null);
-          }
+          if (live && !known) forgetScreen();
         })
         .catch(() => {});
     };
     const first = window.setTimeout(report, POLL_MS);
     const timer = window.setInterval(report, REPORT_MS);
     return () => {
+      live = false;
       window.clearTimeout(first);
       window.clearInterval(timer);
     };
-  }, [screenID, sessionID, kind]);
+  }, [screenID, forgetScreen]);
 
   const current = stage?.current ?? null;
 
@@ -170,6 +186,8 @@ export function PartyStagePage() {
             {t("partyHostStageUnavailable")}
           </p>
         ) : null
+      ) : current?.ineligible ? (
+        <StageIneligible entry={current} driftRef={driftRef} />
       ) : current ? (
         <StagePlayer
           key={current.id}
@@ -187,13 +205,33 @@ export function PartyStagePage() {
           <span className="truncate">
             {stage.upNext
               .map((entry) =>
-                t("partyHostTickerItem", { title: entry.title, name: entry.participantName }),
+                entry.ineligible
+                  ? entry.label || entry.participantName
+                  : t("partyHostTickerItem", { title: entry.title, name: entry.participantName }),
               )
               .join("  ·  ")}
           </span>
         </div>
       )}
     </main>
+  );
+}
+
+function StageIneligible({
+  entry,
+  driftRef,
+}: {
+  entry: PartyEntry;
+  driftRef: React.MutableRefObject<number>;
+}) {
+  const t = useT();
+  driftRef.current = 0;
+  return (
+    <p className="bf-party-stage-idle">
+      {entry.participantName
+        ? t("partyHostUpNextParticipant", { name: entry.participantName })
+        : t("partyHostUpNext")}
+    </p>
   );
 }
 
@@ -226,7 +264,9 @@ function StageIdle({
           <ol className="flex flex-col gap-1">
             {stage.upNext.map((entry) => (
               <li key={entry.id} className="bf-party-stage-next">
-                {t("partyHostTickerItem", { title: entry.title, name: entry.participantName })}
+                {entry.ineligible
+                  ? entry.label || entry.participantName
+                  : t("partyHostTickerItem", { title: entry.title, name: entry.participantName })}
               </li>
             ))}
           </ol>

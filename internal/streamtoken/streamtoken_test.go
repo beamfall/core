@@ -59,18 +59,18 @@ func TestAuthenticatedGrantValidatesMACOnceAndFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Authenticate returned error: %v", err)
 	}
-	if _, err := service.VerifyAuthenticated(authenticated, scope); err != nil {
+	if _, err := service.VerifyAuthenticated(t.Context(), authenticated, scope); err != nil {
 		t.Fatalf("VerifyAuthenticated returned error: %v", err)
 	}
 	if validations != 1 {
 		t.Fatalf("MAC validations = %d, want exactly 1", validations)
 	}
 
-	if _, err := service.VerifyAuthenticated(AuthenticatedGrant{}, scope); err == nil {
+	if _, err := service.VerifyAuthenticated(t.Context(), AuthenticatedGrant{}, scope); err == nil {
 		t.Fatal("VerifyAuthenticated accepted a zero/fabricated grant")
 	}
 	other := NewService([]byte("test-key"), func() time.Time { return now })
-	if _, err := other.VerifyAuthenticated(authenticated, scope); err == nil {
+	if _, err := other.VerifyAuthenticated(t.Context(), authenticated, scope); err == nil {
 		t.Fatal("VerifyAuthenticated accepted a cross-service grant")
 	}
 }

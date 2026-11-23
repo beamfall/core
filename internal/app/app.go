@@ -834,6 +834,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// panel can present a Profile its own outstanding tokens. The
 	// ledger never authorizes bytes — that stays the signed grant's job.
 	tokenService.SetRecorder(st)
+	tokenService.SetRevealGenerationResolver(st)
 	playbackInfo := playback.NewService(st, tokenService, readClock)
 	playbackInfo.SetAuth(authService)
 	// Console resource graphs: an in-memory ring of host samples, never persisted.

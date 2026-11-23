@@ -49,11 +49,11 @@ func TestPartyStageSessionBindingAndTwoRegistrations(t *testing.T) {
 	}
 
 	// Same Session registers two screens, each keeping its own ticker flag.
-	scr1, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-default", "session-default", "Popout", "popout", "local")
+	scr1, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-default", "session-default", "Popout", "popout", "local", host, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	scr2, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-default", "session-default", "Booth", "joined", "local")
+	scr2, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-default", "session-default", "Booth", "joined", "local", host, map[string]LibraryFilter{scr1.ID: host})
 	if err != nil {
 		t.Fatal(err)
 	}
