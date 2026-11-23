@@ -4,6 +4,7 @@ import {
   fadeAdvance,
   fadeBaseVolume,
   LOAD_WAIT_MS,
+  skipFadingOut,
   TRACK_FADE_MS,
 } from "./trackFade";
 
@@ -50,6 +51,20 @@ describe("fadeAdvance", () => {
     video.dispatchEvent(new Event("playing"));
     vi.advanceTimersByTime(TRACK_FADE_MS * 2);
     expect(video.volume).toBeCloseTo(0.8);
+  });
+
+  it("reports a skip as fading out only until it advances or is dropped", () => {
+    const video = playingElement();
+    expect(skipFadingOut()).toBe(false);
+    fadeAdvance(video, () => {});
+    expect(skipFadingOut()).toBe(true);
+    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
+    expect(skipFadingOut()).toBe(false);
+
+    fadeAdvance(playingElement(), () => {});
+    expect(skipFadingOut()).toBe(true);
+    cancelFadeAdvance();
+    expect(skipFadingOut()).toBe(false);
   });
 
   it("fades back in when the skip loads nothing", () => {

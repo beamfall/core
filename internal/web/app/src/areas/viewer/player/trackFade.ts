@@ -29,6 +29,11 @@ export function cancelFadeAdvance() {
   for (const run of [...fadingOut]) run.cancel();
 }
 
+/** Whether a skip is still fading out: its advance owns what plays next. */
+export function skipFadingOut(): boolean {
+  return fadingOut.size > 0;
+}
+
 /** Runs `advance` after a short fade out, then fades the element back in once it plays again. */
 export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void) {
   if (!video) return advance();

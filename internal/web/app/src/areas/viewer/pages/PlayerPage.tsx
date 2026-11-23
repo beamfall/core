@@ -104,7 +104,7 @@ import { PrePlayStage } from "../player/PrePlayStage";
 import { applyPlayerVolume } from "../player/playerVolume";
 import { SkippedOverlay } from "../player/SkippedOverlay";
 import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
-import { cancelFadeAdvance, fadeAdvance } from "../player/trackFade";
+import { cancelFadeAdvance, fadeAdvance, skipFadingOut } from "../player/trackFade";
 import { UpNextCard } from "../player/UpNextCard";
 import { UpNextDrawer } from "../player/UpNextDrawer";
 import { useAmbientChoice, useAmbientIdle } from "../player/useAmbient";
@@ -854,8 +854,10 @@ function FeaturePlayer({
 
   const runQueueAction = useCallback(
     async (action: QueueAction, pick?: string) => {
-      // The track ending on its own mid-fade is not a newer choice: Play now still wins.
+      // The track ending on its own mid-fade is not a newer choice: Play now
+      // still wins, and its advance, not this one, picks what plays next.
       if (action !== "ended") cancelFadeAdvance();
+      else if (skipFadingOut()) return;
       if (
         !profileID ||
         (action !== "start" && !queueMatchesProfile) ||
@@ -870,6 +872,8 @@ function FeaturePlayer({
       if (pendingQueueAction.current !== request) return;
       pendingQueueAction.current = null;
       if (rows === undefined || !isCurrent()) return;
+      // A Play now chosen while this read ran keeps its pick over the refreshed queue's.
+      if (action === "ended" && skipFadingOut()) return;
       if (rows === null) {
         setFailedAction({ action, pick, route: queueRoute });
         return;
