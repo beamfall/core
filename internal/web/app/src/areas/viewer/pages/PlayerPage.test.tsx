@@ -2517,13 +2517,17 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
     const stage = document.querySelector<HTMLElement>(".bf-audio-stage");
     if (!stage) throw new Error("no audio stage");
     expect(await within(stage).findByText("Ann")).toBeInTheDocument();
-    playAudibly(presentFirstFrame());
+    const video = presentFirstFrame();
+    playAudibly(video);
     const card = await screen.findByRole("region", { name: /Playing next/ });
     fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
-    // Joining a party mid-fade withdraws the player's own Up next.
+    await waitFor(() => expect(video.volume).toBeLessThan(0.8));
+    // Joining a party mid-fade withdraws the player's own Up next: the item
+    // stays, back at the listener's level at once.
     vi.mocked(watchPartyDefersUpNext).mockReturnValue(true);
     try {
       rerender();
+      expect(video.volume).toBe(0.8);
       await act(async () => new Promise((resolve) => setTimeout(resolve, 600)));
       expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-next")).toBe(false);
     } finally {

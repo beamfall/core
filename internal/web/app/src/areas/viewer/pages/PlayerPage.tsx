@@ -1047,20 +1047,22 @@ function FeaturePlayer({
             : issued
               ? () => openNextRef.current.advanceToNext(issued)
               : () => openNextRef.current.playNext?.();
-        // A relock mid-fade voids a choice made under the revealed session, and
-        // an advance withdrawn mid-fade (a Watch Party now leads, the item
-        // plays alone) leaves nothing to skip to.
+        // A relock mid-fade voids a choice made under the revealed session.
         fadeAdvance(video, () => {
-          if (chosenUnder?.aborted || !openNextRef.current.playNext) return;
+          if (chosenUnder?.aborted) return;
           advance();
         });
       }
     : undefined;
   // Anything else that changes what plays (another item, a relock, leaving)
-  // drops the skip, so it never overrides the listener's newer choice. Docking
-  // does not: the listener still asked for the next item, which plays on in
-  // the mini player as a natural end would.
-  useEffect(() => () => cancelFadeAdvance(), [mediaId, stageOwner, epoch]);
+  // drops the skip, so it never overrides the listener's newer choice, and so
+  // does an advance withdrawn mid-fade (a Watch Party now leads, the item
+  // plays alone): the item fades back in. Docking and reordering do not: the
+  // listener still asked for the item the card named.
+  useEffect(
+    () => () => cancelFadeAdvance(),
+    [mediaId, stageOwner, epoch, partyLeads, playsAloneRead],
+  );
   // The Up next drawer lists a card queue; a server queue keeps its own panel.
   const drawerQueue = !serverQueueRun && queue && queue.length > 1 ? queue : undefined;
   const [upNextOpen, setUpNextOpen] = useState(false);
