@@ -112,6 +112,26 @@ describe("PlayingNextCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(onDismiss).toHaveBeenCalledOnce();
   });
+  it("shows the next item's picture and artist, and drops a picture that fails", () => {
+    render(
+      <I18nProvider initialLocale="en">
+        <PlayingNextCard
+          title="Closing Track"
+          artist="Ann"
+          artworkURL="/art/closing.jpg"
+          remaining={4}
+          onDismiss={() => {}}
+        />
+      </I18nProvider>,
+    );
+    const region = screen.getByRole("region", { name: "Playing next: Closing Track by Ann" });
+    expect(region).toHaveTextContent("Ann");
+    const art = region.querySelector(".bf-playing-next-art");
+    expect(art).toHaveAttribute("src", "/art/closing.jpg");
+    expect(art).toHaveAttribute("alt", "");
+    if (art) fireEvent.error(art);
+    expect(region.querySelector(".bf-playing-next-art")).toBeNull();
+  });
 });
 
 describe("UpNextDrawer", () => {

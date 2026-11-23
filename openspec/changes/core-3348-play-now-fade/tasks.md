@@ -1,0 +1,5 @@
+- [x] Web: Play now dismisses the card and advances through `fadeAdvance` (equal-power element-volume fade)
+- [x] Web: server Play Queue keys the audio stage by stage owner, not Media id
+- [x] Web: the card shows the next item's picture and artist; `playingNextBy` in every locale
+- [x] Tests: `trackFade.test.ts`, the card test in `nowPlaying.test.tsx`, the Play now test in `PlayerPage.test.tsx`
+- [ ] Verify on tower after landing

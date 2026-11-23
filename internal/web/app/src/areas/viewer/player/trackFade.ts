@@ -1,0 +1,73 @@
+import { listenerMuted } from "./listenerMute";
+
+/** How long a listener's skip fades the playing track out, and the next one in. */
+export const TRACK_FADE_MS = 350;
+/** A skip that loads nothing within this long did not happen: the track fades back in. */
+export const LOAD_WAIT_MS = 1_500;
+/** The next track gets this long to start playing before it fades in anyway. */
+export const PLAY_WAIT_MS = 5_000;
+
+// A skip the listener asks for (Play now) fades the playing track out, moves
+// on, and fades the next track in once it plays, instead of cutting. Like the
+// sleep timer's fade (CORE-2960) it rides the element's volume, which the
+// gapless bridge follows; only the listener's own volume changes are saved.
+// A volume the listener sets mid-fade is theirs: the fade stops and keeps it.
+
+const runs = new WeakMap<HTMLMediaElement, () => void>();
+
+/** Runs `advance` after a short fade out, then fades the element back in once it plays again. */
+export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void) {
+  if (!video) return advance();
+  // A second skip mid-fade finishes the first at once.
+  runs.get(video)?.();
+  const base = video.volume;
+  if (video.paused || listenerMuted(video) || base === 0) return advance();
+
+  let written = base;
+  let frame = 0;
+  let wait: ReturnType<typeof setTimeout> | undefined;
+  const write = (level: number) => {
+    written = Math.max(0, Math.min(1, base * level));
+    video.volume = written;
+  };
+  const theirs = () => video.volume !== written;
+  const done = (restore: boolean) => {
+    cancelAnimationFrame(frame);
+    clearTimeout(wait);
+    video.removeEventListener("loadstart", loading);
+    video.removeEventListener("playing", fadeIn);
+    if (restore && !theirs()) video.volume = base;
+    if (runs.get(video) === stop) runs.delete(video);
+  };
+  const stop = () => done(true);
+  // Equal power: out follows a quarter cosine, in a quarter sine, so the level sounds even.
+  const ramp = (shape: (t: number) => number, then: () => void) => {
+    const started = performance.now();
+    const step = () => {
+      if (theirs()) return done(false);
+      const t = Math.min(1, (performance.now() - started) / TRACK_FADE_MS);
+      write(shape((t * Math.PI) / 2));
+      if (t < 1) frame = requestAnimationFrame(step);
+      else then();
+    };
+    frame = requestAnimationFrame(step);
+  };
+  function fadeIn() {
+    video?.removeEventListener("loadstart", loading);
+    video?.removeEventListener("playing", fadeIn);
+    clearTimeout(wait);
+    ramp(Math.sin, stop);
+  }
+  function loading() {
+    video?.removeEventListener("loadstart", loading);
+    clearTimeout(wait);
+    wait = setTimeout(fadeIn, PLAY_WAIT_MS);
+  }
+  runs.set(video, stop);
+  ramp(Math.cos, () => {
+    video.addEventListener("loadstart", loading);
+    video.addEventListener("playing", fadeIn);
+    wait = setTimeout(fadeIn, LOAD_WAIT_MS);
+    advance();
+  });
+}

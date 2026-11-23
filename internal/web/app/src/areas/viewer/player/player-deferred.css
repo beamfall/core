@@ -2007,6 +2007,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+.bf-playing-next-art {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: color-mix(in oklab, var(--on-scrim-muted) 22%, transparent);
+}
+
 .bf-playing-next-text {
   display: flex;
   flex: 1;
@@ -2028,10 +2037,30 @@
   white-space: nowrap;
 }
 
+.bf-playing-next-artist {
+  overflow: hidden;
+  font-size: 13px;
+  color: color-mix(in oklab, var(--on-scrim) 35%, var(--on-scrim-muted));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .bf-playing-next-actions {
   display: flex;
   flex: none;
   gap: 8px;
+}
+
+/* On a phone the actions take their own row, so the title and artist keep room. */
+@media (max-width: 479px) {
+  .bf-playing-next {
+    flex-wrap: wrap;
+  }
+
+  .bf-playing-next-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
 }
 
 /* The Up next drawer slides in along the stage's right edge, clear of the

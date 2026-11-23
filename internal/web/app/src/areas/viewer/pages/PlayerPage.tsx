@@ -104,6 +104,7 @@ import { PrePlayStage } from "../player/PrePlayStage";
 import { applyPlayerVolume } from "../player/playerVolume";
 import { SkippedOverlay } from "../player/SkippedOverlay";
 import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
+import { fadeAdvance } from "../player/trackFade";
 import { UpNextCard } from "../player/UpNextCard";
 import { UpNextDrawer } from "../player/UpNextDrawer";
 import { useAmbientChoice, useAmbientIdle } from "../player/useAmbient";
@@ -652,13 +653,23 @@ function FeaturePlayer({
     credits,
     queuePosition,
   };
-  const stageReady = !mediaId || mediaReadIsCurrent || (playing && infoIsCurrent);
-  const [heldStage, setHeldStage] = useState<StageItem | null>(null);
-  if (stageReady || serverQueueRun) {
-    const keep = showAudioStage && !serverQueueRun ? liveStage : null;
-    if (!sameStageItem(keep, heldStage)) setHeldStage(keep);
+  // A server queue names its item only through the scoped media read, so its
+  // stage waits for that read (or its failure) rather than for playback.
+  const stageReady =
+    !mediaId || mediaReadIsCurrent || (!serverQueueRun && playing && infoIsCurrent);
+  // The held item belongs to the viewer it was shown to: a relock or a profile
+  // switch never carries one listener's track onto another's stage.
+  const stageOwner = JSON.stringify([identity, revealed, profileID ?? ""]);
+  const [held, setHeld] = useState<{ owner: string; item: StageItem } | null>(null);
+  if (stageReady) {
+    const keep = showAudioStage && queueAllowed ? liveStage : null;
+    const stale = held !== null && held.owner !== stageOwner;
+    if (stale || !sameStageItem(keep, held?.item ?? null)) {
+      setHeld(keep ? { owner: stageOwner, item: keep } : null);
+    }
   }
-  const stage = serverQueueRun || stageReady || !heldStage ? liveStage : heldStage;
+  const heldStage = held?.owner === stageOwner ? held.item : null;
+  const stage = stageReady || !heldStage ? liveStage : heldStage;
 
   // The audio transport never auto-hides (CORE-1637): a listener is not
   // watching a picture the controls would cover.
@@ -963,6 +974,38 @@ function FeaturePlayer({
     itemKey: stage.key,
     enabled: isAudio && playing && !!nextTitle,
   });
+  // The card shows the next item's picture and artist from its own media read,
+  // through the same scoped (server queue) or plain read as the stage, made
+  // when the card appears so a track nobody waits out costs no extra read.
+  const nextID = playNext ? nextInQueue?.id || issuedNext?.mediaID || "" : "";
+  const [nextRead, setNextRead] = useState<{
+    key: string;
+    info: GenericMediaInfo | null;
+  } | null>(null);
+  const nextReadKey = JSON.stringify([queueRoute, nextID]);
+  const cardShown = showAudioStage && playingNext.visible;
+  useEffect(() => {
+    if (!nextID || !cardShown || !queueTitlesAllowed) return;
+    const controller = new AbortController();
+    const settle = (info: GenericMediaInfo | null) => {
+      if (!controller.signal.aborted && !epoch?.aborted) setNextRead({ key: nextReadKey, info });
+    };
+    const read = serverQueueRun ? readMedia : fetchMedia;
+    void read(nextID, controller.signal).then(settle, () => settle(null));
+    return () => controller.abort();
+  }, [nextID, nextReadKey, cardShown, queueTitlesAllowed, epoch, serverQueueRun, readMedia]);
+  const nextInfo = nextRead?.key === nextReadKey ? nextRead.info : null;
+  const nextArtworkURL = nextInfo
+    ? nextInfo.artworkSlots?.poster || nextInfo.artworkSlots?.thumb || ""
+    : "";
+  const nextArtist = nextInfo ? personLine(nextInfo.credits ?? NO_CREDITS) : "";
+  // Play now leaves the card at once and fades the playing track out into the next.
+  const playNow = playNext
+    ? () => {
+        playingNext.dismiss();
+        fadeAdvance(videoRef.current, playNext);
+      }
+    : undefined;
   // The Up next drawer lists a card queue; a server queue keeps its own panel.
   const drawerQueue = !serverQueueRun && queue && queue.length > 1 ? queue : undefined;
   const [upNextOpen, setUpNextOpen] = useState(false);
@@ -1385,7 +1428,7 @@ function FeaturePlayer({
             <video ref={bindVideo} playsInline controls={false} poster={videoPoster || undefined} />
             {showAudioStage && (
               <AudioStage
-                key={serverQueueRun ? (media ? mediaId : "") : undefined}
+                key={serverQueueRun ? stageOwner : undefined}
                 title={stage.title}
                 artworkURL={stage.artworkURL}
                 credits={stage.credits}
@@ -1441,8 +1484,10 @@ function FeaturePlayer({
             {showAudioStage && playingNext.visible && nextTitle && (
               <PlayingNextCard
                 title={nextTitle}
+                artist={nextArtist}
+                artworkURL={nextArtworkURL}
                 remaining={playingNext.remaining}
-                onPlay={playNext}
+                onPlay={playNow}
                 onDismiss={playingNext.dismiss}
               />
             )}
