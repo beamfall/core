@@ -49,7 +49,7 @@ export function HistoryPage() {
   const [query, setQuery] = useState("");
   const [libraryID, setLibraryID] = useState("");
   const [range, setRange] = useState<HistoryRange>("any");
-  // The bound is fixed when a range is chosen or a search committed, so the
+  // The bound is fixed when a range, Library or search is chosen, so the
   // pages of one read stay consistent.
   const [playedAfter, setPlayedAfter] = useState("");
   const filters = useMemo<FeedFilters>(
@@ -80,7 +80,10 @@ export function HistoryPage() {
                   key={library.id || "all"}
                   type="button"
                   aria-pressed={libraryID === library.id}
-                  onClick={() => setLibraryID(library.id)}
+                  onClick={() => {
+                    setLibraryID(library.id);
+                    setPlayedAfter(playedAfterFor(range, new Date()));
+                  }}
                   className="bf-chip"
                 >
                   {library.title}

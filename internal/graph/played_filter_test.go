@@ -28,7 +28,7 @@ func TestPlayedFilterVars(t *testing.T) {
 	if err != nil || fine.PlayedBefore != time.Date(2026, 11, 1, 12, 0, 0, 124_000_000, time.UTC).UnixMilli() {
 		t.Fatalf("sub-millisecond bound = %#v, %v; want rounded up", fine, err)
 	}
-	for _, bad := range []any{"yesterday", "2026-11-01", "1969-12-31T00:00:00Z", 1730000000000, true} {
+	for _, bad := range []any{"yesterday", "2026-11-01", "1969-12-31T00:00:00Z", "1970-01-01T00:00:00Z", 1730000000000, true} {
 		if _, err := playedFilterVars(request{Variables: map[string]any{"playedBefore": bad}}, ""); err == nil {
 			t.Errorf("playedBefore %v accepted; want a client error", bad)
 		}
