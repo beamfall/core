@@ -139,3 +139,69 @@ func TestServerPlayerDisplayCapabilityAndWalkUpEndToEnd(t *testing.T) {
 		t.Fatalf("walk-up off commanded playback-info = %d: %s", playRec2.Code, playRec2.Body.String())
 	}
 }
+
+// ADR-0240: a Device bound as a player display acts as a viewer even when its
+// stored role is manager, on REST and GraphQL alike.
+func TestServerPlayerBoundManagerDeviceResolvesAsViewer(t *testing.T) {
+	ctx := context.Background()
+	srv, st := newTestServerWithStore(t)
+
+	player, err := st.CreateProfile(ctx, "Den TV", store.ProfilePlayer, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.EnrollDevice(ctx,
+		store.Device{
+			ID: "device-mgr-bound", Name: "Den Mac", Role: store.DeviceRoleManager,
+			SecretHash:      store.HashDeviceSecret("mgr-bound-secret"),
+			PlayerProfileID: player.ID, PlayerDisplayName: "Den TV", PlayerBindingGeneration: 1,
+		},
+		store.Session{
+			ID: "session-mgr-bound", DeviceID: "device-mgr-bound", ProfileID: player.ID,
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	authBound := func(req *http.Request) {
+		req.Header.Set("X-Beamfall-Session", "session-mgr-bound")
+		req.Header.Set("X-Beamfall-Device", "device-mgr-bound")
+		req.Header.Set("X-Beamfall-Device-Secret", "mgr-bound-secret")
+	}
+
+	scope, err := srv.auth.ScopeFromRequest(ctx, func() *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		authBound(r)
+		return r
+	}())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope.DeviceRole != store.DeviceRoleViewer || scope.Admin {
+		t.Fatalf("bound scope role=%q admin=%v, want viewer and no admin", scope.DeviceRole, scope.Admin)
+	}
+
+	exportReq := httptest.NewRequest(http.MethodGet, subscriptionExportPath, nil)
+	authBound(exportReq)
+	exportRec := httptest.NewRecorder()
+	srv.ServeHTTP(exportRec, exportReq)
+	if exportRec.Code != http.StatusForbidden {
+		t.Fatalf("bound subscription export = %d, want 403: %s", exportRec.Code, exportRec.Body.String())
+	}
+
+	gqlReq := newJSONRequest(http.MethodPost, "/api/graphql", strings.NewReader(`{"query":"mutation { trashMedia(id: \"media-alpha\") { id } }"}`))
+	authBound(gqlReq)
+	gqlRec := httptest.NewRecorder()
+	srv.ServeHTTP(gqlRec, gqlReq)
+	if !strings.Contains(gqlRec.Body.String(), "errors") {
+		t.Fatalf("bound trashMedia was not refused: %s", gqlRec.Body.String())
+	}
+
+	stored, err := st.Device(ctx, "device-mgr-bound")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Role != store.DeviceRoleManager {
+		t.Fatalf("stored role = %q, want manager kept for unbinding", stored.Role)
+	}
+}

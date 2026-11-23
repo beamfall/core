@@ -645,11 +645,18 @@ func (s *Service) scope(ctx context.Context, sessionID store.SessionID, credenti
 	if caps, ok := ClientCapabilitiesFromContext(ctx); ok {
 		clientCaps = caps
 	}
+	// ADR-0240: a player-bound Device or Player Profile Session acts as a viewer
+	// whatever role the Device stored; the stored role is kept for unbinding.
+	role := device.Role
+	if device.PlayerProfileID != "" || profile.Kind == store.ProfilePlayer {
+		role = store.DeviceRoleViewer
+		adminUntil = time.Time{}
+	}
 	return Scope{
 		SessionID:               session.ID,
 		SessionKind:             session.Kind,
 		DeviceID:                session.DeviceID,
-		DeviceRole:              device.Role,
+		DeviceRole:              role,
 		DistributionClass:       device.DistributionClass,
 		DeviceSurface:           device.Surface,
 		PlayerProfileID:         device.PlayerProfileID,
