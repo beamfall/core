@@ -41,7 +41,7 @@ import {
   nextRecoveryStep,
   resetRecoveryBudget,
 } from "./hlsRecovery";
-import { loadSleepMark, sleepHoldsAutoplay, sleepStopMark } from "./sleepStop";
+import { loadSleepMark, playingSleepMark, sleepHoldsAutoplay } from "./sleepStop";
 import {
   attachCaptionElements,
   captionLocale,
@@ -1022,7 +1022,7 @@ export function usePlayer(
         // that pause has applied, and a paused element has not started.
         if (!video.paused) {
           startMark = remotePlayStateMark();
-          sleepMark = sleepStopMark();
+          sleepMark = playingSleepMark();
         }
       };
       videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate], ["play", onPlay]);

@@ -1,10 +1,15 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadSleepMark, noteSkip, noteSleepStop, sleepHoldsAutoplay } from "./sleepStop";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  loadSleepMark,
+  noteSkip,
+  noteSleepStop,
+  playingSleepMark,
+  sleepHoldsAutoplay,
+} from "./sleepStop";
 
 describe("sleep stop marks (CORE-3365)", () => {
   afterEach(() => {
     loadSleepMark();
-    vi.useRealTimers();
   });
 
   it("holds back a skip's load when the timer stopped before that load began", () => {
@@ -18,15 +23,17 @@ describe("sleep stop marks (CORE-3365)", () => {
     expect(sleepHoldsAutoplay(loadSleepMark())).toBe(false);
   });
 
-  it("lets a skip's mark go once taken, and once it has waited too long", () => {
-    vi.useFakeTimers();
+  it("holds back a skip's load however late it begins, and lets the mark go once taken", () => {
     noteSkip();
     noteSleepStop();
-    loadSleepMark();
+    expect(sleepHoldsAutoplay(loadSleepMark())).toBe(true);
     expect(sleepHoldsAutoplay(loadSleepMark())).toBe(false);
+  });
+
+  it("lets a skip's mark go once playback starts", () => {
     noteSkip();
+    playingSleepMark();
     noteSleepStop();
-    vi.advanceTimersByTime(3_000);
     expect(sleepHoldsAutoplay(loadSleepMark())).toBe(false);
   });
 });
