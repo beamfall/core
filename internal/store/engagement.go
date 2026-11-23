@@ -904,27 +904,8 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 	if len(containerKinds) == 0 {
 		return []SourceItem{}, nil
 	}
-	windowStart := timeToMillis(time.Now().UTC()) - nextUpEngagementWindowMS
-	rows, err := s.eventsR.QueryContext(ctx, `
-		SELECT media_id, updated_at_ms
-		FROM playback_progress
-		WHERE profile_id = ? AND updated_at_ms > ?
-		LIMIT ?
-	`, profileID, windowStart, nextUpRowLimit)
+	engagedAtByMedia, err := s.nextUpEngagementSQL(ctx, profileID, class)
 	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	engagedAtByMedia := map[MediaID]int64{}
-	for rows.Next() {
-		var mediaID MediaID
-		var updatedAt int64
-		if err := rows.Scan(&mediaID, &updatedAt); err != nil {
-			return nil, err
-		}
-		engagedAtByMedia[mediaID] = updatedAt
-	}
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	if len(engagedAtByMedia) == 0 {
@@ -1293,7 +1274,7 @@ func (s *Store) nextUpFirstUnwatchedSQL(ctx context.Context, profileID ProfileID
 			return nil, err
 		}
 		if class != "" {
-			other, err := s.nextUpOtherClassSQL(ctx, class, ids)
+			other, err := s.nextUpClassMatchSQL(ctx, class, ids, false)
 			if err != nil {
 				return nil, err
 			}
@@ -1325,32 +1306,114 @@ func (s *Store) nextUpFirstUnwatchedSQL(ctx context.Context, profileID ProfileID
 	return nil, nil
 }
 
-// nextUpOtherClassSQL reads which of ids (at most engagementChunkSize) are
-// Media of a class other than class.
-func (s *Store) nextUpOtherClassSQL(ctx context.Context, class MediaClass, ids []MediaID) (map[MediaID]bool, error) {
+// nextUpScanPages bounds how many nextUpRowLimit pages a class-filtered
+// engagement scan reads (CORE-3331): plays of the other class must not starve
+// the shelf, and the scan must stay bounded on long-running libraries.
+const nextUpScanPages = 8
+
+// nextUpEngagementSQL reads the Profile's most recent progress rows inside
+// nextUpEngagementWindowMS, newest first, up to nextUpRowLimit. With a class
+// it pages past rows of other classes, so a run of recent music cannot empty
+// Up Next, until nextUpRowLimit rows of the class are found, the window runs
+// out, or nextUpScanPages pages were read.
+func (s *Store) nextUpEngagementSQL(ctx context.Context, profileID ProfileID, class MediaClass) (map[MediaID]int64, error) {
+	windowStart := timeToMillis(time.Now().UTC()) - nextUpEngagementWindowMS
+	// One read transaction keeps every page on the same snapshot, so a report
+	// landing mid-scan cannot shift a row past the OFFSET window.
+	tx, err := s.eventsR.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	engaged := map[MediaID]int64{}
+	for page := 0; page < nextUpScanPages && len(engaged) < nextUpRowLimit; page++ {
+		ids, updatedAt, err := nextUpProgressPageSQL(ctx, tx, profileID, windowStart, page*nextUpRowLimit)
+		if err != nil {
+			return nil, err
+		}
+		if class == "" {
+			return updatedAt, nil
+		}
+		// Only Media the catalog positively places in the class count, so
+		// progress on Media absent from this catalog cannot fill the scan.
+		same := map[MediaID]bool{}
+		if len(ids) > 0 {
+			same, err = s.nextUpClassMatchSQL(ctx, class, ids, true)
+			if err != nil {
+				return nil, err
+			}
+		}
+		for _, id := range ids {
+			if same[id] && len(engaged) < nextUpRowLimit {
+				engaged[id] = updatedAt[id]
+			}
+		}
+		if len(ids) < nextUpRowLimit {
+			break
+		}
+	}
+	return engaged, nil
+}
+
+// nextUpProgressPageSQL reads one nextUpRowLimit page of the Profile's
+// progress rows newer than windowStart, newest first.
+func nextUpProgressPageSQL(ctx context.Context, tx *sql.Tx, profileID ProfileID, windowStart int64, offset int) ([]MediaID, map[MediaID]int64, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT media_id, updated_at_ms
+		FROM playback_progress
+		WHERE profile_id = ? AND updated_at_ms > ?
+		ORDER BY updated_at_ms DESC, media_id
+		LIMIT ? OFFSET ?
+	`, profileID, windowStart, nextUpRowLimit, offset)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	ids := make([]MediaID, 0, nextUpRowLimit)
+	updatedAt := map[MediaID]int64{}
+	for rows.Next() {
+		var mediaID MediaID
+		var at int64
+		if err := rows.Scan(&mediaID, &at); err != nil {
+			return nil, nil, err
+		}
+		ids = append(ids, mediaID)
+		updatedAt[mediaID] = at
+	}
+	return ids, updatedAt, rows.Err()
+}
+
+// nextUpClassMatchSQL reads which of ids (at most engagementChunkSize) the
+// catalog holds in class (same) or in another class (!same). Media absent from
+// the catalog match neither.
+func (s *Store) nextUpClassMatchSQL(ctx context.Context, class MediaClass, ids []MediaID, same bool) (map[MediaID]bool, error) {
 	args := make([]any, 0, len(ids)+1)
 	args = append(args, string(class))
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
+	op := "<>"
+	if same {
+		op = "="
+	}
+	// #nosec G202 -- only a fixed operator and generated placeholders are interpolated; values are bound args.
 	rows, err := s.catalogR.QueryContext(ctx, `
 		SELECT id FROM media
-		WHERE media_class <> ? AND id IN (`+sqlPlaceholders(len(ids))+`)
+		WHERE media_class `+op+` ? AND id IN (`+sqlPlaceholders(len(ids))+`)
 	`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	other := map[MediaID]bool{}
+	matched := map[MediaID]bool{}
 	for rows.Next() {
 		var id MediaID
 		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		other[id] = true
+		matched[id] = true
 	}
-	return other, rows.Err()
+	return matched, rows.Err()
 }
 
 // nextUpWatchedSQL reads which of ids (at most engagementChunkSize) the

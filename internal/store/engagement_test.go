@@ -1139,6 +1139,63 @@ func TestNextUpFiltersByMediaClass(t *testing.T) {
 	}
 }
 
+// TestNextUpClassScanSurvivesOtherClassPlays pins the class-filtered scan
+// (CORE-3331): more recent tracks than one nextUpRowLimit page must not push
+// an older episode out of Up Next.
+func TestNextUpClassScanSurvivesOtherClassPlays(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	registerNextUpContainerKind(t, st)
+	if err := st.UpsertEntity(ctx, widgetEntity("entity-season", "library-local")); err != nil {
+		t.Fatal(err)
+	}
+	episodes := make([]MediaID, 2)
+	for i := range episodes {
+		name := fmt.Sprintf("ep-%d", i)
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: "library-local", Path: "/media/" + name, Title: name,
+			Container: "mp4", Codec: "h264", Class: MediaClassVideo, ContentFingerprint: "sha256:" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		episodes[i] = media.ID
+		order := i + 1
+		if err := st.UpsertEntityRelation(ctx, EntityRelation{
+			FromEntityID: "entity-season", Name: "linked", ToMediaID: media.ID, SortOrder: &order,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustReport(t, st, "profile-default", episodes[0], 120, 120, true)
+	for i := 0; i <= nextUpRowLimit; i++ {
+		name := fmt.Sprintf("tr-%d", i)
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: "library-local", Path: "/music/" + name, Title: name,
+			Container: "mp4", Codec: "aac", Class: MediaClassAudio, ContentFingerprint: "sha256:" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		mustReport(t, st, "profile-default", media.ID, 120, 120, true)
+	}
+	// Age the episode's progress so every track is strictly newer.
+	if _, err := st.eventsW.ExecContext(ctx, `
+		UPDATE playback_progress SET updated_at_ms = updated_at_ms - 60000
+		WHERE profile_id = ? AND media_id = ?
+	`, "profile-default", episodes[0]); err != nil {
+		t.Fatal(err)
+	}
+	items, err := st.SourceItems(ctx, filter, SourceQuery{Kind: "next-up", ProfileID: "profile-default", Value: "video"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != episodes[1] {
+		t.Fatalf("video next-up = %v, want only %q", items, episodes[1])
+	}
+}
+
 // TestNextUpFollowsSeriesSequence pins the audiobook Next in Series shelf: a
 // series orders books by sequence×1000, so book 4.5 sits between 4 and 5,
 // and finishing books 1 and 2 surfaces book 3 (CORE-3013).
