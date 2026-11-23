@@ -64384,6 +64384,13 @@
           }
         },
         {
+          "name": "playerPreviewBinding",
+          "shape": {
+            "type": "string",
+            "optional": true
+          }
+        },
+        {
           "name": "expiresAt",
           "shape": {
             "type": "timestamp"
