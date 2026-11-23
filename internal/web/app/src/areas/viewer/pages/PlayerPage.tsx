@@ -1724,7 +1724,7 @@ function FeaturePlayer({
         <MiniPlayer
           videoRef={videoRef}
           title={stage.title}
-          artist={personLine(stage.credits)}
+          credits={stage.credits}
           artworkURL={stage.artworkURL}
           mediaID={mediaId}
           songScale={songScale}
