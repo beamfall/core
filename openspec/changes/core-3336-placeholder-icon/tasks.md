@@ -1,0 +1,6 @@
+- [x] Pin plugin SDK v0.4.14 and plugin-karaoke v0.1.15
+- [x] A declared plugin icon is the Library's default icon
+- [x] Set `placeholderIcon` on cards, search cards and `media(id)` from the Library plugin's declared icon
+- [x] Store and graph tests for a declaring plugin, a non-declaring plugin and a plugin-less Library
+- [x] Publish the additive client-core-wire minor and regenerate its artifacts
+- [x] Web: the poster glyph prefers a known `placeholderIcon`

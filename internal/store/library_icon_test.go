@@ -51,7 +51,7 @@ func TestDefaultLibraryIcon(t *testing.T) {
 		{"unknown class beside audio", []string{"hologram", "audio"}, LibraryIconNote},
 	}
 	for _, tc := range cases {
-		if got := DefaultLibraryIcon(tc.classes); got != tc.want {
+		if got := DefaultLibraryIcon("", tc.classes); got != tc.want {
 			t.Errorf("%s: DefaultLibraryIcon(%v) = %q, want %q", tc.name, tc.classes, got, tc.want)
 		}
 		if !IsLibraryIcon(tc.want) {
@@ -62,15 +62,15 @@ func TestDefaultLibraryIcon(t *testing.T) {
 
 func TestLibraryEffectiveIcon(t *testing.T) {
 	audio := []string{"audio"}
-	if got := (Library{}).EffectiveIcon(audio); got != LibraryIconNote {
+	if got := (Library{}).EffectiveIcon("", audio); got != LibraryIconNote {
 		t.Fatalf("no choice: EffectiveIcon = %q, want %q", got, LibraryIconNote)
 	}
-	if got := (Library{Icon: LibraryIconHeadphones}).EffectiveIcon(audio); got != LibraryIconHeadphones {
+	if got := (Library{Icon: LibraryIconHeadphones}).EffectiveIcon("", audio); got != LibraryIconHeadphones {
 		t.Fatalf("chosen: EffectiveIcon = %q, want %q", got, LibraryIconHeadphones)
 	}
 	// A stored name that a later build no longer knows falls back to the
 	// default instead of reaching clients.
-	if got := (Library{Icon: "spaceship"}).EffectiveIcon(audio); got != LibraryIconNote {
+	if got := (Library{Icon: "spaceship"}).EffectiveIcon("", audio); got != LibraryIconNote {
 		t.Fatalf("stale choice: EffectiveIcon = %q, want %q", got, LibraryIconNote)
 	}
 }
@@ -142,5 +142,24 @@ func TestSetLibraryIcon(t *testing.T) {
 	}
 	if err := st.SetLibraryIcon(ctx, "", LibraryIconTV, now); err == nil {
 		t.Fatal("empty library ID accepted")
+	}
+}
+
+// A Plugin's declared icon (CORE-3336) is the default when it is in the
+// vocabulary; a name outside it falls back to the class default, and an
+// owner's choice still wins.
+func TestDeclaredLibraryIcon(t *testing.T) {
+	audio := []string{"audio"}
+	if got := DefaultLibraryIcon(LibraryIconMic, audio); got != LibraryIconMic {
+		t.Fatalf("declared: DefaultLibraryIcon = %q, want %q", got, LibraryIconMic)
+	}
+	if got := DefaultLibraryIcon("microphone", audio); got != LibraryIconNote {
+		t.Fatalf("unknown declared: DefaultLibraryIcon = %q, want %q", got, LibraryIconNote)
+	}
+	if got := (Library{}).EffectiveIcon(LibraryIconMic, audio); got != LibraryIconMic {
+		t.Fatalf("no choice: EffectiveIcon = %q, want %q", got, LibraryIconMic)
+	}
+	if got := (Library{Icon: LibraryIconStar}).EffectiveIcon(LibraryIconMic, audio); got != LibraryIconStar {
+		t.Fatalf("chosen: EffectiveIcon = %q, want %q", got, LibraryIconStar)
 	}
 }

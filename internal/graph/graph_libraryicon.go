@@ -10,18 +10,18 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
-// libraryMediaClasses returns the media classes the Library's bound plugin
-// declares, or nil for a Library with no plugin or an unregistered one. It is
-// the only input to a Library's default icon.
-func (h *Handler) libraryMediaClasses(library store.Library) []string {
+// libraryIconBasis returns what a Library's default icon comes from: the icon
+// its bound plugin declares and the media classes it declares, or zero values
+// for a Library with no plugin or an unregistered one.
+func (h *Handler) libraryIconBasis(library store.Library) (string, []string) {
 	if library.PluginID == nil || h.plugins == nil {
-		return nil
+		return "", nil
 	}
 	bundle, ok := h.plugins.Bundle(plugin.ID(*library.PluginID))
 	if !ok {
-		return nil
+		return "", nil
 	}
-	return bundle.MediaClasses
+	return bundle.LibraryDefaults.Icon, bundle.MediaClasses
 }
 
 // pluginImageRule returns the scan image rule for a registered plugin's

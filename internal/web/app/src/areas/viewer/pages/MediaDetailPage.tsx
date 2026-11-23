@@ -411,6 +411,7 @@ export function MediaDetailPage() {
             <DetailPoster
               url={poster}
               mediaClass={card?.mediaClass}
+              placeholderIcon={card?.placeholderIcon ?? media?.placeholderIcon}
               wide={!!still}
               edit={
                 canEditArtwork && !still && mediaId
@@ -887,11 +888,14 @@ function DetailOverview({ text }: { text: string }) {
 function DetailPoster({
   url,
   mediaClass,
+  placeholderIcon,
   wide = false,
   edit,
 }: {
   url: string;
   mediaClass?: string;
+  /** The plugin-declared icon for an artless item (CORE-3336). */
+  placeholderIcon?: string;
   wide?: boolean;
   /** Offered to viewers who may edit metadata (CORE-2933). */
   edit?: { mediaID: string; title: string; onChanged: () => void };
@@ -904,7 +908,7 @@ function DetailPoster({
     <div className={`${frame} bf-detail-poster`}>
       {/* Keyed by URL so a new poster resets the failed state, while the
           edit control keeps its focus across the reload a pin triggers. */}
-      <PosterArt key={url} url={url} mediaClass={mediaClass} wide={wide} />
+      <PosterArt key={url} url={url} mediaClass={mediaClass} icon={placeholderIcon} wide={wide} />
       {edit && (
         <>
           <button
@@ -934,7 +938,17 @@ function DetailPoster({
   );
 }
 
-function PosterArt({ url, mediaClass, wide }: { url: string; mediaClass?: string; wide: boolean }) {
+function PosterArt({
+  url,
+  mediaClass,
+  icon,
+  wide,
+}: {
+  url: string;
+  mediaClass?: string;
+  icon?: string;
+  wide: boolean;
+}) {
   const [failed, setFailed] = useState(false);
   return url && !failed ? (
     <img
@@ -947,7 +961,7 @@ function PosterArt({ url, mediaClass, wide }: { url: string; mediaClass?: string
     />
   ) : (
     // The same glyph a card draws when it has no artwork.
-    <PosterGlyph mediaClass={mediaClass} />
+    <PosterGlyph mediaClass={mediaClass} icon={icon} />
   );
 }
 

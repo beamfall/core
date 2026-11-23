@@ -164,6 +164,11 @@ export interface SourceItem {
    * queues its siblings after it (CORE-3147). Absent means it may queue.
    */
   playsAlone?: boolean;
+  /**
+   * A Library icon name (CORE-1200 vocabulary) the item's plugin declares for
+   * artless items, drawn in place of the media-class glyph (CORE-3336).
+   */
+  placeholderIcon?: string;
   /** Who made an audio Media item: its person-archetype Entities' titles (CORE-2362). */
   byline?: string[];
   /**
@@ -329,6 +334,8 @@ export interface GenericMediaInfo {
   mediaClass?: string;
   /** Plays on its own: no sibling queue follows it (CORE-3147); media(id) only. */
   playsAlone?: boolean;
+  /** The plugin-declared icon for an artless item (CORE-3336); media(id) only. */
+  placeholderIcon?: string;
   /**
    * The owning Library, for the readable address (CORE-2329); only the
    * media(id) read fills it, and a server that predates it omits it.

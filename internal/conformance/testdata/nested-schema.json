@@ -1006,6 +1006,11 @@
         ]
       },
       {
+        "name": "placeholderIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "playsAlone",
         "kind": "scalar",
         "optional": true
@@ -1590,6 +1595,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "placeholderIcon",
         "kind": "scalar",
         "optional": true
       },
@@ -5711,6 +5721,11 @@
         ]
       },
       {
+        "name": "placeholderIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "playsAlone",
         "kind": "scalar",
         "optional": true
@@ -7543,6 +7558,11 @@
                     "optional": true
                   },
                   {
+                    "name": "placeholderIcon",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "playsAlone",
                     "kind": "scalar",
                     "optional": true
@@ -7744,6 +7764,11 @@
                 },
                 {
                   "name": "muted",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "placeholderIcon",
                   "kind": "scalar",
                   "optional": true
                 },
@@ -8040,6 +8065,11 @@
                   "optional": true
                 },
                 {
+                  "name": "placeholderIcon",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
                   "name": "playsAlone",
                   "kind": "scalar",
                   "optional": true
@@ -8241,6 +8271,11 @@
               },
               {
                 "name": "muted",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "placeholderIcon",
                 "kind": "scalar",
                 "optional": true
               },
@@ -8721,6 +8756,11 @@
             ]
           },
           {
+            "name": "placeholderIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
             "name": "playsAlone",
             "kind": "scalar",
             "optional": true
@@ -9147,6 +9187,11 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "placeholderIcon",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "playsAlone",
@@ -10018,6 +10063,11 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "placeholderIcon",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "playsAlone",
@@ -11770,6 +11820,11 @@
               ]
             },
             {
+              "name": "placeholderIcon",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "playsAlone",
               "kind": "scalar",
               "optional": true
@@ -12037,6 +12092,11 @@
                 "kind": "scalar"
               }
             ]
+          },
+          {
+            "name": "placeholderIcon",
+            "kind": "scalar",
+            "optional": true
           },
           {
             "name": "playsAlone",
@@ -12438,6 +12498,11 @@
               "optional": true
             },
             {
+              "name": "placeholderIcon",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "playsAlone",
               "kind": "scalar",
               "optional": true
@@ -12639,6 +12704,11 @@
           },
           {
             "name": "muted",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "placeholderIcon",
             "kind": "scalar",
             "optional": true
           },
@@ -13177,6 +13247,11 @@
               "optional": true
             },
             {
+              "name": "placeholderIcon",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "playsAlone",
               "kind": "scalar",
               "optional": true
@@ -13378,6 +13453,11 @@
           },
           {
             "name": "muted",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "placeholderIcon",
             "kind": "scalar",
             "optional": true
           },
@@ -14624,6 +14704,11 @@
         ]
       },
       {
+        "name": "placeholderIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "playsAlone",
         "kind": "scalar",
         "optional": true
@@ -14925,6 +15010,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "placeholderIcon",
         "kind": "scalar",
         "optional": true
       },
@@ -15352,6 +15442,11 @@
                 "kind": "scalar"
               }
             ]
+          },
+          {
+            "name": "placeholderIcon",
+            "kind": "scalar",
+            "optional": true
           },
           {
             "name": "playsAlone",
@@ -34680,6 +34775,11 @@
         "optional": true
       },
       {
+        "name": "placeholderIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "playsAlone",
         "kind": "scalar",
         "optional": true
@@ -34961,6 +35061,11 @@
         "optional": true
       },
       {
+        "name": "placeholderIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "playsAlone",
         "kind": "scalar",
         "optional": true
@@ -35165,6 +35270,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "placeholderIcon",
         "kind": "scalar",
         "optional": true
       },
@@ -35501,6 +35611,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "placeholderIcon",
         "kind": "scalar",
         "optional": true
       },
@@ -36278,6 +36393,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "placeholderIcon",
         "kind": "scalar",
         "optional": true
       },
@@ -39408,6 +39528,11 @@
         "optional": true
       },
       {
+        "name": "placeholderIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "playsAlone",
         "kind": "scalar",
         "optional": true
@@ -39619,6 +39744,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "placeholderIcon",
         "kind": "scalar",
         "optional": true
       },
@@ -39926,6 +40056,11 @@
               "optional": true
             },
             {
+              "name": "placeholderIcon",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "playsAlone",
               "kind": "scalar",
               "optional": true
@@ -40164,6 +40299,11 @@
           },
           {
             "name": "muted",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "placeholderIcon",
             "kind": "scalar",
             "optional": true
           },
@@ -42864,6 +43004,11 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "placeholderIcon",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "playsAlone",
@@ -49167,6 +49312,11 @@
         "optional": true
       },
       {
+        "name": "placeholderIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "playsAlone",
         "kind": "scalar",
         "optional": true
@@ -49569,6 +49719,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "placeholderIcon",
         "kind": "scalar",
         "optional": true
       },
@@ -50249,6 +50404,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "placeholderIcon",
         "kind": "scalar",
         "optional": true
       },

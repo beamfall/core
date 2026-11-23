@@ -428,6 +428,25 @@ describe("MediaItemCard player prefetch", () => {
 });
 
 describe("MediaItemCard placeholder glyph (CORE-1492)", () => {
+  it("draws the plugin-declared icon for an artwork-less item (CORE-3336)", () => {
+    const { container } = renderCard({
+      artwork: undefined,
+      mediaClass: "audio",
+      placeholderIcon: "mic",
+    });
+    expect(container.querySelector('.bf-poster-glyph[data-glyph="mic"]')).not.toBeNull();
+    expect(container.querySelector('.bf-poster-glyph[data-glyph="audio"]')).toBeNull();
+  });
+
+  it("falls back to the class glyph for an icon this build does not know (CORE-3336)", () => {
+    const { container } = renderCard({
+      artwork: undefined,
+      mediaClass: "audio",
+      placeholderIcon: "microphone",
+    });
+    expect(container.querySelector('.bf-poster-glyph[data-glyph="audio"]')).not.toBeNull();
+  });
+
   it("draws the audio glyph for an artwork-less audio item", () => {
     const { container } = renderCard({ artwork: undefined, mediaClass: "audio" });
     expect(container.querySelector(".bf-poster img")).toBeNull();
