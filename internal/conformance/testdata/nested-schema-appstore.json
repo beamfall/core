@@ -4657,6 +4657,143 @@
     ]
   },
   {
+    "field": "controlrenderersession",
+    "kind": "object",
+    "children": [
+      {
+        "name": "command",
+        "kind": "scalar"
+      },
+      {
+        "name": "revision",
+        "kind": "scalar"
+      },
+      {
+        "name": "sessionID",
+        "kind": "scalar"
+      },
+      {
+        "name": "snapshot",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "current",
+              "kind": "scalar"
+            },
+            {
+              "name": "deviceID",
+              "kind": "scalar"
+            },
+            {
+              "name": "deviceName",
+              "kind": "scalar"
+            },
+            {
+              "name": "deviceRole",
+              "kind": "scalar"
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "libraryID",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "revision",
+              "kind": "scalar"
+            },
+            {
+              "name": "sessionID",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "transcoding",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "current",
+            "kind": "scalar"
+          },
+          {
+            "name": "deviceID",
+            "kind": "scalar"
+          },
+          {
+            "name": "deviceName",
+            "kind": "scalar"
+          },
+          {
+            "name": "deviceRole",
+            "kind": "scalar"
+          },
+          {
+            "name": "durationSeconds",
+            "kind": "scalar"
+          },
+          {
+            "name": "libraryID",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "positionSeconds",
+            "kind": "scalar"
+          },
+          {
+            "name": "revision",
+            "kind": "scalar"
+          },
+          {
+            "name": "sessionID",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "transcoding",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "status",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "controlsession",
     "kind": "object",
     "children": [
@@ -33153,6 +33290,10 @@
       },
       {
         "name": "positionSeconds",
+        "kind": "scalar"
+      },
+      {
+        "name": "revision",
         "kind": "scalar"
       },
       {

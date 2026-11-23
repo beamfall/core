@@ -496,6 +496,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"collections":                        newFieldHandler("collections", "collections", fieldRead, roleSession, 57),
 	"connectionendpoints":                newFieldHandler("connectionEndpoints", "", fieldRead, roleSession, 104),
 	"consoleconfig":                      newFieldHandler("consoleConfig", "consoleConfig", fieldRead, roleSession|roleAdmin, 66),
+	"controlrenderersession":             newFieldHandler("controlRendererSession", "controlRendererSession", fieldMutation, roleSession, 130),
 	"controlsession":                     newFieldHandler("controlSession", "controlSession", fieldMutation, roleSession, 130),
 	"createapikey":                       newFieldHandler("createApiKey", "createApiKey", fieldMutation, roleSession|roleAdmin, 73),
 	"createapitoken":                     newFieldHandler("createApiToken", "createApiToken", fieldMutation, roleSession|roleAdmin, 79),
@@ -4068,6 +4069,12 @@ func dispatchFieldBlock130(dispatch *fieldDispatchContext) response {
 	if fields["controlsession"] {
 		result, err := h.controlSession(ctx, scope, req)
 		if resp := resolveField(dispatch, "controlsession", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["controlrenderersession"] {
+		result, err := h.controlRendererSession(ctx, scope, req)
+		if resp := resolveField(dispatch, "controlrenderersession", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

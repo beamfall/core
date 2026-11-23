@@ -245,6 +245,11 @@
     "tier": "admin"
   },
   {
+    "field": "controlrenderersession",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "controlsession",
     "effect": "write",
     "tier": "session"

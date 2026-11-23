@@ -74,6 +74,7 @@ var originalScopedFields = []string{
 	"consoleconfig",
 	"capabilitystates",           // POWERTOOLS-9 (ADR-0124 §5): capability runtime-state read
 	"setcapabilityenabled",       // POWERTOOLS-9 (ADR-0124 §5): audited Workflow-capability toggle
+	"controlrenderersession",     // CORE-3309 (ADR-0151 D1-D3, ADR-0240 D3): revision-checked renderer session control
 	"controlsession",             // AV-3 (ADR-0035 §7): cross-device transport mutation
 	"formgroup",                  // AV-4 (ADR-0035 §8): Ambient Group Conductor — form group
 	"joingroup",                  // AV-4 (ADR-0035 §8): join group with calibrated offset+latency
