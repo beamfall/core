@@ -46,6 +46,8 @@ const sessionState = vi.hoisted(() => ({
   isManager: false,
   signedIn: false,
   profileKind: "adult",
+  revealed: false,
+  profiles: [{ id: "p1", name: "Owner", kind: "adult" }],
   manifest: null as unknown,
 }));
 
@@ -56,13 +58,13 @@ vi.mock("@/lib/session", () => ({
           deviceRole: sessionState.isManager ? "manager" : "viewer",
           profileID: "p1",
           profile: sessionState.profileKind,
-          revealed: false,
+          revealed: sessionState.revealed,
         }
       : null,
-    profiles: [{ id: "p1", name: "Owner", kind: "adult" }],
+    profiles: sessionState.profiles,
     manifest: sessionState.manifest,
     isManager: sessionState.isManager,
-    revealed: false,
+    revealed: sessionState.revealed,
     needsEnroll: false,
   }),
 }));
@@ -87,6 +89,8 @@ beforeEach(() => {
   sessionState.isManager = false;
   sessionState.signedIn = false;
   sessionState.profileKind = "adult";
+  sessionState.revealed = false;
+  sessionState.profiles = [{ id: "p1", name: "Owner", kind: "adult" }];
   sessionState.manifest = null;
   delete window.beamfallHost;
 });
@@ -477,6 +481,42 @@ describe("AppShell library sidebar", () => {
       await user.click(screen.getByRole("link", { name: "Space Archive" }));
 
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+
+    it("collapses secondary admin header links into the account menu on phones (CORE-1228)", async () => {
+      const user = userEvent.setup();
+      sessionState.signedIn = true;
+      sessionState.isManager = true;
+      sessionState.revealed = true;
+      sessionState.profiles = [
+        { id: "p1", name: "Owner", kind: "adult" },
+        { id: "p2", name: "Kid", kind: "managed" },
+      ];
+      renderShell();
+
+      const banner = screen.getByRole("banner");
+      expect(within(banner).getByRole("button", { name: "Navigation" })).toBeInTheDocument();
+      expect(within(banner).getByRole("link", { name: /Notifications/ })).toBeInTheDocument();
+      expect(within(banner).queryByRole("link", { name: "Console" })).toBeNull();
+      expect(within(banner).queryByRole("link", { name: /Activity|job running/ })).toBeNull();
+
+      await user.click(within(banner).getByRole("button", { name: "Account menu for Owner" }));
+      expect(screen.getByRole("link", { name: "Switch profile" })).toHaveAttribute(
+        "href",
+        "/profiles",
+      );
+      expect(screen.getByRole("link", { name: "Server console" })).toHaveAttribute(
+        "href",
+        "/console",
+      );
+      expect(screen.getByRole("link", { name: "Manage libraries" })).toHaveAttribute(
+        "href",
+        "/manage",
+      );
+      expect(await screen.findByRole("link", { name: "1 job running" })).toHaveAttribute(
+        "href",
+        "/console/operations",
+      );
     });
   });
 });

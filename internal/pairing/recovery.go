@@ -160,7 +160,11 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 	// Strict mode too, so neither timing nor the counters reveal the mode. The
 	// KDF runs inside the process-wide bound, and the attempt is counted on
 	// both lanes before it runs, so parallel guesses cannot outrun the lanes.
-	err := auth.CheckAdminPassword(ctx, s.store, auth.AdminPasswordAttempt{
+	stamp, err := s.store.AdminCredentialStamp(ctx)
+	if err != nil {
+		return EnrollResponse{}, err
+	}
+	err = auth.CheckAdminPassword(ctx, s.store, auth.AdminPasswordAttempt{
 		Action: adminSignInAttemptAction,
 		Keys:   []string{remoteKey, adminSignInGlobalKey},
 		At:     now,
@@ -176,9 +180,6 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 		return deny()
 	case err != nil:
 		return EnrollResponse{}, err
-	}
-	if s.afterAdminPasswordCheck != nil {
-		s.afterAdminPasswordCheck()
 	}
 	deviceID, err := s.generateID("device")
 	if err != nil {
@@ -198,17 +199,18 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 		Role:       store.DeviceRoleManager,
 		SecretHash: store.HashDeviceSecret(deviceSecret),
 	}
-	// The store reads the mode and the owner in the enrolling transaction, so
-	// a switch to Strict during the password check still refuses. Strict mode
-	// (CORE-1110), no owner and a disabled owner are refused and counted
-	// exactly like a wrong password.
-	expiresAt, err := s.sessionExpiry(ctx, now)
-	if err != nil {
-		return EnrollResponse{}, err
+	// The store reads the mode, the owner and the session/admin timeouts in
+	// the enrolling transaction, so a switch to Strict or a timeout change
+	// during sign-in cannot be overtaken. Strict mode (CORE-1110), no owner
+	// and a disabled owner are refused and counted exactly like a wrong
+	// password. Because the admin password just verified, the new session
+	// starts with an active Admin Session window (CORE-1157).
+	if s.afterAdminPasswordCheck != nil {
+		s.afterAdminPasswordCheck()
 	}
-	session, err := s.store.EnrollAdminSignInDevice(ctx, device, store.SessionID(sessionID), expiresAt)
+	session, err := s.store.EnrollAdminSignInDevice(ctx, device, store.SessionID(sessionID), now, stamp)
 	switch {
-	case errors.Is(err, store.ErrAdminSignInOff), errors.Is(err, store.ErrNoOwnerProfile), errors.Is(err, store.ErrProfileDisabled):
+	case errors.Is(err, store.ErrAdminSignInOff), errors.Is(err, store.ErrAdminPasswordMismatch), errors.Is(err, store.ErrNoOwnerProfile), errors.Is(err, store.ErrProfileDisabled):
 		return deny()
 	case err != nil:
 		return EnrollResponse{}, err
@@ -222,6 +224,13 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 		ProfileID:  session.ProfileID,
 		TargetType: "device",
 		TargetID:   string(device.ID),
+	})
+	_ = s.store.AppendActivity(ctx, store.ActivityEntry{
+		OccurredAt: now.UTC(),
+		Action:     store.ActivityAdminLogin,
+		SessionID:  session.ID,
+		DeviceID:   device.ID,
+		ProfileID:  session.ProfileID,
 	})
 	return EnrollResponse{
 		DeviceID:         string(device.ID),

@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"syscall"
+	"unicode/utf8"
+
+	"golang.org/x/net/idna"
+	"golang.org/x/net/publicsuffix"
 )
 
 // vetURL enforces the ADR-0012 §9 pre-dial rules: https only, no literal IP
@@ -104,18 +109,96 @@ func SameOrigin(a, b string) bool {
 	return normalizedRedirectOrigin(ua) == normalizedRedirectOrigin(ub)
 }
 
-func normalizedRedirectOrigin(u *url.URL) string {
-	scheme := strings.ToLower(u.Scheme)
-	hostname := strings.ToLower(u.Hostname())
-	port := u.Port()
-	if port == "" {
-		switch scheme {
-		case "https":
-			port = "443"
-		case "http":
-			port = "80"
+// SameSite reports whether two absolute http(s) URLs share a schemeful site:
+// either the same normalized origin, or the same scheme and registrable domain
+// (eTLD+1) for non-IP hostnames. Unparseable URLs, scheme mismatches, IP
+// literals on different origins, and hosts without a registrable domain on
+// different origins fail closed.
+func SameSite(a, b string) bool {
+	ua, err := url.Parse(a)
+	if err != nil || ua.Hostname() == "" {
+		return false
+	}
+	ub, err := url.Parse(b)
+	if err != nil || ub.Hostname() == "" {
+		return false
+	}
+	schemeA := strings.ToLower(ua.Scheme)
+	schemeB := strings.ToLower(ub.Scheme)
+	if schemeA != schemeB || (schemeA != "https" && schemeA != "http") {
+		return false
+	}
+	hostA := ua.Hostname()
+	hostB := ub.Hostname()
+	ipA, errA := netip.ParseAddr(hostA)
+	ipB, errB := netip.ParseAddr(hostB)
+	if errA == nil || errB == nil {
+		return errA == nil && errB == nil && ipA == ipB && effectivePort(schemeA, ua.Port()) == effectivePort(schemeB, ub.Port())
+	}
+	asciiA, okA := transportHost(hostA)
+	asciiB, okB := transportHost(hostB)
+	if !okA || !okB {
+		return false
+	}
+	if _, err := netip.ParseAddr(asciiA); err == nil {
+		return false
+	}
+	if _, err := netip.ParseAddr(asciiB); err == nil {
+		return false
+	}
+	if asciiA == asciiB && effectivePort(schemeA, ua.Port()) == effectivePort(schemeB, ub.Port()) {
+		return true
+	}
+	siteA, err := publicsuffix.EffectiveTLDPlusOne(asciiA)
+	if err != nil || siteA == "" {
+		return false
+	}
+	siteB, err := publicsuffix.EffectiveTLDPlusOne(asciiB)
+	if err != nil || siteB == "" {
+		return false
+	}
+	return siteA == siteB
+}
+
+func effectivePort(scheme, port string) string {
+	if port != "" {
+		return port
+	}
+	switch scheme {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	}
+	return ""
+}
+
+// transportHost returns the host name the HTTP transport dials: ASCII names
+// as given (lowercased), others through IDNA lookup. Lowercasing a non-ASCII
+// name first would disagree with the transport (U+0130 lowercases to "i", but
+// IDNA maps it to "i" plus a combining dot), so two names that compare equal
+// here could reach different hosts.
+func transportHost(host string) (string, bool) {
+	for i := 0; i < len(host); i++ {
+		if host[i] >= utf8.RuneSelf {
+			ascii, err := idna.Lookup.ToASCII(host)
+			if err != nil || ascii == "" {
+				return "", false
+			}
+			return strings.ToLower(ascii), true
 		}
 	}
+	return strings.ToLower(host), host != ""
+}
+
+func normalizedRedirectOrigin(u *url.URL) string {
+	scheme := strings.ToLower(u.Scheme)
+	hostname, ok := transportHost(u.Hostname())
+	if !ok {
+		// Unresolvable names never match another origin.
+		hostname = "\x00invalid:" + u.Hostname()
+	}
+	port := effectivePort(scheme, u.Port())
 	return scheme + "://" + net.JoinHostPort(hostname, port)
 }
 

@@ -51,12 +51,21 @@ type OriginOpener interface {
 	OpenOriginRange(ctx context.Context, rawURL, rangeHeader string) (scrape.OriginResponse, error)
 }
 
+// OriginAuthOpener extends OriginOpener with an optional upstream Authorization
+// header for authenticated feed enclosures. Satisfied by *scrape.Engine.
+type OriginAuthOpener interface {
+	OriginOpener
+	OpenOriginRangeAuth(ctx context.Context, rawURL, rangeHeader, authHeader string) (scrape.OriginResponse, error)
+}
+
 // Stream is the server-only record of one provisional play: the origin URL to
-// range (never persisted, never client-visible), the in-progress tee path, and
-// the final archive path promotion moves the completed copy into. archiveDir is
-// derived once at Register time.
+// range (never persisted, never client-visible), the optional upstream
+// Authorization header (in memory only, never persisted, never logged), the
+// in-progress tee path, and the final archive path promotion moves the
+// completed copy into. archiveDir is derived once at Register time.
 type stream struct {
 	originURL       string
+	authHeader      string
 	teePath         string
 	teeRelative     string
 	archivePath     string
@@ -66,6 +75,7 @@ type stream struct {
 
 type streamSlot struct {
 	current     *stream
+	guid        string
 	owner       bool
 	registering bool
 	changed     chan struct{}
@@ -205,9 +215,31 @@ type Registration struct {
 	// OriginURL is the enclosure to range. Server-only secret: never persisted,
 	// never returned to a client, never logged.
 	OriginURL string
+	// FeedURL scopes AuthHeader: an origin on a different host receives
+	// AuthHeader only when schemeful same-site with FeedURL.
+	FeedURL string
+	// AuthHeader is the Subscription's upstream Authorization header value.
+	// Server-only secret: held in memory, never persisted, never returned to a
+	// client, never logged.
+	AuthHeader string
 	// ArchivePath is where the completed copy is promoted in place; the tee
 	// writes to "<ArchivePath>.partial" until completion.
 	ArchivePath string
+}
+
+func scopedOriginAuth(feedURL, originURL, authHeader string) string {
+	if strings.TrimSpace(authHeader) == "" || !scrape.SameSite(feedURL, originURL) {
+		return ""
+	}
+	return authHeader
+}
+
+func subscriptionStreamID(guid string) store.SubscriptionID {
+	id, _, ok := strings.Cut(guid, "\x00")
+	if !ok {
+		return ""
+	}
+	return store.SubscriptionID(id)
 }
 
 // Register materializes the provisional Media (store.CreateProvisionalMedia)
@@ -236,6 +268,7 @@ func (s *Service) Register(ctx context.Context, reg Registration) (store.MediaID
 	teeRelative := archiveRelative + ".partial"
 	teePath := archivePath + ".partial"
 	stableID := store.ProvisionalMediaID(reg.LibraryID, reg.GUID)
+	subID := subscriptionStreamID(reg.GUID)
 
 	// A promotion owner pins its generation until the store CAS completes. Wait
 	// briefly for the common completion case, but never for the whole stream.
@@ -246,6 +279,12 @@ func (s *Service) Register(ctx context.Context, reg Registration) (store.MediaID
 	var observed *stream
 	for {
 		s.mu.Lock()
+		if subID != "" {
+			if _, err := s.store.Subscription(ctx, subID); err != nil {
+				s.mu.Unlock()
+				return "", err
+			}
+		}
 		slot = s.slots[stableID]
 		if slot == nil {
 			slot = &streamSlot{changed: make(chan struct{})}
@@ -253,6 +292,7 @@ func (s *Service) Register(ctx context.Context, reg Registration) (store.MediaID
 		}
 		if !slot.owner && !slot.registering {
 			slot.registering = true
+			slot.guid = reg.GUID
 			observed = slot.current
 			s.mu.Unlock()
 			break
@@ -298,12 +338,24 @@ func (s *Service) Register(ctx context.Context, reg Registration) (store.MediaID
 		s.releaseRegistration(stableID, slot)
 		return "", errors.Join(&RegistrationBusyError{MediaID: stableID}, compensateErr)
 	}
+	if subID != "" {
+		if _, subErr := s.store.Subscription(ctx, subID); subErr != nil {
+			if errors.Is(subErr, store.ErrSubscriptionNotFound) {
+				slot.current = nil
+			}
+			s.mu.Unlock()
+			compensateErr := s.compensateRegistration(ctx, mediaID, teePath, previousPath)
+			s.releaseRegistration(stableID, slot)
+			return "", errors.Join(subErr, compensateErr)
+		}
+	}
 	generation := uint64(1)
 	if slot.current != nil {
 		generation = slot.current.generation + 1
 	}
 	slot.current = &stream{
 		originURL:       reg.OriginURL,
+		authHeader:      scopedOriginAuth(reg.FeedURL, reg.OriginURL, reg.AuthHeader),
 		teePath:         teePath,
 		teeRelative:     teeRelative,
 		archivePath:     archivePath,
@@ -329,7 +381,8 @@ func (s *Service) Register(ctx context.Context, reg Registration) (store.MediaID
 // ArchivePath is chosen beneath the archive root from the Media ID.
 func (s *Service) EnsureRegistered(ctx context.Context, reg Registration) (store.MediaID, error) {
 	stableID := store.ProvisionalMediaID(reg.LibraryID, reg.GUID)
-	if current, ok := s.lookup(stableID); ok && current.originURL == reg.OriginURL {
+	authHeader := scopedOriginAuth(reg.FeedURL, reg.OriginURL, reg.AuthHeader)
+	if current, ok := s.lookup(stableID); ok && current.originURL == reg.OriginURL && current.authHeader == authHeader {
 		return stableID, nil
 	}
 	if reg.ArchivePath == "" {
@@ -339,11 +392,29 @@ func (s *Service) EnsureRegistered(ctx context.Context, reg Registration) (store
 	var busy *RegistrationBusyError
 	if errors.As(err, &busy) {
 		// A promotion still owns the slot; the stream it holds keeps serving.
-		if _, ok := s.lookup(stableID); ok {
+		if current, ok := s.lookup(stableID); ok && current.originURL == reg.OriginURL && current.authHeader == authHeader {
 			return stableID, nil
 		}
 	}
 	return mediaID, err
+}
+
+// RevokeSubscription drops every in-memory proxy registration (and cached
+// upstream credential) belonging to id so an unexpired Stream Token cannot
+// continue fetching with cached credentials after the Subscription is removed.
+func (s *Service) RevokeSubscription(id store.SubscriptionID) {
+	if id == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for mediaID, slot := range s.slots {
+		if slot == nil || subscriptionStreamID(slot.guid) != id {
+			continue
+		}
+		delete(s.slots, mediaID)
+		close(slot.changed)
+	}
 }
 
 // archivePathFor names a stream's archive copy: one file per Media ID directly
@@ -483,7 +554,7 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 		defer func() { s.releasePromotion(grant.MediaID, st.generation, promoted) }()
 	}
 
-	origin, err := s.origin.OpenOriginRange(r.Context(), st.originURL, r.Header.Get("Range"))
+	origin, err := s.openOrigin(r.Context(), st, r.Header.Get("Range"))
 	if err != nil {
 		// Never echo the origin URL or its error verbatim (it can carry feed
 		// credentials) — OpenOriginRange already sanitised it, but keep the
@@ -681,6 +752,17 @@ func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream
 		return false, errors.Join(err, s.rollbackPromotion(st, expected))
 	}
 	return true, nil
+}
+
+func (s *Service) openOrigin(ctx context.Context, st *stream, rangeHeader string) (scrape.OriginResponse, error) {
+	if st.authHeader != "" {
+		opener, ok := s.origin.(OriginAuthOpener)
+		if !ok {
+			return scrape.OriginResponse{}, errors.New("authenticated origin opener unavailable")
+		}
+		return opener.OpenOriginRangeAuth(ctx, st.originURL, rangeHeader, st.authHeader)
+	}
+	return s.origin.OpenOriginRange(ctx, st.originURL, rangeHeader)
 }
 
 func (s *Service) validatePublication(relative string, expected os.FileInfo, promoted *os.File) error {

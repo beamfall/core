@@ -366,4 +366,43 @@ describe("See All rendering contract", () => {
     expect(fetchHomeLibraries).toHaveBeenCalledTimes(2);
     expect(fetchSectionItems).toHaveBeenCalledTimes(1);
   });
+
+  it("mounts only the on-screen rows of a long non-Home See All grid on a tall viewport", async () => {
+    const many = Array.from<unknown, SourceItem>({ length: 200 }, (_, index) => ({
+      id: `media-${index}`,
+      kind: "media",
+      title: `Item ${index}`,
+      artwork: { poster: "" },
+    }));
+    vi.stubGlobal("innerHeight", 2500);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.classList.contains("bf-grid")) return { top: 0 } as DOMRect;
+      return { height: 200 } as DOMRect;
+    });
+    vi.mocked(fetchSectionItems)
+      .mockResolvedValueOnce(many.slice(0, 60))
+      .mockResolvedValueOnce(many.slice(60, 120))
+      .mockResolvedValueOnce(many.slice(120, 180))
+      .mockResolvedValueOnce(many.slice(180, 200));
+    const user = userEvent.setup();
+    renderSeeAll(context);
+
+    await screen.findByRole("link", { name: "Item 0" });
+    const grid = screen.getByRole("list");
+    grid.style.gridTemplateColumns = "110px ".repeat(12).trim();
+    grid.style.rowGap = "20px";
+    for (let page = 0; page < 3; page += 1) {
+      await user.click(screen.getByRole("button", { name: "Load more" }));
+    }
+    await waitFor(() => expect(fetchSectionItems).toHaveBeenCalledTimes(4));
+    fireEvent.resize(window);
+
+    await waitFor(() => {
+      const cards = document.querySelectorAll(".bf-card");
+      expect(cards.length).toBe(144); // 12 on-screen rows, not all 200 cards
+      expect(document.querySelector(".bf-grid-spacer")).not.toBeNull();
+    });
+  }, 15_000);
 });

@@ -142,19 +142,98 @@ describe("ServerActivity", () => {
     expect(fetchJobs).toHaveBeenCalledTimes(3);
   });
 
-  // CORE-2318: without an Admin Session the header must not ask for jobs the
-  // server refuses; it reads only the session's standing at the slow cadence.
-  it("reads no jobs while the Admin Session is inactive", async () => {
+  // CORE-2318, CORE-1157: without an Admin Session the header must neither ask
+  // for jobs the server refuses nor offer an Activity link to a locked view; it
+  // reads only the session's standing at the slow cadence.
+  it("hides the activity link and reads no jobs while the Admin Session is inactive", async () => {
     vi.mocked(fetchAdminSession).mockResolvedValue({ active: false });
     renderActivity();
     await advance(0);
     expect(fetchAdminSession).toHaveBeenCalledTimes(1);
     expect(fetchJobs).not.toHaveBeenCalled();
-    expect(screen.getByRole("link", { name: "Activity" })).toBeInTheDocument();
+    expect(screen.queryByRole("link")).toBeNull();
 
     await advance(30000);
     expect(fetchAdminSession).toHaveBeenCalledTimes(2);
     expect(fetchJobs).not.toHaveBeenCalled();
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("hides the activity link when the 15-minute Admin Session expires", async () => {
+    vi.setSystemTime(new Date("2026-11-22T12:00:00Z"));
+    // Expires 10s past the 30th idle poll, so expiry lands mid-interval.
+    const expiresAt = "2026-11-22T12:15:10Z";
+    vi.mocked(fetchAdminSession).mockImplementation(async () =>
+      Date.now() < Date.parse(expiresAt) ? { active: true, expiresAt } : { active: false },
+    );
+    renderActivity();
+    await advance(0);
+    expect(screen.getByRole("link", { name: "Activity" })).toHaveAttribute(
+      "href",
+      "/console/operations",
+    );
+
+    await advance(15 * 60_000 + 9_000);
+    expect(screen.getByRole("link", { name: "Activity" })).toBeInTheDocument();
+
+    await advance(1_000);
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("hides the activity link at the known expiry without waiting for the session check", async () => {
+    vi.setSystemTime(new Date("2026-11-22T12:00:00Z"));
+    const expiresAt = "2026-11-22T12:00:10Z";
+    let release: (v: { active: boolean }) => void = () => {};
+    vi.mocked(fetchAdminSession)
+      .mockResolvedValueOnce({ active: true, expiresAt })
+      .mockImplementationOnce(() => new Promise((r) => (release = r)));
+    renderActivity();
+    await advance(0);
+    expect(screen.getByRole("link", { name: "Activity" })).toBeInTheDocument();
+
+    await advance(10_000);
+    expect(fetchAdminSession).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("link")).toBeNull();
+    release({ active: false });
+  });
+
+  it("hides the activity link at the known expiry while a jobs read is still pending", async () => {
+    vi.setSystemTime(new Date("2026-11-22T12:00:00Z"));
+    vi.mocked(fetchAdminSession).mockResolvedValueOnce({
+      active: true,
+      expiresAt: "2026-11-22T12:00:40Z",
+    });
+    renderActivity();
+    await advance(0);
+    expect(screen.getByRole("link", { name: "Activity" })).toBeInTheDocument();
+
+    vi.mocked(fetchJobs).mockImplementationOnce(() => new Promise(() => {}));
+    await advance(30_000);
+    expect(fetchJobs).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("link", { name: "Activity" })).toBeInTheDocument();
+    await advance(10_000);
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("keeps hiding the activity link at the known expiry when a rescan restarts the poll before it", async () => {
+    vi.setSystemTime(new Date("2026-11-22T12:00:00Z"));
+    vi.mocked(fetchAdminSession).mockResolvedValueOnce({
+      active: true,
+      expiresAt: "2026-11-22T12:00:10Z",
+    });
+    const view = renderActivity();
+    await advance(0);
+    expect(screen.getByRole("link", { name: "Activity" })).toBeInTheDocument();
+
+    await advance(5_000);
+    vi.mocked(fetchAdminSession).mockImplementation(() => new Promise(() => {}));
+    rescan.active = true;
+    view.rerender(activity());
+    await advance(0);
+    expect(fetchAdminSession).toHaveBeenCalledTimes(2);
+
+    await advance(5_000);
+    expect(screen.queryByRole("link")).toBeNull();
   });
 
   it("trusts a known Admin Session until a jobs read is refused", async () => {
@@ -171,5 +250,21 @@ describe("ServerActivity", () => {
     await advance(30000);
     expect(fetchAdminSession).toHaveBeenCalledTimes(2);
     expect(fetchJobs).toHaveBeenCalledTimes(3);
+  });
+
+  it("renders a full-label account menu item when menuItem is set", async () => {
+    vi.mocked(fetchJobs).mockResolvedValue([job("running"), job("running")]);
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/console/operations"]}>
+          <ServerActivity menuItem />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    await advance(0);
+    const link = screen.getByRole("link", { name: "2 jobs running" });
+    expect(link).toHaveClass("bf-account-item");
+    expect(link).toHaveAttribute("href", "/console/operations");
+    expect(link).toHaveAttribute("aria-current", "page");
   });
 });

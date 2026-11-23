@@ -167,11 +167,56 @@ func TestSameOrigin(t *testing.T) {
 		{"https://feeds.example.com/a.xml", "https://feeds.example.com.evil.test/1.mp3", false},
 		{"https://feeds.example.com/a.xml", "/relative/1.mp3", false},
 		{"https://feeds.example.com/a.xml", "://bad", false},
+		{"https://ixample.com/a.xml", "https://\u0130xample.com/1.mp3", false},
+		{"https://\u0130xample.com/a.xml", "https://\u0130XAMPLE.com/1.mp3", true},
+		{"https://ab--cdn.example.com/a.xml", "https://ab--cdn.example.com/1.mp3", true},
 		{"", "", false},
 	}
 	for _, tc := range cases {
 		if got := SameOrigin(tc.a, tc.b); got != tc.want {
 			t.Errorf("SameOrigin(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
+func TestSameSite(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"https://feeds.example.com/a.xml", "https://feeds.example.com/files/1.mp3", true},
+		{"https://feeds.example.com/a.xml", "https://cdn.example.com/files/1.mp3", true},
+		{"https://example.com/a.xml", "https://sub.cdn.example.com/files/1.mp3", true},
+		{"https://FEEDS.EXAMPLE.TEST/a.xml", "https://cdn.example.test/files/1.mp3", true},
+		{"https://feeds.a.co.uk/a.xml", "https://cdn.a.co.uk/files/1.mp3", true},
+		{"https://feeds.a.github.io/a.xml", "https://cdn.a.github.io/files/1.mp3", true},
+		{"http://127.0.0.1:8080/feed", "http://127.0.0.1:8080/file", true},
+		{"http://127.0.0.1:8080/feed", "http://127.0.0.1:8081/file", false},
+		{"http://127.0.0.1:8080/feed", "http://[::1]:8080/file", false},
+		{"https://feeds.example.com/a.xml", "https://cdn.other.com/files/1.mp3", false},
+		{"https://feeds.example.com/a.xml", "https://feeds.example.com.evil.test/files/1.mp3", false},
+		{"https://a.co.uk/a.xml", "https://b.co.uk/files/1.mp3", false},
+		{"https://a.github.io/a.xml", "https://b.github.io/files/1.mp3", false},
+		{"https://a.公司.cn/a.xml", "https://b.公司.cn/files/1.mp3", false},
+		{"https://a.公司.cn/a.xml", "https://b.xn--55qx5d.cn/files/1.mp3", false},
+		{"https://feeds.example.公司.cn/a.xml", "https://cdn.example.公司.cn/files/1.mp3", true},
+		{"https://feeds.example.公司.cn/a.xml", "https://cdn.example.xn--55qx5d.cn/files/1.mp3", true},
+		{"https://feeds.example.公司.cn/a.xml", "https://cdn.example.XN--55QX5D.CN/files/1.mp3", true},
+		{"https://feeds.ixample.com/a.xml", "https://cdn.\u0130xample.com/files/1.mp3", false},
+		{"https://ixample.com/a.xml", "https://\u0130xample.com/files/1.mp3", false},
+		{"https://feeds.\u0130xample.com/a.xml", "https://cdn.\u0130xample.com/files/1.mp3", true},
+		{"https://localhost:8443/a.xml", "https://LOCALHOST:8443/1.mp3", true},
+		{"https://ab--cdn.example.com/a.xml", "https://ab--cdn.example.com/1.mp3", true},
+		{"https://ab--feeds.example.com/a.xml", "https://cdn.example.com/1.mp3", true},
+		{"https://feeds.example.com/a.xml", "http://cdn.example.com/files/1.mp3", false},
+		{"file:///feeds/a.xml", "file:///feeds/1.mp3", false},
+		{"https://localhost:8443/a.xml", "https://localhost:9443/1.mp3", false},
+		{"https://feeds.example.com/a.xml", "/relative/1.mp3", false},
+		{"", "", false},
+	}
+	for _, tc := range cases {
+		if got := SameSite(tc.a, tc.b); got != tc.want {
+			t.Errorf("SameSite(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
 		}
 	}
 }

@@ -2,9 +2,10 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
 import {
+  createLibrary,
   deleteLibrary,
   fetchFolderTree,
   fetchJobs,
@@ -14,6 +15,7 @@ import {
   setLibraryRoots,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import { setManifestRefresher } from "@/lib/manifestRefresh";
 import { LibrariesPage } from "./LibrariesPage";
 
 class ResizeObserverStub {
@@ -44,9 +46,15 @@ vi.mock("@/lib/graphql", () => ({
 }));
 
 describe("LibrariesPage folder tree", () => {
+  let refreshed: ReturnType<typeof vi.fn<() => void>>;
+
+  afterEach(() => setManifestRefresher());
+
   beforeEach(() => {
     vi.clearAllMocks();
     resetRescansForTest();
+    refreshed = vi.fn();
+    setManifestRefresher(refreshed);
     vi.mocked(fetchLibraries).mockResolvedValue([
       {
         id: "library-1",
@@ -295,5 +303,67 @@ describe("LibrariesPage folder tree", () => {
     expect(first).toHaveFocus();
 
     expect(screen.getAllByRole("treeitem").filter((item) => item.tabIndex === 0)).toHaveLength(1);
+  });
+
+  it("creates a library, requests a manifest refresh, and reloads the list", async () => {
+    const existing = {
+      id: "library-1",
+      title: "Library",
+      pluginID: null,
+      roots: ["/media"],
+      previewClips: true,
+      restricted: false,
+    };
+    const created = {
+      id: "library-2",
+      title: "Music",
+      pluginID: null,
+      roots: [],
+      previewClips: true,
+      restricted: false,
+    };
+    vi.mocked(fetchLibraries)
+      .mockResolvedValueOnce([existing])
+      .mockResolvedValue([existing, created]);
+    vi.mocked(createLibrary).mockResolvedValue({
+      id: created.id,
+      title: created.title,
+      pluginID: created.pluginID,
+    });
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrariesPage renameEnabled />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Library" });
+    await user.type(screen.getByLabelText("Title"), "Music");
+    await user.click(screen.getByRole("button", { name: "Create Library" }));
+
+    await waitFor(() => expect(createLibrary).toHaveBeenCalledWith("Music", null));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("heading", { name: "Music" })).toBeInTheDocument();
+  });
+
+  it("shows the error and does not refresh the manifest when library creation fails", async () => {
+    vi.mocked(createLibrary).mockRejectedValueOnce(new Error("duplicate library"));
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrariesPage renameEnabled />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Library" });
+    await user.type(screen.getByLabelText("Title"), "Music");
+    await user.click(screen.getByRole("button", { name: "Create Library" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("duplicate library");
+    expect(refreshed).not.toHaveBeenCalled();
   });
 });

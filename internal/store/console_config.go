@@ -346,6 +346,40 @@ func (s *Store) ConsoleConfigWithDefaults(ctx context.Context, defaults ConsoleC
 	return cfg, nil
 }
 
+// sessionConfigTx reads the session and Admin Session lifetimes inside tx,
+// applying their defaults when absent or invalid so an enrolling transaction
+// stamps the same lifetimes that committed config changes wrote before it.
+func sessionConfigTx(ctx context.Context, tx *sql.Tx) (ConsoleConfig, error) {
+	cfg := ConsoleConfig{
+		SessionLifetimeDays: DefaultSessionLifetimeDays,
+		AdminSessionMinutes: DefaultAdminSessionMinutes,
+	}
+	rows, err := tx.QueryContext(ctx,
+		`SELECT key, value FROM server_config WHERE key IN (?, ?)`,
+		configSessionLifetimeDays, configAdminSessionMinutes)
+	if err != nil {
+		return ConsoleConfig{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var key, raw string
+		if err := rows.Scan(&key, &raw); err != nil {
+			return ConsoleConfig{}, err
+		}
+		switch key {
+		case configSessionLifetimeDays:
+			if n, convErr := strconv.Atoi(raw); convErr == nil && validSessionLifetimeDays(n) {
+				cfg.SessionLifetimeDays = n
+			}
+		case configAdminSessionMinutes:
+			if n, convErr := strconv.Atoi(raw); convErr == nil && validAdminSessionMinutes(n) {
+				cfg.AdminSessionMinutes = n
+			}
+		}
+	}
+	return cfg, rows.Err()
+}
+
 // SetConsoleConfig applies a partial console-config write, then returns the
 // resolved config. An out-of-range value is a ValidationError (client-safe).
 func (s *Store) SetConsoleConfig(ctx context.Context, patch ConsoleConfigPatch, now time.Time) (ConsoleConfig, error) {

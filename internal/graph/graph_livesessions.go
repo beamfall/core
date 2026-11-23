@@ -156,6 +156,8 @@ func (h *Handler) endPlayback(ctx context.Context, scope auth.Scope, req request
 		return err
 	}
 	wait()
+	h.clearPlaybackPaused(scope, store.MediaID(mediaID))
+	h.flushPlaybackInvalidation(ctx, scope)
 	return nil
 }
 

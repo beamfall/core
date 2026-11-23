@@ -154,13 +154,21 @@ func TestSetSignInSecurityModeAsOwnerRechecksTheCaller(t *testing.T) {
 func TestEnrollAdminSignInDeviceRereadsModeAndOwner(t *testing.T) {
 	ctx := context.Background()
 	st := openBackoffStore(t)
-	now := time.Now().UTC()
+	now := time.Now().UTC().Truncate(time.Millisecond)
 	device := func(id DeviceID) Device {
 		return Device{ID: id, Name: "Laptop", Role: DeviceRoleManager, SecretHash: HashDeviceSecret("s")}
 	}
-	expires := now.Add(30 * 24 * time.Hour)
+	expires := now.Add(DefaultSessionLifetimeDays * 24 * time.Hour)
+	adminUntil := now.Add(DefaultAdminSessionMinutes * time.Minute)
+	if err := st.SetAdminPassword(ctx, "correct horse", now); err != nil {
+		t.Fatal(err)
+	}
+	stamp, err := st.AdminCredentialStamp(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if _, err := st.EnrollAdminSignInDevice(ctx, device("device-a"), "session-a", expires); !errors.Is(err, ErrNoOwnerProfile) {
+	if _, err := st.EnrollAdminSignInDevice(ctx, device("device-a"), "session-a", now, stamp); !errors.Is(err, ErrNoOwnerProfile) {
 		t.Fatalf("no owner err = %v, want ErrNoOwnerProfile", err)
 	}
 	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
@@ -169,7 +177,7 @@ func TestEnrollAdminSignInDeviceRereadsModeAndOwner(t *testing.T) {
 	if _, err := st.SetSignInSecurityMode(ctx, SignInSecurityStrict, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.EnrollAdminSignInDevice(ctx, device("device-a"), "session-a", expires); !errors.Is(err, ErrAdminSignInOff) {
+	if _, err := st.EnrollAdminSignInDevice(ctx, device("device-a"), "session-a", now, stamp); !errors.Is(err, ErrAdminSignInOff) {
 		t.Fatalf("strict err = %v, want ErrAdminSignInOff", err)
 	}
 	if _, err := st.Device(ctx, "device-a"); err == nil {
@@ -178,11 +186,52 @@ func TestEnrollAdminSignInDeviceRereadsModeAndOwner(t *testing.T) {
 	if _, err := st.SetSignInSecurityMode(ctx, SignInSecurityHome, now); err != nil {
 		t.Fatal(err)
 	}
-	session, err := st.EnrollAdminSignInDevice(ctx, device("device-a"), "session-a", expires)
-	if err != nil || session.ProfileID != "profile-default" || session.Kind != SessionKindEnrolled {
+	session, err := st.EnrollAdminSignInDevice(ctx, device("device-a"), "session-a", now, stamp)
+	if err != nil || session.ProfileID != "profile-default" || session.Kind != SessionKindEnrolled || !session.ExpiresAt.Equal(expires) || !session.AdminUntil.Equal(adminUntil) {
 		t.Fatalf("home enroll = %+v, %v", session, err)
 	}
-	if got, err := st.Session(ctx, "session-a"); err != nil || got.DeviceID != "device-a" {
+	if got, err := st.Session(ctx, "session-a"); err != nil || got.DeviceID != "device-a" || !got.ExpiresAt.Equal(expires) || !got.AdminUntil.Equal(adminUntil) {
 		t.Fatalf("stored session = %+v, %v", got, err)
+	}
+
+	never := 0
+	if _, err := st.SetConsoleConfig(ctx, ConsoleConfigPatch{SessionLifetimeDays: &never, AdminSessionMinutes: &never}, now); err != nil {
+		t.Fatal(err)
+	}
+	neverSession, err := st.EnrollAdminSignInDevice(ctx, device("device-b"), "session-b", now, stamp)
+	if err != nil || !neverSession.ExpiresAt.Equal(SessionNeverExpires) || !neverSession.AdminUntil.Equal(SessionNeverExpires) {
+		t.Fatalf("never-expire enroll = %+v, %v", neverSession, err)
+	}
+}
+
+// CORE-1157: an admin password reset that lands after sign-in verified the old
+// password, but before enrollment commits, must refuse the enrollment instead
+// of opening a fresh Admin Session with the old credential.
+func TestEnrollAdminSignInDeviceRefusesAfterPasswordReset(t *testing.T) {
+	ctx := context.Background()
+	st := openBackoffStore(t)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAdminPassword(ctx, "old password", now); err != nil {
+		t.Fatal(err)
+	}
+	stamp, err := st.AdminCredentialStamp(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.VerifyAdminPassword(ctx, "old password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAdminPassword(ctx, "new password", now); err != nil {
+		t.Fatal(err)
+	}
+	dev := Device{ID: "device-a", Name: "Laptop", Role: DeviceRoleManager, SecretHash: HashDeviceSecret("s")}
+	if _, err := st.EnrollAdminSignInDevice(ctx, dev, "session-a", now, stamp); !errors.Is(err, ErrAdminPasswordMismatch) {
+		t.Fatalf("enroll after reset err = %v, want ErrAdminPasswordMismatch", err)
+	}
+	if _, err := st.Device(ctx, "device-a"); err == nil {
+		t.Fatal("enrollment after a password reset inserted a device")
 	}
 }

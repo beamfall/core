@@ -32,6 +32,7 @@ import type {
   PathPickerInfo,
 } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { setManifestRefresher } from "@/lib/manifestRefresh";
 import { type SessionState, useSession } from "@/lib/session";
 import { Libraries } from "./Libraries";
 
@@ -106,9 +107,12 @@ function pickerAnswer(path?: string): PathPickerInfo {
 }
 
 describe("Console Libraries scan", () => {
+  let refreshed: ReturnType<typeof vi.fn<() => void>>;
+
   afterEach(() => {
     localStorage.clear();
     setAdvancedSettings(false);
+    setManifestRefresher();
   });
 
   beforeEach(() => {
@@ -116,6 +120,8 @@ describe("Console Libraries scan", () => {
     setAdvancedSettings(true);
     vi.clearAllMocks();
     resetRescansForTest();
+    refreshed = vi.fn();
+    setManifestRefresher(refreshed);
     vi.mocked(fetchLibraries).mockResolvedValue([
       {
         id: "library-1",
@@ -644,6 +650,7 @@ describe("Console Libraries scan", () => {
 
     await waitFor(() => expect(setLibraryRestricted).toHaveBeenCalledWith("library-1", true));
     await waitFor(() => expect(vi.mocked(fetchLibraries).mock.calls.length).toBeGreaterThan(loads));
+    expect(refreshed).toHaveBeenCalledTimes(1);
   });
 
   it("holds the Restricted switch until the session is unlocked (CORE-2463)", async () => {
@@ -672,6 +679,7 @@ describe("Console Libraries scan", () => {
     expect(
       await within(card).findByText("The change was not saved. Try again."),
     ).toBeInTheDocument();
+    expect(refreshed).not.toHaveBeenCalled();
   });
 });
 
@@ -686,6 +694,7 @@ describe("Console Libraries scan", () => {
 // 93 files and 619 tests passed.
 
 describe("Console Libraries add (CORE-1156)", () => {
+  let refreshed: ReturnType<typeof vi.fn<() => void>>;
   const PLUGINS = [
     { id: "filmtv", displayName: "Film & TV" },
     { id: "music", displayName: "Music" },
@@ -695,9 +704,13 @@ describe("Console Libraries add (CORE-1156)", () => {
     { id: "karaoke", displayName: "Karaoke" },
   ];
 
+  afterEach(() => setManifestRefresher());
+
   beforeEach(() => {
     vi.clearAllMocks();
     resetRescansForTest();
+    refreshed = vi.fn();
+    setManifestRefresher(refreshed);
     vi.mocked(fetchLibraries).mockResolvedValue([]);
     vi.mocked(fetchPlugins).mockResolvedValue(PLUGINS);
     vi.mocked(fetchSkipDetectionEnabled).mockResolvedValue([]);
@@ -775,6 +788,7 @@ describe("Console Libraries add (CORE-1156)", () => {
       ]);
     });
     expect(createLibrary).toHaveBeenCalledTimes(1);
+    expect(refreshed).toHaveBeenCalledTimes(1);
     expect(setLibraryRoots).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(scanLibrary).toHaveBeenCalledWith("lib-new", "/media/films");
@@ -828,6 +842,7 @@ describe("Console Libraries add (CORE-1156)", () => {
     expect(screen.getByLabelText("Folder")).toHaveValue("/media/karaoke");
     expect(screen.getByRole("radio", { name: /^Karaoke/ })).toBeChecked();
     expect(scanLibrary).not.toHaveBeenCalled();
+    expect(refreshed).not.toHaveBeenCalled();
   });
 
   it("points to Plugins when no media type is available", async () => {

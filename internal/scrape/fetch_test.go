@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 const ingestTestFeed = `<?xml version="1.0" encoding="UTF-8"?>
@@ -287,6 +288,56 @@ func TestDownloadResourceStreamRedirects(t *testing.T) {
 	}
 	if cdnHits != 1 {
 		t.Fatalf("credentialed redirect reached the other origin (%d hits)", cdnHits)
+	}
+}
+
+func TestOpenOriginRangeAuthSendsAuthorizationAndPinsRedirects(t *testing.T) {
+	var gotAuth, gotRange string
+	otherHits := 0
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otherHits++
+		_, _ = w.Write([]byte("other"))
+	}))
+	defer other.Close()
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotRange = r.Header.Get("Range")
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, other.URL+"/file.mp3", http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		http.ServeContent(w, r, "file.mp3", time.Time{}, strings.NewReader("0123456789"))
+	}))
+	defer origin.Close()
+
+	engine := New(WithInsecureLoopback())
+	resp, err := engine.OpenOriginRangeAuth(context.Background(), origin.URL+"/file.mp3", "bytes=0-3", "Bearer range-secret")
+	if err != nil {
+		t.Fatalf("OpenOriginRangeAuth: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusPartialContent || gotAuth != "Bearer range-secret" || gotRange != "bytes=0-3" {
+		t.Fatalf("status=%d auth=%q range=%q", resp.StatusCode, gotAuth, gotRange)
+	}
+
+	anon, err := engine.OpenOriginRange(context.Background(), origin.URL+"/file.mp3", "")
+	if err != nil {
+		t.Fatalf("OpenOriginRange: %v", err)
+	}
+	_ = anon.Body.Close()
+	if gotAuth != "" {
+		t.Fatalf("OpenOriginRange sent Authorization %q, want empty", gotAuth)
+	}
+
+	if _, err := engine.OpenOriginRangeAuth(context.Background(), origin.URL+"/redirect", "", "Bearer range-secret"); err == nil {
+		t.Fatal("credentialed cross-origin redirect succeeded, want refusal")
+	} else if strings.Contains(err.Error(), "range-secret") {
+		t.Fatalf("redirect error leaked secret: %v", err)
+	}
+	if otherHits != 0 {
+		t.Fatalf("credentialed redirect reached cross-origin target (%d hits)", otherHits)
 	}
 }
 

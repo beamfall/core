@@ -1324,7 +1324,9 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req playback.InfoRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
 		writeDecodeError(w, r, err)
 		return
 	}
@@ -1674,13 +1676,19 @@ func writeErrorCause(w http.ResponseWriter, r *http.Request, status int, message
 }
 
 // writeDecodeError reports a JSON-body decode failure: a body that exceeded the
-// http.MaxBytesReader cap becomes 413 Request Entity Too Large, anything else a
-// generic 400.
+// http.MaxBytesReader cap becomes 413 Request Entity Too Large, an unknown JSON
+// field becomes a 400 naming the field, and anything else becomes a generic 400.
 func writeDecodeError(w http.ResponseWriter, r *http.Request, err error) {
 	var maxErr *http.MaxBytesError
 	if errors.As(err, &maxErr) {
 		writeError(w, r, http.StatusRequestEntityTooLarge, "request body too large")
 		return
+	}
+	if err != nil {
+		if field, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			writeError(w, r, http.StatusBadRequest, "unknown JSON field "+field)
+			return
+		}
 	}
 	writeError(w, r, http.StatusBadRequest, "invalid JSON body")
 }

@@ -35,6 +35,8 @@ import {
   type LibraryBrowseState,
   type LibraryItemsFacets,
   type LibraryItemsLetter,
+  type LibraryItemsPage,
+  type LibraryViewMode,
   libraryViewClass,
   parseBrowseState,
 } from "../lib/libraryBrowse";
@@ -139,6 +141,17 @@ function LibraryBrowse({
   const [audioOnly, setAudioOnly] = useState<boolean | null>(null);
   const [retryTick, setRetryTick] = useState(0);
 
+  const applyPage = useCallback((pageIndex: number, page: LibraryItemsPage) => {
+    pagesRef.current.set(pageIndex, page.items);
+    setAudioOnly((decided) => decided ?? (page.items.length > 0 ? isAudioOnly(page.items) : null));
+    setTotal(page.total);
+    if (pageIndex === 0) {
+      setFacets(page.facets);
+      setLetters(page.letters);
+    }
+    setLoadedTick((tick) => tick + 1);
+  }, []);
+
   const loadPage = useCallback(
     (pageIndex: number) => {
       if (pagesRef.current.has(pageIndex) || pendingRef.current.has(pageIndex)) return;
@@ -153,16 +166,7 @@ function LibraryBrowse({
         .then((page) => {
           if (generation !== generationRef.current) return;
           pendingRef.current.delete(pageIndex);
-          pagesRef.current.set(pageIndex, page.items);
-          setAudioOnly(
-            (decided) => decided ?? (page.items.length > 0 ? isAudioOnly(page.items) : null),
-          );
-          setTotal(page.total);
-          if (pageIndex === 0) {
-            setFacets(page.facets);
-            setLetters(page.letters);
-          }
-          setLoadedTick((tick) => tick + 1);
+          applyPage(pageIndex, page);
         })
         .catch(() => {
           if (generation !== generationRef.current) return;
@@ -173,7 +177,7 @@ function LibraryBrowse({
     // `state` is derived from stateKey; keying on the string keeps loadPage
     // stable across unrelated renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [libraryID, stateKey],
+    [applyPage, libraryID, stateKey],
   );
 
   // A new query (or a retry) drops every cached page and starts again.
@@ -212,10 +216,12 @@ function LibraryBrowse({
     seenEpochRef.current = engagementEpoch;
     seenHideRef.current = hideWatched.version;
     if (!followsEngagement && !hid && !(toggled && unfiltered)) {
-      // Order and membership hold, but the cards' watched marks are stale:
-      // re-read the pages already loaded and swap them in place.
+      // Order and membership hold, but the cards' watched marks and progress
+      // are stale: re-read the loaded and in-flight pages and swap them in place.
+      generationRef.current += 1;
       const generation = generationRef.current;
-      for (const pageIndex of pagesRef.current.keys()) {
+      const pageIndexes = new Set([...pagesRef.current.keys(), ...pendingRef.current]);
+      for (const pageIndex of pageIndexes) {
         fetchLibraryItems({
           libraryID,
           state,
@@ -224,11 +230,15 @@ function LibraryBrowse({
         })
           .then((page) => {
             if (generation !== generationRef.current) return;
-            pagesRef.current.set(pageIndex, page.items);
-            setLoadedTick((tick) => tick + 1);
+            pendingRef.current.delete(pageIndex);
+            applyPage(pageIndex, page);
           })
-          // The cards keep what they showed; the next change tries again.
-          .catch(() => {});
+          // Loaded cards keep what they showed; an initial read surfaces its error.
+          .catch(() => {
+            if (generation !== generationRef.current) return;
+            pendingRef.current.delete(pageIndex);
+            if (!pagesRef.current.has(pageIndex)) setFailed(true);
+          });
       }
       return;
     }
@@ -251,6 +261,8 @@ function LibraryBrowse({
     columns: rowColumns,
     layout: viewMode,
     maxItems: BROWSE_MAX_RENDERED,
+    aspectRatio:
+      viewMode === "thumbnail" ? 16 / 9 : viewMode === "poster" && audioOnly ? 1 : undefined,
   });
   const start = gridWindow?.startIndex ?? 0;
   const end = gridWindow?.endIndex ?? Math.min(itemCount, LIBRARY_BROWSE_PAGE);
@@ -351,7 +363,7 @@ function LibraryBrowse({
           display={viewMode}
         />
       ) : (
-        <PendingCard key={`pending-${index}`} />
+        <PendingCard key={`pending-${index}`} display={viewMode} square={audioOnly === true} />
       ),
     );
   }
@@ -450,11 +462,17 @@ function Spacer({ height }: { height: number }) {
 
 // Holds the place (and the measured height) of an item whose page has not
 // arrived yet; never focusable and hidden from assistive tech.
-function PendingCard() {
+function PendingCard({ display, square }: { display: LibraryViewMode; square: boolean }) {
+  const posterClass =
+    display === "thumbnail"
+      ? "bf-poster bf-poster-wide"
+      : square
+        ? "bf-poster bf-poster-square"
+        : "bf-poster";
   return (
-    <li className="list-none" aria-hidden="true">
+    <li className="list-none" aria-hidden="true" data-pending="true">
       <div className="bf-card" style={{ pointerEvents: "none" }}>
-        <div className="bf-poster" />
+        {display !== "table" && <div className={posterClass} />}
         <div className="bf-card-copy">
           <span className="bf-card-title">&nbsp;</span>
         </div>

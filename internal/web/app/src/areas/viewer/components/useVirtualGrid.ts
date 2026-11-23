@@ -20,7 +20,11 @@ const VIRTUAL_GRID_OVERSCAN_ROWS = 2;
 // Fallback column floor before the grid template is measured: the Large poster
 // size (chrome.css --bf-grid-min). Smaller sizes are read from the template.
 const VIRTUAL_GRID_COLUMN_MIN = 150;
-// A sane row-height fallback before a card has been measured.
+const VIRTUAL_GRID_WIDE_COLUMN_MIN = 220;
+// Fallback card copy height before a card has laid out (title + subline + padding).
+const VIRTUAL_GRID_DEFAULT_COPY_HEIGHT = 56;
+const VIRTUAL_GRID_DEFAULT_ASPECT_RATIO = 2 / 3;
+// A sane row-height fallback before a card or grid width has been measured.
 const VIRTUAL_GRID_FALLBACK_ROW_HEIGHT = 300;
 
 export interface VirtualGridWindow {
@@ -36,40 +40,182 @@ function readGap(grid: HTMLElement): number {
   return Number.isFinite(gap) ? gap : 14;
 }
 
+function readColumnGap(grid: HTMLElement, rowGap: number): number {
+  const styles = window.getComputedStyle(grid);
+  const gap = parseFloat(styles.columnGap || styles.gap || "");
+  return Number.isFinite(gap) ? gap : rowGap;
+}
+
+function readColumnMin(grid: HTMLElement): number {
+  const styles = window.getComputedStyle(grid);
+  const prop = grid.classList.contains("bf-grid-wide") ? "--bf-grid-wide-min" : "--bf-grid-min";
+  const min = parseFloat(styles.getPropertyValue(prop));
+  if (Number.isFinite(min) && min > 0) return min;
+  return grid.classList.contains("bf-grid-wide")
+    ? VIRTUAL_GRID_WIDE_COLUMN_MIN
+    : VIRTUAL_GRID_COLUMN_MIN;
+}
+
 // Derives the live column count: prefer the actual rendered column template,
 // else compute from the grid width and the CSS column floor (the vanilla path).
 function readColumns(grid: HTMLElement, gap: number): number {
   const styles = window.getComputedStyle(grid);
   const template = styles.gridTemplateColumns;
-  if (template && template !== "none") {
+  if (template && template !== "none" && !template.includes("(")) {
     const tracks = template.split(" ").filter(Boolean).length;
     if (tracks > 0) return tracks;
   }
-  const width = grid.clientWidth || window.innerWidth || VIRTUAL_GRID_COLUMN_MIN;
-  return Math.max(1, Math.floor((width + gap) / (VIRTUAL_GRID_COLUMN_MIN + gap)));
+  const colGap = readColumnGap(grid, gap);
+  const colMin = readColumnMin(grid);
+  const width = grid.clientWidth || window.innerWidth || colMin;
+  return Math.max(1, Math.floor((width + colGap) / (colMin + colGap)));
+}
+
+function readColumnWidth(grid: HTMLElement, columns: number, gap: number): number {
+  if (columns <= 0) return 0;
+  const styles = window.getComputedStyle(grid);
+  const template = styles.gridTemplateColumns;
+  if (template && template !== "none" && !template.includes("(")) {
+    const first = parseFloat(template.split(" ").filter(Boolean)[0] ?? "");
+    if (Number.isFinite(first) && first > 0) return first;
+  }
+  const clientWidth = grid.clientWidth;
+  if (clientWidth <= 0) return 0;
+  const padding = (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
+  const contentWidth = Math.max(0, clientWidth - padding);
+  const colGap = readColumnGap(grid, gap);
+  return Math.max(0, (contentWidth - colGap * (columns - 1)) / columns);
+}
+
+function parseAspectRatio(raw: string): number {
+  const ratioMatch = raw.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+  if (ratioMatch) {
+    const width = Number(ratioMatch[1]);
+    const height = Number(ratioMatch[2]);
+    if (width > 0 && height > 0) return width / height;
+  }
+  const numeric = parseFloat(raw);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+}
+
+function readCardAspectRatio(grid: HTMLElement, explicit?: number): number {
+  if (explicit && explicit > 0) return explicit;
+  if (grid.classList.contains("bf-grid-wide")) return 16 / 9;
+  const cards = grid.querySelectorAll<HTMLElement>(":scope > li:not(.bf-grid-spacer)");
+  let sawSquare = false;
+  let sawNonSquare = false;
+  for (const card of cards) {
+    const poster = card.querySelector<HTMLElement>(".bf-poster");
+    if (!poster) continue;
+    if (poster.classList.contains("bf-poster-wide")) return 16 / 9;
+    if (poster.classList.contains("bf-poster-intrinsic")) {
+      const img = poster.querySelector<HTMLImageElement>("img");
+      if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+        return img.naturalWidth / img.naturalHeight;
+      }
+    }
+    const inlineRatio = poster.style.aspectRatio ? parseAspectRatio(poster.style.aspectRatio) : 0;
+    if (inlineRatio > 0) return inlineRatio;
+    const computedRatio = parseAspectRatio(window.getComputedStyle(poster).aspectRatio);
+    if (computedRatio > 0) return computedRatio;
+    if (poster.classList.contains("bf-poster-square")) sawSquare = true;
+    else sawNonSquare = true;
+  }
+  if (sawSquare && !sawNonSquare) return 1;
+  return VIRTUAL_GRID_DEFAULT_ASPECT_RATIO;
+}
+
+function estimateCardHeight(
+  grid: HTMLElement,
+  columns: number,
+  gap: number,
+  fixedColumns?: number,
+  explicitAspectRatio?: number,
+): number {
+  if (grid.classList.contains("bf-table-rows")) return 36;
+  const columnWidth = readColumnWidth(grid, columns, gap);
+  if (columnWidth <= 0) return VIRTUAL_GRID_FALLBACK_ROW_HEIGHT;
+  if (fixedColumns === 1 || grid.classList.contains("bf-stack")) return 80;
+  const ratio = readCardAspectRatio(grid, explicitAspectRatio);
+  const copy = grid.querySelector<HTMLElement>(":scope > li:not(.bf-grid-spacer) .bf-card-copy");
+  const measuredCopy = copy ? copy.getBoundingClientRect().height : 0;
+  const copyHeight = measuredCopy > 0 ? measuredCopy : VIRTUAL_GRID_DEFAULT_COPY_HEIGHT;
+  return Math.round(columnWidth / ratio + copyHeight);
+}
+
+function cardContentHeight(card: HTMLElement): number {
+  const content = card.querySelector<HTMLElement>(":scope > .bf-card");
+  const measured = content ? content.getBoundingClientRect().height : 0;
+  return measured > 0 ? measured : card.getBoundingClientRect().height;
 }
 
 // The tallest rendered card's height (0 before any card has laid out). Card
 // copy varies (one- or two-line titles, an optional subtitle) and grid items
 // stretch to their row, so a single sample card under-reads taller rows; the
-// tallest one is the safest uniform row estimate.
-function readCardHeight(grid: HTMLElement): number {
-  let tallest = 0;
-  for (const card of grid.querySelectorAll<HTMLElement>(":scope > li:not(.bf-grid-spacer)")) {
-    tallest = Math.max(tallest, card.getBoundingClientRect().height);
+// tallest one is the safest uniform row estimate. Rows containing pending
+// placeholders are excluded from real-card measurements because CSS grid
+// stretches shorter real cards in that row to the placeholder's height.
+function readCardHeight(
+  grid: HTMLElement,
+  columns: number,
+): { height: number; pendingOnly: boolean } {
+  const cards = grid.querySelectorAll<HTMLElement>(":scope > li:not(.bf-grid-spacer)");
+  let realTallest = 0;
+  let pendingTallest = 0;
+  const stride = Math.max(1, columns);
+  for (let rowStart = 0; rowStart < cards.length; rowStart += stride) {
+    const rowEnd = Math.min(cards.length, rowStart + stride);
+    let rowHasPending = false;
+    let rowTallest = 0;
+    for (let index = rowStart; index < rowEnd; index += 1) {
+      const card = cards[index];
+      if (card.getAttribute("data-pending") === "true") rowHasPending = true;
+      rowTallest = Math.max(rowTallest, cardContentHeight(card));
+    }
+    if (rowHasPending) {
+      pendingTallest = Math.max(pendingTallest, rowTallest);
+    } else {
+      realTallest = Math.max(realTallest, rowTallest);
+    }
   }
-  return tallest;
+  if (realTallest > 0) return { height: realTallest, pendingOnly: false };
+  return { height: pendingTallest, pendingOnly: pendingTallest > 0 };
 }
 
 // The tallest card each windowed grid has measured, which its spacer rows
 // use. The jump helpers read it too, so a jump lands on the row the window
 // will render rather than on one computed from the cards now in view.
-const retainedCardHeight = new WeakMap<HTMLElement, number>();
+const retainedCardHeight = new WeakMap<HTMLElement, { height: number; pendingOnly: boolean }>();
+const retainedAspectRatio = new WeakMap<HTMLElement, number>();
 
 interface VariableRowMeasurements {
   geometry: string;
   items: readonly unknown[];
   heights: Map<number, number>;
+}
+
+// Computes the row range [startRow, endRow) capped to maxItems. A viewport
+// taller than maxRows mounts exactly its visible rows, so no on-screen card is
+// ever dropped; otherwise the window adds overscan within the cap.
+function windowRows(
+  totalRows: number,
+  columns: number,
+  maxItems: number,
+  maxTop: number,
+  firstRow: number,
+  lastRow: number,
+): { startRow: number; endRow: number } {
+  // Nothing scrolls, so every row is on screen: the cap cannot drop any.
+  if (maxTop <= 0) return { startRow: 0, endRow: totalRows };
+  const maxRows = Math.max(1, Math.floor(maxItems / columns));
+  // When more rows are on screen than the cap allows, mount exactly the rows
+  // on screen: the cap bounds off-screen work and must never leave a visible
+  // card unmounted (interpolating a capped window across a short scroll range
+  // skips rows outright).
+  if (lastRow - firstRow > maxRows) return { startRow: firstRow, endRow: Math.min(totalRows, lastRow) };
+  const startRow = Math.max(0, firstRow - VIRTUAL_GRID_OVERSCAN_ROWS, lastRow - maxRows);
+  const endRow = Math.min(totalRows, lastRow + VIRTUAL_GRID_OVERSCAN_ROWS, startRow + maxRows);
+  return { startRow, endRow };
 }
 
 function variableGridWindow(
@@ -79,6 +225,7 @@ function variableGridWindow(
   gap: number,
   maxItems: number,
   measurements: VariableRowMeasurements,
+  aspectRatio?: number,
 ): VirtualGridWindow {
   const { heights } = measurements;
   const totalRows = Math.ceil(items.length / columns);
@@ -99,17 +246,28 @@ function variableGridWindow(
     }
   }
 
+  const fallbackHeight = estimateCardHeight(grid, columns, gap, undefined, aspectRatio);
+  let estimatedHeight = fallbackHeight;
+  for (let row = 0; row < totalRows; row += 1) {
+    const measured = heights.get(row);
+    if (measured !== undefined) {
+      estimatedHeight = measured;
+      break;
+    }
+  }
   const offsets = [0];
   for (let row = 0; row < totalRows; row += 1) {
-    const height = heights.get(row) ?? VIRTUAL_GRID_FALLBACK_ROW_HEIGHT;
-    offsets.push(offsets[row] + height + gap);
+    const measured = heights.get(row);
+    if (measured !== undefined) estimatedHeight = measured;
+    offsets.push(offsets[row] + (measured ?? estimatedHeight) + gap);
   }
   const totalHeight = offsets[totalRows];
   const rect = grid.getBoundingClientRect();
   const paddingTop = parseFloat(window.getComputedStyle(grid).paddingTop) || 0;
-  const viewport = window.innerHeight || rect.height || VIRTUAL_GRID_FALLBACK_ROW_HEIGHT * 3;
+  const viewport = window.innerHeight || rect.height || fallbackHeight * 3;
   const relativeTop = -rect.top - paddingTop;
-  const top = Math.min(Math.max(0, relativeTop), Math.max(0, totalHeight - gap - viewport));
+  const maxTop = Math.max(0, totalHeight - gap - viewport);
+  const top = Math.min(Math.max(0, relativeTop), maxTop);
   const bottom = Math.max(top, Math.min(relativeTop + viewport, top + viewport));
 
   let firstRow = 0;
@@ -117,15 +275,17 @@ function variableGridWindow(
   let lastRow = firstRow + 1;
   while (lastRow < totalRows && offsets[lastRow] < bottom) lastRow += 1;
 
-  const startRow = Math.max(0, firstRow - VIRTUAL_GRID_OVERSCAN_ROWS);
-  const maxRows = Math.floor(maxItems / columns);
-  const endRow = Math.min(
+  const { startRow, endRow } = windowRows(
     totalRows,
-    lastRow + VIRTUAL_GRID_OVERSCAN_ROWS,
-    Math.max(lastRow, startRow + maxRows),
+    columns,
+    maxItems,
+    maxTop,
+    firstRow,
+    lastRow,
   );
+  const startIndex = startRow * columns;
   return {
-    startIndex: startRow * columns,
+    startIndex,
     endIndex: Math.min(items.length, endRow * columns),
     // The grid already inserts one gap between each spacer and the cards.
     topPad: Math.max(0, offsets[startRow] - gap),
@@ -134,21 +294,37 @@ function variableGridWindow(
 }
 
 // The grid's column count, row pitch and page-space top, from the same
-// geometry the window uses. Rows not yet measured use the fallback height.
+// geometry the window uses. Rows not yet measured derive their height from
+// the card aspect ratio and column width (falling back to 300px off-layout).
 function gridGeometry(grid: HTMLElement, fixedColumns?: number) {
   const gap = readGap(grid);
-  const cardHeight = Math.max(retainedCardHeight.get(grid) ?? 0, readCardHeight(grid));
+  const columns = fixedColumns ?? readColumns(grid, gap);
+  const measured = readCardHeight(grid, columns);
+  const retained = retainedCardHeight.get(grid);
+  const cardHeight =
+    measured.height > 0 && !measured.pendingOnly
+      ? Math.max(retained && !retained.pendingOnly ? retained.height : 0, measured.height)
+      : retained && retained.height > 0
+        ? retained.height
+        : measured.height;
+  const fallback = estimateCardHeight(
+    grid,
+    columns,
+    gap,
+    fixedColumns,
+    retainedAspectRatio.get(grid),
+  );
   return {
-    columns: fixedColumns ?? readColumns(grid, gap),
-    rowHeight: (cardHeight || VIRTUAL_GRID_FALLBACK_ROW_HEIGHT) + gap,
+    columns,
+    rowHeight: (cardHeight || fallback) + gap,
     top: grid.getBoundingClientRect().top + window.scrollY,
   };
 }
 
 /**
  * The page scroll position that puts the row holding `index` at the top of the
- * viewport. Unmeasured rows use the fallback height, so the caller settles the
- * final position once the card renders.
+ * viewport. Unmeasured rows use the aspect-ratio estimate, so the caller settles
+ * the final position once the card renders.
  */
 export function virtualGridScrollTop(
   grid: HTMLElement,
@@ -177,6 +353,7 @@ export function useVirtualGrid({
   layout,
   maxItems = VIRTUAL_GRID_MAX_ITEMS,
   variableRows,
+  aspectRatio,
 }: {
   gridRef: React.RefObject<HTMLUListElement | null>;
   itemCount: number;
@@ -192,29 +369,38 @@ export function useVirtualGrid({
   maxItems?: number;
   /** Items in intrinsic-height grids, used to keep measurements across page appends. */
   variableRows?: readonly unknown[];
+  /** Known card aspect ratio (width / height) used to estimate row height before layout. */
+  aspectRatio?: number;
 }): VirtualGridWindow | null {
-  // Tallest card seen while windowing. It only grows, so the spacer geometry
-  // does not oscillate as rows of different heights scroll in and out.
+  // Tallest card seen while windowing. It only grows within the same geometry,
+  // so the spacer geometry does not oscillate as rows of different heights scroll in and out.
   const cardHeightRef = useRef(0);
+  const hasRealCardRef = useRef(false);
   const variableRef = useRef<VariableRowMeasurements | null>(null);
   // The layout the retained height was measured in: a switch between grid
   // and list, or to another poster size (CORE-2468), starts the measurement
   // over, or the spacers and jumps would keep the old layout's row height.
   const [posterSize] = usePosterSize();
-  const layoutKey = `${layout ?? ""}:${fixedColumns ?? ""}:${posterSize}`;
-  const layoutRef = useRef(layoutKey);
+  const layoutKey = `${layout ?? ""}:${fixedColumns ?? ""}:${posterSize}:${aspectRatio ?? ""}`;
+  const geometryRef = useRef("");
   const compute = useCallback((): VirtualGridWindow | null => {
     const grid = gridRef.current;
     if (!grid || !enabled || itemCount <= 0) return null;
-    if (layoutRef.current !== layoutKey) {
-      layoutRef.current = layoutKey;
-      cardHeightRef.current = 0;
-    }
+
+    if (aspectRatio && aspectRatio > 0) retainedAspectRatio.set(grid, aspectRatio);
+    else retainedAspectRatio.delete(grid);
 
     const gap = readGap(grid);
     const columns = fixedColumns ?? readColumns(grid, gap);
+    const geometry = `${layoutKey}:${columns}:${grid.clientWidth}:${gap}`;
+    if (geometryRef.current !== geometry) {
+      geometryRef.current = geometry;
+      cardHeightRef.current = 0;
+      hasRealCardRef.current = false;
+      retainedCardHeight.delete(grid);
+    }
+
     if (variableRows) {
-      const geometry = `${layoutKey}:${columns}:${grid.clientWidth}:${gap}`;
       let measurements = variableRef.current;
       if (!measurements || measurements.geometry !== geometry) {
         measurements = { geometry, heights: new Map(), items: variableRows };
@@ -229,38 +415,67 @@ export function useVirtualGrid({
         }
         measurements.items = variableRows;
       }
-      return variableGridWindow(grid, variableRows, columns, gap, maxItems, measurements);
+      return variableGridWindow(
+        grid,
+        variableRows,
+        columns,
+        gap,
+        maxItems,
+        measurements,
+        aspectRatio,
+      );
     }
-    cardHeightRef.current = Math.max(cardHeightRef.current, readCardHeight(grid));
-    retainedCardHeight.set(grid, cardHeightRef.current);
-    const rowHeight = (cardHeightRef.current || VIRTUAL_GRID_FALLBACK_ROW_HEIGHT) + gap;
+
+    const measured = readCardHeight(grid, columns);
+    if (measured.height > 0) {
+      if (!measured.pendingOnly) {
+        cardHeightRef.current = hasRealCardRef.current
+          ? Math.max(cardHeightRef.current, measured.height)
+          : measured.height;
+        hasRealCardRef.current = true;
+        retainedCardHeight.set(grid, { height: cardHeightRef.current, pendingOnly: false });
+      } else if (!hasRealCardRef.current) {
+        cardHeightRef.current = Math.max(cardHeightRef.current, measured.height);
+        retainedCardHeight.set(grid, { height: cardHeightRef.current, pendingOnly: true });
+      }
+    }
+    const fallbackHeight = estimateCardHeight(grid, columns, gap, fixedColumns, aspectRatio);
+    const rowHeight = (cardHeightRef.current || fallbackHeight) + gap;
     const totalRows = Math.ceil(itemCount / columns);
 
     const rect = grid.getBoundingClientRect();
     const viewportHeight = window.innerHeight || rect.height || rowHeight * 3;
     // Pixels of the grid scrolled above the viewport top (0 until it scrolls up).
     const scrolledPast = Math.max(0, -rect.top);
-
-    const visibleRows = Math.ceil(viewportHeight / rowHeight) + VIRTUAL_GRID_OVERSCAN_ROWS * 2;
-    // Clamped to the last rows: when the list shrinks under a deep scroll the
-    // window must still hold items, and the smaller top spacer lets the
-    // browser pull the scroll position back.
-    const startRow = Math.min(
-      Math.max(0, totalRows - visibleRows),
-      Math.max(0, Math.floor(scrolledPast / rowHeight) - VIRTUAL_GRID_OVERSCAN_ROWS),
+    const maxTop = Math.max(0, totalRows * rowHeight - gap - viewportHeight);
+    const top = Math.min(scrolledPast, maxTop);
+    const firstRow = Math.min(totalRows - 1, Math.floor(top / rowHeight));
+    const lastRow = Math.min(
+      totalRows,
+      Math.max(firstRow + 1, Math.ceil((top + viewportHeight) / rowHeight)),
+    );
+    const { startRow, endRow } = windowRows(
+      totalRows,
+      columns,
+      maxItems,
+      maxTop,
+      firstRow,
+      lastRow,
     );
 
     const startIndex = Math.min(itemCount, startRow * columns);
-    const count = Math.min(itemCount - startIndex, visibleRows * columns, maxItems);
-    const renderedRows = Math.ceil(count / columns);
+    const endIndex = Math.min(itemCount, endRow * columns);
+    const renderedRows = Math.ceil((endIndex - startIndex) / columns);
+    const trailingRows = Math.max(0, totalRows - startRow - renderedRows);
 
     return {
       startIndex,
-      endIndex: startIndex + count,
-      topPad: startRow * rowHeight,
-      bottomPad: Math.max(0, totalRows - startRow - renderedRows) * rowHeight,
+      endIndex,
+      // The grid already inserts one gap between each spacer and the cards.
+      topPad: startRow > 0 ? Math.max(0, startRow * rowHeight - gap) : 0,
+      bottomPad: trailingRows > 0 ? Math.max(0, trailingRows * rowHeight - gap) : 0,
     };
-  }, [gridRef, itemCount, enabled, fixedColumns, layoutKey, maxItems, variableRows]);
+  }, [gridRef, itemCount, enabled, fixedColumns, layoutKey, maxItems, variableRows, aspectRatio]);
 
   const [windowState, setWindowState] = useState<VirtualGridWindow | null>(() => compute());
   // Measure the newly mounted rows even when their combined height matches
@@ -271,8 +486,13 @@ export function useVirtualGrid({
   useEffect(() => {
     if (!enabled) {
       cardHeightRef.current = 0;
+      hasRealCardRef.current = false;
+      geometryRef.current = "";
       variableRef.current = null;
-      if (gridRef.current) retainedCardHeight.delete(gridRef.current);
+      if (gridRef.current) {
+        retainedCardHeight.delete(gridRef.current);
+        retainedAspectRatio.delete(gridRef.current);
+      }
       setWindowState(null);
       return;
     }
@@ -295,8 +515,7 @@ export function useVirtualGrid({
       });
     };
     const grid = gridRef.current;
-    const observer =
-      variableRows && typeof ResizeObserver !== "undefined" ? new ResizeObserver(recompute) : null;
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(recompute) : null;
     if (grid && observer) observer.observe(grid);
     if (variableRows) {
       grid?.addEventListener("load", recompute, true);

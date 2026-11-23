@@ -37,7 +37,7 @@ func (f *fakeFeedRegistrar) RegisterFeedStream(_ context.Context, stream FeedStr
 func feedEntryFor(authRef string) fakeFeedEntries {
 	return fakeFeedEntries{
 		entry: store.SubscriptionEntry{SubscriptionID: "subscription-1", GUID: "entry-guid-1", EnclosureURL: testEnclosureURL, EnclosureType: "audio/mpeg"},
-		sub:   store.Subscription{ID: "subscription-1", LibraryID: "library-local", AuthRef: authRef},
+		sub:   store.Subscription{ID: "subscription-1", LibraryID: "library-local", FeedURL: "https://feeds.example.test/private.xml?token=feed-secret", AuthRef: authRef},
 		found: true,
 	}
 }
@@ -83,7 +83,7 @@ func TestInfoStreamsFilelessPublicFeedEntryThroughProxy(t *testing.T) {
 	}
 }
 
-func TestInfoKeepsPrivateFeedEntryUnavailableUntilDownloaded(t *testing.T) {
+func TestInfoStreamsFilelessPrivateFeedEntryThroughProxy(t *testing.T) {
 	service, scope := newTestService(t, "session-default")
 	registrar := &fakeFeedRegistrar{mediaID: "media-alpha"}
 	service.feedEntries = feedEntryFor("subscription-auth-1")
@@ -93,11 +93,28 @@ func TestInfoKeepsPrivateFeedEntryUnavailableUntilDownloaded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if resp.Decision != "unavailable" || resp.Reason != ReasonFeedStreamRequiresDownload || len(resp.Streams) != 0 {
-		t.Fatalf("Decision = %q reason %q streams %d, want unavailable %q", resp.Decision, resp.Reason, len(resp.Streams), ReasonFeedStreamRequiresDownload)
+	if resp.Decision != "direct-play" || len(resp.Streams) != 1 {
+		t.Fatalf("Decision = %q reason %q streams %d, want one direct-play proxy stream", resp.Decision, resp.Reason, len(resp.Streams))
 	}
-	if len(registrar.calls) != 0 {
-		t.Fatalf("private feed registered an origin stream: %+v", registrar.calls)
+	stream := resp.Streams[0]
+	if stream.URL != "/api/media/proxy/"+stream.Token {
+		t.Fatalf("stream URL = %q, want /api/media/proxy/<token>", stream.URL)
+	}
+	if len(registrar.calls) != 1 {
+		t.Fatalf("registrar calls = %d, want 1", len(registrar.calls))
+	}
+	got := registrar.calls[0]
+	if got.AuthRef != "subscription-auth-1" || !strings.HasPrefix(got.FeedURL, "https://feeds.example.test/") || got.OriginURL != testEnclosureURL {
+		t.Fatalf("registered private stream = %+v", got)
+	}
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"subscription-auth-1", "feeds.example.test", "feed-secret", "cdn.example.test", "private-signature"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("response leaks %q: %s", secret, raw)
+		}
 	}
 }
 

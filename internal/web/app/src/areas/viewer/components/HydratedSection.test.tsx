@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@/lib/api";
+import { ApiError, subscribeEvents } from "@/lib/api";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
@@ -10,11 +10,16 @@ import {
   clearContinueWatchingRemoved,
   removeFromContinueWatching,
 } from "../actions/continueWatching";
-import { notifyEngagementChanged } from "../actions/engagementSync";
+import { notifyEngagementChanged, useEngagementEvents } from "../actions/engagementSync";
 import { fetchSectionItems } from "../lib/sections";
 import { HydratedSection, SECTION_LOAD_TIMEOUT_MS, sectionCacheKey } from "./HydratedSection";
 
 const identityMock = vi.hoisted(() => ({ identity: null as string | null }));
+
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return { ...actual, subscribeEvents: vi.fn(() => () => {}) };
+});
 
 vi.mock("../lib/sections", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/sections")>();
@@ -353,5 +358,57 @@ describe("HydratedSection Continue Watching removal (CORE-2017)", () => {
     act(() => notifyEngagementChanged());
     expect(reads).toHaveLength(3);
     expect(screen.getByRole("link", { name: /^Visible item/ })).toBeVisible();
+  });
+
+  it("refreshes shelf card progress and finished marks when an engagement-changed SSE arrives", async () => {
+    vi.mocked(subscribeEvents).mockClear();
+    let currentItem: SourceItem = { ...item };
+    vi.mocked(fetchSectionItems).mockImplementation(async () => [currentItem]);
+
+    function OpenShelfPage() {
+      useEngagementEvents();
+      return <HydratedSection section={section} libraryID="" entityID="" />;
+    }
+
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <OpenShelfPage />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByRole("link", { name: "Visible item" })).toBeVisible();
+    const deliver = vi.mocked(subscribeEvents).mock.calls[0]?.[0];
+    expect(deliver).toBeTypeOf("function");
+
+    const sendInvalidation = (reason: string) =>
+      act(() => {
+        deliver?.(
+          new MessageEvent("client.invalidate", {
+            data: JSON.stringify({
+              kind: "client.invalidate",
+              aggregateType: "invalidation",
+              aggregateID: "profile-default",
+              payload: { profileID: "profile-default", reason },
+            }),
+          }),
+        );
+      });
+
+    // Unrelated invalidation leaves the shelf alone.
+    const readsBefore = vi.mocked(fetchSectionItems).mock.calls.length;
+    sendInvalidation("access-changed");
+    expect(vi.mocked(fetchSectionItems).mock.calls.length).toBe(readsBefore);
+
+    // Pausing on another client publishes engagement-changed -> card shows progress.
+    currentItem = { ...item, engagement: { positionSeconds: 60, durationSeconds: 120 } };
+    sendInvalidation("engagement-changed");
+    expect(await screen.findByRole("link", { name: "Visible item, 1 minute left" })).toBeVisible();
+
+    // Finishing on another client publishes engagement-changed -> card shows Finished.
+    currentItem = { ...item, engagement: { completed: true } };
+    sendInvalidation("engagement-changed");
+    expect(await screen.findByRole("link", { name: "Visible item, Finished" })).toBeVisible();
   });
 });

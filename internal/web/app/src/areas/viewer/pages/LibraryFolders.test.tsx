@@ -1,10 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { notifyEngagementChanged } from "../actions/engagementSync";
 import { fetchLibraryItems } from "../lib/libraryBrowse";
 import {
   fetchLibraryFolder,
@@ -334,5 +335,34 @@ describe("Library folder view (CORE-2359)", () => {
 
     expect(await screen.findByRole("list", { name: "Folders" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Posters" })).toBeNull();
+  });
+
+  it("refreshes an open folder's cards when engagement changes", async () => {
+    let engagement: SourceItem["engagement"];
+    vi.mocked(fetchLibraryFolder).mockImplementation(async (request) => {
+      const page = folderFor(request);
+      return {
+        ...page,
+        items: page.items.map((entry, idx) =>
+          idx === 0 && engagement ? { ...entry, engagement } : entry,
+        ),
+      };
+    });
+    renderAt("/n/archive/all?view=folders&folder=%2Fa");
+
+    const list = await screen.findByRole("list", { name: "a" });
+    expect(within(list).getByRole("link", { name: "Clip m1" })).toBeInTheDocument();
+
+    engagement = { positionSeconds: 60, durationSeconds: 120 };
+    act(() => notifyEngagementChanged());
+    expect(
+      await within(list).findByRole("link", { name: "Clip m1, 1 minute left" }),
+    ).toBeInTheDocument();
+
+    engagement = { completed: true };
+    act(() => notifyEngagementChanged());
+    expect(
+      await within(list).findByRole("link", { name: "Clip m1, Finished" }),
+    ).toBeInTheDocument();
   });
 });

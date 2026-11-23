@@ -68,14 +68,20 @@ func (s *Store) SignInSecurityMode(ctx context.Context) (SignInSecurityMode, err
 var ErrAdminSignInOff = errors.New("admin-password sign-in is off in strict mode")
 
 // EnrollAdminSignInDevice enrolls device with an enrolled session on the
-// owner Profile for admin-password sign-in (CORE-1106, CORE-1110). The mode,
-// the owner and its disabled flag are read in the same transaction that
-// inserts the rows, so a switch to Strict or an ownership change that commits
-// while the caller waited for the password check cannot be overtaken. It
-// returns ErrAdminSignInOff in Strict mode, ErrNoOwnerProfile with no owner
-// and ErrProfileDisabled for a disabled owner, inserting nothing. The
-// returned session carries the owner Profile.
-func (s *Store) EnrollAdminSignInDevice(ctx context.Context, device Device, sessionID SessionID, expiresAt time.Time) (Session, error) {
+// owner Profile for admin-password sign-in (CORE-1106, CORE-1110) and opens
+// its initial Admin Session window from now (CORE-1157). The mode, the owner,
+// its disabled flag and the session and Admin Session lifetimes are read in
+// the same transaction that inserts the rows, so a switch to Strict, an
+// ownership change or a timeout change that commits during sign-in cannot be
+// overtaken. It returns ErrAdminSignInOff in Strict mode, ErrNoOwnerProfile
+// with no owner and ErrProfileDisabled for a disabled or non-adult owner,
+// inserting nothing. The returned session carries the owner Profile,
+// ExpiresAt and AdminUntil. credentialStamp (AdminCredentialStamp read before
+// the password was verified) must still match the stored credential in the
+// enrolling transaction, so an admin password reset that lands in between,
+// which clears Admin Sessions, cannot be followed by a fresh one opened with
+// the old password: it returns ErrAdminPasswordMismatch, inserting nothing.
+func (s *Store) EnrollAdminSignInDevice(ctx context.Context, device Device, sessionID SessionID, now time.Time, credentialStamp string) (Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
@@ -97,19 +103,35 @@ func (s *Store) EnrollAdminSignInDevice(ctx context.Context, device Device, sess
 	}
 	var (
 		owner    ProfileID
+		kind     ProfileKind
 		disabled int
 	)
-	err = tx.QueryRowContext(ctx, `SELECT id, disabled FROM profile WHERE is_owner = 1 LIMIT 1`).Scan(&owner, &disabled)
+	err = tx.QueryRowContext(ctx, `SELECT id, kind, disabled FROM profile WHERE is_owner = 1 LIMIT 1`).Scan(&owner, &kind, &disabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, ErrNoOwnerProfile
 	}
 	if err != nil {
 		return Session{}, err
 	}
-	if disabled != 0 {
+	if disabled != 0 || kind != ProfileAdult {
 		return Session{}, ErrProfileDisabled
 	}
-	device, session, err := normalizeEnrollment(device, Session{ID: sessionID, DeviceID: device.ID, ProfileID: owner, ExpiresAt: expiresAt})
+	if stamp, err := adminCredentialStampQ(ctx, tx); err != nil {
+		return Session{}, err
+	} else if stamp == "" || stamp != credentialStamp {
+		return Session{}, ErrAdminPasswordMismatch
+	}
+	cfg, err := sessionConfigTx(ctx, tx)
+	if err != nil {
+		return Session{}, err
+	}
+	device, session, err := normalizeEnrollment(device, Session{
+		ID:         sessionID,
+		DeviceID:   device.ID,
+		ProfileID:  owner,
+		ExpiresAt:  cfg.SessionExpiry(now),
+		AdminUntil: cfg.AdminSessionExpiry(now),
+	})
 	if err != nil {
 		return Session{}, err
 	}
