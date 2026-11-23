@@ -110,8 +110,10 @@ container archetype SHALL count as containers.
 ### Requirement: Recently Added folds by container without hiding other items
 
 The Viewer SHALL read 100 recent items for a Recently Added shelf, fold items sharing a container
-into one container card, and show up to 20 cards. A folded card SHALL count the items the Profile
-has not finished and SHALL name no count when every item is finished.
+into one container card, and show up to 20 cards. A video that is the only new item in its container
+SHALL also fold into its container card; any other item alone in its container SHALL stay as it is.
+A folded card SHALL count the items the Profile has not finished and SHALL name no count when every
+item is finished.
 
 #### Scenario: One show adds a whole season
 
@@ -122,6 +124,16 @@ has not finished and SHALL name no count when every item is finished.
 
 - **WHEN** every new item of a folded container is finished
 - **THEN** its card names no count
+
+#### Scenario: One show adds one episode
+
+- **WHEN** a show's only new item is one episode
+- **THEN** the shelf shows the show's card with "1 new" and the show's poster, and it opens the show
+
+#### Scenario: One album adds one track
+
+- **WHEN** an album's only new item is one track
+- **THEN** the shelf shows the track's own card
 
 ### Requirement: The Home hero names what it features
 
@@ -206,3 +218,13 @@ under another.
 
 - **WHEN** the Profile changes while a removal is pending, or before its Undo
 - **THEN** no notice shows for the new Profile and the Undo writes nothing
+
+### Requirement: Continue Watching draws the container poster
+
+The Viewer SHALL draw a Continue Watching item with its container's poster when the container has
+one, and SHALL keep the item's own target and resume position.
+
+#### Scenario: An episode is in progress
+
+- **WHEN** an episode of a show with a poster is in Continue Watching
+- **THEN** its card draws the show's poster and opens the episode to resume
