@@ -484,6 +484,13 @@ describe("useGaplessAudio", () => {
     // The named item plays on the element; its own successor joins as usual.
     hook.rerender({ mediaID: "m2", next: nextItem("m3") });
     await vi.waitFor(() => expect(sources).toHaveLength(2));
+    // Back on the skipped item later, it joins its next one again.
+    hook.rerender({ mediaID: "m1", next: nextItem("m2") });
+    await settle();
+    act(() => {
+      element.dispatchEvent(new Event("timeupdate"));
+    });
+    await vi.waitFor(() => expect(sources).toHaveLength(3));
   });
 
   it("starts no confirmed server successor after Play now retires the join (CORE-3352)", async () => {

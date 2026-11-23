@@ -735,6 +735,13 @@ export function useGaplessAudio({
     };
   }, [enabled, videoRef, mediaID, leadURL, leadTrim, nextID]);
 
+  // A skip retires only the item it left: once the element plays another,
+  // a later return to that item joins its next one again (CORE-3352).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video && skipping.get(video) !== mediaID) skipping.delete(video);
+  }, [videoRef, mediaID]);
+
   // Decode the next track ahead, then schedule its join.
   useEffect(() => {
     const video = videoRef.current;

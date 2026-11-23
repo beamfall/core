@@ -2512,6 +2512,19 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
     await waitFor(() => expect(playingNow()).toBe("media-next"));
   });
 
+  it("plays the item the card named when the order changes under a Play now (CORE-3352)", async () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.3);
+    try {
+      await playNowAudibly();
+      // Shuffle mid-fade (this seed) puts media-prev next; the skip keeps the one named.
+      act(() => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.shuffle?.onToggle());
+      await waitFor(() => expect(playingNow()).toBe("media-next"));
+      expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-prev")).toBe(false);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
   it("drops a Play now still fading out when the identity relocks under it", async () => {
     const epoch = new AbortController();
     setIdentityEpochSignal(epoch.signal);

@@ -960,10 +960,11 @@ function FeaturePlayer({
     goToQueueItem,
     advanceToNext,
   ]);
-  const playNextRef = useRef(playNext);
+  // The current way to open an item: docking mid-fade changes it (CORE-3352).
+  const openNextRef = useRef({ playNext, goToQueueItem, advanceToNext });
   useLayoutEffect(() => {
-    playNextRef.current = playNext;
-  }, [playNext]);
+    openNextRef.current = { playNext, goToQueueItem, advanceToNext };
+  }, [playNext, goToQueueItem, advanceToNext]);
   // A card queue names its own previous item; without one, a Play all queue
   // that holds this item may (stepping back keeps that queue going).
   const playAllPrevious = useMemo(
@@ -1032,13 +1033,20 @@ function FeaturePlayer({
         // element plays the named item from its start.
         const video = videoRef.current;
         if (video) skipJoin(video, mediaId || "");
+        // The skip plays the item the card named at the click, opened the
+        // current way: a reorder mid-fade does not change it, docking does.
+        const queued = serverQueueRun ? undefined : nextInQueue;
+        const issued = serverQueueRun || queued || !issuedNext?.streams ? undefined : issuedNext;
         const advance = playNowTarget
           ? () => {
               endedWithoutNext.current = null;
               playItemRef.current(playNowTarget, "", true, profileID);
             }
-          : // Docking mid-fade changes how the next item opens: the skip uses the current way.
-            () => playNextRef.current?.();
+          : queued
+            ? () => openNextRef.current.goToQueueItem(queued)
+            : issued
+              ? () => openNextRef.current.advanceToNext(issued)
+              : () => openNextRef.current.playNext?.();
         // A relock mid-fade voids a choice made under the revealed session.
         fadeAdvance(video, () => {
           if (chosenUnder?.aborted) return;
