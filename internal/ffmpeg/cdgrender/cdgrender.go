@@ -50,11 +50,15 @@ var (
 )
 
 // compile builds the module once per process; every render instantiates the
-// shared compiled module, which wazero allows concurrently.
+// shared compiled module, which wazero allows concurrently. The runtime does
+// not close modules on context done: that check, at every guest call and
+// loop, made the presenter about four times slower (22 against 91 frames a
+// second at 960x540 on an i7-8700K), below real time. A render stops on its
+// context through its streams instead (Render).
 func compile() (wazero.Runtime, wazero.CompiledModule, error) {
 	compileOnce.Do(func() {
 		ctx := context.Background()
-		rt := wazero.NewRuntimeWithConfig(ctx, wazero.NewRuntimeConfig().WithCloseOnContextDone(true))
+		rt := wazero.NewRuntime(ctx)
 		if _, err := wasi_snapshot_preview1.Instantiate(ctx, rt); err != nil {
 			compileErr = fmt.Errorf("cdgrender: instantiating WASI: %w", err)
 			return
@@ -86,14 +90,26 @@ func (t *tail) Write(p []byte) (int, error) {
 // a blocked read or write without the descriptor being reused under the
 // module. They also replace every error with errStream: wazero reports a
 // closed file as EBADF, which Rust's standard streams treat as success, so a
-// presenter writing to a closed file would never stop.
-type readerOnly struct{ r io.Reader }
+// presenter writing to a closed file would never stop. Once ctx ends they
+// fail every call, which is how a render stops on its context: the presenter
+// reads the whole stream before drawing and writes every frame, so it never
+// runs longer than one frame without calling one of them.
+type readerOnly struct {
+	ctx context.Context
+	r   io.Reader
+}
 
-type writerOnly struct{ w io.Writer }
+type writerOnly struct {
+	ctx context.Context
+	w   io.Writer
+}
 
 var errStream = errors.New("cdgrender: stream closed")
 
 func (r readerOnly) Read(p []byte) (int, error) {
+	if r.ctx.Err() != nil {
+		return 0, errStream
+	}
 	n, err := r.r.Read(p)
 	if err != nil && err != io.EOF {
 		err = errStream
@@ -102,6 +118,9 @@ func (r readerOnly) Read(p []byte) (int, error) {
 }
 
 func (w writerOnly) Write(p []byte) (int, error) {
+	if w.ctx.Err() != nil {
+		return 0, errStream
+	}
 	n, err := w.w.Write(p)
 	if err != nil {
 		err = errStream
@@ -123,8 +142,8 @@ func Render(ctx context.Context, stream io.Reader, out io.Writer, o Options) err
 	cfg := wazero.NewModuleConfig().
 		WithName("").
 		WithArgs(o.args()...).
-		WithStdin(readerOnly{stream}).
-		WithStdout(writerOnly{out}).
+		WithStdin(readerOnly{ctx, stream}).
+		WithStdout(writerOnly{ctx, out}).
 		WithStderr(&diag)
 	mod, err := rt.InstantiateModule(ctx, cm, cfg)
 	if mod != nil {
