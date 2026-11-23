@@ -1047,9 +1047,11 @@ function FeaturePlayer({
             : issued
               ? () => openNextRef.current.advanceToNext(issued)
               : () => openNextRef.current.playNext?.();
-        // A relock mid-fade voids a choice made under the revealed session.
+        // A relock mid-fade voids a choice made under the revealed session, and
+        // an advance withdrawn mid-fade (a Watch Party now leads, the item
+        // plays alone) leaves nothing to skip to.
         fadeAdvance(video, () => {
-          if (chosenUnder?.aborted) return;
+          if (chosenUnder?.aborted || !openNextRef.current.playNext) return;
           advance();
         });
       }

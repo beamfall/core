@@ -2512,6 +2512,25 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
     await waitFor(() => expect(playingNow()).toBe("media-next"));
   });
 
+  it("drops a Play now when a Watch Party takes the lead under it (CORE-3352)", async () => {
+    const rerender = renderAdvance();
+    const stage = document.querySelector<HTMLElement>(".bf-audio-stage");
+    if (!stage) throw new Error("no audio stage");
+    expect(await within(stage).findByText("Ann")).toBeInTheDocument();
+    playAudibly(presentFirstFrame());
+    const card = await screen.findByRole("region", { name: /Playing next/ });
+    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    // Joining a party mid-fade withdraws the player's own Up next.
+    vi.mocked(watchPartyDefersUpNext).mockReturnValue(true);
+    try {
+      rerender();
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 600)));
+      expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-next")).toBe(false);
+    } finally {
+      vi.mocked(watchPartyDefersUpNext).mockReturnValue(false);
+    }
+  });
+
   it("plays the item the card named when the order changes under a Play now (CORE-3352)", async () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(0.3);
     try {
@@ -3581,6 +3600,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     } finally {
       resetWatchPartyForTest();
       stream.mockRestore();
+      vi.mocked(calibrateWatchPartyClock).mockRejectedValue(new Error("not on the home network"));
     }
   });
 
