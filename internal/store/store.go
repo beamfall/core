@@ -3870,7 +3870,15 @@ func (s *Store) sourceItemsForKind(ctx context.Context, filter LibraryFilter, qu
 		if query.ProfileID == "" {
 			return []SourceItem{}, nil
 		}
-		return s.nextUpSQL(ctx, query.ProfileID, filter, limit, offset)
+		// The value names one media class (CORE-3331): Home's Up Next reads
+		// video and Continue Listening audio. No value offers every class.
+		class := MediaClass(query.Value)
+		switch class {
+		case "", MediaClassVideo, MediaClassAudio:
+		default:
+			return []SourceItem{}, nil
+		}
+		return s.nextUpSQL(ctx, query.ProfileID, filter, class, limit, offset)
 	case "recently-played":
 		if query.ProfileID == "" {
 			return []SourceItem{}, nil

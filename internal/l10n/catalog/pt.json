@@ -17,6 +17,7 @@
   "library_root.overlaps": "A pasta {path} já faz parte de uma biblioteca.",
   "library_root.unreadable": "O servidor não tem permissão para ler {path}.",
   "manifest.shelf.next_up": "A seguir",
+  "manifest.shelf.continue_listening": "Continuar a ouvir",
   "media_relation.invalid_input": "Verifique o conteúdo, o tipo de entidade, a relação e os atributos.",
   "media_relation.undo_conflict": "Não é possível desfazer esta mesclagem porque uma relação foi editada depois.",
   "notification.access_request.title": "Acesso solicitado",
