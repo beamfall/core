@@ -626,6 +626,18 @@ const engagementFilterBatch = 256
 // query must select media_id first; scan reads one row and returns its Media ID
 // with a builder that renders the SourceItem from the visible Media.
 func (s *Store) filteredEngagementPage(ctx context.Context, query string, args []any, filter LibraryFilter, limit, offset int, excludeIncomplete bool, scan func(*sql.Rows) (MediaID, func(Media) SourceItem, error)) ([]SourceItem, error) {
+	return s.matchedEngagementPage(ctx, query, args, filter, limit, offset, excludeIncomplete, nil, scan)
+}
+
+// engagementMatch narrows one chunk of visible candidates further, before
+// they count against offset: it returns the IDs to keep. A nil match keeps
+// every visible candidate.
+type engagementMatch func(ctx context.Context, visible map[MediaID]Media) (map[MediaID]bool, error)
+
+// matchedEngagementPage is filteredEngagementPage with an extra per-chunk
+// match, so a narrowed feed (History search, CORE-3333) still pages over the
+// filtered sequence and every page is full until the feed ends.
+func (s *Store) matchedEngagementPage(ctx context.Context, query string, args []any, filter LibraryFilter, limit, offset int, excludeIncomplete bool, match engagementMatch, scan func(*sql.Rows) (MediaID, func(Media) SourceItem, error)) ([]SourceItem, error) {
 	items := []SourceItem{}
 	if limit == 0 {
 		return items, nil
@@ -667,9 +679,16 @@ func (s *Store) filteredEngagementPage(ctx context.Context, query string, args [
 				return false, err
 			}
 		}
+		var kept map[MediaID]bool
+		if match != nil {
+			kept, err = match(ctx, visible)
+			if err != nil {
+				return false, err
+			}
+		}
 		for _, c := range batch {
 			media, ok := visible[c.id]
-			if !ok || extras[c.id] || incomplete[c.id] {
+			if !ok || extras[c.id] || incomplete[c.id] || (match != nil && !kept[c.id]) {
 				// Hidden, deleted or out-of-scope Media never reaches the wire;
 				// Extras are excluded from engagement shelves by default (ADR-0009 §3).
 				continue
@@ -1444,19 +1463,42 @@ func (s *Store) nextUpWatchedSQL(ctx context.Context, profileID ProfileID, ids [
 	return watched, rows.Err()
 }
 
+// PlayedFilter narrows the recently-played and most-played Source kinds for
+// the History page (CORE-3333). Query keeps Media whose title, or the title of
+// an Entity linked to it (such as its artist or album), contains every term,
+// folded for case and diacritics. PlayedAfter/PlayedBefore bound the last play
+// in Unix milliseconds: after is inclusive, before exclusive, 0 is unbounded.
+type PlayedFilter struct {
+	Query        string
+	PlayedAfter  int64
+	PlayedBefore int64
+}
+
 // playedItemsSQL backs the recently-played and most-played Source kinds:
-// engagement-projection-backed, reveal-filtered, generic.
-//
-// The events-DB page is fetched first (ordered, cheap), then all candidate IDs
-// are resolved in a single visibleMediaBatchSQL call instead of one
-// visibleMediaSQL per row — eliminating the N+1 that caused one catalog round-
-// trip per played item.
-func (s *Store) playedItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, orderBy string, limit, offset int) ([]SourceItem, error) {
-	return s.filteredEngagementPage(ctx, `
+// the Profile's played Media in the given order, each summarised by its play
+// count, narrowed by PlayedFilter before paging.
+func (s *Store) playedItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, played PlayedFilter, orderBy string, limit, offset int) ([]SourceItem, error) {
+	where := "profile_id = ? AND play_count > 0"
+	args := []any{profileID}
+	if played.PlayedAfter > 0 {
+		where += " AND last_played_at_ms >= ?"
+		args = append(args, played.PlayedAfter)
+	}
+	if played.PlayedBefore > 0 {
+		where += " AND last_played_at_ms < ?"
+		args = append(args, played.PlayedBefore)
+	}
+	var match engagementMatch
+	if terms := strings.Fields(foldSearchText(played.Query)); len(terms) > 0 {
+		match = func(ctx context.Context, visible map[MediaID]Media) (map[MediaID]bool, error) {
+			return s.matchMediaTextLocked(ctx, visible, terms)
+		}
+	}
+	return s.matchedEngagementPage(ctx, `
 		SELECT media_id, play_count
 		FROM playback_progress
-		WHERE profile_id = ? AND play_count > 0
-		ORDER BY `+orderBy, []any{profileID}, filter, limit, offset, false,
+		WHERE `+where+`
+		ORDER BY `+orderBy, args, filter, limit, offset, false, match,
 		func(rows *sql.Rows) (MediaID, func(Media) SourceItem, error) {
 			var mediaID MediaID
 			var playCount int
@@ -1471,6 +1513,36 @@ func (s *Store) playedItemsSQL(ctx context.Context, profileID ProfileID, filter 
 				return SourceItem{ID: media.ID, Kind: "media", Title: media.Title, Summary: summary}
 			}, nil
 		})
+}
+
+// matchMediaTextLocked keeps the visible Media whose title together with the
+// titles of the Entities linked to it contains every folded term.
+func (s *Store) matchMediaTextLocked(ctx context.Context, visible map[MediaID]Media, terms []string) (map[MediaID]bool, error) {
+	ids := make([]MediaID, 0, len(visible))
+	for id := range visible {
+		ids = append(ids, id)
+	}
+	links, err := s.mediaEntityLinksLocked(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	kept := make(map[MediaID]bool, len(visible))
+	for id, media := range visible {
+		parts := []string{media.Title}
+		for _, link := range links[id] {
+			parts = append(parts, link.Title)
+		}
+		haystack := foldSearchText(strings.Join(parts, " "))
+		match := true
+		for _, term := range terms {
+			if !strings.Contains(haystack, term) {
+				match = false
+				break
+			}
+		}
+		kept[id] = match
+	}
+	return kept, nil
 }
 
 // ListeningStats is the Profile-scoped playback rollup for music-style summary

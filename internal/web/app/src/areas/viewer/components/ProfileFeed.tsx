@@ -11,12 +11,31 @@ import { MediaItemCard } from "./MediaItemCard";
 
 export const PROFILE_FEED_LIMIT = 100;
 
-function feedPage(kind: string, offset: number, signal: AbortSignal): Promise<SourceItem[]> {
+/** Server-side narrowing of a played feed (History search, CORE-3333). */
+export interface FeedFilters {
+  /** Matches title, artist or album; empty matches all. */
+  query: string;
+  /** One Library; empty means every visible Library. */
+  libraryID: string;
+  /** RFC 3339 lower bound on the last play; empty means any time. */
+  playedAfter: string;
+}
+
+const NO_FILTERS: FeedFilters = { query: "", libraryID: "", playedAfter: "" };
+
+function feedPage(
+  kind: string,
+  filters: FeedFilters,
+  offset: number,
+  signal: AbortSignal,
+): Promise<SourceItem[]> {
   return fetchSourceItems(
     {
       kind,
       entityKind: "",
-      libraryID: "",
+      libraryID: filters.libraryID,
+      ...(filters.query ? { query: filters.query } : {}),
+      ...(filters.playedAfter ? { playedAfter: filters.playedAfter } : {}),
       entityID: "",
       fieldFilters: null,
       entityFilter: null,
@@ -42,9 +61,14 @@ const FEED_END_EMPTY_PAGES = 3;
 // on by the requested size until a page comes back full (more may follow) or
 // FEED_END_EMPTY_PAGES pages in a row come back empty (the end). It returns the
 // rows and the offset of the next page, or null at the end. A read that hits
-// MAX_FEED_READS first leaves Load more to step on.
+// MAX_FEED_READS first leaves Load more to step on. The played kinds are paged
+// after every filter, Mute and the History search included, so for them a short
+// page is the end (CORE-3333).
+const EXACT_PAGE_KINDS = new Set(["recently-played", "most-played"]);
+
 async function readFeed(
   kind: string,
+  filters: FeedFilters,
   offset: number,
   signal: AbortSignal,
 ): Promise<{ items: SourceItem[]; next: number | null }> {
@@ -52,10 +76,11 @@ async function readFeed(
   let at = offset;
   let emptyRun = 0;
   for (let reads = 0; reads < MAX_FEED_READS; reads++) {
-    const page = await feedPage(kind, at, signal);
+    const page = await feedPage(kind, filters, at, signal);
     items.push(...page);
     at += PROFILE_FEED_LIMIT;
     if (page.length === PROFILE_FEED_LIMIT) return { items, next: at };
+    if (EXACT_PAGE_KINDS.has(kind)) return { items, next: null };
     emptyRun = page.length === 0 ? emptyRun + 1 : 0;
     if (emptyRun === FEED_END_EMPTY_PAGES) return { items, next: null };
   }
@@ -70,12 +95,15 @@ export function ProfileFeed({
   kind,
   heading,
   empty,
+  filters = NO_FILTERS,
 }: {
   /** The sourceItems kind ("favorites", "recently-played", "most-played"). */
   kind: string;
   /** A section heading; omit when the page title already names the feed. */
   heading?: string;
   empty: string;
+  /** Narrows the feed on the server, before paging. */
+  filters?: FeedFilters;
 }) {
   const t = useT();
   const identity = useViewerIdentity();
@@ -85,6 +113,13 @@ export function ProfileFeed({
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
+  // Key the read on the filter values, not the object, so a re-render with
+  // equal filters does not re-read.
+  const { query, libraryID, playedAfter } = filters;
+  const active = useMemo(
+    () => ({ query, libraryID, playedAfter }),
+    [query, libraryID, playedAfter],
+  );
 
   // The identity and engagement epoch only re-run the read; they are not inputs to it.
   useEffect(() => {
@@ -93,7 +128,7 @@ export function ProfileFeed({
     setItems(null);
     setNextOffset(null);
     setLoadingMore(false);
-    readFeed(kind, 0, controller.signal)
+    readFeed(kind, active, 0, controller.signal)
       .then(({ items: first, next }) => {
         setItems(first);
         setNextOffset(next);
@@ -102,13 +137,13 @@ export function ProfileFeed({
         if (!controller.signal.aborted) setItems([]);
       });
     return () => controller.abort();
-  }, [kind, identity, epoch]);
+  }, [kind, active, identity, epoch]);
 
   const loadMore = useCallback(() => {
     const controller = controllerRef.current;
     if (!controller || nextOffset === null) return;
     setLoadingMore(true);
-    readFeed(kind, nextOffset, controller.signal)
+    readFeed(kind, active, nextOffset, controller.signal)
       .then(({ items: more, next }) => {
         if (controller.signal.aborted) return;
         setItems((prev) => [...(prev ?? []), ...more]);
@@ -118,7 +153,7 @@ export function ProfileFeed({
       .finally(() => {
         if (!controller.signal.aborted) setLoadingMore(false);
       });
-  }, [kind, nextOffset]);
+  }, [kind, active, nextOffset]);
 
   const queue = useMemo(() => playQueueOf(items ?? []), [items]);
 

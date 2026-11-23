@@ -3433,6 +3433,16 @@
           "optional": true
         },
         {
+          "name": "playedAfter",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "playedBefore",
+          "kind": "string",
+          "optional": true
+        },
+        {
           "name": "query",
           "kind": "string",
           "optional": true
@@ -51699,6 +51709,16 @@
         {
           "name": "offset",
           "kind": "int",
+          "optional": true
+        },
+        {
+          "name": "playedAfter",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "playedBefore",
+          "kind": "string",
           "optional": true
         },
         {

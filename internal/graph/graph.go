@@ -2004,6 +2004,50 @@ func (h *Handler) genreRollUp(kind string, entityFilter *store.EntityFilter) *st
 	return &store.ContainerRollUp{MemberRelations: members, ParentRelations: parents}
 }
 
+// playedFilterVars reads the History filters for the played Source kinds:
+// the search text and the RFC 3339 bounds on the last play, playedAfter
+// inclusive and playedBefore exclusive. A malformed bound is a client error
+// rather than a silently widened feed.
+func playedFilterVars(req request, queryText string) (store.PlayedFilter, error) {
+	after, err := playedBound("playedAfter", req.Variables["playedAfter"])
+	if err != nil {
+		return store.PlayedFilter{}, err
+	}
+	before, err := playedBound("playedBefore", req.Variables["playedBefore"])
+	if err != nil {
+		return store.PlayedFilter{}, err
+	}
+	return store.PlayedFilter{Query: queryText, PlayedAfter: after, PlayedBefore: before}, nil
+}
+
+// playedBound parses one RFC 3339 bound to Unix milliseconds; absent, null or
+// blank is 0, unbounded; the epoch itself and any non-string value are client
+// errors, since 0 means unbounded. Plays
+// are stored in whole milliseconds, so a sub-millisecond bound rounds up: the
+// inclusive lower bound and the exclusive upper bound both stay exact.
+func playedBound(name string, value any) (int64, error) {
+	if value == nil {
+		return 0, nil
+	}
+	raw, ok := value.(string)
+	if !ok {
+		return 0, clientError(name + " must be an RFC 3339 time")
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	at, err := time.Parse(time.RFC3339, raw)
+	if err != nil || at.UnixMilli() <= 0 {
+		return 0, clientError(name + " must be an RFC 3339 time")
+	}
+	ms := at.UnixMilli()
+	if at.Nanosecond()%int(time.Millisecond) != 0 {
+		ms++
+	}
+	return ms, nil
+}
+
 func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request) ([]SourceItem, error) {
 	if h.store == nil {
 		return []SourceItem{}, nil
@@ -2062,6 +2106,14 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 			}
 		}
 	}
+	// Only the played kinds take the History bounds; the rest ignore them.
+	var played store.PlayedFilter
+	if kind == "recently-played" || kind == "most-played" {
+		var err error
+		if played, err = playedFilterVars(req, queryText); err != nil {
+			return nil, err
+		}
+	}
 	filter := scope.LibraryFilter()
 	if kind == "subscription-new" {
 		// New entries reach Profiles across Libraries, so a Sealed Library's
@@ -2095,6 +2147,8 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 		// availability, ADR-0052 §2.6); echoed back from the manifest like the
 		// other Source parameters. An unrecognized value yields an empty feed.
 		Value: trimmedVariable(req, "value"),
+		// The History page searches and narrows the played kinds (CORE-3333).
+		Played: played,
 	})
 	if err != nil {
 		return nil, err
