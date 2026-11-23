@@ -186,6 +186,15 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 			}
 		}
 	}
+	// A bound display is a receiver (ADR-0240 D1, D2): the Device's stored role
+	// and any admin credential never extend to it, so manager- and admin-gated
+	// fields are refused whatever role the Device held before it was bound.
+	if playerBound && gate&(roleManager|roleAdmin) != 0 {
+		return response{
+			Errors:               []graphError{newGraphError(ErrorCodeForbidden, "player display cannot run this operation")},
+			authorizationRefused: true,
+		}
+	}
 	if gate&roleManager != 0 && dispatch.scope.DeviceRole != store.DeviceRoleManager {
 		return response{
 			Errors:               []graphError{newGraphError(ErrorCodeForbidden, "manager role required")},
