@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { holdMute, setListenerMuted } from "./listenerMute";
-import { sleepHoldsAutoplay, sleepStopMark } from "./listening";
+import { sleepHoldsAutoplay, sleepStopMark } from "./sleepStop";
 import { fadeAdvance, holdVolume, volumeHeld } from "./trackFade";
 import { useSleepTimer } from "./useListening";
 

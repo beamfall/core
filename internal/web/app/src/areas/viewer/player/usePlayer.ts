@@ -41,7 +41,7 @@ import {
   nextRecoveryStep,
   resetRecoveryBudget,
 } from "./hlsRecovery";
-import { sleepHoldsAutoplay, sleepStopMark } from "./listening";
+import { loadSleepMark, sleepHoldsAutoplay, sleepStopMark } from "./sleepStop";
 import {
   attachCaptionElements,
   captionLocale,
@@ -800,7 +800,8 @@ export function usePlayer(
     let startMark = remotePlayStateMark();
     // Likewise a sleep timer that stopped playback after this load began, or
     // after playback last started: a skip still loading must not play on (CORE-3365).
-    let sleepMark = sleepStopMark();
+    // A skip's load begins from when the skip moved on.
+    let sleepMark = loadSleepMark();
     setState(emptyState());
     const reloading = retryFromRef.current?.mediaID === mediaID;
     const retryFrom = reloading ? (retryFromRef.current?.position ?? 0) : 0;

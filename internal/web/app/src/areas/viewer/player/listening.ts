@@ -185,24 +185,6 @@ export function sleepRemaining(
   return Math.max(0, timer.kind === "item" ? left - SLEEP_END_LEAD_SECONDS : left);
 }
 
-// Bumped each time the sleep timer stops playback (CORE-3365).
-let sleepStops = 0;
-
-/** Records that the sleep timer stopped playback: a load already under way must not start itself. */
-export function noteSleepStop(): void {
-  sleepStops += 1;
-}
-
-/** A mark to pass to `sleepHoldsAutoplay` later: taken when a load begins or playback starts. */
-export function sleepStopMark(): number {
-  return sleepStops;
-}
-
-/** Whether the sleep timer stopped playback after `mark`, so a load must not start itself. */
-export function sleepHoldsAutoplay(mark: number): boolean {
-  return sleepStops > mark;
-}
-
 /** How long the fade lasts for a timer set with `total` listening seconds left. */
 export function sleepFadeSeconds(total: number): number {
   return Math.min(SLEEP_FADE_SECONDS, Math.max(0, total / 4));

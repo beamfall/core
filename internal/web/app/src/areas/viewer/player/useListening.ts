@@ -4,7 +4,6 @@ import { playbackDurationSeconds } from "../lib/transport";
 import {
   longPauseAt,
   nextPauseStart,
-  noteSleepStop,
   parseSilenceMap,
   type SilentSpan,
   type SleepTimer,
@@ -12,6 +11,7 @@ import {
   sleepFadeSeconds,
   sleepRemaining,
 } from "./listening";
+import { noteSleepStop } from "./sleepStop";
 import {
   cancelFadeAdvance,
   dropFadeAdvance,
@@ -230,14 +230,18 @@ export function useSleepTimer(
       if (left >= fadeSeconds) {
         // The next poll could land past the fade's start, so a short fade steps from
         // here and still begins on time (CORE-3364).
-        if (left - SLEEP_POLL_MS / 1000 > fadeSeconds) letGo();
-        else stepping ??= setInterval(() => fade(measure()), SLEEP_FADE_STEP_MS);
+        if (left - SLEEP_POLL_MS / 1000 > fadeSeconds) return letGo();
+        // Back before the fade (a seek): the listener's level until it begins again.
+        hold?.release(true);
+        hold = null;
+        stepping ??= setInterval(() => fade(measure()), SLEEP_FADE_STEP_MS);
         return;
       }
       if (!hold) {
         if (volumeHeld(video)) return; // A skip is fading; this fade starts once it is done.
         hold = holdVolume(video);
-        from = left;
+        // One step in, so even a fade only a step or two long is heard.
+        from = Math.min(fadeSeconds, left + SLEEP_FADE_STEP_MS / 1000);
         stepping ??= setInterval(() => fade(measure()), SLEEP_FADE_STEP_MS);
       }
       hold.write(sleepFade(left, from));
