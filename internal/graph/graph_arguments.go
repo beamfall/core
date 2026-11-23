@@ -629,7 +629,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "windowDays", Kind: "int", Optional: true},
 	},
 	"playerbinding": {},
-	"plugins":       {},
+	"playercontrollers": {
+		{Name: "profileID", Kind: "string"},
+	},
+	"playerdisplays": {},
+	"plugins":        {},
 	"pluginworker": {
 		{Name: "actionID", Kind: "string", Optional: true},
 		{Name: "descriptorID", Kind: "string", Optional: true},
@@ -1063,6 +1067,12 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "pluginID", Kind: "string"},
 		{Name: "signature", Kind: "string", Optional: true},
 		{Name: "signingKey", Kind: "string", Optional: true},
+	},
+	"setplayercontrollers": {
+		{Name: "allAdults", Kind: "boolean", Optional: true},
+		{Name: "exclude", Kind: "list", Optional: true},
+		{Name: "include", Kind: "list", Optional: true},
+		{Name: "profileID", Kind: "string"},
 	},
 	"setplayerwalkup": {
 		{Name: "enabled", Kind: "boolean"},

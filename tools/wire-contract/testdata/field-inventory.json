@@ -839,6 +839,7 @@
         "libraryIDs",
         "maxConcurrentStreams",
         "name",
+        "playerControllers",
         "preferSDH",
         "remoteMaxBitrate",
         "subtitleLanguages",
@@ -2820,6 +2821,31 @@
       ]
     },
     {
+      "field": "playercontrollers",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "allAdults",
+        "exclude",
+        "include",
+        "profileID"
+      ]
+    },
+    {
+      "field": "playerdisplays",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "currentItem",
+        "displayName",
+        "handle",
+        "lastSeenAt",
+        "playerProfileID",
+        "presence",
+        "sessionID"
+      ]
+    },
+    {
       "field": "playhistory",
       "effect": "read",
       "tier": "admin",
@@ -2944,14 +2970,17 @@
       "effect": "read",
       "tier": "session",
       "children": [
+        "artworkURL",
         "current",
         "deviceID",
         "deviceName",
         "deviceRole",
         "durationSeconds",
+        "label",
         "libraryID",
         "mediaID",
         "positionSeconds",
+        "privateItem",
         "revision",
         "sessionID",
         "title",
@@ -4215,6 +4244,7 @@
         "libraryIDs",
         "maxConcurrentStreams",
         "name",
+        "playerControllers",
         "preferSDH",
         "remoteMaxBitrate",
         "subtitleLanguages",
@@ -4533,6 +4563,28 @@
       ]
     },
     {
+      "field": "setplayercontrollers",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "audioLanguages",
+        "certificationCeilings",
+        "disabled",
+        "id",
+        "kind",
+        "libraryIDs",
+        "maxConcurrentStreams",
+        "name",
+        "playerControllers",
+        "preferSDH",
+        "remoteMaxBitrate",
+        "subtitleLanguages",
+        "subtitleMode",
+        "transcodeAllowed",
+        "walkUpEnabled"
+      ]
+    },
+    {
       "field": "setplayerwalkup",
       "effect": "write",
       "tier": "admin",
@@ -4545,6 +4597,7 @@
         "libraryIDs",
         "maxConcurrentStreams",
         "name",
+        "playerControllers",
         "preferSDH",
         "remoteMaxBitrate",
         "subtitleLanguages",
@@ -4651,6 +4704,7 @@
         "libraryIDs",
         "maxConcurrentStreams",
         "name",
+        "playerControllers",
         "preferSDH",
         "remoteMaxBitrate",
         "subtitleLanguages",
@@ -5506,6 +5560,7 @@
         "libraryIDs",
         "maxConcurrentStreams",
         "name",
+        "playerControllers",
         "preferSDH",
         "remoteMaxBitrate",
         "subtitleLanguages",

@@ -202,6 +202,7 @@ const (
 	ActivityDeviceRole          = "device.role"
 	ActivityDevicePlayerBinding = "device.player_binding"
 	ActivityPlayerWalkUp        = "profile.player_walk_up"
+	ActivityPlayerControllers   = "profile.player_controllers"
 	// ActivitySessionControl records a cross-device transport command (ADR-0035
 	// §7): a session-authenticated device, admin API token, or scoped API key
 	// controlled an active session. TargetType is "session", TargetID the

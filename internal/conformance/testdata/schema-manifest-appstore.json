@@ -965,6 +965,16 @@
     "tier": "session"
   },
   {
+    "field": "playercontrollers",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "playerdisplays",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "playhistory",
     "effect": "read",
     "tier": "admin"
@@ -1528,6 +1538,11 @@
     "field": "setnavoverride",
     "effect": "write",
     "tier": "session"
+  },
+  {
+    "field": "setplayercontrollers",
+    "effect": "write",
+    "tier": "admin"
   },
   {
     "field": "setplayerwalkup",

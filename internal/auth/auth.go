@@ -69,6 +69,7 @@ const (
 	integrationAttemptAction        = store.IntegrationAttemptAction
 	integrationAttemptPseudonymInfo = "beamfall/integration-attempt-pseudonym/v1"
 	integrationIPThrottleInfo       = "beamfall/integration-ip-throttle/v1"
+	playerDisplayHandleInfo         = "beamfall/player-display-handle/v1"
 )
 
 // adminBackoff is the admin re-auth lane's exponential-backoff curve (ADR-0012
@@ -233,6 +234,7 @@ type Service struct {
 	certificationScales      map[string][]string
 	integrationAttemptSecret []byte
 	integrationIPSecret      []byte
+	playerDisplaySecret      []byte
 	// beforeAdminGrant, when non-nil, runs in BeginAdminSession after the
 	// owner and password checks and before the window is written. Test seam
 	// for the ownership-transfer race; nil in production.
@@ -258,6 +260,7 @@ func NewServiceWithClock(st *store.Store, now func() time.Time) *Service {
 	return &Service{
 		store: st, now: now, integrationAttemptSecret: secret,
 		integrationIPSecret: deriveIntegrationAttemptSecret(secret, integrationIPThrottleInfo),
+		playerDisplaySecret: deriveIntegrationAttemptSecret(secret, playerDisplayHandleInfo),
 	}
 }
 
@@ -270,6 +273,46 @@ func (s *Service) SetIntegrationAttemptSecret(secret []byte) {
 	}
 	s.integrationAttemptSecret = deriveIntegrationAttemptSecret(secret, integrationAttemptPseudonymInfo)
 	s.integrationIPSecret = deriveIntegrationAttemptSecret(secret, integrationIPThrottleInfo)
+	s.playerDisplaySecret = deriveIntegrationAttemptSecret(secret, playerDisplayHandleInfo)
+}
+
+// PlayerDisplayHandle derives an opaque, stable handle for a player-bound
+// Device ID using the server's HMAC key (ADR-0240 D9).
+func (s *Service) PlayerDisplayHandle(deviceID store.DeviceID) string {
+	if deviceID == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, s.playerDisplaySecret)
+	mac.Write([]byte("player-display:"))
+	mac.Write([]byte(deviceID))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// PlayerProfilePlaybackFilter builds the PlaybackFilter for a Player Profile
+// from its stored Library access list and certification ceilings, with Revealed
+// always false (ADR-0240 D1, D4).
+func (s *Service) PlayerProfilePlaybackFilter(ctx context.Context, profileID store.ProfileID) (store.LibraryFilter, error) {
+	if s == nil || s.store == nil {
+		return store.LibraryFilter{}, errors.New("auth store unavailable")
+	}
+	profile, err := s.store.Profile(ctx, profileID)
+	if err != nil {
+		return store.LibraryFilter{}, err
+	}
+	if profile.Disabled {
+		return store.LibraryFilter{}, store.ErrProfileDisabled
+	}
+	if profile.Kind != store.ProfilePlayer {
+		return store.LibraryFilter{}, store.ValidationError("target profile must be kind player")
+	}
+	playerScope := Scope{
+		ProfileID:     profile.ID,
+		Profile:       profile.Kind,
+		Revealed:      false,
+		LibraryIDs:    profile.Library,
+		Certification: s.CertificationConstraints(profile.CertificationCeilings),
+	}
+	return playerScope.PlaybackFilter(), nil
 }
 
 func deriveIntegrationAttemptSecret(secret []byte, info string) []byte {

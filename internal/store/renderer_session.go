@@ -209,6 +209,35 @@ func (s *Store) ControlRendererSession(
 	activity *ActivityEntry,
 	now time.Time,
 ) (RendererSessionControlResult, error) {
+	return s.controlRendererSession(ctx, target, expectedRevision, commandID, payload, activity, now, nil)
+}
+
+// ControlRendererSessionForPlayer executes ControlRendererSession while holding
+// sessionBindMu.RLock() so binding generation, Player Profile membership, and
+// controller authorization are re-checked before committing to events.db.
+func (s *Store) ControlRendererSessionForPlayer(
+	ctx context.Context,
+	target SessionID,
+	expectedRevision int64,
+	commandID string,
+	payload SessionControlPayload,
+	activity *ActivityEntry,
+	now time.Time,
+	guard PlayerControlGuard,
+) (RendererSessionControlResult, error) {
+	return s.controlRendererSession(ctx, target, expectedRevision, commandID, payload, activity, now, &guard)
+}
+
+func (s *Store) controlRendererSession(
+	ctx context.Context,
+	target SessionID,
+	expectedRevision int64,
+	commandID string,
+	payload SessionControlPayload,
+	activity *ActivityEntry,
+	now time.Time,
+	guard *PlayerControlGuard,
+) (RendererSessionControlResult, error) {
 	if expectedRevision < 0 {
 		return RendererSessionControlResult{}, ValidationError("expectedRevision must be a non-negative integer")
 	}
@@ -233,10 +262,19 @@ func (s *Store) ControlRendererSession(
 		}
 	}
 
+	if guard != nil {
+		s.sessionBindMu.RLock()
+		defer s.sessionBindMu.RUnlock()
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return RendererSessionControlResult{}, err
+	}
+	if guard != nil {
+		if err := s.verifyPlayerControlLocked(ctx, target, *guard); err != nil {
+			return RendererSessionControlResult{}, err
+		}
 	}
 
 	playerBound, err := s.playMediaTargetsPlayerLocked(ctx, target, payload)

@@ -988,8 +988,9 @@ func (h *Handler) endWatchParty(ctx context.Context, scope auth.Scope, partyID s
 const partyStreamGrace = 20 * time.Second
 
 // EventStreamOpened records that session opened an event stream. The server's
-// event surface calls it for every session stream (CORE-1763 presence).
+// event surface calls it for every session stream (CORE-1763 presence, ADR-0240 D9).
 func (h *Handler) EventStreamOpened(session store.SessionID) {
+	h.playerStreamOpened(session)
 	if h.conductor != nil {
 		h.conductor.StreamOpened(session)
 	}
@@ -999,6 +1000,7 @@ func (h *Handler) EventStreamOpened(session store.SessionID) {
 // the last stream of a party member, it schedules an expiry sweep for after the
 // grace window.
 func (h *Handler) EventStreamClosed(session store.SessionID) {
+	h.playerStreamClosed(session)
 	if h.conductor == nil || !h.conductor.StreamClosed(session) || !h.conductor.SessionInParty(session) {
 		return
 	}

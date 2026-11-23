@@ -108,9 +108,12 @@ var originalScopedFields = []string{
 	"createprofile",
 	"currentsession",
 	"playerbinding",
+	"playercontrollers",
+	"playerdisplays",
 	"setdeviceplayerbinding",
 	"cleardeviceplayerbinding",
 	"setplayerwalkup",
+	"setplayercontrollers",
 	"deletelibrary",
 	"trashedlibraries",     // CORE-1201: deleted Libraries that can still be restored
 	"restorelibrary",       // CORE-1201: bring a deleted Library back

@@ -968,6 +968,16 @@
       "tier": "session"
     },
     {
+      "field": "playercontrollers",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "playerdisplays",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "playhistory",
       "effect": "read",
       "tier": "admin"
@@ -1531,6 +1541,11 @@
       "field": "setnavoverride",
       "effect": "write",
       "tier": "session"
+    },
+    {
+      "field": "setplayercontrollers",
+      "effect": "write",
+      "tier": "admin"
     },
     {
       "field": "setplayerwalkup",
@@ -6651,6 +6666,11 @@
             "kind": "object",
             "children": [
               {
+                "name": "artworkURL",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "current",
                 "kind": "scalar"
               },
@@ -6671,6 +6691,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "label",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "libraryID",
                 "kind": "scalar",
                 "optional": true
@@ -6683,6 +6708,11 @@
               {
                 "name": "positionSeconds",
                 "kind": "scalar"
+              },
+              {
+                "name": "privateItem",
+                "kind": "scalar",
+                "optional": true
               },
               {
                 "name": "revision",
@@ -6705,6 +6735,11 @@
           },
           "children": [
             {
+              "name": "artworkURL",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "current",
               "kind": "scalar"
             },
@@ -6725,6 +6760,11 @@
               "kind": "scalar"
             },
             {
+              "name": "label",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "libraryID",
               "kind": "scalar",
               "optional": true
@@ -6737,6 +6777,11 @@
             {
               "name": "positionSeconds",
               "kind": "scalar"
+            },
+            {
+              "name": "privateItem",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "revision",
@@ -7521,6 +7566,38 @@
         {
           "name": "name",
           "kind": "scalar"
+        },
+        {
+          "name": "playerControllers",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "allAdults",
+              "kind": "scalar"
+            },
+            {
+              "name": "exclude",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "include",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "profileID",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "preferSDH",
@@ -34673,6 +34750,114 @@
       ]
     },
     {
+      "field": "playercontrollers",
+      "kind": "object",
+      "children": [
+        {
+          "name": "allAdults",
+          "kind": "scalar"
+        },
+        {
+          "name": "exclude",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "include",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "profileID",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "playerdisplays",
+      "kind": "object",
+      "children": [
+        {
+          "name": "currentItem",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artworkURL",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "label",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "libraryID",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "privateItem",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "title",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        {
+          "name": "displayName",
+          "kind": "scalar"
+        },
+        {
+          "name": "handle",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastSeenAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "playerProfileID",
+          "kind": "scalar"
+        },
+        {
+          "name": "presence",
+          "kind": "scalar"
+        },
+        {
+          "name": "sessionID",
+          "kind": "scalar",
+          "optional": true
+        }
+      ]
+    },
+    {
       "field": "playhistory",
       "kind": "object",
       "children": [
@@ -35280,6 +35465,11 @@
       "kind": "object",
       "children": [
         {
+          "name": "artworkURL",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "current",
           "kind": "scalar"
         },
@@ -35300,6 +35490,11 @@
           "kind": "scalar"
         },
         {
+          "name": "label",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "libraryID",
           "kind": "scalar",
           "optional": true
@@ -35312,6 +35507,11 @@
         {
           "name": "positionSeconds",
           "kind": "scalar"
+        },
+        {
+          "name": "privateItem",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "revision",
@@ -41277,6 +41477,38 @@
           "kind": "scalar"
         },
         {
+          "name": "playerControllers",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "allAdults",
+              "kind": "scalar"
+            },
+            {
+              "name": "exclude",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "include",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "profileID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "preferSDH",
           "kind": "scalar"
         },
@@ -44251,6 +44483,145 @@
       ]
     },
     {
+      "field": "setplayercontrollers",
+      "kind": "object",
+      "children": [
+        {
+          "name": "audioLanguages",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "certificationCeilings",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "allowUnrated",
+                "kind": "scalar"
+              },
+              {
+                "name": "ceiling",
+                "kind": "scalar"
+              },
+              {
+                "name": "pluginID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "allowUnrated",
+              "kind": "scalar"
+            },
+            {
+              "name": "ceiling",
+              "kind": "scalar"
+            },
+            {
+              "name": "pluginID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "disabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "kind",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryIDs",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "maxConcurrentStreams",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "playerControllers",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "allAdults",
+              "kind": "scalar"
+            },
+            {
+              "name": "exclude",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "include",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "profileID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "preferSDH",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
+          "name": "subtitleLanguages",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "subtitleMode",
+          "kind": "scalar"
+        },
+        {
+          "name": "transcodeAllowed",
+          "kind": "scalar"
+        },
+        {
+          "name": "walkUpEnabled",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "setplayerwalkup",
       "kind": "object",
       "children": [
@@ -44326,6 +44697,38 @@
         {
           "name": "name",
           "kind": "scalar"
+        },
+        {
+          "name": "playerControllers",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "allAdults",
+              "kind": "scalar"
+            },
+            {
+              "name": "exclude",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "include",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "profileID",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "preferSDH",
@@ -48353,6 +48756,38 @@
         {
           "name": "name",
           "kind": "scalar"
+        },
+        {
+          "name": "playerControllers",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "allAdults",
+              "kind": "scalar"
+            },
+            {
+              "name": "exclude",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "include",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "profileID",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "preferSDH",
@@ -53665,6 +54100,38 @@
           "kind": "scalar"
         },
         {
+          "name": "playerControllers",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "allAdults",
+              "kind": "scalar"
+            },
+            {
+              "name": "exclude",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "include",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "profileID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "preferSDH",
           "kind": "scalar"
         },
@@ -55587,6 +56054,10 @@
         "effect": "read"
       },
       {
+        "field": "playercontrollers",
+        "effect": "read"
+      },
+      {
         "field": "playhistory",
         "effect": "read"
       },
@@ -55760,6 +56231,10 @@
       },
       {
         "field": "setlibraryshowonhome",
+        "effect": "write"
+      },
+      {
+        "field": "setplayercontrollers",
         "effect": "write"
       },
       {
@@ -58259,7 +58734,8 @@
       "REVEAL_PIN_INCORRECT",
       "PROFILE_MISMATCH",
       "ACCESS_SCHEDULE_ENDED",
-      "UPDATE_REQUIRED"
+      "UPDATE_REQUIRED",
+      "DISPLAY_OFFLINE"
     ],
     "notes": [
       "Every entry in a GraphQL response's errors array carries extensions.code from the closed vocabulary in codes. Clients branch on the code, never on the message text; growing the vocabulary is a deliberate wire-contract change.",

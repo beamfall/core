@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"strings"
 	"time"
@@ -42,6 +43,9 @@ type ProfileSessionInfo struct {
 	MediaID         string `json:"mediaID,omitempty"`
 	Title           string `json:"title,omitempty"`
 	LibraryID       string `json:"libraryID,omitempty"`
+	ArtworkURL      string `json:"artworkURL,omitempty"`
+	PrivateItem     bool   `json:"privateItem,omitempty"`
+	Label           string `json:"label,omitempty"`
 	Transcoding     bool   `json:"transcoding"`
 	PositionSeconds int    `json:"positionSeconds"`
 	DurationSeconds int    `json:"durationSeconds"`
@@ -166,10 +170,15 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 	if _, err := store.ValidateSessionControlArgs(command, args); err != nil {
 		return ControlSessionResult{}, sessionControlClientError(err)
 	}
-	now := time.Now().UTC()
-	target, playing, anchor, err := h.authorizeSessionControl(ctx, scope, targetID, command, args, now)
+	now := h.now().UTC()
+	target, playing, anchor, playerGuard, err := h.authorizeSessionControl(ctx, scope, targetID, command, args, now)
 	if err != nil {
 		return ControlSessionResult{}, err
+	}
+	if playerGuard != nil {
+		// ADR-0240 D3: the legacy controlSession stays same-Profile and refuses
+		// every player target; only controlRendererSession drives a display.
+		return ControlSessionResult{}, clientError("unknown session")
 	}
 
 	payload, err := store.NewSessionControlPayload(command, args, scope.DeviceID, target.ProfileID, anchor)
@@ -236,8 +245,8 @@ func (h *Handler) controlRendererSession(ctx context.Context, scope auth.Scope, 
 		return ControlRendererSessionResult{}, sessionControlClientError(err)
 	}
 
-	now := time.Now().UTC()
-	target, playing, anchor, err := h.authorizeSessionControl(ctx, scope, targetID, command, args, now)
+	now := h.now().UTC()
+	target, playing, anchor, playerGuard, err := h.authorizeSessionControl(ctx, scope, targetID, command, args, now)
 	if err != nil {
 		return ControlRendererSessionResult{}, err
 	}
@@ -249,24 +258,51 @@ func (h *Handler) controlRendererSession(ctx context.Context, scope auth.Scope, 
 	if command != store.SessionCommandPlayMedia {
 		payload.PlayingMediaIDs = playing
 	}
+	activityProfile := target.ProfileID
+	if playerGuard != nil {
+		activityProfile = scope.ProfileID
+	}
 	activity := &store.ActivityEntry{
 		OccurredAt: now,
 		Action:     store.ActivitySessionControl,
 		SessionID:  scope.SessionID,
 		DeviceID:   scope.DeviceID,
-		ProfileID:  target.ProfileID,
+		ProfileID:  activityProfile,
 		TargetType: "session",
 		TargetID:   targetID,
 		TokenID:    scope.APITokenID,
 		APIKeyID:   scope.APIKeyID,
 	}
-	res, err := h.store.ControlRendererSession(ctx, store.SessionID(targetID), expectedRevision, commandID, payload, activity, now)
+	var res store.RendererSessionControlResult
+	if playerGuard != nil {
+		res, err = h.store.ControlRendererSessionForPlayer(ctx, store.SessionID(targetID), expectedRevision, commandID, payload, activity, now, *playerGuard)
+	} else {
+		res, err = h.store.ControlRendererSession(ctx, store.SessionID(targetID), expectedRevision, commandID, payload, activity, now)
+	}
 	if err != nil {
+		if errors.Is(err, store.ErrPlayerControlUnauthorized) || errors.Is(err, store.ErrSessionProfileMismatch) {
+			if playerGuard != nil {
+				h.auditPlayerControl(ctx, scope, target, command, "unauthorized")
+			}
+			return ControlRendererSessionResult{}, clientError("unknown session")
+		}
 		if errors.Is(err, store.ErrRendererSessionCommandReuse) {
+			if playerGuard != nil {
+				if isCtrl, cerr := h.store.IsPlayerController(ctx, target.ProfileID, scope.ProfileID); cerr != nil || !isCtrl {
+					return ControlRendererSessionResult{}, clientError("unknown session")
+				}
+				h.auditPlayerControl(ctx, scope, target, command, "command-reuse")
+			}
 			return ControlRendererSessionResult{}, clientError("commandID already used for a different command")
 		}
 		var conflict store.RendererSessionRevisionConflictError
 		if errors.As(err, &conflict) {
+			if playerGuard != nil {
+				if isCtrl, cerr := h.store.IsPlayerController(ctx, target.ProfileID, scope.ProfileID); cerr != nil || !isCtrl {
+					return ControlRendererSessionResult{}, clientError("unknown session")
+				}
+				h.auditPlayerControl(ctx, scope, target, command, "conflict")
+			}
 			snapshot, snapErr := h.rendererSessionSnapshot(ctx, scope, store.SessionID(targetID), conflict.CurrentRevision, now)
 			if snapErr != nil {
 				return ControlRendererSessionResult{}, snapErr
@@ -279,11 +315,21 @@ func (h *Handler) controlRendererSession(ctx context.Context, scope auth.Scope, 
 				Snapshot:  &snapshot,
 			}, nil
 		}
+		if playerGuard != nil {
+			h.auditPlayerControl(ctx, scope, target, command, "error")
+		}
 		var verr store.ValidationError
 		if errors.As(err, &verr) {
 			return ControlRendererSessionResult{}, clientError(string(verr))
 		}
 		return ControlRendererSessionResult{}, err
+	}
+	if playerGuard != nil {
+		resultLabel := "applied"
+		if res.Replayed {
+			resultLabel = "replayed"
+		}
+		h.auditPlayerControl(ctx, scope, target, command, resultLabel)
 	}
 	return ControlRendererSessionResult{
 		Status:    string(res.Status),
@@ -293,36 +339,57 @@ func (h *Handler) controlRendererSession(ctx context.Context, scope auth.Scope, 
 	}, nil
 }
 
+func (h *Handler) auditPlayerControl(ctx context.Context, scope auth.Scope, target store.Session, verb, result string) {
+	slog.InfoContext(ctx, "player session control",
+		"controllerProfileID", scope.ProfileID,
+		"controllerSessionID", scope.SessionID,
+		"displaySessionID", target.ID,
+		"displayDeviceID", target.DeviceID,
+		"playerProfileID", target.ProfileID,
+		"verb", verb,
+		"result", result,
+	)
+}
+
 func (h *Handler) authorizeSessionControl(
 	ctx context.Context,
 	scope auth.Scope,
 	targetID, command string,
 	args store.SessionControlArgs,
 	now time.Time,
-) (store.Session, []store.MediaID, store.MediaID, error) {
+) (store.Session, []store.MediaID, store.MediaID, *store.PlayerControlGuard, error) {
 	if scope.ProfileID == "" {
 		// No Profile to scope to: a non-Profile caller can never share a Profile
 		// with any session, so every target is "unknown" to it.
-		return store.Session{}, nil, "", clientError("unknown session")
+		return store.Session{}, nil, "", nil, clientError("unknown session")
 	}
 	if scope.IsPlayerBound() {
-		// A player-bound display is controlled, never a controller (ADR-0240 D2).
-		return store.Session{}, nil, "", clientError("session not controllable")
+		// A player-bound display is controlled, never a controller (ADR-0240 D2, D4).
+		return store.Session{}, nil, "", nil, clientError("session not controllable")
 	}
 
-	// Gate 1 — same Profile. Resolve the target session's Profile; a missing or
-	// cross-Profile session is reported identically as "unknown session" so the
-	// surface is never an existence oracle for another Profile's sessions.
+	// Gate 1 — resolve target session and Profile. A missing session or
+	// unauthorized cross-Profile target reports "unknown session" identically so
+	// the surface is never an existence oracle.
 	target, err := h.store.Session(ctx, store.SessionID(targetID))
 	if err != nil {
 		var verr store.ValidationError
 		if errors.As(err, &verr) {
-			return store.Session{}, nil, "", clientError(string(verr))
+			return store.Session{}, nil, "", nil, clientError(string(verr))
 		}
-		return store.Session{}, nil, "", clientError("unknown session")
+		return store.Session{}, nil, "", nil, clientError("unknown session")
 	}
+	targetProfile, err := h.store.Profile(ctx, target.ProfileID)
+	if err != nil {
+		return store.Session{}, nil, "", nil, clientError("unknown session")
+	}
+
+	if targetProfile.Kind == store.ProfilePlayer {
+		return h.authorizePlayerSessionControl(ctx, scope, target, targetProfile, command, args, now)
+	}
+
 	if target.ProfileID != scope.ProfileID {
-		return store.Session{}, nil, "", clientError("unknown session")
+		return store.Session{}, nil, "", nil, clientError("unknown session")
 	}
 
 	// Gate 2 — reveal. Applied through the CALLER's own filter: a session
@@ -334,7 +401,7 @@ func (h *Handler) authorizeSessionControl(
 	// rows come back in.
 	active, err := h.store.GrantedSessions(ctx, now, scope.LibraryFilter())
 	if err != nil {
-		return store.Session{}, nil, "", err
+		return store.Session{}, nil, "", nil, err
 	}
 	var playing []store.MediaID
 	for _, s := range active {
@@ -342,7 +409,7 @@ func (h *Handler) authorizeSessionControl(
 			continue
 		}
 		if s.Title == "" { // reveal-hidden: Media identity is suppressed
-			return store.Session{}, nil, "", clientError("session not controllable")
+			return store.Session{}, nil, "", nil, clientError("session not controllable")
 		}
 		playing = append(playing, s.MediaID)
 	}
@@ -357,28 +424,173 @@ func (h *Handler) authorizeSessionControl(
 	if command == store.SessionCommandPlayMedia {
 		if target.Kind == store.SessionKindIntegration || target.DeviceID == "" ||
 			(!target.ExpiresAt.IsZero() && !target.ExpiresAt.After(now)) {
-			return store.Session{}, nil, "", clientError("session not controllable")
+			return store.Session{}, nil, "", nil, clientError("session not controllable")
 		}
 		if _, err := h.store.Media(ctx, args.MediaID, scope.LibraryFilter()); err != nil {
 			var verr store.ValidationError
 			if errors.As(err, &verr) {
-				return store.Session{}, nil, "", clientError("unknown media")
+				return store.Session{}, nil, "", nil, clientError("unknown media")
 			}
-			return store.Session{}, nil, "", err
+			return store.Session{}, nil, "", nil, err
 		}
 		anchor = args.MediaID
 	} else if !found {
-		return store.Session{}, nil, "", clientError("session has no active playback")
+		return store.Session{}, nil, "", nil, clientError("session has no active playback")
 	}
-	return target, playing, anchor, nil
+	return target, playing, anchor, nil, nil
+}
+
+func (h *Handler) authorizePlayerSessionControl(
+	ctx context.Context,
+	scope auth.Scope,
+	target store.Session,
+	targetProfile store.Profile,
+	command string,
+	args store.SessionControlArgs,
+	now time.Time,
+) (store.Session, []store.MediaID, store.MediaID, *store.PlayerControlGuard, error) {
+	if targetProfile.Disabled ||
+		target.Kind == store.SessionKindIntegration ||
+		target.DeviceID == "" ||
+		(!target.ExpiresAt.IsZero() && !target.ExpiresAt.After(now)) {
+		return store.Session{}, nil, "", nil, clientError("unknown session")
+	}
+	dev, err := h.store.Device(ctx, target.DeviceID)
+	if err != nil || dev.Revoked || dev.PlayerProfileID != target.ProfileID {
+		return store.Session{}, nil, "", nil, clientError("unknown session")
+	}
+	isController, err := h.store.IsPlayerController(ctx, target.ProfileID, scope.ProfileID)
+	if err != nil {
+		return store.Session{}, nil, "", nil, err
+	}
+	if !isController {
+		return store.Session{}, nil, "", nil, clientError("unknown session")
+	}
+
+	if err := h.checkPlayerControlRateLimit(ctx, scope.ProfileID, now); err != nil {
+		h.auditPlayerControl(ctx, scope, target, command, "throttled")
+		return store.Session{}, nil, "", nil, err
+	}
+	if !h.isPlayerSessionOnline(target.ID, now) {
+		h.auditPlayerControl(ctx, scope, target, command, "offline")
+		return store.Session{}, nil, "", nil, reasonedClientError{
+			message: "display offline",
+			reason:  ErrorReasonDisplayOffline,
+		}
+	}
+
+	guard := &store.PlayerControlGuard{
+		PlayerProfileID:   target.ProfileID,
+		CallerProfileID:   scope.ProfileID,
+		BindingGeneration: dev.PlayerBindingGeneration,
+	}
+
+	callerVisibleFilter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return store.Session{}, nil, "", nil, err
+	}
+	callerPlaybackFilter, err := h.sealedFilter(ctx, scope.PlaybackFilter())
+	if err != nil {
+		return store.Session{}, nil, "", nil, err
+	}
+
+	if command == store.SessionCommandPlayMedia {
+		if _, err := h.store.Media(ctx, args.MediaID, callerPlaybackFilter); err != nil {
+			var verr store.ValidationError
+			if errors.As(err, &verr) {
+				h.auditPlayerControl(ctx, scope, target, command, "denied-caller-playback")
+				return store.Session{}, nil, "", nil, clientError("unknown media")
+			}
+			return store.Session{}, nil, "", nil, err
+		}
+		playerPlaybackFilter, err := h.auth.PlayerProfilePlaybackFilter(ctx, target.ProfileID)
+		if err != nil {
+			var verr store.ValidationError
+			if errors.As(err, &verr) || errors.Is(err, store.ErrProfileDisabled) {
+				return store.Session{}, nil, "", nil, clientError("unknown session")
+			}
+			return store.Session{}, nil, "", nil, err
+		}
+		playerPlaybackFilter, err = h.sealedFilter(ctx, playerPlaybackFilter)
+		if err != nil {
+			return store.Session{}, nil, "", nil, err
+		}
+		if _, err := h.store.Media(ctx, args.MediaID, playerPlaybackFilter); err != nil {
+			var verr store.ValidationError
+			if errors.As(err, &verr) {
+				h.auditPlayerControl(ctx, scope, target, command, "denied-player-playback")
+				return store.Session{}, nil, "", nil, clientError("display cannot play this media")
+			}
+			return store.Session{}, nil, "", nil, err
+		}
+		return target, nil, args.MediaID, guard, nil
+	}
+
+	// Read the display's active media rows so stop/display-message keep the
+	// receiver's anchor and transport verbs check caller visibility/playback.
+	active, err := h.store.GrantedSessions(ctx, now, store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		return store.Session{}, nil, "", nil, err
+	}
+	var playing []store.MediaID
+	for _, s := range active {
+		if s.SessionID == target.ID {
+			playing = append(playing, s.MediaID)
+		}
+	}
+	var anchor store.MediaID
+	if len(playing) > 0 {
+		anchor = playing[0]
+	}
+
+	switch command {
+	case store.SessionCommandStop, store.SessionCommandDisplayMessage:
+		return target, playing, anchor, guard, nil
+	case store.SessionCommandResume:
+		if len(playing) == 0 {
+			h.auditPlayerControl(ctx, scope, target, command, "no-active-playback")
+			return store.Session{}, nil, "", nil, clientError("session has no active playback")
+		}
+		for _, mediaID := range playing {
+			if _, err := h.store.Media(ctx, mediaID, callerVisibleFilter); err != nil {
+				h.auditPlayerControl(ctx, scope, target, command, "denied-caller-visibility")
+				return store.Session{}, nil, "", nil, clientError("session not controllable")
+			}
+			if _, err := h.store.Media(ctx, mediaID, callerPlaybackFilter); err != nil {
+				h.auditPlayerControl(ctx, scope, target, command, "denied-caller-playback")
+				return store.Session{}, nil, "", nil, clientError("session not controllable")
+			}
+		}
+		return target, playing, anchor, guard, nil
+	default:
+		if len(playing) == 0 {
+			h.auditPlayerControl(ctx, scope, target, command, "no-active-playback")
+			return store.Session{}, nil, "", nil, clientError("session has no active playback")
+		}
+		for _, mediaID := range playing {
+			if _, err := h.store.Media(ctx, mediaID, callerVisibleFilter); err != nil {
+				h.auditPlayerControl(ctx, scope, target, command, "denied-caller-visibility")
+				return store.Session{}, nil, "", nil, clientError("session not controllable")
+			}
+		}
+		return target, playing, anchor, guard, nil
+	}
 }
 
 // rendererSessionSnapshot returns the caller-filtered GrantedSessions rows for
 // targetID only at the given revision, suppressing every Media identity field
-// whenever the Media is hidden from the caller's LibraryFilter.
+// whenever the Media is hidden from the caller's LibraryFilter (and rendering
+// "Private item" with position/duration only for Player Profile displays per D6).
 func (h *Handler) rendererSessionSnapshot(ctx context.Context, scope auth.Scope, targetID store.SessionID, revision int64, now time.Time) ([]ProfileSessionInfo, error) {
 	if scope.ProfileID == "" {
 		return []ProfileSessionInfo{}, nil
+	}
+	target, err := h.store.Session(ctx, targetID)
+	if err == nil {
+		targetProfile, perr := h.store.Profile(ctx, target.ProfileID)
+		if perr == nil && targetProfile.Kind == store.ProfilePlayer {
+			return h.playerRendererSessionSnapshot(ctx, scope, target, revision, now)
+		}
 	}
 	active, err := h.store.GrantedSessions(ctx, now, scope.LibraryFilter())
 	if err != nil {
@@ -404,9 +616,77 @@ func (h *Handler) rendererSessionSnapshot(ctx context.Context, scope auth.Scope,
 			row.MediaID = string(s.MediaID)
 			row.Title = s.Title
 			row.LibraryID = string(s.LibraryID)
+			row.ArtworkURL = h.playerArtworkURL(s.MediaID)
 		} else {
 			row.PositionSeconds = 0
 			row.DurationSeconds = 0
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
+func (h *Handler) playerRendererSessionSnapshot(ctx context.Context, scope auth.Scope, target store.Session, revision int64, now time.Time) ([]ProfileSessionInfo, error) {
+	if scope.IsPlayerBound() {
+		return []ProfileSessionInfo{}, nil
+	}
+	dev, err := h.store.Device(ctx, target.DeviceID)
+	if err != nil || dev.Revoked || dev.PlayerProfileID != target.ProfileID {
+		return []ProfileSessionInfo{}, nil
+	}
+	isCtrl, err := h.store.IsPlayerController(ctx, target.ProfileID, scope.ProfileID)
+	if err != nil || !isCtrl {
+		return []ProfileSessionInfo{}, nil
+	}
+	active, err := h.store.GrantedSessions(ctx, now, store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		return nil, err
+	}
+	var matching []store.ActiveSession
+	var mediaIDs []store.MediaID
+	for _, s := range active {
+		if s.SessionID == target.ID {
+			matching = append(matching, s)
+			mediaIDs = append(mediaIDs, s.MediaID)
+		}
+	}
+	if len(matching) == 0 {
+		return []ProfileSessionInfo{}, nil
+	}
+	callerFilter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	visibleMedia, err := h.store.VisibleMediaBatch(ctx, mediaIDs, callerFilter)
+	if err != nil {
+		return nil, err
+	}
+	displayName := dev.PlayerDisplayName
+	if displayName == "" {
+		displayName = dev.Name
+	}
+	handle := h.playerDisplayHandle(dev.ID)
+	out := make([]ProfileSessionInfo, 0, len(matching))
+	for _, s := range matching {
+		row := ProfileSessionInfo{
+			SessionID:       string(s.SessionID),
+			DeviceID:        handle,
+			DeviceName:      displayName,
+			DeviceRole:      string(s.DeviceRole),
+			Current:         false,
+			Transcoding:     s.Transcoding,
+			PositionSeconds: s.PositionSeconds,
+			DurationSeconds: s.DurationSeconds,
+			Revision:        revision,
+		}
+		if media, ok := visibleMedia[s.MediaID]; ok {
+			row.MediaID = string(s.MediaID)
+			row.Title = media.Title
+			row.LibraryID = string(media.LibraryID)
+			row.ArtworkURL = h.playerArtworkURL(s.MediaID)
+		} else {
+			row.PrivateItem = true
+			row.Label = "Private item"
 		}
 		out = append(out, row)
 	}

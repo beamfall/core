@@ -93,6 +93,10 @@ const (
 	// declaring the player-display capability (ADR-0240 D2). Only playerBinding
 	// may be read until the display client updates.
 	ErrorReasonUpdateRequired ErrorReason = "UPDATE_REQUIRED"
+	// ErrorReasonDisplayOffline: a controller commanded a player display whose
+	// event stream is disconnected or has not sent a heartbeat within 60 s
+	// (ADR-0240 D9).
+	ErrorReasonDisplayOffline ErrorReason = "DISPLAY_OFFLINE"
 )
 
 // ErrorReasons returns the closed reason vocabulary in its documented order.
@@ -104,6 +108,7 @@ func ErrorReasons() []ErrorReason {
 		ErrorReasonProfileMismatch,
 		ErrorReasonAccessScheduleEnded,
 		ErrorReasonUpdateRequired,
+		ErrorReasonDisplayOffline,
 	}
 }
 
@@ -279,6 +284,10 @@ var clientErrorCodes = map[string]ErrorCode{
 	"player display cannot list profiles":                            ErrorCodeForbidden,
 	"player display cannot modify profile settings":                  ErrorCodeForbidden,
 	"target profile must be kind player":                             ErrorCodeInvalid,
+	"controllers apply to player profiles only":                      ErrorCodeInvalid,
+	"player profile cannot be a controller":                          ErrorCodeInvalid,
+	"profile cannot be in both include and exclude lists":            ErrorCodeInvalid,
+	"display cannot play this media":                                 ErrorCodeForbidden,
 	"player profile kind cannot be changed":                          ErrorCodeInvalid,
 	"profile kind cannot be changed to player":                       ErrorCodeInvalid,
 	"walk-up applies to player profiles only":                        ErrorCodeInvalid,
@@ -287,33 +296,34 @@ var clientErrorCodes = map[string]ErrorCode{
 	"device revoked":  ErrorCodeUnauthenticated,
 	"invalid session": ErrorCodeUnauthenticated,
 
-	"access request already resolved":                                                              ErrorCodeConflict,
-	"commandID already used for a different command":                                               ErrorCodeConflict,
-	"follow the subscription first":                                                                ErrorCodeConflict, // CORE-2958
-	"no backup key is waiting to be saved":                                                         ErrorCodeConflict,
-	"the backup key changed; reveal it again":                                                      ErrorCodeConflict,
-	"encrypted library is already provisioned":                                                     ErrorCodeConflict,
+	"access request already resolved":                ErrorCodeConflict,
+	"display offline":                                ErrorCodeConflict,
+	"commandID already used for a different command": ErrorCodeConflict,
+	"follow the subscription first":                  ErrorCodeConflict, // CORE-2958
+	"no backup key is waiting to be saved":           ErrorCodeConflict,
+	"the backup key changed; reveal it again":        ErrorCodeConflict,
+	"encrypted library is already provisioned":       ErrorCodeConflict,
 	"this item was merged into another item as a Version; undo the merge to split it back":         ErrorCodeConflict,
 	"an item in this batch was later merged into another item as a Version; undo that merge first": ErrorCodeConflict,
-	"job is not terminal":                                                                          ErrorCodeConflict,
-	"job is terminal":                                                                              ErrorCodeConflict,
-	"This workflow is disabled in Console → Optional features.":                                    ErrorCodeConflict,
-	"no identification to refresh; use Fix Match first":                                            ErrorCodeConflict,
-	"extension request already resolved":                                                           ErrorCodeConflict,
-	"library is already provisioned":                                                               ErrorCodeConflict,
-	"library is not provisioned":                                                                   ErrorCodeConflict,
-	"library must be unsealed before rewrap":                                                       ErrorCodeConflict,
-	"no runnable job":                                                                              ErrorCodeConflict,
-	"offline pack is still building":                                                               ErrorCodeConflict,
-	"another offline pack build for the same selection is running; retry when it finishes":         ErrorCodeConflict,
-	"the previous offline pack build is still finishing; retry shortly":                            ErrorCodeConflict,
-	"queue has items; pass confirmReplace to replace it":                                           ErrorCodeConflict,
-	"the session is bound to another profile":                                                      ErrorCodeConflict,
-	"session has no active playback":                                                               ErrorCodeConflict,
-	"scan preview token was already used":                                                          ErrorCodeConflict,
-	"scan preview token has expired":                                                               ErrorCodeConflict,
-	"sonic analysis is not available on this server":                                               ErrorCodeConflict,
-	"scan preview is stale because the library changed":                                            ErrorCodeConflict,
+	"job is not terminal": ErrorCodeConflict,
+	"job is terminal":     ErrorCodeConflict,
+	"This workflow is disabled in Console → Optional features.":                            ErrorCodeConflict,
+	"no identification to refresh; use Fix Match first":                                    ErrorCodeConflict,
+	"extension request already resolved":                                                   ErrorCodeConflict,
+	"library is already provisioned":                                                       ErrorCodeConflict,
+	"library is not provisioned":                                                           ErrorCodeConflict,
+	"library must be unsealed before rewrap":                                               ErrorCodeConflict,
+	"no runnable job":                                                                      ErrorCodeConflict,
+	"offline pack is still building":                                                       ErrorCodeConflict,
+	"another offline pack build for the same selection is running; retry when it finishes": ErrorCodeConflict,
+	"the previous offline pack build is still finishing; retry shortly":                    ErrorCodeConflict,
+	"queue has items; pass confirmReplace to replace it":                                   ErrorCodeConflict,
+	"the session is bound to another profile":                                              ErrorCodeConflict,
+	"session has no active playback":                                                       ErrorCodeConflict,
+	"scan preview token was already used":                                                  ErrorCodeConflict,
+	"scan preview token has expired":                                                       ErrorCodeConflict,
+	"sonic analysis is not available on this server":                                       ErrorCodeConflict,
+	"scan preview is stale because the library changed":                                    ErrorCodeConflict,
 
 	"offline pack job did not produce a pack":    ErrorCodeInternal,
 	"playback rendition cache is not configured": ErrorCodeInternal,

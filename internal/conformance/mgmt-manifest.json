@@ -262,6 +262,10 @@
       "effect": "read"
     },
     {
+      "field": "playercontrollers",
+      "effect": "read"
+    },
+    {
       "field": "playhistory",
       "effect": "read"
     },
@@ -459,6 +463,10 @@
     },
     {
       "field": "setlibraryshowonhome",
+      "effect": "write"
+    },
+    {
+      "field": "setplayercontrollers",
       "effect": "write"
     },
     {

@@ -560,6 +560,7 @@ type SessionControlPayload struct {
 	ProfileID       ProfileID `json:"profileID"`
 	MediaID         MediaID   `json:"mediaID,omitempty"`
 	PlayingMediaIDs []MediaID `json:"playingMediaIDs,omitempty"`
+	PrivateItem     bool      `json:"privateItem,omitempty"`
 	Direction       string    `json:"direction,omitempty"`
 	PositionMs      *int64    `json:"positionMs,omitempty"`
 	Volume          *int      `json:"volume,omitempty"`

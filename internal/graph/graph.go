@@ -738,6 +738,8 @@ type Handler struct {
 	playbackInvalidationMu sync.Mutex
 	playbackInvalidation   map[store.ProfileID]playbackInvalidationState
 	playbackPaused         map[playbackStreamKey]time.Time
+	playerPresenceMu       sync.Mutex
+	playerStreams          map[store.SessionID]playerStreamPresence
 	nowFunc                func() time.Time
 	afterFunc              func(time.Duration, func()) func() bool
 }
@@ -2376,6 +2378,9 @@ type ProfileInfo struct {
 	// WalkUpEnabled reports whether a Player Profile allows walk-up browsing
 	// on bound display Sessions (ADR-0240 D7).
 	WalkUpEnabled bool `json:"walkUpEnabled"`
+	// PlayerControllers holds the owner-visible controllers policy on a Player
+	// Profile (ADR-0240 D4).
+	PlayerControllers *PlayerControllersInfo `json:"playerControllers,omitempty"`
 }
 
 // CertificationCeilingInfo is the wire shape for one Profile certification
@@ -2682,7 +2687,7 @@ func (h *Handler) createProfile(ctx context.Context, scope auth.Scope, req reque
 			return ProfileInfo{}, err
 		}
 	}
-	return profileInfo(profile), nil
+	return h.profileInfoForScope(ctx, scope, profile)
 }
 
 // updateProfile applies a partial Profile policy write (Admin Session gated
@@ -2736,7 +2741,10 @@ func (h *Handler) updateProfile(ctx context.Context, scope auth.Scope, req reque
 			return ProfileInfo{}, err
 		}
 	}
-	info := profileInfo(profile)
+	info, err := h.profileInfoForScope(ctx, scope, profile)
+	if err != nil {
+		return ProfileInfo{}, err
+	}
 	if !scope.Admin {
 		// Only the own-track-preference write (CORE-1937) runs without an
 		// Admin Session. Its reply lists only the Library grants the caller
@@ -2808,7 +2816,7 @@ func (h *Handler) setProfileLibraries(ctx context.Context, scope auth.Scope, req
 	if err := h.emitAccessCeilingInvalidation(ctx, profileID); err != nil {
 		return ProfileInfo{}, err
 	}
-	return profileInfo(profile), nil
+	return h.profileInfoForScope(ctx, scope, profile)
 }
 
 // setCertificationCeiling pins or clears a Profile's certification ceiling
@@ -2816,7 +2824,7 @@ func (h *Handler) setProfileLibraries(ctx context.Context, scope auth.Scope, req
 // An absent or empty ceiling clears the constraint; a set ceiling must be a
 // value of the plugin's declared scale. allowUnrated overrides the
 // fail-closed unrated-blocked default.
-func (h *Handler) setCertificationCeiling(ctx context.Context, req request) (ProfileInfo, error) {
+func (h *Handler) setCertificationCeiling(ctx context.Context, scope auth.Scope, req request) (ProfileInfo, error) {
 	profileID := trimmedVariable(req, "profileID")
 	pluginID := trimmedVariable(req, "pluginID")
 	if profileID == "" || pluginID == "" {
@@ -2838,7 +2846,7 @@ func (h *Handler) setCertificationCeiling(ctx context.Context, req request) (Pro
 		if err := h.emitAccessCeilingInvalidation(ctx, store.ProfileID(profileID)); err != nil {
 			return ProfileInfo{}, err
 		}
-		return profileInfo(profile), nil
+		return h.profileInfoForScope(ctx, scope, profile)
 	}
 	ceiling = strings.TrimSpace(ceiling)
 	if h.plugins == nil {
@@ -2864,7 +2872,7 @@ func (h *Handler) setCertificationCeiling(ctx context.Context, req request) (Pro
 	if err := h.emitAccessCeilingInvalidation(ctx, store.ProfileID(profileID)); err != nil {
 		return ProfileInfo{}, err
 	}
-	return profileInfo(profile), nil
+	return h.profileInfoForScope(ctx, scope, profile)
 }
 
 // profileSettingsFromVariables reads the optional Profile policy variables.
@@ -7017,6 +7025,8 @@ var queryFields = map[string]bool{
 	"browseserverfolders": true,
 	"pathpicker":          true,
 	"playerbinding":       true,
+	"playercontrollers":   true,
+	"playerdisplays":      true,
 }
 
 // mutationFields are the scoped top-level fields that write or command state.
@@ -7221,6 +7231,7 @@ var mutationFields = map[string]bool{
 	"setdeviceplayerbinding":             true,
 	"cleardeviceplayerbinding":           true,
 	"setplayerwalkup":                    true,
+	"setplayercontrollers":               true,
 	"controlsession":                     true,
 	// Ambient Group Conductor: session-scoped, same-Profile-
 	// gated group lifecycle + sync. NOT admin-gated — like controlSession these
@@ -7393,6 +7404,8 @@ var adminFields = map[string]bool{
 	"setprofileavatar":        true,
 	"setprofilelibraries":     true,
 	"setplayerwalkup":         true,
+	"playercontrollers":       true,
+	"setplayercontrollers":    true,
 	"setcertificationceiling": true,
 	"accessschedule":          true,
 	"setaccessschedule":       true,

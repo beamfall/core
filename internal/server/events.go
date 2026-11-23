@@ -163,6 +163,19 @@ type EventStreamObserver interface {
 	EventStreamClosed(session store.SessionID)
 }
 
+// EventStreamHeartbeatObserver is an optional extension of EventStreamObserver
+// notified when a session's event stream flushes a keepalive or event frame,
+// driving player-display presence heartbeats (ADR-0240 D9).
+type EventStreamHeartbeatObserver interface {
+	EventStreamHeartbeat(session store.SessionID)
+}
+
+// PlayerControllerEventStore is the optional slice of EventStore used to
+// evaluate Player Profile controller membership live per SSE event delivery.
+type PlayerControllerEventStore interface {
+	IsPlayerController(ctx context.Context, playerProfileID, callerProfileID store.ProfileID) (bool, error)
+}
+
 // SetEventStreamObserver wires the observer told about session event streams.
 func (s *Server) SetEventStreamObserver(observer EventStreamObserver) {
 	s.streamObserver = observer
@@ -283,6 +296,7 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 		readAt := time.Now()
 		if wrote {
 			lastWrite = readAt
+			s.notifyStreamHeartbeat(scope)
 		}
 
 		// Wait for a write, or for the fallback read to come due. The Scope
@@ -303,6 +317,7 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 					return // peer gone: release the handler
 				}
 				lastWrite = now
+				s.notifyStreamHeartbeat(scope)
 			}
 			if now.Sub(readAt) >= fallback {
 				break
@@ -387,10 +402,11 @@ func (s *Server) drainEventsWith(ctx context.Context, w http.ResponseWriter, flu
 					return cursor, wrote, err
 				}
 			}
-			if !s.eventPermitted(ctx, event, currentProfileID, currentFilter) {
+			delivered, permitted := s.filterEvent(ctx, event, currentProfileID, currentFilter)
+			if !permitted {
 				continue
 			}
-			if err := writeSSEEvent(w, event); err != nil {
+			if err := writeSSEEvent(w, delivered); err != nil {
 				return cursor, wrote, err
 			}
 			wrote = true
@@ -446,30 +462,82 @@ func (e *eventOutboxReadError) Unwrap() error {
 //     not a reveal side-channel. Each entry of playingMediaIDs (the receiver's
 //     anchor set) is filtered the same way. A command with no Media (none
 //     resolved at issue time) skips the Media read and rides only the Profile gate.
+func (s *Server) notifyStreamHeartbeat(scope auth.Scope) {
+	if s.streamObserver == nil || scope.SessionID == "" || scope.APIKeyID != "" || scope.APITokenID != "" {
+		return
+	}
+	if hb, ok := s.streamObserver.(EventStreamHeartbeatObserver); ok {
+		hb.EventStreamHeartbeat(scope.SessionID)
+	}
+}
+
 func (s *Server) eventPermitted(ctx context.Context, event store.OutboxEvent, profileID store.ProfileID, filter store.LibraryFilter) bool {
+	_, permitted := s.filterEvent(ctx, event, profileID, filter)
+	return permitted
+}
+
+func (s *Server) filterEvent(ctx context.Context, event store.OutboxEvent, profileID store.ProfileID, filter store.LibraryFilter) (store.OutboxEvent, bool) {
 	if event.AggregateType == store.OutboxAggregateSession {
 		var payload store.SessionControlPayload
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
-			return false // malformed payload — fail closed, never over-deliver
+			return event, false // malformed payload — fail closed, never over-deliver
 		}
-		// Same-Profile gate: an empty subscriber Profile (admin token / scoped
-		// key without a Profile binding) never matches, so a non-Profile context
-		// is never delivered a session-control command.
-		if profileID == "" || payload.ProfileID != profileID {
-			return false
+		if profileID == "" {
+			return event, false
 		}
-		// Every Media the command names, the receiver's anchor set included,
-		// must be visible to this subscriber: one hidden entry withholds it.
-		named := payload.PlayingMediaIDs
+		if payload.ProfileID == profileID {
+			// Same-Profile gate: every Media the command names, the receiver's
+			// anchor set included, must be visible to this subscriber.
+			named := payload.PlayingMediaIDs
+			if payload.MediaID != "" {
+				named = append([]store.MediaID{payload.MediaID}, named...)
+			}
+			for _, mediaID := range named {
+				if _, err := s.events.Media(ctx, mediaID, filter); err != nil {
+					return event, false
+				}
+			}
+			return event, true
+		}
+		// Cross-Profile gate (ADR-0240 D4, D6): only live controllers of a
+		// Player Profile may observe its session-control events, and any
+		// Media outside the observing controller's LibraryFilter is redacted
+		// per D6 ("Private item" without MediaID / PlayingMediaIDs).
+		pc, ok := s.events.(PlayerControllerEventStore)
+		if !ok {
+			return event, false
+		}
+		isCtrl, err := pc.IsPlayerController(ctx, payload.ProfileID, profileID)
+		if err != nil || !isCtrl {
+			return event, false
+		}
+		redacted := false
 		if payload.MediaID != "" {
-			named = append([]store.MediaID{payload.MediaID}, named...)
-		}
-		for _, mediaID := range named {
-			if _, err := s.events.Media(ctx, mediaID, filter); err != nil {
-				return false
+			if _, err := s.events.Media(ctx, payload.MediaID, filter); err != nil {
+				payload.MediaID = ""
+				redacted = true
 			}
 		}
-		return true
+		if len(payload.PlayingMediaIDs) > 0 {
+			visiblePlaying := make([]store.MediaID, 0, len(payload.PlayingMediaIDs))
+			for _, mediaID := range payload.PlayingMediaIDs {
+				if _, err := s.events.Media(ctx, mediaID, filter); err == nil {
+					visiblePlaying = append(visiblePlaying, mediaID)
+				} else {
+					redacted = true
+				}
+			}
+			payload.PlayingMediaIDs = visiblePlaying
+		}
+		if redacted {
+			payload.PrivateItem = true
+			raw, err := json.Marshal(payload)
+			if err != nil {
+				return event, false
+			}
+			event.Payload = raw
+		}
+		return event, true
 	}
 	if event.AggregateType == store.OutboxAggregateGroup {
 		// Group Conductor sync signals are Profile-gated: each row names one
@@ -482,18 +550,18 @@ func (s *Server) eventPermitted(ctx context.Context, event store.OutboxEvent, pr
 		// session on a member Profile never learns a restricted item's identity.
 		var payload store.GroupSyncPayload
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
-			return false // malformed payload — fail closed, never over-deliver
+			return event, false // malformed payload — fail closed, never over-deliver
 		}
 		if profileID == "" || payload.ProfileID != profileID {
-			return false
+			return event, false
 		}
 		if payload.Item == "" {
-			return true
+			return event, true
 		}
 		if _, err := s.events.Media(ctx, payload.Item, filter); err != nil {
-			return false
+			return event, false
 		}
-		return true
+		return event, true
 	}
 	if event.AggregateType == store.OutboxAggregateExtension {
 		// Parental extension-request outcome (ADR-0039 §2.3 step 6) is Profile-gated
@@ -504,9 +572,9 @@ func (s *Server) eventPermitted(ctx context.Context, event store.OutboxEvent, pr
 		// observes another Profile's extension outcome, fail-closed.
 		var payload store.ExtensionEventPayload
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
-			return false // malformed payload — fail closed, never over-deliver
+			return event, false // malformed payload — fail closed, never over-deliver
 		}
-		return profileID != "" && payload.ProfileID == profileID
+		return event, profileID != "" && payload.ProfileID == profileID
 	}
 	if event.AggregateType == store.OutboxAggregateInvalidation {
 		// Server-initiated client-cache invalidation is
@@ -519,28 +587,28 @@ func (s *Server) eventPermitted(ctx context.Context, event store.OutboxEvent, pr
 		// Profile's invalidation, fail-closed.
 		var payload store.InvalidationPayload
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
-			return false // malformed payload — fail closed, never over-deliver
+			return event, false // malformed payload — fail closed, never over-deliver
 		}
-		return profileID != "" && payload.ProfileID == profileID
+		return event, profileID != "" && payload.ProfileID == profileID
 	}
 	if event.AggregateType != store.OutboxAggregateMedia {
-		return true
+		return event, true
 	}
 	if event.Kind == store.MediaEventDeleted {
 		var payload store.MediaDeletedPayload
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
-			return false // malformed payload — fail closed, never over-deliver
+			return event, false // malformed payload — fail closed, never over-deliver
 		}
 		visible, err := s.events.LibraryVisible(ctx, payload.LibraryID, filter)
 		if err != nil {
-			return false
+			return event, false
 		}
-		return visible
+		return event, visible
 	}
 	if _, err := s.events.Media(ctx, store.MediaID(event.AggregateID), filter); err != nil {
-		return false
+		return event, false
 	}
-	return true
+	return event, true
 }
 
 // resumeCursor reads the reconnection cursor: the SSE standard Last-Event-ID

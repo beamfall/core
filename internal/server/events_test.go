@@ -57,6 +57,7 @@ func newTestServerWithStoreAt(t *testing.T, dataDir string) (*Server, *store.Sto
 		st,
 	)
 	srv.SetEvents(st)
+	srv.SetEventStreamObserver(graphHandler)
 	srv.SetPushNotifications(st)
 	srv.SetV1Store(st)
 	srv.SetPartyGuestStore(st)

@@ -140,4 +140,6 @@ package store
 // retention ranking and audit recovery, off the entity-query hot path.
 // CORE-3310 adds 0136_player_profile_binding for durable Device player bindings
 // and Player Profile walk-up policy, off the entity-query hot path.
-const schemaFreezeCatalogMigrations = 132
+// CORE-3311 adds 0137_player_controllers for Player Profile controller lists
+// and display last-seen tracking, off the entity-query hot path.
+const schemaFreezeCatalogMigrations = 133

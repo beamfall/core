@@ -659,6 +659,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"pinartworkcandidate":                newFieldHandler("pinArtworkCandidate", "pinArtworkCandidate", fieldMutation, roleSession|roleManager|roleAdultProfile, 16),
 	"playbackrenditioncache":             newFieldHandler("playbackRenditionCache", "playbackRenditionCache", fieldRead, roleSession|roleAdmin, 75),
 	"playerbinding":                      newFieldHandler("playerBinding", "playerBinding", fieldRead, roleSession, 1),
+	"playercontrollers":                  newFieldHandler("playerControllers", "playerControllers", fieldRead, roleSession|roleAdmin, 38),
+	"playerdisplays":                     newFieldHandler("playerDisplays", "playerDisplays", fieldRead, roleSession, 129),
 	"plugins":                            newFieldHandler("plugins", "", fieldRead, roleSession, 5),
 	"pluginworker":                       newFieldHandler("pluginWorker", "pluginWorker", fieldRead, roleSession|roleAdmin, 66),
 	"precomputeplaybackrenditions":       newFieldHandler("precomputePlaybackRenditions", "precomputePlaybackRenditions", fieldMutation, roleSession|roleAdmin, 75),
@@ -800,6 +802,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setpluginconfig":                    newFieldHandler("setPluginConfig", "setPluginConfig", fieldMutation, roleSession|roleAdmin, 66),
 	"setpluginupdatesource":              newFieldHandler("setPluginUpdateSource", "setPluginUpdateSource", fieldMutation, roleSession|roleAdmin, 66),
 	"setplayerwalkup":                    newFieldHandler("setPlayerWalkUp", "setPlayerWalkUp", fieldMutation, roleSession|roleAdmin, 38),
+	"setplayercontrollers":               newFieldHandler("setPlayerControllers", "setPlayerControllers", fieldMutation, roleSession|roleAdmin, 38),
 	"setprofilelibraries":                newFieldHandler("setProfileLibraries", "setProfileLibraries", fieldMutation, roleSession|roleAdmin, 39),
 	"setjellyfincompat":                  newFieldHandler("setJellyfinCompat", "setJellyfinCompat", fieldMutation, roleSession|roleAdmin, 155),
 	"setprofileintegrationsignin":        newFieldHandler("setProfileIntegrationSignIn", "setProfileIntegrationSignIn", fieldMutation, roleSession|roleAdmin, 155),
@@ -1721,6 +1724,18 @@ func dispatchFieldBlock038(dispatch *fieldDispatchContext) response {
 			return resp
 		}
 	}
+	if fields["playercontrollers"] {
+		ctrl, err := h.playerControllers(ctx, req)
+		if resp := resolveField(dispatch, "playercontrollers", ctrl, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setplayercontrollers"] {
+		profile, err := h.setPlayerControllers(ctx, scope, req)
+		if resp := resolveField(dispatch, "setplayercontrollers", profile, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	return response{}
 }
 
@@ -1742,10 +1757,11 @@ func dispatchFieldBlock039(dispatch *fieldDispatchContext) response {
 func dispatchFieldBlock040(dispatch *fieldDispatchContext) response {
 	h := dispatch.handler
 	ctx := dispatch.ctx
+	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
 	if fields["setcertificationceiling"] {
-		profile, err := h.setCertificationCeiling(ctx, req)
+		profile, err := h.setCertificationCeiling(ctx, scope, req)
 		if resp := resolveField(dispatch, "setcertificationceiling", profile, err); len(resp.Errors) > 0 {
 			return resp
 		}
@@ -4109,6 +4125,12 @@ func dispatchFieldBlock129(dispatch *fieldDispatchContext) response {
 	if fields["profilesessions"] {
 		sessions, err := h.profileSessions(ctx, scope)
 		if resp := resolveField(dispatch, "profilesessions", sessions, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["playerdisplays"] {
+		displays, err := h.playerDisplays(ctx, scope)
+		if resp := resolveField(dispatch, "playerdisplays", displays, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
