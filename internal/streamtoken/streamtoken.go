@@ -205,8 +205,11 @@ type Grant struct {
 	Tempo               float64 `json:"tempo,omitempty"`
 	// GrantID binds a player-display playback grant to its server-side
 	// playback_grant row (ADR-0240 D5). Omitted for ordinary non-player grants.
-	GrantID   string    `json:"grantID,omitempty"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	GrantID string `json:"grantID,omitempty"`
+	// PlayerPreviewBinding binds standalone display assets to a party
+	// registration and entry or a renderer command without starting playback.
+	PlayerPreviewBinding string    `json:"playerPreviewBinding,omitempty"`
+	ExpiresAt            time.Time `json:"expiresAt"`
 }
 
 // HasResolvedProfileCapability reports whether the grant carries a capability

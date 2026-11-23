@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/capabilities"
+	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/streamtoken"
 )
 
 func TestEventStreamPartyStageBindingAndControllerCheck(t *testing.T) {
@@ -194,7 +196,20 @@ func TestPlayerDisplayWalkUpOffPlaysPartyCurrentAndGuestsBlocked(t *testing.T) {
 	if err := st.SetPrimaryMediaFile(ctx, "media-alpha", mediaPath); err != nil {
 		t.Fatal(err)
 	}
+	file, err := st.PrimaryMediaFile(ctx, "media-alpha", hostFilter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assets := genassets.NewService(st, nil, t.TempDir())
+	clipPath := assets.PreviewClipPath(file.ContentFingerprint)
+	if err := os.MkdirAll(filepath.Dir(clipPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(clipPath, []byte("preview bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	srv.playback.SetAssets(testAssetLocator{preview: true})
+	srv.media.SetAssets(assets)
 	body, err := json.Marshal(playback.InfoRequest{
 		MediaID: "media-alpha",
 		CapabilityProfile: playback.CapabilityProfile{
@@ -231,27 +246,58 @@ func TestPlayerDisplayWalkUpOffPlaysPartyCurrentAndGuestsBlocked(t *testing.T) {
 			t.Fatalf("party stream response = %d %q, want status %d", rec.Code, rec.Body.String(), wantStatus)
 		}
 	}
+	previewURL := func() string {
+		t.Helper()
+		req := newJSONRequest(http.MethodPost, "/api/preview-info", bytes.NewReader(body))
+		authTV(req)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		var preview playback.PreviewInfoResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil || rec.Code != http.StatusOK ||
+			preview.Assets == nil || preview.Assets.PreviewClip == "" {
+			t.Fatalf("preview-info = %d %+v, %v", rec.Code, preview, err)
+		}
+		return preview.Assets.PreviewClip
+	}
+	checkPreview := func(url string, wantStatus int) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
+		if rec.Code != wantStatus || (rec.Body.String() == "preview bytes") != (wantStatus == http.StatusOK) {
+			t.Fatalf("preview response = %d %q, want status %d", rec.Code, rec.Body.String(), wantStatus)
+		}
+	}
+	// A display can fetch the party preview before asking for a playback grant.
+	partyPreview := previewURL()
+	checkPreview(partyPreview, http.StatusOK)
 	beforeDrop := streamURL()
 	checkStream(beforeDrop, http.StatusOK)
-	previewReq := newJSONRequest(http.MethodPost, "/api/preview-info", bytes.NewReader(body))
-	authTV(previewReq)
-	previewRec := httptest.NewRecorder()
-	srv.ServeHTTP(previewRec, previewReq)
-	var preview playback.PreviewInfoResponse
-	if err := json.Unmarshal(previewRec.Body.Bytes(), &preview); err != nil || previewRec.Code != http.StatusOK ||
-		preview.Assets == nil || preview.Assets.PreviewClip == "" {
-		t.Fatalf("party preview = %d %+v, %v", previewRec.Code, preview, err)
+	checkPreview(partyPreview, http.StatusOK)
+
+	// Re-sign the same assets grant in the pre-upgrade format, retaining its
+	// valid compatibility decision, subject and expiry.
+	const previewBase = "/api/media/assets/"
+	const previewFile = "/" + genassets.PreviewClipName
+	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return time.Unix(0, 0).UTC() })
+	tokens.SetCompatDecisionResolver(compatStreamTokenResolver{server: srv})
+	grant, err := tokens.UnverifiedGrant(strings.TrimSuffix(strings.TrimPrefix(partyPreview, previewBase), previewFile), streamtoken.TargetMediaAssets)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// The fixture advertises a preview, but keeps no asset file on disk.
-	checkStream(preview.Assets.PreviewClip, http.StatusNotFound)
+	grant.PlayerPreviewBinding = ""
+	legacyToken, err := tokens.Issue(ctx, grant)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := st.DropPartyScreen(ctx, "profile-default", hostFilter, screen.Screen.ID); err != nil {
 		t.Fatal(err)
 	}
 	checkStream(beforeDrop, http.StatusUnauthorized)
-	checkStream(preview.Assets.PreviewClip, http.StatusUnauthorized)
+	checkPreview(partyPreview, http.StatusUnauthorized)
+	checkPreview(previewBase+legacyToken+previewFile, http.StatusUnauthorized)
 	join()
 	checkStream(beforeDrop, http.StatusUnauthorized)
-	checkStream(preview.Assets.PreviewClip, http.StatusUnauthorized)
+	checkPreview(partyPreview, http.StatusUnauthorized)
 
 	beforeStop := streamURL()
 	checkStream(beforeStop, http.StatusOK)
@@ -265,6 +311,33 @@ func TestPlayerDisplayWalkUpOffPlaysPartyCurrentAndGuestsBlocked(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkStream(beforeStop, http.StatusUnauthorized)
+
+	// A commanded item also has a preview before playback. Pause preserves
+	// its authorization, and removing its originator from controllers ends it.
+	var commandPreview string
+	for i, cmd := range []string{store.SessionCommandPlayMedia, store.SessionCommandPause} {
+		var args store.SessionControlArgs
+		if cmd == store.SessionCommandPlayMedia {
+			args.MediaID = "media-alpha"
+		}
+		payload, err := store.NewSessionControlPayload(cmd, args, "device-mac", player.ID, "media-alpha")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.ControlRendererSessionForPlayer(ctx, display.SessionID, int64(i+1), "cmd_party_preview_"+cmd, payload, nil, now, store.PlayerControlGuard{
+			PlayerProfileID: player.ID, CallerProfileID: "profile-default", BindingGeneration: 1,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			commandPreview = previewURL()
+		}
+		checkPreview(commandPreview, http.StatusOK)
+	}
+	if _, err := st.SetPlayerControllers(ctx, player.ID, false, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	checkPreview(commandPreview, http.StatusUnauthorized)
 
 	// Guest token cannot access /api/events or /api/graphql.
 	view, _, _ := st.PartySessionForHost(ctx, "profile-default", hostFilter)

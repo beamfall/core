@@ -409,6 +409,49 @@ func (s *Store) PlayerPlaybackGrantActive(ctx context.Context, grant PlaybackGra
 	return true, nil
 }
 
+// PlayerPreviewBinding identifies the active party registration and entry or
+// the current command authorizing a standalone display preview.
+func (s *Store) PlayerPreviewBinding(ctx context.Context, playerID ProfileID, sessionID SessionID, mediaID MediaID, generation int, policy PlayerOriginatorPolicy) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return "", err
+	}
+	tx, err := s.eventsR.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	binding, err := s.playerPartyMediaBindingLocked(ctx, tx, sessionID, mediaID)
+	if binding != "" || err != nil {
+		return binding, err
+	}
+	now := s.serverNow()
+	attr, active, err := activePlayerCommandedAttributionSQL(ctx, tx, sessionID, mediaID, now)
+	if err != nil || !active || attr.PlayerBindingGeneration != generation {
+		return "", err
+	}
+	allowed, err := isPlayerControllerLocked(ctx, s.catalogR, playerID, attr.OriginatorProfileID)
+	if err != nil || !allowed {
+		return "", err
+	}
+	allowed, err = s.playerOriginatorPlaybackAllowedLocked(ctx, attr.OriginatorProfileID, attr.OriginatorSessionID, mediaID, policy)
+	if err != nil || !allowed {
+		return "", err
+	}
+	var commandID string
+	err = tx.QueryRowContext(ctx, `SELECT command_id FROM renderer_session_command
+		WHERE session_id = ? AND command = ? AND created_at_ms >= ?
+		ORDER BY revision DESC LIMIT 1`, sessionID, SessionCommandPlayMedia, timeToMillis(now.Add(-PlayerCommandedWindow))).Scan(&commandID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return "command:" + commandID, nil
+}
+
 // ActivePlaybackGrantForSession returns the latest active (not ended,
 // cancelled, or expired) playback grant for (sessionID, mediaID).
 func (s *Store) ActivePlaybackGrantForSession(ctx context.Context, sessionID SessionID, mediaID MediaID, now time.Time) (PlaybackGrant, bool, error) {

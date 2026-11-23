@@ -64,6 +64,7 @@ func TestStaleProfileTokenGetsGenericRefusalOutsideSchedule(t *testing.T) {
 	}
 	now := time.Unix(100, 0).UTC()
 	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
+	tokens.SetStreamGenerationResolver(st)
 	issue := func(profileID store.ProfileID) string {
 		token, err := tokens.Issue(ctx, streamtoken.Grant{
 			Target:    streamtoken.TargetMediaDirect,
@@ -97,8 +98,29 @@ func TestStaleProfileTokenGetsGenericRefusalOutsideSchedule(t *testing.T) {
 	if rec := direct(staleToken); rec.Code != http.StatusUnauthorized || rec.Header().Get(auth.DenialReasonHeader) != "" {
 		t.Fatalf("stale Profile token: status = %d header = %q, want 401 and no reason", rec.Code, rec.Header().Get(auth.DenialReasonHeader))
 	}
-	if rec := direct(issue("profile-managed")); rec.Code != http.StatusForbidden || rec.Header().Get(auth.DenialReasonHeader) != auth.DenialReasonAccessScheduleEnded {
+	managedToken := issue("profile-managed")
+	if rec := direct(managedToken); rec.Code != http.StatusForbidden || rec.Header().Get(auth.DenialReasonHeader) != auth.DenialReasonAccessScheduleEnded {
 		t.Fatalf("current Profile token: status = %d header = %q, want 403 %s", rec.Code, rec.Header().Get(auth.DenialReasonHeader), auth.DenialReasonAccessScheduleEnded)
+	}
+	for _, profileID := range []store.ProfileID{scope.ProfileID, "profile-managed"} {
+		if err := st.SetSessionProfile(ctx, scope.SessionID, profileID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkCancelled := func() string {
+		t.Helper()
+		rec := direct(managedToken)
+		if rec.Code != http.StatusUnauthorized || rec.Header().Get(auth.DenialReasonHeader) != "" {
+			t.Fatalf("cancelled token after switching back: status = %d header = %q, want 401 and no reason", rec.Code, rec.Header().Get(auth.DenialReasonHeader))
+		}
+		return rec.Body.String()
+	}
+	outside := checkCancelled()
+	if err := st.SetProfileAccessWindows(ctx, "profile-managed", nil); err != nil {
+		t.Fatal(err)
+	}
+	if inside := checkCancelled(); inside != outside {
+		t.Fatalf("cancelled token response differs by schedule: inside = %q, outside = %q", inside, outside)
 	}
 }
 

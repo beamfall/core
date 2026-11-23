@@ -1046,15 +1046,13 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 		return PreviewInfoResponse{}, ErrInvalidRequest
 	}
 	filter := scope.LibraryFilter()
-	var grantID string
+	var previewBinding string
 	if scope.IsPlayerBound() && !scope.WalkUpEnabled {
-		// A standalone preview on a controlled display borrows the current
-		// playback's authorization and cannot outlive it.
-		grant, found, err := s.store.ActivePlaybackGrantForSession(ctx, scope.SessionID, store.MediaID(mediaID), s.now())
-		if err != nil || !found {
+		var err error
+		previewBinding, err = s.store.PlayerPreviewBinding(ctx, scope.PlayerProfileID, scope.SessionID, store.MediaID(mediaID), scope.PlayerBindingGeneration, s.playerOriginatorPolicy())
+		if err != nil || previewBinding == "" {
 			return PreviewInfoResponse{}, err
 		}
-		grantID = grant.GrantID
 		filter = scope.PlaybackFilter()
 	}
 	media, err := s.store.Media(ctx, store.MediaID(mediaID), filter)
@@ -1079,13 +1077,13 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 	}
 	expiresAt := s.now().Add(time.Hour).UTC()
 	assets, err := s.assetsInfo(ctx, streamtoken.Grant{
-		MediaID:    media.ID,
-		DeviceID:   scope.DeviceID,
-		SessionID:  scope.SessionID,
-		ProfileID:  scope.ProfileID,
-		GrantID:    grantID,
-		Restricted: restricted,
-		ExpiresAt:  expiresAt,
+		MediaID:              media.ID,
+		DeviceID:             scope.DeviceID,
+		SessionID:            scope.SessionID,
+		ProfileID:            scope.ProfileID,
+		PlayerPreviewBinding: previewBinding,
+		Restricted:           restricted,
+		ExpiresAt:            expiresAt,
 	}, file.ContentFingerprint, false, expiresAt)
 	if err != nil {
 		return PreviewInfoResponse{}, err
@@ -1128,10 +1126,7 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	}
 	resumeProfileID := scope.ProfileID
 	var playerGrant *store.PlaybackGrant
-	originatorPolicy := store.PlayerOriginatorPolicy{Now: s.now}
-	if s.auth != nil {
-		originatorPolicy.CertificationConstraints = s.auth.CertificationConstraints
-	}
+	originatorPolicy := s.playerOriginatorPolicy()
 	if scope.IsPlayerBound() {
 		resumeProfileID = ""
 		if suffix == mainSuffix {
@@ -1215,6 +1210,14 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 		batch.observe(dec)
 	}
 	return dec, nil
+}
+
+func (s *Service) playerOriginatorPolicy() store.PlayerOriginatorPolicy {
+	policy := store.PlayerOriginatorPolicy{Now: s.now}
+	if s.auth != nil {
+		policy.CertificationConstraints = s.auth.CertificationConstraints
+	}
+	return policy
 }
 
 func (s *Service) preparePlayerPlaybackGrant(ctx context.Context, scope auth.Scope, media store.Media, revision int64, policy store.PlayerOriginatorPolicy) (*store.PlaybackGrant, bool, error) {

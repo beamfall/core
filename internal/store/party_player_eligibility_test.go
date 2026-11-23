@@ -100,13 +100,15 @@ func TestPartyStageAndPlaybackGrantRequireRecentScreenHeartbeat(t *testing.T) {
 	if err := st.AdvanceParty(ctx, "profile-default", host, ""); err != nil {
 		t.Fatal(err)
 	}
-	join, err := st.AddPartyPlayerDisplay(ctx, "profile-default", host, PlayerDisplay{
+	display := PlayerDisplay{
 		DeviceID: dev.ID, PlayerProfileID: player.ID, BindingGeneration: 1, SessionID: sess.ID,
-	}, "local")
+	}
+	join, err := st.AddPartyPlayerDisplay(ctx, "profile-default", host, display, "local")
 	if err != nil {
 		t.Fatal(err)
 	}
 	screenID := join.Screen.ID
+	var previousGrantID string
 	check := func(active bool) {
 		t.Helper()
 		_, err := st.PartyStage(ctx, party.Session.ID, screenID, sess.ID, host, host, nil)
@@ -130,6 +132,9 @@ func TestPartyStageAndPlaybackGrantRequireRecentScreenHeartbeat(t *testing.T) {
 		if published, err := st.CreatePlaybackGrant(ctx, grant, 0, PlayerOriginatorPolicy{}); err != nil || published != active {
 			t.Fatalf("CreatePlaybackGrant = %t, %v, want %t", published, err, active)
 		}
+		if active {
+			previousGrantID = grantID
+		}
 	}
 	check(true)
 	now = now.Add(time.Minute)
@@ -140,6 +145,27 @@ func TestPartyStageAndPlaybackGrantRequireRecentScreenHeartbeat(t *testing.T) {
 	check(true)
 	now = now.Add(time.Millisecond)
 	check(false)
+
+	rejoined, err := st.AddPartyPlayerDisplay(ctx, "profile-default", host, display, "local")
+	if err != nil || rejoined.Screen.ID == screenID {
+		t.Fatalf("re-add after silence = %+v, %v, want a new registration", rejoined, err)
+	}
+	if _, err := st.PartyStage(ctx, party.Session.ID, rejoined.Screen.ID, sess.ID, host, host, nil); err != nil {
+		t.Fatalf("replacement stage: %v", err)
+	}
+	var droppedAtMS int64
+	if err := st.eventsR.QueryRowContext(ctx, `SELECT dropped_at_ms FROM party_screen WHERE screen_id = ?`, screenID).Scan(&droppedAtMS); err != nil || droppedAtMS != timeToMillis(now) {
+		t.Fatalf("old registration dropped at %d, %v, want %d", droppedAtMS, err, timeToMillis(now))
+	}
+	if grant, found, err := st.PlaybackGrant(ctx, previousGrantID); err != nil || !found || grant.CancelledAt.IsZero() {
+		t.Fatalf("old registration grant = %+v, %t, %v, want cancelled", grant, found, err)
+	}
+	var joinedEvents int
+	if err := st.eventsR.QueryRowContext(ctx, `SELECT COUNT(*) FROM event_outbox
+		WHERE kind = ? AND json_extract(payload_json, '$.screenID') = ?
+			AND json_extract(payload_json, '$.action') = ?`, PartyStageEventKind, rejoined.Screen.ID, PartyStageActionJoined).Scan(&joinedEvents); err != nil || joinedEvents != 1 {
+		t.Fatalf("replacement joined events = %d, %v, want 1", joinedEvents, err)
+	}
 }
 
 func TestPartyStageETAsRequireVisibleTimingSources(t *testing.T) {

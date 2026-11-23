@@ -2143,14 +2143,18 @@ func (s *Store) AddPartyPlayerDisplay(ctx context.Context, host ProfileID, filte
 			&existing.registeredAtMS, &existing.reportedAtMS,
 		)
 		if err == nil {
-			existing.authSessionID = SessionID(authSess)
-			existing.deviceID = DeviceID(devID)
-			existing.chosenLead = chosenLead == 1
-			existing.ticker = ticker == 1
-			out.Screen = existing.view()
-			return nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
+			if max(existing.registeredAtMS, existing.reportedAtMS) > nowMS-partyScreenSilence.Milliseconds() {
+				existing.authSessionID = SessionID(authSess)
+				existing.deviceID = DeviceID(devID)
+				existing.chosenLead = chosenLead == 1
+				existing.ticker = ticker == 1
+				out.Screen = existing.view()
+				return nil
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ? WHERE screen_id = ?`, nowMS, existing.id); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 
@@ -2160,8 +2164,8 @@ func (s *Store) AddPartyPlayerDisplay(ctx context.Context, host ProfileID, filte
 		}
 		// A fresh registration cannot revive URLs issued for a former join.
 		if _, err := tx.ExecContext(ctx, `UPDATE playback_grant SET cancelled_at_ms = ?
-			WHERE session_id = ? AND originator_profile_id = '' AND walk_up = 0 AND ambient = 0
-				AND ended_at_ms IS NULL AND cancelled_at_ms IS NULL`, nowMS, display.SessionID); err != nil {
+			WHERE session_id IN (?, ?) AND originator_profile_id = '' AND walk_up = 0 AND ambient = 0
+				AND ended_at_ms IS NULL AND cancelled_at_ms IS NULL`, nowMS, authSess, display.SessionID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO party_screen
@@ -2652,12 +2656,18 @@ func (s *Store) IsPlayerPartyCurrentMedia(ctx context.Context, authSessionID Ses
 }
 
 func (s *Store) isPlayerPartyCurrentMediaLocked(ctx context.Context, q queryRower, authSessionID SessionID, mediaID MediaID) (bool, error) {
+	binding, err := s.playerPartyMediaBindingLocked(ctx, q, authSessionID, mediaID)
+	return binding != "", err
+}
+
+func (s *Store) playerPartyMediaBindingLocked(ctx context.Context, q queryRower, authSessionID SessionID, mediaID MediaID) (string, error) {
 	nowMS := timeToMillis(s.serverNow())
 	var row partyScreenRow
 	var hostProfileID ProfileID
+	var entryID string
 	var authSess, devID string
 	err := q.QueryRowContext(ctx, `
-		SELECT s.screen_id, s.profile_id, s.auth_session_id, s.device_id, s.binding_generation, p.host_profile_id
+		SELECT s.screen_id, s.profile_id, s.auth_session_id, s.device_id, s.binding_generation, p.host_profile_id, e.entry_id
 		FROM party_screen s
 		JOIN party_session p ON p.session_id = s.session_id
 		JOIN party_entry e ON e.entry_id = p.current_entry_id AND e.session_id = p.session_id
@@ -2665,17 +2675,20 @@ func (s *Store) isPlayerPartyCurrentMediaLocked(ctx context.Context, q queryRowe
 			AND p.ended_at_ms IS NULL AND p.expires_at_ms > ?
 			AND e.state = 'current' AND e.media_id = ?
 		LIMIT 1
-	`, authSessionID, nowMS-partyScreenSilence.Milliseconds(), nowMS, mediaID).Scan(&row.id, &row.profileID, &authSess, &devID, &row.bindingGeneration, &hostProfileID)
+	`, authSessionID, nowMS-partyScreenSilence.Milliseconds(), nowMS, mediaID).Scan(&row.id, &row.profileID, &authSess, &devID, &row.bindingGeneration, &hostProfileID, &entryID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+		return "", nil
 	}
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	row.authSessionID = SessionID(authSess)
 	row.deviceID = DeviceID(devID)
 	valid, _ := s.isPartyPlayerScreenValidLocked(ctx, hostProfileID, row)
-	return valid, nil
+	if !valid {
+		return "", nil
+	}
+	return row.id + ":" + entryID, nil
 }
 
 // IsPlayerDeviceInLiveParty reports whether deviceID or authSessionID is
