@@ -11,6 +11,7 @@ import {
   pauseSkipTarget,
   resolveSpeed,
   sleepFade,
+  sleepFadeSeconds,
   sleepRemaining,
   speedValue,
 } from "./listening";
@@ -114,9 +115,18 @@ describe("sleep timer", () => {
     expect(sleepRemaining({ kind: "chapter", end: 120 }, 0, media)).toBe(10);
   });
 
-  it("fades over the last ten seconds", () => {
-    expect(sleepFade(30)).toBe(1);
-    expect(sleepFade(5)).toBe(0.5);
-    expect(sleepFade(0)).toBe(0);
+  it("fades over at most 45 seconds, or a quarter of a short timer", () => {
+    expect(sleepFadeSeconds(15 * 60)).toBe(45);
+    expect(sleepFadeSeconds(60)).toBe(15);
+    expect(sleepFadeSeconds(0)).toBe(0);
+  });
+
+  it("fades with equal power from where the fade began", () => {
+    expect(sleepFade(60, 45)).toBe(1);
+    expect(sleepFade(45, 45)).toBe(1);
+    expect(sleepFade(22.5, 45)).toBeCloseTo(Math.SQRT1_2);
+    expect(sleepFade(0, 45)).toBeCloseTo(0);
+    expect(sleepFade(5, 10)).toBeCloseTo(Math.SQRT1_2);
+    expect(sleepFade(5, 0)).toBe(1);
   });
 });

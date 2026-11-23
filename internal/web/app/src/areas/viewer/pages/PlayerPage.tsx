@@ -111,7 +111,7 @@ import { useAmbientChoice, useAmbientIdle } from "../player/useAmbient";
 import { type PartySeekAutoSkip, useAutoSkip } from "../player/useAutoSkip";
 import { useCaptionLoad } from "../player/useCaptionLoad";
 import { idleChromeClass, useChromeAutoHide } from "../player/useChromeAutoHide";
-import { decodableStream, handBack, useGaplessAudio } from "../player/useGaplessAudio";
+import { decodableStream, handBack, skipJoin, useGaplessAudio } from "../player/useGaplessAudio";
 import { useLongPauseSkip, usePlaybackSpeed, useSleepTimer } from "../player/useListening";
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
@@ -648,6 +648,7 @@ function FeaturePlayer({
   // CORE-2363).
   const liveStage: StageItem = {
     key: mediaId || navTitle,
+    mediaID: mediaId || "",
     title: navTitle,
     artworkURL,
     credits,
@@ -696,7 +697,7 @@ function FeaturePlayer({
   // browsing.
   const playItem = useCallback(
     (id: string, title: string, selectPartyTitle = true, musicProfile?: string) => {
-      // A newer choice drops a Play now still fading out (its own advance has left that state).
+      // A newer choice drops a Play now still fading out (its own advance opening this item does not).
       cancelFadeAdvance();
       const search = musicProfile
         ? `?${new URLSearchParams({ [MUSIC_QUEUE_PARAM]: musicProfile })}`
@@ -967,6 +968,11 @@ function FeaturePlayer({
     goToQueueItem,
     advanceToNext,
   ]);
+  // The current way to open an item: docking mid-fade changes it (CORE-3352).
+  const openNextRef = useRef({ playNext, goToQueueItem, advanceToNext });
+  useLayoutEffect(() => {
+    openNextRef.current = { playNext, goToQueueItem, advanceToNext };
+  }, [playNext, goToQueueItem, advanceToNext]);
   // A card queue names its own previous item; without one, a Play all queue
   // that holds this item may (stepping back keeps that queue going).
   const playAllPrevious = useMemo(
@@ -999,9 +1005,12 @@ function FeaturePlayer({
     key: string;
     info: GenericMediaInfo | null;
   } | null>(null);
-  const nextReadKey = JSON.stringify([queueRoute, nextID]);
+  // Each appearance reads afresh, for the viewer it shows to: a card that hides
+  // and comes back never shows an earlier read's picture (CORE-3353).
+  const nextReadKey = JSON.stringify([queueRoute, nextID, stageOwner]);
   const cardShown = showAudioStage && !docked && playingNext.visible;
   useEffect(() => {
+    if (!cardShown) setNextRead(null);
     if (!nextID || !cardShown || !queueTitlesAllowed) return;
     const controller = new AbortController();
     const settle = (info: GenericMediaInfo | null) => {
@@ -1026,22 +1035,43 @@ function FeaturePlayer({
     ? () => {
         playingNext.dismiss();
         const chosenUnder = getIdentityEpochSignal();
+        // A gapless join already scheduled would start the next track where
+        // the playing one ends, under the fade or after it (CORE-3352): the
+        // skip retires it at once, so only the playing item fades out and the
+        // element plays the named item from its start.
+        const video = videoRef.current;
+        if (video) skipJoin(video, mediaId || "");
+        // The skip plays the item the card named at the click, opened the
+        // current way: a reorder mid-fade does not change it, docking does.
+        const queued = serverQueueRun ? undefined : nextInQueue;
+        const issued = serverQueueRun || queued || !issuedNext?.streams ? undefined : issuedNext;
         const advance = playNowTarget
           ? () => {
               endedWithoutNext.current = null;
               playItemRef.current(playNowTarget, "", true, profileID);
             }
-          : playNext;
+          : queued
+            ? () => openNextRef.current.goToQueueItem(queued)
+            : issued
+              ? () => openNextRef.current.advanceToNext(issued)
+              : () => openNextRef.current.playNext?.();
         // A relock mid-fade voids a choice made under the revealed session.
-        fadeAdvance(videoRef.current, () => {
-          if (!chosenUnder?.aborted) advance();
+        fadeAdvance(video, () => {
+          if (chosenUnder?.aborted) return;
+          advance();
         });
       }
     : undefined;
-  // Anything else that changes what plays (another item, Back docking the
-  // player, a relock, leaving) drops the skip, so it never overrides the
-  // listener's newer choice.
-  useEffect(() => () => cancelFadeAdvance(), [mediaId, docked, stageOwner, epoch]);
+  // Anything else that changes what plays (another item, a relock, leaving)
+  // drops the skip, so it never overrides the listener's newer choice, and so
+  // does an advance withdrawn mid-fade (a Watch Party now leads, the item
+  // plays alone): the item fades back in. Docking and reordering do not: the
+  // listener still asked for the item the card named. A layout cleanup, so the
+  // drop lands before the fade's last frame can run.
+  useLayoutEffect(
+    () => () => cancelFadeAdvance(),
+    [mediaId, stageOwner, epoch, partyLeads, playsAloneRead],
+  );
   // The Up next drawer lists a card queue; a server queue keeps its own panel.
   const drawerQueue = !serverQueueRun && queue && queue.length > 1 ? queue : undefined;
   const [upNextOpen, setUpNextOpen] = useState(false);
@@ -1094,6 +1124,9 @@ function FeaturePlayer({
         if (!serverQueueRun) handBack(video);
         return;
       }
+      // A Play now still fading out owns the advance: the end moves its skip
+      // on at once, to the item the listener picked (CORE-3348).
+      if (finishFadeAdvance()) return;
       if (loopItem) restart(0);
       else if (serverQueueRun) void runQueueAction("ended");
       else playNext?.();
@@ -1496,7 +1529,7 @@ function FeaturePlayer({
                     />
                   ) : null
                 }
-                mediaID={mediaId || ""}
+                mediaID={stage.mediaID}
               >
                 <NowPlayingDetails
                   quality={infoIsCurrent ? activeQuality(state.info, state.stream) : null}
@@ -1763,6 +1796,8 @@ const NO_CREDITS: readonly MediaCredit[] = [];
 /** What the audio stage shows for one item. */
 interface StageItem {
   key: string;
+  /** The item the title links to: the held item's own, not the incoming one's (CORE-3353). */
+  mediaID: string;
   title: string;
   artworkURL: string;
   credits: readonly MediaCredit[];
@@ -1773,6 +1808,7 @@ function sameStageItem(a: StageItem | null, b: StageItem | null): boolean {
   if (!a || !b) return a === b;
   return (
     a.key === b.key &&
+    a.mediaID === b.mediaID &&
     a.title === b.title &&
     a.artworkURL === b.artworkURL &&
     a.credits === b.credits &&
