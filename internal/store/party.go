@@ -2125,7 +2125,7 @@ func (s *Store) AddPartyPlayerDisplay(ctx context.Context, host ProfileID, filte
 		// the old Session cannot displace the renewed display's registration.
 		var liveSession int
 		if err := s.catalogR.QueryRowContext(ctx, `SELECT COUNT(*) FROM auth_session
-			WHERE id = ? AND device_id = ? AND expires_at_ms > ?`,
+			WHERE id = ? AND device_id = ? AND (expires_at_ms IS NULL OR expires_at_ms > ?)`,
 			display.SessionID, display.DeviceID, nowMS).Scan(&liveSession); err != nil {
 			return err
 		}
