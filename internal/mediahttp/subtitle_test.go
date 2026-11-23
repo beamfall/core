@@ -241,9 +241,23 @@ func TestSubtitleSidecarPathBoundsTheWait(t *testing.T) {
 func TestSubtitlesAnswersPendingWithRetryAfter(t *testing.T) {
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
-	defer close(release)
 	conv := &blockingSubtitleConverter{started: started, release: release}
 	handler, token := newSubtitleTestHandler(t, "session-default", "media-alpha", false, conv)
+	// The extraction outlives the 503 by design. Release it and wait for it to
+	// finish before TempDir cleanup runs (cleanups run LIFO), or its writes race
+	// the directory removal.
+	t.Cleanup(func() {
+		close(release)
+		handler.subtitleJobs.mu.Lock()
+		jobs := make([]*subtitleExtraction, 0, len(handler.subtitleJobs.jobs))
+		for _, job := range handler.subtitleJobs.jobs {
+			jobs = append(jobs, job)
+		}
+		handler.subtitleJobs.mu.Unlock()
+		for _, job := range jobs {
+			<-job.done
+		}
+	})
 	handler.subtitleWait = 20 * time.Millisecond
 	rec := httptest.NewRecorder()
 	handler.Subtitles(rec, httptest.NewRequest(http.MethodGet, "/api/media/subtitle/"+token+"/2.vtt", nil))
