@@ -13,11 +13,17 @@ export function useChromeAutoHide({
   stageRef,
   videoRef,
   menuOpen,
+  mounted = true,
 }: {
   stageRef: React.RefObject<HTMLElement | null>;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   /** True while any track menu / overlay is open — suppresses hiding. */
   menuOpen: boolean;
+  /**
+   * Whether the stage and video are rendered. A playback error swaps the stage
+   * for a message and a retry mounts new nodes: the listeners rebind on change.
+   */
+  mounted?: boolean;
 }): { chromeHidden: boolean; reveal: () => void } {
   const [chromeHidden, setChromeHidden] = useState(false);
   const timerRef = useRef<number | null>(null);
@@ -63,7 +69,8 @@ export function useChromeAutoHide({
   useEffect(() => {
     const stage = stageRef.current;
     const video = videoRef.current;
-    if (!stage || !video) return;
+    if (!mounted || !stage || !video) return;
+    reveal();
     const onActivity = () => reveal();
     const onPause = () => {
       setChromeHidden(false);
@@ -87,7 +94,27 @@ export function useChromeAutoHide({
       video.removeEventListener("pause", onPause);
       clearTimer();
     };
-  }, [stageRef, videoRef, reveal, clearTimer]);
+  }, [mounted, stageRef, videoRef, reveal, clearTimer]);
 
   return { chromeHidden, reveal };
+}
+
+/**
+ * The stage class for the idle state. Video hides its chrome; the music stage
+ * dims it instead (CORE-3351), unless Ambient mode runs its own idle.
+ */
+export function idleChromeClass({
+  playing,
+  chromeHidden,
+  audioStage,
+  ambient,
+}: {
+  playing: boolean;
+  chromeHidden: boolean;
+  audioStage: boolean;
+  ambient: boolean;
+}): string {
+  if (!playing || !chromeHidden) return "";
+  if (!audioStage) return " is-chrome-hidden";
+  return ambient ? "" : " is-chrome-dim";
 }

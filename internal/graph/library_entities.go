@@ -206,6 +206,10 @@ func (h *Handler) libraryEntities(ctx context.Context, scope auth.Scope, req req
 	if err != nil {
 		return LibraryEntitiesResponse{}, err
 	}
+	if browse.Sort == store.LibraryBrowseSortField {
+		// Entities carry no Media fields to order by.
+		return LibraryEntitiesResponse{}, clientError("sort is not a supported library sort")
+	}
 	libraryID := browse.LibraryID
 	limit, offset := intVar(req, "limit"), intVar(req, "offset")
 	if limit < 0 || offset < 0 {

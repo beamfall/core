@@ -1,21 +1,16 @@
 import { ExternalLink, MonitorUp, QrCode as QrIcon, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useHref } from "react-router";
 import { QrCode } from "@/components/beamfall/QrCode";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
-import { localClockMS } from "@/lib/clockEstimate";
 import {
-  calibrateWatchPartyClock,
   fetchHomeLibraries,
-  fetchPartySession,
-  fetchPlaybackAdjustmentRanges,
   type HomeLibrary,
   type PartyFairness,
   type PartySession,
-  type PlaybackAdjustmentRanges,
   partyEnd,
   partyRotateCode,
   partyStart,
@@ -30,17 +25,11 @@ import {
   PartyRotation,
   PartyScreens,
 } from "../party/HostLive";
-import { POLL_MS, stagePath, stageWindowName } from "../party/partySync";
-import { useVisiblePoll } from "../party/useVisiblePoll";
+import { stagePath, stageWindowName } from "../party/partySync";
+import { type RunPartyOp, usePartyHost } from "../party/usePartyHost";
 import "../party/party.css";
 
-type Notice = { tone: "ok" | "error"; text: string };
-
-/** Runs one host operation and applies the session it returns. */
-export type RunPartyOp = (
-  op: () => Promise<PartySession | null>,
-  success?: string,
-) => Promise<boolean>;
+export type { RunPartyOp } from "../party/usePartyHost";
 
 /**
  * The party host page (CORE-2945): start a session over chosen Libraries, then
@@ -49,68 +38,7 @@ export type RunPartyOp = (
  */
 export function PartyHostPage() {
   const t = useT();
-  // undefined while the first read is out; null when there is no live session.
-  const [session, setSession] = useState<PartySession | null | undefined>(undefined);
-  const [loadError, setLoadError] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
-  const [ranges, setRanges] = useState<PlaybackAdjustmentRanges | null>(null);
-  // serverClock − localClock; 0 until calibrated (or when calibration is refused).
-  const clockOffsetRef = useRef(0);
-  // Requests are numbered as they start, so a poll that set out before a
-  // mutation never overwrites the newer session the mutation returned.
-  const seqRef = useRef(0);
-  const appliedRef = useRef(0);
-
-  const apply = useCallback((seq: number, next: PartySession | null) => {
-    if (seq < appliedRef.current) return;
-    appliedRef.current = seq;
-    setSession(next);
-  }, []);
-
-  useVisiblePoll(async (signal) => {
-    const seq = ++seqRef.current;
-    try {
-      const next = await fetchPartySession(signal);
-      apply(seq, next);
-      setLoadError(false);
-    } catch (error) {
-      if (!signal.aborted) setLoadError(true);
-      throw error;
-    }
-  }, POLL_MS);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchPlaybackAdjustmentRanges(controller.signal)
-      .then((next) => {
-        if (!controller.signal.aborted) setRanges(next);
-      })
-      .catch(() => {});
-    calibrateWatchPartyClock()
-      .then((estimate) => {
-        clockOffsetRef.current = estimate.offsetMS;
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, []);
-
-  const serverNow = useCallback(() => localClockMS() + clockOffsetRef.current, []);
-
-  const run = useCallback<RunPartyOp>(
-    async (op, success) => {
-      const seq = ++seqRef.current;
-      try {
-        const next = await op();
-        apply(seq, next);
-        setNotice(success ? { tone: "ok", text: success } : null);
-        return true;
-      } catch {
-        setNotice({ tone: "error", text: t("partyHostActionError") });
-        return false;
-      }
-    },
-    [apply, t],
-  );
+  const { session, loadError, notice, ranges, serverNow, run } = usePartyHost();
 
   return (
     <AppShell actions={<ViewerActions />}>

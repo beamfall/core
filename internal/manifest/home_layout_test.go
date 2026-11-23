@@ -62,7 +62,7 @@ func TestHomeLayoutReordersHidesAndResets(t *testing.T) {
 		t.Fatal("saved layout not reported customized")
 	}
 	got := homeSectionIDs(t, service, scope)
-	if want := []string{"recent", "continue", "next-up", "your-most-played"}; !slices.Equal(got, want) {
+	if want := []string{"recent", "continue", "next-up", "continue-listening", "your-most-played"}; !slices.Equal(got, want) {
 		t.Fatalf("customized home = %v, want %v", got, want)
 	}
 	var hidden []string

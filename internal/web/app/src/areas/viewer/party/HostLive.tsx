@@ -37,8 +37,8 @@ import {
 } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { formatClockTime } from "../lib/transport";
-import type { RunPartyOp } from "../pages/PartyHostPage";
 import { anchorTargetMS, screenInSync, stagePath } from "./partySync";
+import type { RunPartyOp } from "./usePartyHost";
 
 const SEEK_STEP_MS = 10_000;
 const TEMPO_STEP = 0.05;

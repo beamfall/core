@@ -17,6 +17,7 @@
   "library_root.overlaps": "The folder {path} is already part of a library.",
   "library_root.unreadable": "The server doesn't have permission to read {path}.",
   "manifest.shelf.next_up": "Up Next",
+  "manifest.shelf.continue_listening": "Continue Listening",
   "media_relation.invalid_input": "Check the media, entity kind, relation, and attributes.",
   "media_relation.undo_conflict": "This merge cannot be undone because a relation was edited afterward.",
   "notification.access_request.title": "Access requested",

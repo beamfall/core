@@ -221,6 +221,11 @@ export interface LibraryItemsRequest {
   state: LibraryBrowseState;
   /** "random" replaces the state's sort for Shuffle; seed keeps paging stable. */
   shuffleSeed?: string;
+  /**
+   * A plugin field to order by (CORE-3362), sent as "field:<name>": the karaoke
+   * songbook's artist order. It replaces the state's sort, not its direction.
+   */
+  fieldSort?: string;
   limit: number;
   offset: number;
 }
@@ -232,7 +237,11 @@ export function libraryItemsVariables(request: LibraryItemsRequest): Record<stri
   const { state } = request;
   const vars: Record<string, unknown> = {
     libraryID: request.libraryID,
-    sort: request.shuffleSeed ? "random" : state.sort,
+    sort: request.shuffleSeed
+      ? "random"
+      : request.fieldSort
+        ? `field:${request.fieldSort}`
+        : state.sort,
     direction: request.shuffleSeed ? "asc" : state.direction,
     limit: request.limit,
     offset: request.offset,

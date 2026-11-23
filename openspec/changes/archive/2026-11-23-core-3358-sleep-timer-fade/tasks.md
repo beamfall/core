@@ -1,0 +1,5 @@
+- [x] Web: shared volume hold and equal-power curve in `trackFade.ts`; Play now uses it
+- [x] Web: `useSleepTimer` fades over up to 45 s in 50 ms steps, restores the level, re-anchors after a listener interruption
+- [x] Web: the transport slider shows the listener's level during a fade
+- [x] Tests: `useSleepTimer.test.tsx`, `listening.test.ts`, `trackFade.test.ts`
+- [ ] Verify on tower after landing

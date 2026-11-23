@@ -1,4 +1,5 @@
 import { feedStrings } from "./feeds";
+import { karaokeLibraryStrings } from "./karaoke-library";
 
 export const libraryPivotStrings = {
   en: {
@@ -34,6 +35,7 @@ export const libraryPivotStrings = {
     libraryBrowseFiltersDone: "Done",
     // The Following pivot's own screens (CORE-2957).
     ...feedStrings.en,
+    ...karaokeLibraryStrings.en,
   },
   fr: {
     libraryPivotsLabel: "Vues de la bibliothèque",
@@ -65,6 +67,7 @@ export const libraryPivotStrings = {
     libraryBrowseFiltersDone: "Terminé",
     // The Following pivot's own screens (CORE-2957).
     ...feedStrings.fr,
+    ...karaokeLibraryStrings.fr,
   },
   de: {
     libraryPivotsLabel: "Bibliotheksansichten",
@@ -96,6 +99,7 @@ export const libraryPivotStrings = {
     libraryBrowseFiltersDone: "Fertig",
     // The Following pivot's own screens (CORE-2957).
     ...feedStrings.de,
+    ...karaokeLibraryStrings.de,
   },
   es: {
     libraryPivotsLabel: "Vistas de la biblioteca",
@@ -127,6 +131,7 @@ export const libraryPivotStrings = {
     libraryBrowseFiltersDone: "Listo",
     // The Following pivot's own screens (CORE-2957).
     ...feedStrings.es,
+    ...karaokeLibraryStrings.es,
   },
   pt: {
     libraryPivotsLabel: "Vistas da biblioteca",
@@ -158,5 +163,6 @@ export const libraryPivotStrings = {
     libraryBrowseFiltersDone: "Concluído",
     // The Following pivot's own screens (CORE-2957).
     ...feedStrings.pt,
+    ...karaokeLibraryStrings.pt,
   },
 } as const;

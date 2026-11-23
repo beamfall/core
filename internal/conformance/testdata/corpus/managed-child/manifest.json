@@ -21,7 +21,8 @@
           "id": "next-up",
           "kind": "shelf",
           "source": {
-            "kind": "next-up"
+            "kind": "next-up",
+            "value": "video"
           },
           "title": {
             "de": "Als Nächstes",
@@ -29,6 +30,22 @@
             "es": "A continuación",
             "fr": "À suivre",
             "pt": "A seguir"
+          }
+        },
+        {
+          "artworkSlot": "poster",
+          "id": "continue-listening",
+          "kind": "shelf",
+          "source": {
+            "kind": "next-up",
+            "value": "audio"
+          },
+          "title": {
+            "de": "Weiter hören",
+            "en": "Continue Listening",
+            "es": "Seguir escuchando",
+            "fr": "Reprendre l'écoute",
+            "pt": "Continuar a ouvir"
           }
         },
         {
