@@ -11,7 +11,7 @@ import {
   sleepFadeSeconds,
   sleepRemaining,
 } from "./listening";
-import { holdVolume, type VolumeHold, volumeHeld } from "./trackFade";
+import { cancelFadeAdvance, holdVolume, type VolumeHold, volumeHeld } from "./trackFade";
 
 type VideoRef = RefObject<HTMLVideoElement | null>;
 
@@ -228,6 +228,8 @@ export function useSleepTimer(
       const left = measure();
       setRemaining(Number.isFinite(left) ? left : null);
       if (left <= 0) {
+        // A skip still fading out would start the next item after the stop.
+        cancelFadeAdvance();
         video.pause();
         letGo();
         setState(null);

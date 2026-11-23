@@ -119,6 +119,9 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     video.paused || listenerMuted(video) || fadeBaseVolume(video) === 0 || document.hidden;
   // A cut writes nothing, so it takes no hold on the volume.
   let hold: VolumeHold | null = cut ? null : holdVolume(video);
+  // A fade already under way (the sleep timer's) has the element below the
+  // listener's level: the skip fades out from where it is, not from their level.
+  const from = hold && hold.base > 0 ? Math.min(1, video.volume / hold.base) : 1;
 
   let frame = 0;
   let wait: ReturnType<typeof setTimeout> | undefined;
@@ -213,10 +216,13 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   // A cut owns what plays next too: the outgoing track's end must not act as well.
   if (cut) return settle();
   document.addEventListener("visibilitychange", hide);
-  ramp(fadeOutGain, () => {
-    video.addEventListener("loadstart", loading);
-    video.addEventListener("playing", fadeIn);
-    wait = setTimeout(fadeIn, LOAD_WAIT_MS);
-    go();
-  });
+  ramp(
+    (t) => from * fadeOutGain(t),
+    () => {
+      video.addEventListener("loadstart", loading);
+      video.addEventListener("playing", fadeIn);
+      wait = setTimeout(fadeIn, LOAD_WAIT_MS);
+      go();
+    },
+  );
 }
