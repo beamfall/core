@@ -463,18 +463,37 @@ describe("useGaplessAudio", () => {
     const element = playing();
     const hook = render(element);
     await vi.waitFor(() => expect(sources).toHaveLength(1));
-    act(() => skipJoin(element));
+    act(() => skipJoin(element, "m1"));
     expect(sources[0].stop).toHaveBeenCalled();
-    // The outgoing track plays on until the skip lands: it schedules no join again.
+    // The outgoing track plays on until the skip lands: it schedules no join
+    // again, even when the successor's stream changes under it.
     act(() => {
       element.dispatchEvent(new Event("timeupdate"));
       element.dispatchEvent(new Event("playing"));
+    });
+    hook.rerender({
+      mediaID: "m1",
+      next: { ...nextItem("m2"), streams: [{ kind: "direct-play", url: "/api/media/m2/other" }] },
+    } as never);
+    await settle();
+    act(() => {
+      element.dispatchEvent(new Event("timeupdate"));
     });
     expect(sources).toHaveLength(1);
     expect(element.muted).toBe(false);
     // The named item plays on the element; its own successor joins as usual.
     hook.rerender({ mediaID: "m2", next: nextItem("m3") });
     await vi.waitFor(() => expect(sources).toHaveLength(2));
+  });
+
+  it("starts no confirmed server successor after Play now retires the join (CORE-3352)", async () => {
+    const element = playing();
+    const hook = render(element, true);
+    await settle();
+    await vi.waitFor(() => expect(contexts[0].decodeAudioData).toHaveBeenCalledOnce());
+    act(() => skipJoin(element, "m1"));
+    hook.result.current("m2");
+    expect(sources).toHaveLength(0);
   });
 
   it("hands the sound back when the join is turned off on the same item", async () => {

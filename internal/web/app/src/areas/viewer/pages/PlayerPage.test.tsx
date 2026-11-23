@@ -1764,7 +1764,7 @@ describe("PlayerPage server Play Queue", () => {
     expect(screen.queryByRole("region", { name: /Playing next/ })).toBeNull();
     // A gapless join already scheduled for C's start would play B out first
     // (CORE-3352): the skip retires it and takes the sound back to the element.
-    expect(skipJoin).toHaveBeenCalledWith(video);
+    expect(skipJoin).toHaveBeenCalledWith(video, b.id);
     await waitFor(() => expect(playingID()).toBe(c.id));
     await screen.findByRole("heading", { name: "C" });
     // The stage, and the visuals on it, stay mounted across the advance.
@@ -3210,6 +3210,27 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     });
 
     fireEvent.click(within(region).getByRole("button", { name: /^Next: / }));
+    await waitFor(() =>
+      expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-next")).toBe(true),
+    );
+    expect(screen.getByText("search route")).toBeInTheDocument();
+    expect(within(miniPlayer() as HTMLElement).getByText("Track Two")).toBeInTheDocument();
+  });
+
+  it("keeps a Play now still fading out when the player docks under it (CORE-3352)", async () => {
+    renderHosted({ mediaClass: "audio" });
+    const video = await waitFor(() => {
+      const found = stageVideo();
+      if (!found) throw new Error("no stage");
+      return found;
+    });
+    playAudibly(video);
+    const card = await screen.findByRole("region", { name: /Playing next/ });
+    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    act(() => {
+      video.dispatchEvent(new Event("ended"));
+      void go("/search");
+    });
     await waitFor(() =>
       expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-next")).toBe(true),
     );

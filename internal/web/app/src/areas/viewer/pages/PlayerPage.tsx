@@ -960,6 +960,10 @@ function FeaturePlayer({
     goToQueueItem,
     advanceToNext,
   ]);
+  const playNextRef = useRef(playNext);
+  useLayoutEffect(() => {
+    playNextRef.current = playNext;
+  }, [playNext]);
   // A card queue names its own previous item; without one, a Play all queue
   // that holds this item may (stepping back keeps that queue going).
   const playAllPrevious = useMemo(
@@ -1022,30 +1026,31 @@ function FeaturePlayer({
     ? () => {
         playingNext.dismiss();
         const chosenUnder = getIdentityEpochSignal();
+        // A gapless join already scheduled would start the next track where
+        // the playing one ends, under the fade or after it (CORE-3352): the
+        // skip retires it at once, so only the playing item fades out and the
+        // element plays the named item from its start.
+        const video = videoRef.current;
+        if (video) skipJoin(video, mediaId || "");
         const advance = playNowTarget
           ? () => {
               endedWithoutNext.current = null;
               playItemRef.current(playNowTarget, "", true, profileID);
             }
-          : playNext;
+          : // Docking mid-fade changes how the next item opens: the skip uses the current way.
+            () => playNextRef.current?.();
         // A relock mid-fade voids a choice made under the revealed session.
-        fadeAdvance(videoRef.current, () => {
+        fadeAdvance(video, () => {
           if (chosenUnder?.aborted) return;
-          // A gapless join already scheduled starts the next track where the
-          // playing one would end, with the outgoing track still sounding under
-          // it (CORE-3352). The skip stops the decoded audio, retires the join
-          // so it is not scheduled again before the item changes, and lets the
-          // element play the named item from its start.
-          const video = videoRef.current;
-          if (video) skipJoin(video);
           advance();
         });
       }
     : undefined;
-  // Anything else that changes what plays (another item, Back docking the
-  // player, a relock, leaving) drops the skip, so it never overrides the
-  // listener's newer choice.
-  useEffect(() => () => cancelFadeAdvance(), [mediaId, docked, stageOwner, epoch]);
+  // Anything else that changes what plays (another item, a relock, leaving)
+  // drops the skip, so it never overrides the listener's newer choice. Docking
+  // does not: the listener still asked for the next item, which plays on in
+  // the mini player as a natural end would.
+  useEffect(() => () => cancelFadeAdvance(), [mediaId, stageOwner, epoch]);
   // The Up next drawer lists a card queue; a server queue keeps its own panel.
   const drawerQueue = !serverQueueRun && queue && queue.length > 1 ? queue : undefined;
   const [upNextOpen, setUpNextOpen] = useState(false);

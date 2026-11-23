@@ -305,17 +305,17 @@ export function handBack(video: HTMLMediaElement) {
   releaseMute(video);
 }
 
-// Joins retired by a skip, counted per element: a join's effect run keeps the
-// count it started with, and joins no more once it changes.
-const skips = new WeakMap<HTMLMediaElement, number>();
+// The item each element skips away from: it joins nothing more until the
+// element plays another item (CORE-3352).
+const skipping = new WeakMap<HTMLMediaElement, string>();
 
 /**
  * Play now (CORE-3352): stops the decoded audio and retires the join the
- * playing track scheduled, so the named item starts on the element from its
- * beginning and nothing reschedules the old join before the item changes.
+ * playing item scheduled, from the click on, so only that item fades out and
+ * the named item starts on the element from its beginning.
  */
-export function skipJoin(video: HTMLMediaElement) {
-  skips.set(video, (skips.get(video) ?? 0) + 1);
+export function skipJoin(video: HTMLMediaElement, mediaID: string) {
+  skipping.set(video, mediaID);
   handBack(video);
 }
 
@@ -746,8 +746,7 @@ export function useGaplessAudio({
     const controller = new AbortController();
     let decoding = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const skipsAtStart = skips.get(video) ?? 0;
-    const retired = () => (skips.get(video) ?? 0) !== skipsAtStart;
+    const retired = () => skipping.get(video) === mediaID;
 
     const remaining = () => video.duration - video.currentTime;
     const cancelNext = () => {
