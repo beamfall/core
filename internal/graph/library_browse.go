@@ -94,6 +94,17 @@ func (h *Handler) libraryItems(ctx context.Context, scope auth.Scope, req reques
 		return LibraryItemsResponse{}, err
 	}
 	query.FacetMembers = boolVar(req, "categoryCounts")
+	if query.Sort == store.LibraryBrowseSortField {
+		// Which fields sort describes the Library's plugin, so a Library the
+		// caller cannot see answers as empty, the same as an unknown one.
+		visible, err := h.store.LibraryVisible(ctx, query.LibraryID, scope.LibraryFilter())
+		if err != nil {
+			return LibraryItemsResponse{}, err
+		}
+		if !visible {
+			return emptyLibraryItems(), nil
+		}
+	}
 	bundle, _ := h.libraryBundle(ctx, query.LibraryID)
 	if err := libraryBrowseMediaFields(bundle, &query); err != nil {
 		return LibraryItemsResponse{}, err

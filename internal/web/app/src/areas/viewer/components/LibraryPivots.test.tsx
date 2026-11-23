@@ -9,6 +9,12 @@ import { I18nProvider } from "@/lib/i18n";
 import { pivotOfPath, readLibraryPivot, rememberedLibraryPath } from "@/lib/libraryPivot";
 import { LibraryPivots } from "./LibraryPivots";
 
+// The pivots ask the manifest which plugin a Library runs (CORE-3362).
+const session = vi.hoisted(() => ({
+  manifest: { libraries: [] as { id: string; pluginID: string | null }[] },
+}));
+vi.mock("@/lib/session", () => ({ useSession: () => session }));
+
 // CORE-2826: reopening a Library returns to the pivot last used there.
 
 const NODE = {
@@ -145,5 +151,30 @@ describe("remembered Library pivot", () => {
     expect(pivotOfPath("/n/films/collections")).toBe("/collections");
     expect(pivotOfPath("/n/films/categories/")).toBe("/categories");
     expect(pivotOfPath("/n/films/unknown")).toBe("");
+  });
+});
+
+describe("karaoke Library pivots", () => {
+  afterEach(() => {
+    session.manifest.libraries = [];
+  });
+
+  it("opens on the Songbook and keeps Collections and Categories", () => {
+    session.manifest.libraries = [{ id: NODE.libraryID, pluginID: "karaoke" }];
+    renderAt("/n/library-films");
+    const links = screen.getByRole("navigation", { name: "Library views" }).querySelectorAll("a");
+    expect([...links].map((link) => link.textContent)).toEqual([
+      "Songbook",
+      "Collections",
+      "Categories",
+    ]);
+    expect(screen.getByRole("link", { name: "Songbook" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("keeps the generic pivots for any other Library", () => {
+    session.manifest.libraries = [{ id: NODE.libraryID, pluginID: "films" }];
+    renderAt("/n/library-films");
+    expect(screen.getByRole("link", { name: "Recommended" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Songbook" })).toBeNull();
   });
 });
