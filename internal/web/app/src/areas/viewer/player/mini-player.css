@@ -94,6 +94,10 @@
   display: flex;
   margin: -4px;
   padding: 4px;
+  /* When even the credits' minimum widths overflow (a very narrow screen or a
+     long list), the row scrolls sideways so every credit stays reachable. */
+  overflow-x: auto;
+  scrollbar-width: none;
   font-size: 13px;
   color: color-mix(
     in oklab,
