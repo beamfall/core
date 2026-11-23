@@ -4722,8 +4722,8 @@ func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device D
 		return Profile{}, err
 	}
 	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO auth_session(id, device_id, profile_id, revealed, expires_at_ms, kind) VALUES (?, ?, ?, ?, ?, ?)",
-		session.ID, session.DeviceID, session.ProfileID, boolInt(session.Revealed), nullableMillis(session.ExpiresAt), SessionKindEnrolled,
+		"INSERT INTO auth_session(id, device_id, profile_id, revealed, expires_at_ms, admin_until_ms, kind) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		session.ID, session.DeviceID, session.ProfileID, boolInt(session.Revealed), nullableMillis(session.ExpiresAt), nullableMillis(session.AdminUntil), SessionKindEnrolled,
 	); err != nil {
 		return Profile{}, err
 	}

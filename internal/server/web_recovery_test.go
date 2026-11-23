@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -209,6 +210,80 @@ func TestWebAdminSignInFromLANEnrollsManager(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"deviceRole":"manager"`) {
 		t.Fatalf("sign-in body = %s", rec.Body.String())
+	}
+}
+
+func TestWebAdminSignInOpensAdminSessionForConsoleAndOperations(t *testing.T) {
+	srv, st := newAdminSignInServer(t, "correct horse")
+	rec := postAdminSignIn(srv, "192.168.4.20:51000", lanHost, `{"password":"correct horse","deviceName":"Laptop"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("admin sign-in status = %d, want 201: %s", rec.Code, rec.Body.String())
+	}
+	cookies := responseCookies(rec)
+
+	// Immediately after signing in with the admin password, AdminGate (adminSession),
+	// Console (consoleConfig), and the header Activity icon's Operations view (jobs)
+	// must all be unlocked without a second password prompt (CORE-1157).
+	graphReq := newJSONRequest(http.MethodPost, "/api/graphql", strings.NewReader(
+		`{"query":"query { adminSession { active expiresAt } consoleConfig { adminSessionMinutes } jobs { id status } }"}`,
+	))
+	graphReq.Header.Set(auth.CSRFHeader, "1")
+	for _, cookie := range cookies {
+		graphReq.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value}) //nolint:gosec // test request cookie
+	}
+	graphRec := httptest.NewRecorder()
+	srv.ServeHTTP(graphRec, graphReq)
+	if graphRec.Code != http.StatusOK {
+		t.Fatalf("graphql status = %d, want 200: %s", graphRec.Code, graphRec.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			AdminSession struct {
+				Active    bool   `json:"active"`
+				ExpiresAt string `json:"expiresAt"`
+			} `json:"adminSession"`
+			ConsoleConfig *struct {
+				AdminSessionMinutes int `json:"adminSessionMinutes"`
+			} `json:"consoleConfig"`
+			Jobs []struct {
+				ID string `json:"id"`
+			} `json:"jobs"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(graphRec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode graphql response: %v (%s)", err, graphRec.Body.String())
+	}
+	if len(resp.Errors) != 0 {
+		t.Fatalf("graphql errors after admin sign-in = %+v, want none", resp.Errors)
+	}
+	wantUntil := time.Unix(0, 0).UTC().Add(store.DefaultAdminSessionMinutes * time.Minute).Format(time.RFC3339)
+	if !resp.Data.AdminSession.Active || resp.Data.AdminSession.ExpiresAt != wantUntil {
+		t.Fatalf("adminSession = %+v, want active until %s", resp.Data.AdminSession, wantUntil)
+	}
+	if resp.Data.ConsoleConfig == nil || resp.Data.ConsoleConfig.AdminSessionMinutes != store.DefaultAdminSessionMinutes {
+		t.Fatalf("consoleConfig = %+v, want default adminSessionMinutes", resp.Data.ConsoleConfig)
+	}
+	if resp.Data.Jobs == nil {
+		t.Fatalf("jobs = nil, want non-nil list")
+	}
+
+	entries, err := st.ActivityEntries(context.Background(), store.ActivityQuery{Limit: 20})
+	if err != nil {
+		t.Fatalf("ActivityEntries: %v", err)
+	}
+	hasAdminLogin := false
+	for _, entry := range entries {
+		if entry.Action == store.ActivityAdminLogin && string(entry.SessionID) == cookies[auth.SessionCookie].Value {
+			hasAdminLogin = true
+			break
+		}
+	}
+	if !hasAdminLogin {
+		t.Fatalf("activity entries = %+v, want admin.login for signed-in session", entries)
 	}
 }
 

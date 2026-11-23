@@ -236,8 +236,57 @@ func TestAdminSignInEnrollsManagerOnOwner(t *testing.T) {
 		t.Fatalf("device = %+v, %v", device, err)
 	}
 	session, err := st.Session(ctx, store.SessionID(resp.SessionID))
-	if err != nil || !session.ExpiresAt.Equal(now.Add(30*24*time.Hour)) {
-		t.Fatalf("session = %+v, %v", session, err)
+	wantAdminUntil := now.Add(store.DefaultAdminSessionMinutes * time.Minute)
+	if err != nil || !session.ExpiresAt.Equal(now.Add(30*24*time.Hour)) || !session.AdminUntil.Equal(wantAdminUntil) {
+		t.Fatalf("session = %+v, %v (want adminUntil %v)", session, err, wantAdminUntil)
+	}
+}
+
+// CORE-1157: if another Console changes the admin timeout from never to 15
+// minutes before sign-in inserts its session, the new session must read the
+// updated timeout in the enrolling transaction rather than keeping a
+// non-expiring window read earlier.
+func TestAdminSignInReadsAdminTimeoutInEnrollTransaction(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	now := time.Unix(1_000_000, 0).UTC()
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAdminPassword(ctx, "correct horse", now); err != nil {
+		t.Fatal(err)
+	}
+	never := 0
+	if _, err := st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{AdminSessionMinutes: &never, SessionLifetimeDays: &never}, now); err != nil {
+		t.Fatal(err)
+	}
+	service := deterministicService(st, now)
+	service.afterAdminPasswordCheck = func() {
+		minutes := store.DefaultAdminSessionMinutes
+		days := store.DefaultSessionLifetimeDays
+		if _, err := st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{AdminSessionMinutes: &minutes, SessionLifetimeDays: &days}, now); err != nil {
+			t.Error(err)
+		}
+	}
+	resp, err := service.AdminSignIn(ctx, AdminSignInRequest{
+		Password:   "correct horse",
+		DeviceName: "Laptop",
+		RemoteAddr: "192.168.1.5:5000",
+	})
+	if err != nil {
+		t.Fatalf("AdminSignIn: %v", err)
+	}
+	session, err := st.Session(ctx, store.SessionID(resp.SessionID))
+	if err != nil {
+		t.Fatalf("Session: %v", err)
+	}
+	wantAdminUntil := now.Add(store.DefaultAdminSessionMinutes * time.Minute)
+	wantExpiresAt := now.Add(store.DefaultSessionLifetimeDays * 24 * time.Hour)
+	if !session.AdminUntil.Equal(wantAdminUntil) {
+		t.Fatalf("session.AdminUntil = %v, want %v", session.AdminUntil, wantAdminUntil)
+	}
+	if !session.ExpiresAt.Equal(wantExpiresAt) || resp.SessionExpiresAt != wantExpiresAt.Format(time.RFC3339) {
+		t.Fatalf("session.ExpiresAt = %v (resp %q), want %v", session.ExpiresAt, resp.SessionExpiresAt, wantExpiresAt)
 	}
 }
 

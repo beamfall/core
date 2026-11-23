@@ -326,7 +326,8 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 	// reset-admin-password uses. An invalid/used token never reaches this point.
 	// Empty AdminPassword leaves the existing flow unchanged (backward compat);
 	// the plaintext stays inside store.SetAdminPassword and is never logged.
-	if strings.TrimSpace(req.AdminPassword) != "" {
+	adminPasswordSet := strings.TrimSpace(req.AdminPassword) != ""
+	if adminPasswordSet {
 		if err := s.store.SetAdminPassword(ctx, req.AdminPassword, now); err != nil {
 			return SetupResponse{}, err
 		}
@@ -344,9 +345,14 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 		return SetupResponse{}, err
 	}
 
-	sessionExpiresAt, err := s.sessionExpiry(ctx, now)
+	cfg, err := s.store.ConsoleConfig(ctx)
 	if err != nil {
 		return SetupResponse{}, err
+	}
+	sessionExpiresAt := cfg.SessionExpiry(now)
+	var adminUntil time.Time
+	if adminPasswordSet {
+		adminUntil = cfg.AdminSessionExpiry(now)
 	}
 	device := store.Device{
 		ID:                store.DeviceID(deviceID),
@@ -356,9 +362,10 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 		SecretHash:        store.HashDeviceSecret(deviceSecret),
 	}
 	session := store.Session{
-		ID:        store.SessionID(sessionID),
-		DeviceID:  device.ID,
-		ExpiresAt: sessionExpiresAt,
+		ID:         store.SessionID(sessionID),
+		DeviceID:   device.ID,
+		ExpiresAt:  sessionExpiresAt,
+		AdminUntil: adminUntil,
 	}
 	// The owner Profile, its owner designation (ADR-0007 §2/§4: the only
 	// Profile that may later open an Admin Session), this first MANAGER device

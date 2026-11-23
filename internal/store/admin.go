@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -246,6 +247,38 @@ func (s *Store) VerifyAdminPassword(ctx context.Context, password string) error 
 		return ErrAdminPasswordMismatch
 	}
 	return nil
+}
+
+// AdminCredentialStamp identifies the stored admin credential (hash, salt and
+// update time) so a caller can read it before verifying a password and have a
+// later transaction refuse if a reset replaced the credential in between. It
+// is empty when no password is set.
+func (s *Store) AdminCredentialStamp(ctx context.Context) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return "", err
+	}
+	return adminCredentialStampQ(ctx, s.catalogR)
+}
+
+type stampRowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func adminCredentialStampQ(ctx context.Context, q stampRowQuerier) (string, error) {
+	var hash string
+	var salt []byte
+	var at int64
+	err := q.QueryRowContext(ctx,
+		`SELECT password_hash, password_salt, updated_at_ms FROM admin_credential WHERE id = ?`, adminCredentialID).Scan(&hash, &salt, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s:%x:%d", hash, salt, at), nil
 }
 
 // SetSessionAdminUntil stamps (or clears, with the zero time) the admin

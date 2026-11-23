@@ -1005,6 +1005,11 @@ func TestBootstrapSetsAdminPassword(t *testing.T) {
 	if err := st.VerifyAdminPassword(context.Background(), "wrong"); !errors.Is(err, store.ErrAdminPasswordMismatch) {
 		t.Fatalf("VerifyAdminPassword with wrong password = %v, want ErrAdminPasswordMismatch", err)
 	}
+	session, err := st.Session(context.Background(), store.SessionID(resp.SessionID))
+	wantAdminUntil := time.Unix(0, 0).UTC().Add(store.DefaultAdminSessionMinutes * time.Minute)
+	if err != nil || !session.AdminUntil.Equal(wantAdminUntil) {
+		t.Fatalf("bootstrap session = %+v, %v; want AdminUntil %v", session, err, wantAdminUntil)
+	}
 }
 
 // TestBootstrapDesignatesOwnerProfile pins ADR-0007 §2/§4 first-run: the
@@ -1081,6 +1086,10 @@ func TestBootstrapEmptyAdminPasswordLeavesFlowUnchanged(t *testing.T) {
 
 	if set, err := st.AdminPasswordSet(context.Background()); err != nil || set {
 		t.Fatalf("AdminPasswordSet after empty-password bootstrap = %v, %v; want false, nil", set, err)
+	}
+	session, err := st.Session(context.Background(), store.SessionID(resp.SessionID))
+	if err != nil || !session.AdminUntil.IsZero() {
+		t.Fatalf("empty-password bootstrap session = %+v, %v; want zero AdminUntil", session, err)
 	}
 }
 
