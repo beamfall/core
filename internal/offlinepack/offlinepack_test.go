@@ -1163,12 +1163,18 @@ func TestServingDeniesSealedEncryptedMemberThatNoLongerResolves(t *testing.T) {
 	handlers := NewHTTPHandlers(svc, authService)
 
 	svc.store = hidingStore{Store: svc.store, hidden: map[store.MediaID]bool{"media-alpha": true}}
-	if rec := serveManifest(t, handlers, token); rec.Code != http.StatusOK {
-		t.Fatalf("unresolved member with nothing sealed: status = %d, want 200", rec.Code)
+	if sealed, err := svc.PackHasSealedMember(context.Background(), pack); err != nil || sealed {
+		t.Fatalf("PackHasSealedMember with nothing sealed = %v, %v; want false, nil", sealed, err)
+	}
+	if rec := serveManifest(t, handlers, token); rec.Code != http.StatusNotFound {
+		t.Fatalf("unresolved member with nothing sealed: status = %d, want 404", rec.Code)
 	}
 	svc.SetSealed(func(id store.LibraryID) bool { return id == "library-local" })
-	if rec := serveManifest(t, handlers, token); rec.Code == http.StatusOK {
-		t.Fatalf("sealed encrypted member served: status = 200, want denial")
+	if sealed, err := svc.PackHasSealedMember(context.Background(), pack); err != nil || !sealed {
+		t.Fatalf("PackHasSealedMember with sealed library = %v, %v; want true, nil", sealed, err)
+	}
+	if rec := serveManifest(t, handlers, token); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "offline pack sealed") {
+		t.Fatalf("sealed encrypted member: status=%d body=%q, want 403 offline pack sealed", rec.Code, rec.Body.String())
 	}
 }
 

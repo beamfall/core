@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, graphqlErrorCode } from "@/lib/api";
+import { isCompatibilityRefusal } from "@/lib/compat";
 import {
   type FeedSubscription,
   libraryHasFeedSubscriptions,
@@ -155,6 +156,7 @@ export function isRateLimited(err: unknown): boolean {
 
 /** Whether a read was refused for this device's role (a non-manager device). */
 export function isForbidden(err: unknown): boolean {
+  if (isCompatibilityRefusal(err)) return false;
   return graphqlErrorCode(err) === "FORBIDDEN";
 }
 

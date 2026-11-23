@@ -16,7 +16,7 @@ import {
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { nodePath } from "@/lib/nodePath";
-import { asFeedURL, catalogueView, formatBytes, isRateLimited } from "../../lib/feeds";
+import { asFeedURL, catalogueView, formatBytes, isForbidden, isRateLimited } from "../../lib/feeds";
 import { FeedCatalogue } from "./FeedCatalogue";
 import { FeedFollowPanel } from "./FeedFollowPanel";
 import { FeedHealth } from "./FeedHealth";
@@ -90,6 +90,32 @@ describe("feed helpers", () => {
     expect(isRateLimited(throttled())).toBe(true);
     expect(isRateLimited(new ApiError("refresh unavailable", 200, { errors: [] }))).toBe(false);
     expect(isRateLimited(new Error("boom"))).toBe(false);
+  });
+
+  it("recognises role denials without treating compatibility refusals as role denials", () => {
+    const roleDenial = new ApiError("forbidden", 200, {
+      errors: [{ message: "forbidden", extensions: { code: "FORBIDDEN" } }],
+    });
+    const compatRefusal = new ApiError("POST /api/graphql failed", 403, {
+      decision: "client-too-old",
+      reasonCode: "unknown-build",
+      messageClass: "compat-client-too-old",
+      data: null,
+      errors: [
+        {
+          message: "client update required",
+          extensions: {
+            code: "FORBIDDEN",
+            decision: "client-too-old",
+            reasonCode: "unknown-build",
+            messageClass: "compat-client-too-old",
+          },
+        },
+      ],
+    });
+    expect(isForbidden(roleDenial)).toBe(true);
+    expect(isForbidden(compatRefusal)).toBe(false);
+    expect(isForbidden(new Error("boom"))).toBe(false);
   });
 
   it("formats sizes in the display locale and hides unknown ones", () => {

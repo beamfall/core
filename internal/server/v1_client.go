@@ -172,7 +172,7 @@ func (p v1CapabilityProfile) internal() playback.CapabilityProfile {
 func v1PlaybackInfoFrom(resp playback.InfoResponse) v1PlaybackInfoResponse {
 	out := v1PlaybackInfoResponse{
 		MediaID:             resp.MediaID,
-		Decision:            resp.Decision,
+		Decision:            string(resp.Decision),
 		Reason:              resp.Reason,
 		StreamTokenRequired: resp.StreamTokenRequired,
 		Streams:             make([]v1PlaybackStream, 0, min(len(resp.Streams), v1PlaybackStreamLimit)),

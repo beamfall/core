@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"sync"
@@ -521,10 +522,11 @@ func (m *Manager) dekCopyLocked(libraryID string) ([]byte, error) {
 // Provisioned reports whether a key bundle exists for the library.
 func (m *Manager) provisionedLocked(libraryID string) bool {
 	_, err := m.loadBundle(libraryID)
-	// An exact-ref ownership mismatch is corruption, not absence. Report the
+	// Only a genuinely missing bundle (ErrNotProvisioned) is absence. A read
+	// failure, corrupt bundle, or exact-ref ownership mismatch still reports the
 	// library as provisioned so callers keep its data plane sealed while all
-	// lifecycle operations continue to return the ownership error.
-	return err == nil || errors.Is(err, ErrSecretOwnership)
+	// lifecycle operations continue to return the underlying error.
+	return !errors.Is(err, ErrNotProvisioned)
 }
 
 // Mode reports the library's persisted unseal mode. ErrNotProvisioned for a
@@ -577,7 +579,9 @@ func (m *Manager) BootUnseal(libraryIDs []string) (sealed []string) {
 	for _, id := range libraryIDs {
 		mode, err := m.Mode(id)
 		if err != nil {
-			// Not provisioned (or unreadable) — nothing to unseal; skip silently.
+			if !errors.Is(err, ErrNotProvisioned) {
+				sealed = append(sealed, id)
+			}
 			continue
 		}
 		if mode != UnsealModeAuto {
@@ -768,10 +772,10 @@ func (m *Manager) newBundle(mode UnsealMode, passphrase string, dek, kek []byte,
 func (m *Manager) loadBundle(libraryID string) (keyBundle, error) {
 	raw, err := m.readOwnerSecret(libraryID, secretKindBundle)
 	if err != nil {
-		if errors.Is(err, ErrSecretOwnership) {
-			return keyBundle{}, err
+		if errors.Is(err, fs.ErrNotExist) {
+			return keyBundle{}, ErrNotProvisioned
 		}
-		return keyBundle{}, ErrNotProvisioned
+		return keyBundle{}, err
 	}
 	var b keyBundle
 	if err := json.Unmarshal([]byte(raw), &b); err != nil {

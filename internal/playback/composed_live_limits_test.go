@@ -317,7 +317,7 @@ func TestAdjustmentDeclinedWithoutItsFilters(t *testing.T) {
 	t.Cleanup(func() { audioAdjustSupported = previous })
 	cases := map[string]struct {
 		profile      CapabilityProfile
-		wantDecision string
+		wantDecision Decision
 	}{
 		"composed picture plays unadjusted": {videoClient, "transcode"},
 		"audio plays unadjusted":            {audioOnlyClient, "direct-play"},

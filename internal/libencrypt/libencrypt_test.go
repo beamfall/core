@@ -23,6 +23,8 @@ type memStore struct {
 	mu         sync.Mutex
 	values     map[string]string
 	writes     []string
+	failGetRef string
+	failGetErr error
 	failSetRef string
 	failSetErr error
 	failSetAt  int
@@ -36,6 +38,9 @@ func newMemStore() *memStore {
 func (s *memStore) Secret(ref string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.failGetErr != nil && (s.failGetRef == "" || s.failGetRef == ref) {
+		return "", s.failGetErr
+	}
 	v, ok := s.values[ref]
 	if !ok {
 		return "", errNotFound
@@ -820,6 +825,38 @@ func TestUnsealNotProvisioned(t *testing.T) {
 	}
 	if m.Provisioned("nope") {
 		t.Fatal("unprovisioned library should report not provisioned")
+	}
+}
+
+// TestUnreadableBundleFailsClosed confirms a secure-store read failure on a
+// sealed library's key bundle is never mistaken for absence (CORE-3033): Mode
+// surfaces the read error instead of ErrNotProvisioned, Provisioned and
+// SealedEncrypted stay true (fail closed), and Provision refuses to overwrite.
+func TestUnreadableBundleFailsClosed(t *testing.T) {
+	m, store := newTestManager()
+	if _, err := m.Provision(testLib, UnsealModeAuto, ""); err != nil {
+		t.Fatalf("Provision: %v", err)
+	}
+	m.Seal(testLib)
+
+	errReadRefused := errors.New("secure store read refused")
+	store.failGetRef = bundleRef(testLib)
+	store.failGetErr = errReadRefused
+
+	if _, err := m.Mode(testLib); !errors.Is(err, errReadRefused) || errors.Is(err, ErrNotProvisioned) {
+		t.Fatalf("Mode with unreadable bundle = %v, want %v (not ErrNotProvisioned)", err, errReadRefused)
+	}
+	if !m.Provisioned(testLib) {
+		t.Fatal("Provisioned = false on unreadable bundle, want true (fail closed)")
+	}
+	if !m.SealedEncrypted(testLib) {
+		t.Fatal("SealedEncrypted = false on unreadable bundle, want true (fail closed)")
+	}
+	if _, err := m.Provision(testLib, UnsealModeAuto, ""); !errors.Is(err, errReadRefused) {
+		t.Fatalf("Provision with unreadable bundle = %v, want %v", err, errReadRefused)
+	}
+	if m.Provisioned("unprovisioned-library") || m.SealedEncrypted("unprovisioned-library") {
+		t.Fatal("missing bundle (fs.ErrNotExist) reported as provisioned/sealed")
 	}
 }
 

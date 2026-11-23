@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -243,5 +244,207 @@ func TestSealedLibrarySubscriptionsReadAsMissing(t *testing.T) {
 		if got, want := refusal(tc.query, tc.sealed), refusal(tc.query, tc.unset); got != want {
 			t.Errorf("%s on a sealed Library refused with %q, want the missing-Library refusal %q", tc.name, got, want)
 		}
+	}
+}
+
+// TestSealedFilterFailsClosedWhenSecureStoreRefusesReads pins CORE-3033: when
+// the secure store refuses to read a sealed Library's key bundle, sealedFilter
+// distinguishes that read failure from a missing bundle (unprovisioned open
+// Libraries stay visible) and fails closed so the sealed Library's
+// Subscriptions and Media cannot be listed, removed or refreshed.
+func TestSealedFilterFailsClosedWhenSecureStoreRefusesReads(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	added := time.Now().UTC()
+
+	sealedLibrary, err := st.CreateLibrary(ctx, "Sealed Vault", false, "feedkit", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	openSub, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local", FeedURL: "https://feeds.example.com/open", Root: "/media/open", Title: "Open Feed",
+	}, added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedSub, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: sealedLibrary.ID, FeedURL: "https://feeds.example.com/sealed", Root: "/media/sealed", Title: "Sealed Feed",
+	}, added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := added.Add(time.Hour)
+	for _, subscription := range []store.Subscription{openSub, sealedSub} {
+		if err := st.RecordSubscriptionPollSuccess(ctx, subscription, "", "", added, later); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sealedMedia, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID:          sealedLibrary.ID,
+		Path:               "/media/sealed/item.mp4",
+		Title:              "Sealed Item",
+		Container:          "mp4",
+		Codec:              "h264",
+		ContentFingerprint: "sha256:core-3033-sealed-item",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	col, err := st.CreateCollection(ctx, store.Collection{LibraryID: sealedLibrary.ID, Name: "Sealed Set"}, added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AddCollectionMedia(ctx, col.ID, []store.MediaID{sealedMedia.ID}, store.LibraryFilter{AllLibraries: true, Revealed: true}, added); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := newTestHandlerWithStore(st)
+	var seededQueue PlayQueueInfo
+	execGraph(t, handler, authorizeManager,
+		`mutation ($ids: [String!]!) { queueAddMany(mediaIDs: $ids, placement: "end") `+queueStateSelection+" }",
+		map[string]any{"ids": []string{"media-alpha", string(sealedMedia.ID)}}, "queueAddMany", &seededQueue)
+	if len(seededQueue.Entries) != 2 {
+		t.Fatalf("seeded queue entries = %+v, want 2", seededQueue.Entries)
+	}
+	sealedEntryID := seededQueue.Entries[1].ID
+
+	secrets := newMemSecretStore()
+	mgr := libencrypt.NewManagerWithParams(secrets, libencrypt.TestArgon2Params)
+	handler.SetLibEncrypt(mgr)
+	if _, err := mgr.Provision(string(sealedLibrary.ID), libencrypt.UnsealModeAuto, ""); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Seal(string(sealedLibrary.ID))
+
+	errReadRefused := errors.New("secure store read refused")
+	// Refuse reads for stored secrets while missing refs ("library-local")
+	// continue returning fs.ErrNotExist.
+	secrets.failGet = func(ref string) error {
+		if _, ok := secrets.values[ref]; ok {
+			return errReadRefused
+		}
+		return nil
+	}
+
+	// Open unprovisioned Library ("library-local", missing bundle -> fs.ErrNotExist)
+	// stays accessible: missing key bundle is distinguished from a read failure.
+	var openListed []SubscriptionInfo
+	execGraph(t, handler, authorizeManager,
+		`query { subscriptions(libraryID: "library-local") { id } }`,
+		nil, "subscriptions", &openListed)
+	if len(openListed) != 1 || openListed[0].ID != string(openSub.ID) {
+		t.Fatalf("open Library subscriptions = %+v, want [%s]", openListed, openSub.ID)
+	}
+
+	// Sealed Library Subscriptions cannot be listed, refreshed or removed.
+	for _, tc := range []struct {
+		name  string
+		query string
+		vars  map[string]any
+		want  string
+	}{
+		{
+			name:  "list subscriptions",
+			query: `query List($library: String!) { subscriptions(libraryID: $library) { id } }`,
+			vars:  map[string]any{"library": string(sealedLibrary.ID)},
+			want:  "unknown library",
+		},
+		{
+			name:  "refresh subscription",
+			query: `mutation Refresh($id: String!) { refreshSubscription(id: $id) { id } }`,
+			vars:  map[string]any{"id": string(sealedSub.ID)},
+			want:  "unknown subscription",
+		},
+		{
+			name:  "remove subscription",
+			query: `mutation Remove($id: String!) { removeSubscription(id: $id) { id } }`,
+			vars:  map[string]any{"id": string(sealedSub.ID)},
+			want:  "unknown subscription",
+		},
+	} {
+		resp := postGraphJSON(t, handler, authorizeManager, tc.query, tc.vars)
+		if len(resp.Errors) == 0 || resp.Errors[0].Message != tc.want {
+			t.Fatalf("%s with unreadable bundle: errors = %+v, want %q", tc.name, resp.Errors, tc.want)
+		}
+	}
+
+	var all SubscriptionRefreshAllInfo
+	execGraph(t, handler, authorizeManager, `mutation { refreshAllSubscriptions { refreshed } }`, nil, "refreshAllSubscriptions", &all)
+	if all.Refreshed != 1 {
+		t.Fatalf("refreshAllSubscriptions refreshed %d, want 1 (only open Library)", all.Refreshed)
+	}
+	storedSealedSub, err := st.Subscription(ctx, sealedSub.ID)
+	if err != nil {
+		t.Fatalf("sealed subscription was removed or lost: %v", err)
+	}
+	if storedSealedSub.Health.Due(time.Now().UTC()) {
+		t.Fatalf("sealed subscription became due on refreshAllSubscriptions: %+v", storedSealedSub.Health)
+	}
+
+	// Sealed Library Media cannot be listed (playQueue, collections) or removed
+	// (queueRemoveEntry, queueRemove).
+	var visibleQueue PlayQueueInfo
+	execGraph(t, handler, authorizeManager, "{ playQueue "+queueStateSelection+" }", nil, "playQueue", &visibleQueue)
+	if len(visibleQueue.Entries) != 1 || visibleQueue.Entries[0].MediaID != "media-alpha" {
+		t.Fatalf("playQueue with unreadable bundle = %+v, want only media-alpha", visibleQueue.Entries)
+	}
+
+	var cols []CollectionInfo
+	execGraph(t, handler, authorizeManager,
+		`query ListCols($library: String!) { collections(libraryID: $library) { id memberCount members { mediaID } } }`,
+		map[string]any{"library": string(sealedLibrary.ID)}, "collections", &cols)
+	if len(cols) != 1 || cols[0].MemberCount != 0 || len(cols[0].Members) != 0 {
+		t.Fatalf("collections with unreadable bundle = %+v, want sealed Media hidden", cols)
+	}
+
+	execGraph(t, handler, authorizeManager,
+		`mutation ($id: String!) { queueRemoveEntry(entryID: $id) `+queueStateSelection+" }",
+		map[string]any{"id": sealedEntryID}, "queueRemoveEntry", &visibleQueue)
+	var remaining []SourceItem
+	execGraph(t, handler, authorizeManager,
+		`mutation ($mediaID: String!) { queueRemove(mediaID: $mediaID) { id } }`,
+		map[string]any{"mediaID": string(sealedMedia.ID)}, "queueRemove", &remaining)
+
+	rawQueue, err := st.PlayQueue(ctx, "profile-default", store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rawQueue.Entries) != 2 || rawQueue.Entries[1].Item.ID != sealedMedia.ID {
+		t.Fatalf("sealed Media was removed from queue while bundle unreadable: %+v", rawQueue.Entries)
+	}
+
+	// Also fail closed when the secure store refuses ALL reads (including
+	// unprovisioned refs).
+	secrets.failGet = func(string) error { return errReadRefused }
+	for _, tc := range []struct {
+		name  string
+		query string
+		vars  map[string]any
+	}{
+		{
+			name:  "list subscriptions (all reads refused)",
+			query: `query List($library: String!) { subscriptions(libraryID: $library) { id } }`,
+			vars:  map[string]any{"library": string(sealedLibrary.ID)},
+		},
+		{
+			name:  "refresh subscription (all reads refused)",
+			query: `mutation Refresh($id: String!) { refreshSubscription(id: $id) { id } }`,
+			vars:  map[string]any{"id": string(sealedSub.ID)},
+		},
+		{
+			name:  "remove subscription (all reads refused)",
+			query: `mutation Remove($id: String!) { removeSubscription(id: $id) { id } }`,
+			vars:  map[string]any{"id": string(sealedSub.ID)},
+		},
+	} {
+		resp := postGraphJSON(t, handler, authorizeManager, tc.query, tc.vars)
+		if len(resp.Errors) == 0 {
+			t.Fatalf("%s succeeded when all secure-store reads refused", tc.name)
+		}
+	}
+	execGraph(t, handler, authorizeManager, "{ playQueue "+queueStateSelection+" }", nil, "playQueue", &visibleQueue)
+	if len(visibleQueue.Entries) != 0 {
+		t.Fatalf("playQueue when all secure-store reads refused = %+v, want empty", visibleQueue.Entries)
 	}
 }

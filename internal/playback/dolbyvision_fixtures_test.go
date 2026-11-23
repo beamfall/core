@@ -35,7 +35,7 @@ type dvFixtureCase struct {
 	Video        dvFixtureVideo `json:"video"`
 	Audio        dvFixtureAudio `json:"audio"`
 	Profile      string         `json:"profile"`
-	WantDecision string         `json:"wantDecision"`
+	WantDecision Decision       `json:"wantDecision"`
 	WantReason   string         `json:"wantReason"`
 }
 

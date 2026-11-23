@@ -360,7 +360,7 @@ func TestQuirkOverlayVetoesCachedRenditionByRenditionShape(t *testing.T) {
 		sourceCodec    string
 		renditionCodec string
 		entry          QuirkEntry
-		want           string
+		want           Decision
 	}{
 		{"cached HEVC rendition is vetoed", "h264", "hevc", denyHEVC, "transcode"},
 		{"cached H.264 rendition survives a source-HEVC deny", "hevc", "h264", denyHEVC, "precomputed-rendition"},
@@ -425,12 +425,12 @@ func TestQuirkUnverifiableOverrideRejectsCachedRendition(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Info: %v", err)
 			}
-			want := "transcode"
+			want := DecisionTranscode
 			if name == "no override" {
 				// ForceRemux is absorbing over SOURCE passthrough only, so the
 				// cached rendition — neither the source nor its container — is
 				// still served.
-				want = "precomputed-rendition"
+				want = DecisionPrecomputedRendition
 			}
 			if resp.Decision != want {
 				t.Fatalf("Decision = %q, want %q", resp.Decision, want)

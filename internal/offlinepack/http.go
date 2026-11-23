@@ -90,29 +90,37 @@ func (h *HTTPHandlers) Authority(w http.ResponseWriter, r *http.Request) {
 func (h *HTTPHandlers) authorize(r *http.Request, prefix string) (store.OfflinePack, auth.Scope, GrantClaims, int, string) {
 	token := strings.TrimPrefix(r.URL.Path, prefix)
 	token = strings.Trim(token, "/")
-	return h.authorizeToken(r, token)
+	pack, _, scope, grant, status, msg := h.authorizeToken(r, token)
+	return pack, scope, grant, status, msg
 }
 
-func (h *HTTPHandlers) authorizeToken(r *http.Request, token string) (store.OfflinePack, auth.Scope, GrantClaims, int, string) {
-	if token == "" {
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusUnauthorized, "missing offline pack grant"
+func (h *HTTPHandlers) authorizeToken(r *http.Request, token string) (store.OfflinePack, []store.OfflinePackItem, auth.Scope, GrantClaims, int, string) {
+	var scope auth.Scope
+	var scopeErr error
+	if h.auth != nil {
+		scope, scopeErr = h.auth.ScopeFromRequest(r.Context(), r)
+		if scopeErr != nil {
+			scope = auth.Scope{}
+		}
 	}
-	scope, err := h.auth.ScopeFromRequest(r.Context(), r)
-	if err != nil {
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusUnauthorized, "invalid session"
+	if token == "" {
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusUnauthorized, "missing offline pack grant"
+	}
+	if h.auth == nil || scopeErr != nil {
+		return store.OfflinePack{}, nil, auth.Scope{}, GrantClaims{}, http.StatusUnauthorized, "invalid session"
 	}
 	if h.svc.authority == nil {
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusServiceUnavailable, "offline pack authority unavailable"
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusServiceUnavailable, "offline pack authority unavailable"
 	}
 	authenticated, err := h.svc.authority.AuthenticateGrant(token)
 	if err != nil {
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusUnauthorized, "invalid offline pack grant"
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusUnauthorized, "invalid offline pack grant"
 	}
 	unbound := authenticated.Grant()
 	// (2) Live pack-state re-check. Pack must be the caller's.
 	pack, err := h.svc.store.OfflinePackByID(r.Context(), store.OfflinePackID(unbound.PackID), scope.ProfileID)
 	if err != nil {
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusNotFound, "unknown offline pack"
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusNotFound, "unknown offline pack"
 	}
 	libraryIDs := make([]string, len(pack.LibraryIDs))
 	for i := range pack.LibraryIDs {
@@ -121,7 +129,7 @@ func (h *HTTPHandlers) authorizeToken(r *http.Request, token string) (store.Offl
 	if pack.State == store.OfflinePackRevoked || pack.State == store.OfflinePackExpired {
 		// Terminal denial wins over the now-stale revocation generation in the
 		// presented grant, while still disclosing nothing before ownership.
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusGone, "offline pack revoked"
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusGone, "offline pack revoked"
 	}
 	grant, _, _, err := h.svc.authority.VerifyAuthenticatedGrant(authenticated, GrantExpectations{
 		Issuer: h.svc.authority.Issuer(), PackID: string(pack.ID), ProfileID: string(scope.ProfileID),
@@ -130,21 +138,21 @@ func (h *HTTPHandlers) authorizeToken(r *http.Request, token string) (store.Offl
 		ManifestSHA256: pack.ManifestSHA256, Rev: packRevocations(pack), TrustedNow: h.svc.now(),
 	})
 	if err != nil {
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusUnauthorized, "invalid offline pack grant"
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusUnauthorized, "invalid offline pack grant"
 	}
 	if !h.svc.servable(pack) {
 		// Not-yet-ready or lazily-expired: deny without a terminal verdict.
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusForbidden, "offline pack not servable"
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusForbidden, "offline pack not servable"
 	}
 	// Live Reveal re-check: a restricted pack requires the session to currently
 	// hold reveal. Re-derive from live membership so a member hidden after issue
 	// also denies.
 	restricted, err := h.svc.packRestricted(r.Context(), pack, scope.LibraryFilter())
 	if err != nil {
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusInternalServerError, "offline pack unavailable"
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusInternalServerError, "offline pack unavailable"
 	}
 	if restricted && !scope.Revealed {
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusForbidden, "offline pack requires reveal"
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusForbidden, "offline pack requires reveal"
 	}
 	// Live Sealed re-check (ADR-0098 area 2): a Sealed Library serves NOTHING.
 	// Re-derive Sealed state from the encryption seam so a member sealed AFTER
@@ -152,12 +160,23 @@ func (h *HTTPHandlers) authorizeToken(r *http.Request, token string) (store.Offl
 	// does NOT lift Sealed, unlike restricted).
 	sealed, err := h.svc.PackHasSealedMember(r.Context(), pack)
 	if err != nil {
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusInternalServerError, "offline pack unavailable"
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusInternalServerError, "offline pack unavailable"
 	}
 	if sealed {
-		return store.OfflinePack{}, auth.Scope{}, GrantClaims{}, http.StatusForbidden, "offline pack sealed"
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusForbidden, "offline pack sealed"
 	}
-	return pack, scope, grant, http.StatusOK, ""
+	// Live membership visibility re-check (CORE-3116): every frozen Media
+	// member must remain visible under the caller's live playback filter,
+	// matching Content and Manifest when the caller loses Library access, a
+	// certification ceiling tightens, or a member is trashed.
+	items, visible, err := h.svc.packMembersVisible(r.Context(), pack, scope.PlaybackFilter())
+	if err != nil {
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusInternalServerError, "media unavailable"
+	}
+	if !visible {
+		return store.OfflinePack{}, nil, scope, GrantClaims{}, http.StatusNotFound, "media unavailable"
+	}
+	return pack, items, scope, grant, http.StatusOK, ""
 }
 
 // Manifest serves the encrypted-at-rest-eligible manifest blob for a pack after
@@ -182,7 +201,7 @@ func (h *HTTPHandlers) Content(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing stream token", http.StatusUnauthorized)
 		return
 	}
-	pack, scope, _, status, msg := h.authorizeToken(r, token)
+	pack, items, _, _, status, msg := h.authorizeToken(r, token)
 	if status != http.StatusOK {
 		http.Error(w, msg, status)
 		return
@@ -198,11 +217,6 @@ func (h *HTTPHandlers) Content(w http.ResponseWriter, r *http.Request) {
 		part = parsed
 	}
 	mediaID := store.MediaID(mediaIDText)
-	items, err := h.svc.store.OfflinePackItems(r.Context(), pack.ID)
-	if err != nil {
-		http.Error(w, "offline pack unavailable", http.StatusInternalServerError)
-		return
-	}
 	var found store.OfflinePackItem
 	for _, item := range items {
 		if item.MediaID == mediaID && item.PartOrdinal == part {
@@ -214,17 +228,6 @@ func (h *HTTPHandlers) Content(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown offline pack item", http.StatusNotFound)
 		return
 	}
-	mediaRows, err := h.svc.store.VisibleMediaBatch(r.Context(), []store.MediaID{mediaID}, scope.PlaybackFilter())
-	if err != nil {
-		http.Error(w, "media unavailable", http.StatusInternalServerError)
-		return
-	}
-	media, ok := mediaRows[mediaID]
-	if !ok {
-		http.Error(w, "media unavailable", http.StatusNotFound)
-		return
-	}
-	_ = media
 	f, info, err := h.openPackMember(pack.ID, found.CiphertextPath)
 	if err != nil {
 		status := http.StatusInternalServerError

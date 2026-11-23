@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1523,5 +1524,66 @@ func TestInfoAdvertisesOnDemandWaveformForAudioOnly(t *testing.T) {
 	}
 	if video.Assets == nil || video.Assets.Waveform != "" {
 		t.Fatalf("video Waveform = %+v, want omitted", video.Assets)
+	}
+}
+
+func TestDecisionDecodeRejectsUnrecognizedValues(t *testing.T) {
+	legal := Decisions()
+	want := []Decision{
+		DecisionDirectPlay,
+		DecisionDirectStream,
+		DecisionPrecomputedRendition,
+		DecisionTranscode,
+		DecisionUnavailable,
+	}
+	if !slices.Equal(legal, want) {
+		t.Fatalf("Decisions() = %v, want %v", legal, want)
+	}
+	for _, v := range legal {
+		if !v.Valid() {
+			t.Fatalf("%q.Valid() = false, want true", v)
+		}
+		if parsed, err := ParseDecision(string(v)); err != nil || parsed != v {
+			t.Fatalf("ParseDecision(%q) = (%q, %v), want (%q, nil)", v, parsed, err, v)
+		}
+		raw, err := json.Marshal(InfoResponse{
+			MediaID:  "media-alpha",
+			Decision: v,
+			Next: &NextInfo{
+				MediaID:  "media-beta",
+				Decision: v,
+			},
+		})
+		if err != nil {
+			t.Fatalf("marshal legal decision %q: %v", v, err)
+		}
+		var got InfoResponse
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatalf("unmarshal legal decision %q: %v", v, err)
+		}
+		if got.Decision != v || got.Next == nil || got.Next.Decision != v {
+			t.Fatalf("round-trip decision = %q / next %+v, want %q", got.Decision, got.Next, v)
+		}
+	}
+
+	if Decision("bogus").Valid() || Decision("").Valid() {
+		t.Fatal("invalid Decision unexpectedly reported Valid() == true")
+	}
+	if _, err := ParseDecision("bogus"); err == nil {
+		t.Fatal("ParseDecision(\"bogus\") unexpectedly succeeded")
+	}
+
+	for _, raw := range []string{
+		`{"mediaID":"media-alpha","decision":"bogus"}`,
+		`{"mediaID":"media-alpha","decision":"direct_play"}`,
+		`{"mediaID":"media-alpha","decision":""}`,
+		`{"mediaID":"media-alpha","decision":null}`,
+		`{"mediaID":"media-alpha","decision":123}`,
+		`{"mediaID":"media-alpha","decision":"direct-play","next":{"mediaID":"media-beta","decision":"bogus"}}`,
+	} {
+		var got InfoResponse
+		if err := json.Unmarshal([]byte(raw), &got); err == nil {
+			t.Fatalf("json.Unmarshal(%s) unexpectedly succeeded with Decision=%q", raw, got.Decision)
+		}
 	}
 }
