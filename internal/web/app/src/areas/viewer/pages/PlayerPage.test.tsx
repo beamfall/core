@@ -62,7 +62,7 @@ import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { attachCaptionElements, captionElement, showCaptionElement } from "../player/streamTracks";
-import { handBack, useGaplessAudio } from "../player/useGaplessAudio";
+import { skipJoin, useGaplessAudio } from "../player/useGaplessAudio";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
 import {
@@ -152,6 +152,7 @@ vi.mock("../player/useGaplessAudio", async (importOriginal) => {
   return {
     ...actual,
     handBack: vi.fn(actual.handBack),
+    skipJoin: vi.fn(actual.skipJoin),
     useGaplessAudio: vi.fn(actual.useGaplessAudio),
   };
 });
@@ -239,6 +240,19 @@ function presentFirstFrame(): HTMLVideoElement {
   const video = stageVideo();
   fireEvent.loadedData(video);
   return video;
+}
+
+// Plays the element, heard, into the last seconds of a 200 s track, where the
+// Playing next card shows and Play now fades out before it skips. The page is
+// muted under test (jsdom makes no sound); the fade reads the element's volume.
+function playAudibly(video: HTMLMediaElement) {
+  Object.defineProperty(video, "paused", { configurable: true, get: () => false });
+  Object.defineProperty(video, "duration", { configurable: true, value: 200 });
+  video.volume = 0.8;
+  act(() => {
+    video.currentTime = 195;
+    video.dispatchEvent(new Event("timeupdate"));
+  });
 }
 
 describe("PlayerPage timestamp links", () => {
@@ -1745,16 +1759,42 @@ describe("PlayerPage server Play Queue", () => {
     expect(within(card).getByText("Cee")).toBeInTheDocument();
 
     queueHangs = true;
-    vi.mocked(handBack).mockClear();
+    vi.mocked(skipJoin).mockClear();
     fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
     expect(screen.queryByRole("region", { name: /Playing next/ })).toBeNull();
     // A gapless join already scheduled for C's start would play B out first
-    // (CORE-3352): the skip takes the sound back to the element before moving on.
-    expect(handBack).toHaveBeenCalledWith(video);
+    // (CORE-3352): the skip retires it and takes the sound back to the element.
+    expect(skipJoin).toHaveBeenCalledWith(video);
     await waitFor(() => expect(playingID()).toBe(c.id));
     await screen.findByRole("heading", { name: "C" });
     // The stage, and the visuals on it, stay mounted across the advance.
     expect(document.querySelector(".bf-audio-stage")).toBe(stage);
+  });
+
+  it("drops a Play now still fading out when the identity relocks under it", async () => {
+    graphql.mockImplementation(async (query, variables) => {
+      if (!query.startsWith("query MusicQueueMedia")) return readQueue();
+      const id = (variables as { id: string }).id;
+      return {
+        media: { id, title: id === c.id ? "C" : "B", favorited: false, credits: [] },
+        currentSession: serverSession,
+      };
+    });
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    renderQueue();
+    await screen.findByRole("heading", { name: "B" });
+    const video = stageVideo();
+    playAudibly(video);
+    const card = await screen.findByRole("region", { name: /Playing next: C/ });
+    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    // The relock lands mid-fade, before anything renders again.
+    epoch.abort();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    expect(playingID()).toBe(b.id);
+    setIdentityEpochSignal();
   });
 
   it("reads the card afresh each time it shows, and the held title links to its own track (CORE-3353)", async () => {
@@ -2447,6 +2487,41 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
     });
     rerender();
     expect(document.querySelector(".bf-audio-stage")).toBeNull();
+  });
+
+  async function playNowAudibly(): Promise<HTMLVideoElement> {
+    renderAdvance();
+    const stage = document.querySelector<HTMLElement>(".bf-audio-stage");
+    if (!stage) throw new Error("no audio stage");
+    expect(await within(stage).findByText("Ann")).toBeInTheDocument();
+    const video = presentFirstFrame();
+    playAudibly(video);
+    const card = await screen.findByRole("region", { name: /Playing next/ });
+    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    return video;
+  }
+  const playingNow = () => vi.mocked(usePlayer).mock.calls.at(-1)?.[0];
+
+  it("leaves the advance to a Play now still fading out when the track ends under it", async () => {
+    const video = await playNowAudibly();
+    act(() => {
+      video.dispatchEvent(new Event("ended"));
+    });
+    // The fade, not the natural end, moves on: the skip keeps its fade in.
+    expect(playingNow()).toBe("media-alpha");
+    await waitFor(() => expect(playingNow()).toBe("media-next"));
+  });
+
+  it("drops a Play now still fading out when the identity relocks under it", async () => {
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    await playNowAudibly();
+    epoch.abort();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    expect(playingNow()).toBe("media-alpha");
+    setIdentityEpochSignal();
   });
 
   it("shows a small cue, not a cover, while an audio item loads", () => {

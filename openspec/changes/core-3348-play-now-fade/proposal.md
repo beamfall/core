@@ -23,15 +23,11 @@ and artist on the card.
   mid-fade is kept and the skip still happens; the fade is never saved as the listener's volume
   (a mute during the fade saves the listener's level). A track change that is not the fading skip
   (Back, another item, leaving the player) drops the pending skip.
-- A gapless join already scheduled for the next track is stopped before the skip, so the outgoing
-  decoded track never plays on under the next one (CORE-3352).
 - On the server Play Queue the audio stage keeps one identity per stage owner instead of per Media,
   so the stage and its Oscillux visual stay mounted across tracks (restores the existing visualizer
   requirement; no new effect code in the client).
 - The card reads the next item (only while the card shows) and shows its poster or thumb and its
   person credits; a picture that fails to load is dropped. The region label names the artist.
-  Each appearance of the card reads afresh, for the viewer it shows to. A held stage title links to
-  its own item, not the incoming one (CORE-3353).
 - New string `playingNextBy` in every locale.
 
 ## Non-goals

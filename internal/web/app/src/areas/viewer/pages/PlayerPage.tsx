@@ -111,7 +111,7 @@ import { useAmbientChoice, useAmbientIdle } from "../player/useAmbient";
 import { type PartySeekAutoSkip, useAutoSkip } from "../player/useAutoSkip";
 import { useCaptionLoad } from "../player/useCaptionLoad";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
-import { decodableStream, handBack, useGaplessAudio } from "../player/useGaplessAudio";
+import { decodableStream, handBack, skipJoin, useGaplessAudio } from "../player/useGaplessAudio";
 import { useLongPauseSkip, usePlaybackSpeed, useSleepTimer } from "../player/useListening";
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
@@ -1033,10 +1033,11 @@ function FeaturePlayer({
           if (chosenUnder?.aborted) return;
           // A gapless join already scheduled starts the next track where the
           // playing one would end, with the outgoing track still sounding under
-          // it (CORE-3352). The skip stops the decoded audio and lets the
+          // it (CORE-3352). The skip stops the decoded audio, retires the join
+          // so it is not scheduled again before the item changes, and lets the
           // element play the named item from its start.
           const video = videoRef.current;
-          if (video) handBack(video);
+          if (video) skipJoin(video);
           advance();
         });
       }
@@ -1097,6 +1098,9 @@ function FeaturePlayer({
         if (!serverQueueRun) handBack(video);
         return;
       }
+      // A Play now still fading out owns the advance: its fade ends in the
+      // item the listener picked (CORE-3348).
+      if (skipFadingOut()) return;
       if (loopItem) restart(0);
       else if (serverQueueRun) void runQueueAction("ended");
       else playNext?.();

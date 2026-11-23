@@ -305,6 +305,20 @@ export function handBack(video: HTMLMediaElement) {
   releaseMute(video);
 }
 
+// Joins retired by a skip, counted per element: a join's effect run keeps the
+// count it started with, and joins no more once it changes.
+const skips = new WeakMap<HTMLMediaElement, number>();
+
+/**
+ * Play now (CORE-3352): stops the decoded audio and retires the join the
+ * playing track scheduled, so the named item starts on the element from its
+ * beginning and nothing reschedules the old join before the item changes.
+ */
+export function skipJoin(video: HTMLMediaElement) {
+  skips.set(video, (skips.get(video) ?? 0) + 1);
+  handBack(video);
+}
+
 // The element shadows a decoded track from its own end on: muted, so only the
 // decoded track is heard.
 function shadow(video: HTMLMediaElement) {
@@ -732,6 +746,8 @@ export function useGaplessAudio({
     const controller = new AbortController();
     let decoding = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const skipsAtStart = skips.get(video) ?? 0;
+    const retired = () => (skips.get(video) ?? 0) !== skipsAtStart;
 
     const remaining = () => video.duration - video.currentTime;
     const cancelNext = () => {
@@ -740,7 +756,8 @@ export function useGaplessAudio({
       if (bridge.segments.length === 0 && !bridge.pending) handBack(video);
     };
     const confirmAdvance = (id: string) => {
-      if (!waitForAdvance || id !== nextID || bridge.context.state !== "running") return;
+      if (retired() || !waitForAdvance || id !== nextID || bridge.context.state !== "running")
+        return;
       const track = bridge.tracks.get(id);
       if (!track || audioDelayHolds(video) || segmentFor(bridge, id)) return;
       const current = segmentFor(bridge, mediaID);
@@ -762,7 +779,7 @@ export function useGaplessAudio({
 
     const join = () => {
       const track = bridge.tracks.get(nextID);
-      if (waitForAdvance || !track || segmentFor(bridge, nextID)) return;
+      if (retired() || waitForAdvance || !track || segmentFor(bridge, nextID)) return;
       // A suspended context would start the track late; a delay line would not line up.
       if (bridge.context.state !== "running" || audioDelayHolds(video)) return;
       const current = segmentFor(bridge, mediaIDRef.current);
@@ -801,7 +818,7 @@ export function useGaplessAudio({
     };
 
     const check = () => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || retired()) return;
       // The track heard and the next are the most held at once.
       const due = remaining() <= PREPARE_AHEAD_SECONDS;
       if (!decoding && !bridge.tracks.has(nextID) && heldTracks(bridge) < 2 && due) void prepare();
