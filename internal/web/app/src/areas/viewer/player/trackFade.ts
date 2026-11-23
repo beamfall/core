@@ -138,8 +138,9 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     document.removeEventListener("visibilitychange", hide);
     // The volume is the listener's again: the fade writes and restores nothing more.
     written = Number.NaN;
-    if (!advanced) go();
+    // Armed first, so a skip that throws still lets go.
     wait = setTimeout(stop, LOAD_WAIT_MS);
+    if (!advanced) go();
   }
   // Hidden mid-fade, the frames stop: the skip happens now, at the listener's level.
   function hide() {
