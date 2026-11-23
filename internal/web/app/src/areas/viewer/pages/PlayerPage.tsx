@@ -290,16 +290,17 @@ function FeaturePlayer({
   const [musicQueueOpen, setMusicQueueOpen] = useState(false);
   // The audio stage's lyrics view (CORE-1638); it stays open across tracks.
   const [lyricsOpen, setLyricsOpen] = useState(false);
-  const { view: musicQueue, refresh: refreshMusicQueue, readMedia, isCurrent } = useMusicQueue();
+  const {
+    view: musicQueue,
+    refresh: refreshMusicQueue,
+    readMedia,
+    isCurrent,
+    latestRows: latestQueueRows,
+  } = useMusicQueue();
   const queueAllowed = !serverQueueRun || (queueMatchesProfile && !musicQueue?.invalid);
   const queueReady = queueAllowed && (!serverQueueRun || musicQueue?.rows !== undefined);
   const queueReadFailed = serverQueueRun && queueAllowed && musicQueue?.failed;
   const serverItems = useMemo(() => musicQueue?.rows?.filter(playableMusic), [musicQueue?.rows]);
-  // The latest read, for a Play now that lands after a refresh (CORE-3361).
-  const serverItemsRef = useRef(serverItems);
-  useLayoutEffect(() => {
-    serverItemsRef.current = serverItems;
-  }, [serverItems]);
   const serverNeighbours = useMemo(
     () => musicQueueNeighbours(musicQueue?.rows, mediaId),
     [musicQueue?.rows, mediaId],
@@ -910,6 +911,8 @@ function FeaturePlayer({
         const replay = () => {
           if (rows.some((row) => row.id === mediaId && playableMusic(row))) restart(0);
         };
+        // A Watch Party that took the lead during the read keeps it.
+        if (action !== "ended" && partyLeadsRef.current) return;
         if (action === "ended" && playModes.repeat === "one") return replay();
         const neighbours = reorder
           ? modeNeighbours(rows, mediaId, playModes, playableMusic)
@@ -972,9 +975,9 @@ function FeaturePlayer({
     advanceToNext,
   ]);
   // The current way to open an item: docking mid-fade changes it (CORE-3352).
-  const openNextRef = useRef({ playNext, goToQueueItem, advanceToNext });
+  const openNextRef = useRef({ playNext, goToQueueItem, advanceToNext, runQueueAction });
   useLayoutEffect(() => {
-    openNextRef.current = { playNext, goToQueueItem, advanceToNext };
+    openNextRef.current = { playNext, goToQueueItem, advanceToNext, runQueueAction };
   }, [playNext, goToQueueItem, advanceToNext]);
   // A card queue names its own previous item; without one, a Play all queue
   // that holds this item may (stepping back keeps that queue going).
@@ -1051,9 +1054,11 @@ function FeaturePlayer({
         const advance = playNowTarget
           ? () => {
               // A queue read mid-fade that drops or locks the named item
-              // (CORE-3361) leaves Next's own fresh read to pick instead.
-              if (!serverItemsRef.current?.some((row) => row.id === playNowTarget)) {
-                openNextRef.current.playNext?.();
+              // (CORE-3361) leaves a fresh read to pick instead: the track's
+              // own end if it ended under the fade, Next otherwise.
+              const rows = latestQueueRows();
+              if (!rows?.some((row) => row.id === playNowTarget && playableMusic(row))) {
+                void openNextRef.current.runQueueAction(video?.ended ? "ended" : "next");
                 return;
               }
               endedWithoutNext.current = null;

@@ -124,6 +124,8 @@ export function useMusicQueue() {
     signal: AbortSignal;
     invalid?: boolean;
     pending?: { controller: AbortController; promise: Promise<RefreshResult> };
+    // The last rows read, before React renders them.
+    rows?: MusicQueueRow[];
   }>(null);
   const [result, setResult] = useState<MusicQueueView & { scope: typeof scope }>();
 
@@ -170,6 +172,7 @@ export function useMusicQueue() {
         .then((rows) => {
           if (signal.aborted || current() !== read) return undefined;
           read.pending = undefined;
+          if (rows) read.rows = rows;
           setResult((previous) => ({
             scope,
             failed: rows === null,
@@ -210,6 +213,9 @@ export function useMusicQueue() {
     [scope, current, invalidate],
   );
 
+  /** The rows the latest read returned, even before they render (CORE-3361). */
+  const latestRows = useCallback(() => current()?.rows, [current]);
+
   const view = scope && !scope.epoch?.aborted && result?.scope === scope ? result : undefined;
-  return { view, refresh, readMedia, isCurrent: current };
+  return { view, refresh, readMedia, isCurrent: current, latestRows };
 }

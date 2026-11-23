@@ -47,8 +47,8 @@ export function finishFadeAdvance(): boolean {
 
 /**
  * Runs `advance` after a short fade out, then fades the element back in once it plays again.
- * `withdraw` runs when the skip lets go of what plays next without being replaced or moved
- * on by the track's end: dropped, or its wait ran out (CORE-3360).
+ * `withdraw` runs once the skip lets go of what plays next, unless a newer skip replaced it:
+ * the item it left may join its next one again (CORE-3360).
  */
 export function fadeAdvance(
   video: HTMLMediaElement | null,
@@ -109,7 +109,11 @@ export function fadeAdvance(
     finish: () => {
       if (advanced) return;
       done(true);
-      go();
+      try {
+        go();
+      } finally {
+        withdraw?.();
+      }
     },
   };
   const stop = () => {

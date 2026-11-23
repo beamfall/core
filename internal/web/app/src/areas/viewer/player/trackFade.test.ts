@@ -136,7 +136,7 @@ describe("fadeAdvance", () => {
     }
   });
 
-  it("withdraws only when it lets go without moving on (CORE-3360)", () => {
+  it("withdraws whenever it lets go, unless a newer skip replaced it (CORE-3360)", () => {
     const video = playingElement();
     const withdraw = vi.fn();
     // Dropped mid-fade, before it skipped.
@@ -155,16 +155,23 @@ describe("fadeAdvance", () => {
     cancelFadeAdvance();
     expect(withdraw).toHaveBeenCalledOnce();
 
-    // Replaced by a newer skip, or moved on by the track's end: no withdraw.
+    // Moved on by the track's end: it lets go at once, after skipping.
     withdraw.mockClear();
+    const order: string[] = [];
+    fadeAdvance(
+      video,
+      () => order.push("advance"),
+      () => order.push("withdraw"),
+    );
+    vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+    finishFadeAdvance();
+    expect(order).toEqual(["advance", "withdraw"]);
+
+    // Replaced by a newer skip: no withdraw, the newer one owns the item.
     fadeAdvance(video, () => {}, withdraw);
     vi.advanceTimersByTime(TRACK_FADE_MS / 2);
-    const next = vi.fn();
-    fadeAdvance(video, () => {}, next);
+    fadeAdvance(video, () => {});
     expect(withdraw).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(TRACK_FADE_MS / 4);
-    finishFadeAdvance();
-    expect(next).not.toHaveBeenCalled();
   });
 
   it("fades back in when the skip loads nothing", () => {

@@ -1821,6 +1821,56 @@ describe("PlayerPage server Play Queue", () => {
     expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === c.id)).toBe(false);
   });
 
+  it("reads afresh at the track's end when a Play now's item is gone with nothing after it (CORE-3361)", async () => {
+    graphql.mockImplementation(async (query, variables) => {
+      if (!query.startsWith("query MusicQueueMedia")) return readQueue();
+      const id = (variables as { id: string }).id;
+      return {
+        media: { id, title: id === c.id ? "C" : "B", favorited: false, credits: [] },
+        currentSession: serverSession,
+      };
+    });
+    renderQueue();
+    await screen.findByRole("heading", { name: "B" });
+    const video = stageVideo();
+    playAudibly(video);
+    const card = await screen.findByRole("region", { name: /Playing next: C/ });
+    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    rows = [a, b];
+    act(() => controls()?.onMusicQueueOpenChange?.(true));
+    await waitFor(() => expect(controls()?.onNextInQueue).toBeUndefined());
+    const reads = readQueue.mock.calls.length;
+    vi.mocked(rejoinSkip).mockClear();
+    Object.defineProperty(video, "ended", { configurable: true, value: true });
+    fireEvent.ended(video);
+    // The end still reads the queue, and the item may join its next one again.
+    await waitFor(() => expect(readQueue.mock.calls.length).toBeGreaterThan(reads));
+    expect(rejoinSkip).toHaveBeenCalledWith(video, b.id);
+    expect(playingID()).toBe(b.id);
+  });
+
+  it("keeps a Watch Party's lead taken during Next's queue read", async () => {
+    renderQueue();
+    await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
+    let release = () => {};
+    readQueue = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ sourceItems: rows, currentSession: serverSession });
+        }),
+    );
+    act(() => controls()?.onNextInQueue?.());
+    vi.mocked(watchPartyDefersUpNext).mockReturnValue(true);
+    try {
+      act(() => controls()?.onMusicQueueOpenChange?.(false));
+      await act(async () => release());
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
+      expect(playingID()).toBe(b.id);
+    } finally {
+      vi.mocked(watchPartyDefersUpNext).mockReturnValue(false);
+    }
+  });
+
   it("reads the card afresh each time it shows, and the held title links to its own track (CORE-3353)", async () => {
     const reads: string[] = [];
     let holdC: Promise<never> | null = null;
