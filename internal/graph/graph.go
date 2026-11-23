@@ -7192,6 +7192,7 @@ var mutationFields = map[string]bool{
 	"revokedevice":                       true,
 	"revokealldevices":                   true,
 	"setdevicerole":                      true,
+	"controlrenderersession":             true,
 	"controlsession":                     true,
 	// Ambient Group Conductor: session-scoped, same-Profile-
 	// gated group lifecycle + sync. NOT admin-gated — like controlSession these

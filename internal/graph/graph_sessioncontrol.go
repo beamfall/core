@@ -45,6 +45,7 @@ type ProfileSessionInfo struct {
 	Transcoding     bool   `json:"transcoding"`
 	PositionSeconds int    `json:"positionSeconds"`
 	DurationSeconds int    `json:"durationSeconds"`
+	Revision        int64  `json:"revision"`
 }
 
 // profileSessions enumerates the active playback sessions in the CALLER'S OWN
@@ -64,7 +65,17 @@ func (h *Handler) profileSessions(ctx context.Context, scope auth.Scope) ([]Prof
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ProfileSessionInfo, 0, len(sessions))
+	sessionIDs := make([]store.SessionID, 0, len(sessions))
+	for _, s := range sessions {
+		if s.ProfileID == scope.ProfileID {
+			sessionIDs = append(sessionIDs, s.SessionID)
+		}
+	}
+	revisions, err := h.store.RendererSessionRevisions(ctx, sessionIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ProfileSessionInfo, 0, len(sessionIDs))
 	for _, s := range sessions {
 		if s.ProfileID != scope.ProfileID {
 			continue // same-Profile only: never list another Profile's session
@@ -87,6 +98,7 @@ func (h *Handler) profileSessions(ctx context.Context, scope auth.Scope) ([]Prof
 			Transcoding:     s.Transcoding,
 			PositionSeconds: s.PositionSeconds,
 			DurationSeconds: s.DurationSeconds,
+			Revision:        revisions[s.SessionID],
 		})
 	}
 	return out, nil
@@ -102,11 +114,24 @@ type ControlSessionResult struct {
 	Command   string `json:"command"`
 }
 
+// ControlRendererSessionResult is the ADR-0151 D3 / ADR-0240 D3 result for
+// controlRendererSession: APPLIED with the new monotonic revision, or CONFLICT
+// with the current revision and a caller-filtered snapshot of that session.
+type ControlRendererSessionResult struct {
+	Status    string                `json:"status"`
+	SessionID string                `json:"sessionID"`
+	Command   string                `json:"command"`
+	Revision  int64                 `json:"revision"`
+	Snapshot  *[]ProfileSessionInfo `json:"snapshot,omitempty"`
+}
+
 // controlSession issues a transport command from the closed session-control
 // vocabulary (store.SessionControlCommands) against another device's session
-// in the SAME Profile. The authorization is per Profile, fail-closed, and
-// every refusal reports an unknown/unavailable session rather than leaking
-// existence:
+// in the SAME Profile. controlSession stays strictly same-Profile (and refuses
+// any player target); ADR-0240 D3 forbids relaxing its Profile equality check
+// for player targets — revision-checked control lives on controlRendererSession.
+// The authorization is per Profile, fail-closed, and every refusal reports an
+// unknown/unavailable session rather than leaking existence:
 //
 //  1. Same-Profile: the target session must resolve to the caller's OWN Profile.
 //     A cross-Profile target is reported "unknown session" — a device can never
@@ -123,10 +148,11 @@ type ControlSessionResult struct {
 //
 // On success the command is published on the outbox (store.AppendSessionControlEvent)
 // with the target's resolved Profile and a reveal anchor Media in the payload,
-// so the SSE surface delivers it to the target device (and any other
-// same-Profile, reveal-permitted subscriber) without re-authorizing at delivery
-// time. For play-media the anchor is the started Media, so a target that cannot
-// see it never receives the command.
+// and bumps the target session's monotonic revision so revision-checked callers
+// see its effects. The SSE surface delivers it to the target device (and any
+// other same-Profile, reveal-permitted subscriber) without re-authorizing at
+// delivery time. For play-media the anchor is the started Media, so a target
+// that cannot see it never receives the command.
 func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req request) (ControlSessionResult, error) {
 	targetID := trimmedVariable(req, "sessionID")
 	command := trimmedVariable(req, "command")
@@ -140,74 +166,10 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 	if _, err := store.ValidateSessionControlArgs(command, args); err != nil {
 		return ControlSessionResult{}, sessionControlClientError(err)
 	}
-	if scope.ProfileID == "" {
-		// No Profile to scope to: a non-Profile caller can never share a Profile
-		// with any session, so every target is "unknown" to it.
-		return ControlSessionResult{}, clientError("unknown session")
-	}
-
-	// Gate 1 — same Profile. Resolve the target session's Profile; a missing or
-	// cross-Profile session is reported identically as "unknown session" so the
-	// surface is never an existence oracle for another Profile's sessions.
-	target, err := h.store.Session(ctx, store.SessionID(targetID))
-	if err != nil {
-		var verr store.ValidationError
-		if errors.As(err, &verr) {
-			return ControlSessionResult{}, clientError(string(verr))
-		}
-		return ControlSessionResult{}, clientError("unknown session")
-	}
-	if target.ProfileID != scope.ProfileID {
-		return ControlSessionResult{}, clientError("unknown session")
-	}
-
-	// Gate 2 — reveal. Applied through the CALLER's own filter: a session
-	// playing Media the caller cannot reveal comes back with its identifying
-	// fields suppressed, and is treated as not controllable (the caller never
-	// learns what restricted Media it is, nor commands it). ActiveSessions has
-	// a row per session and Media, so every row of the target must be visible:
-	// one hidden row makes the whole session uncontrollable, whatever order the
-	// rows come back in. The rows' Media (a prefetched next item as well as the
-	// current one) travel as the receiver's anchor set: which of them is on
-	// screen only the receiver knows.
 	now := time.Now().UTC()
-	active, err := h.store.GrantedSessions(ctx, now, scope.LibraryFilter())
+	target, playing, anchor, err := h.authorizeSessionControl(ctx, scope, targetID, command, args, now)
 	if err != nil {
 		return ControlSessionResult{}, err
-	}
-	var playing []store.MediaID
-	for _, s := range active {
-		if s.SessionID != store.SessionID(targetID) {
-			continue
-		}
-		if s.Title == "" { // reveal-hidden: Media identity is suppressed
-			return ControlSessionResult{}, clientError("session not controllable")
-		}
-		playing = append(playing, s.MediaID)
-	}
-	found := len(playing) > 0
-	var activeMedia store.MediaID
-	if found {
-		activeMedia = playing[0]
-	}
-
-	// Gate 3 — what the command needs from the target.
-	anchor := activeMedia
-	if command == store.SessionCommandPlayMedia {
-		if target.Kind == store.SessionKindIntegration || target.DeviceID == "" ||
-			(!target.ExpiresAt.IsZero() && !target.ExpiresAt.After(now)) {
-			return ControlSessionResult{}, clientError("session not controllable")
-		}
-		if _, err := h.store.Media(ctx, args.MediaID, scope.LibraryFilter()); err != nil {
-			var verr store.ValidationError
-			if errors.As(err, &verr) {
-				return ControlSessionResult{}, clientError("unknown media")
-			}
-			return ControlSessionResult{}, err
-		}
-		anchor = args.MediaID
-	} else if !found {
-		return ControlSessionResult{}, clientError("session has no active playback")
 	}
 
 	payload, err := store.NewSessionControlPayload(command, args, scope.DeviceID, target.ProfileID, anchor)
@@ -235,6 +197,216 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 		return ControlSessionResult{}, err
 	}
 	return ControlSessionResult{SessionID: targetID, Command: command}, nil
+}
+
+// controlRendererSession issues a revision-checked, idempotent transport command
+// against a Renderer Session (ADR-0151 D1-D3, ADR-0240 D3). It enforces the
+// same authorization gates and non-leaking refusals as controlSession.
+func (h *Handler) controlRendererSession(ctx context.Context, scope auth.Scope, req request) (ControlRendererSessionResult, error) {
+	targetID := trimmedVariable(req, "sessionID")
+	if targetID == "" {
+		return ControlRendererSessionResult{}, clientError("sessionID is required")
+	}
+	rawRevision, hasRevision := req.Variables["expectedRevision"]
+	if !hasRevision || rawRevision == nil {
+		return ControlRendererSessionResult{}, clientError("expectedRevision is required")
+	}
+	expectedRevision, ok := wholeNumber(rawRevision)
+	if !ok || expectedRevision < 0 {
+		return ControlRendererSessionResult{}, clientError("expectedRevision must be a non-negative integer")
+	}
+	rawCommandID, hasCommandID := req.Variables["commandID"]
+	if !hasCommandID || rawCommandID == nil {
+		return ControlRendererSessionResult{}, clientError("commandID is required")
+	}
+	commandIDStr, ok := rawCommandID.(string)
+	if !ok {
+		return ControlRendererSessionResult{}, clientError("commandID must be a string")
+	}
+	commandID := strings.TrimSpace(commandIDStr)
+	if err := store.ValidateRendererSessionCommandID(commandID); err != nil {
+		return ControlRendererSessionResult{}, sessionControlClientError(err)
+	}
+	command := trimmedVariable(req, "command")
+	args, err := sessionControlArgsFromVariables(req)
+	if err != nil {
+		return ControlRendererSessionResult{}, err
+	}
+	if _, err := store.ValidateSessionControlArgs(command, args); err != nil {
+		return ControlRendererSessionResult{}, sessionControlClientError(err)
+	}
+
+	now := time.Now().UTC()
+	target, playing, anchor, err := h.authorizeSessionControl(ctx, scope, targetID, command, args, now)
+	if err != nil {
+		return ControlRendererSessionResult{}, err
+	}
+
+	payload, err := store.NewSessionControlPayload(command, args, scope.DeviceID, target.ProfileID, anchor)
+	if err != nil {
+		return ControlRendererSessionResult{}, sessionControlClientError(err)
+	}
+	if command != store.SessionCommandPlayMedia {
+		payload.PlayingMediaIDs = playing
+	}
+	activity := &store.ActivityEntry{
+		OccurredAt: now,
+		Action:     store.ActivitySessionControl,
+		SessionID:  scope.SessionID,
+		DeviceID:   scope.DeviceID,
+		ProfileID:  target.ProfileID,
+		TargetType: "session",
+		TargetID:   targetID,
+		TokenID:    scope.APITokenID,
+		APIKeyID:   scope.APIKeyID,
+	}
+	res, err := h.store.ControlRendererSession(ctx, store.SessionID(targetID), expectedRevision, commandID, payload, activity, now)
+	if err != nil {
+		if errors.Is(err, store.ErrRendererSessionCommandReuse) {
+			return ControlRendererSessionResult{}, clientError("commandID already used for a different command")
+		}
+		var conflict store.RendererSessionRevisionConflictError
+		if errors.As(err, &conflict) {
+			snapshot, snapErr := h.rendererSessionSnapshot(ctx, scope, store.SessionID(targetID), conflict.CurrentRevision, now)
+			if snapErr != nil {
+				return ControlRendererSessionResult{}, snapErr
+			}
+			return ControlRendererSessionResult{
+				Status:    string(store.RendererSessionControlConflict),
+				SessionID: targetID,
+				Command:   command,
+				Revision:  conflict.CurrentRevision,
+				Snapshot:  &snapshot,
+			}, nil
+		}
+		var verr store.ValidationError
+		if errors.As(err, &verr) {
+			return ControlRendererSessionResult{}, clientError(string(verr))
+		}
+		return ControlRendererSessionResult{}, err
+	}
+	return ControlRendererSessionResult{
+		Status:    string(res.Status),
+		SessionID: string(res.SessionID),
+		Command:   res.Command,
+		Revision:  res.Revision,
+	}, nil
+}
+
+func (h *Handler) authorizeSessionControl(
+	ctx context.Context,
+	scope auth.Scope,
+	targetID, command string,
+	args store.SessionControlArgs,
+	now time.Time,
+) (store.Session, []store.MediaID, store.MediaID, error) {
+	if scope.ProfileID == "" {
+		// No Profile to scope to: a non-Profile caller can never share a Profile
+		// with any session, so every target is "unknown" to it.
+		return store.Session{}, nil, "", clientError("unknown session")
+	}
+
+	// Gate 1 — same Profile. Resolve the target session's Profile; a missing or
+	// cross-Profile session is reported identically as "unknown session" so the
+	// surface is never an existence oracle for another Profile's sessions.
+	target, err := h.store.Session(ctx, store.SessionID(targetID))
+	if err != nil {
+		var verr store.ValidationError
+		if errors.As(err, &verr) {
+			return store.Session{}, nil, "", clientError(string(verr))
+		}
+		return store.Session{}, nil, "", clientError("unknown session")
+	}
+	if target.ProfileID != scope.ProfileID {
+		return store.Session{}, nil, "", clientError("unknown session")
+	}
+
+	// Gate 2 — reveal. Applied through the CALLER's own filter: a session
+	// playing Media the caller cannot reveal comes back with its identifying
+	// fields suppressed, and is treated as not controllable (the caller never
+	// learns what restricted Media it is, nor commands it). GrantedSessions has
+	// a row per session and Media, so every row of the target must be visible:
+	// one hidden row makes the whole session uncontrollable, whatever order the
+	// rows come back in.
+	active, err := h.store.GrantedSessions(ctx, now, scope.LibraryFilter())
+	if err != nil {
+		return store.Session{}, nil, "", err
+	}
+	var playing []store.MediaID
+	for _, s := range active {
+		if s.SessionID != store.SessionID(targetID) {
+			continue
+		}
+		if s.Title == "" { // reveal-hidden: Media identity is suppressed
+			return store.Session{}, nil, "", clientError("session not controllable")
+		}
+		playing = append(playing, s.MediaID)
+	}
+	found := len(playing) > 0
+	var activeMedia store.MediaID
+	if found {
+		activeMedia = playing[0]
+	}
+
+	// Gate 3 — what the command needs from the target.
+	anchor := activeMedia
+	if command == store.SessionCommandPlayMedia {
+		if target.Kind == store.SessionKindIntegration || target.DeviceID == "" ||
+			(!target.ExpiresAt.IsZero() && !target.ExpiresAt.After(now)) {
+			return store.Session{}, nil, "", clientError("session not controllable")
+		}
+		if _, err := h.store.Media(ctx, args.MediaID, scope.LibraryFilter()); err != nil {
+			var verr store.ValidationError
+			if errors.As(err, &verr) {
+				return store.Session{}, nil, "", clientError("unknown media")
+			}
+			return store.Session{}, nil, "", err
+		}
+		anchor = args.MediaID
+	} else if !found {
+		return store.Session{}, nil, "", clientError("session has no active playback")
+	}
+	return target, playing, anchor, nil
+}
+
+// rendererSessionSnapshot returns the caller-filtered GrantedSessions rows for
+// targetID only at the given revision, suppressing every Media identity field
+// whenever the Media is hidden from the caller's LibraryFilter.
+func (h *Handler) rendererSessionSnapshot(ctx context.Context, scope auth.Scope, targetID store.SessionID, revision int64, now time.Time) ([]ProfileSessionInfo, error) {
+	if scope.ProfileID == "" {
+		return []ProfileSessionInfo{}, nil
+	}
+	active, err := h.store.GrantedSessions(ctx, now, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ProfileSessionInfo, 0)
+	for _, s := range active {
+		if s.SessionID != targetID || s.ProfileID != scope.ProfileID {
+			continue
+		}
+		row := ProfileSessionInfo{
+			SessionID:       string(s.SessionID),
+			DeviceID:        string(s.DeviceID),
+			DeviceName:      s.DeviceName,
+			DeviceRole:      string(s.DeviceRole),
+			Current:         s.SessionID == scope.SessionID,
+			Transcoding:     s.Transcoding,
+			PositionSeconds: s.PositionSeconds,
+			DurationSeconds: s.DurationSeconds,
+			Revision:        revision,
+		}
+		if s.Title != "" {
+			row.MediaID = string(s.MediaID)
+			row.Title = s.Title
+			row.LibraryID = string(s.LibraryID)
+		} else {
+			row.PositionSeconds = 0
+			row.DurationSeconds = 0
+		}
+		out = append(out, row)
+	}
+	return out, nil
 }
 
 // sessionControlArgsFromVariables reads the optional per-command arguments.

@@ -178,6 +178,18 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"connectionendpoints": {},
 	"consoleconfig":       {},
+	"controlrenderersession": {
+		{Name: "command", Kind: "string"},
+		{Name: "commandID", Kind: "string"},
+		{Name: "direction", Kind: "string", Optional: true},
+		{Name: "expectedRevision", Kind: "int"},
+		{Name: "mediaID", Kind: "string", Optional: true},
+		{Name: "positionMs", Kind: "int", Optional: true},
+		{Name: "sessionID", Kind: "string"},
+		{Name: "text", Kind: "string", Optional: true},
+		{Name: "trackID", Kind: "string", Optional: true},
+		{Name: "volume", Kind: "int", Optional: true},
+	},
 	"controlsession": {
 		{Name: "command", Kind: "string"},
 		{Name: "direction", Kind: "string", Optional: true},

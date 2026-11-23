@@ -57,6 +57,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"CollectionByID":                        {},
 	"Collections":                           {},
 	"ConsoleConfig":                         {},
+	"ControlRendererSession":                {},
 	"CreateAPIToken":                        {},
 	"CreateAccessRequest":                   {},
 	"CreateChannel":                         {},
@@ -221,6 +222,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"RelatedEntityGroupsBy":                   {},
 	"RemoveCollectionMedia":                   {},
 	"RemoveSubscription":                      {},
+	"RendererSessionRevisions":                {},
 	"RequestAllSubscriptionsRefresh":          {}, // updates poll cadence only
 	"RequestSubscriptionRefresh":              {}, // updates poll cadence and fetch validators
 	"ReorderCollectionMedia":                  {},

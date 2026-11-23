@@ -121,7 +121,10 @@ package store
 // in the owning Library plane.
 // Events 0029 (CORE-2958) adds the per-follow new-entry route, read by the
 // subscription-new Source and the poller, without changing entity queries.
+// Events 0030 (CORE-3309) adds renderer_session_revision and the 24h
+// renderer_session_command ledger for revision-checked session control, off the
+// entity-query hot path.
 const (
-	schemaFreezeEventsMigrations           = 29
+	schemaFreezeEventsMigrations           = 30
 	schemaFreezeEncryptedLibraryMigrations = 13
 )

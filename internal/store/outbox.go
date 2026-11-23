@@ -620,26 +620,37 @@ func (s *Store) AppendSessionControlEvent(ctx context.Context, target SessionID,
 	if err != nil {
 		return err
 	}
+	now = normalizeTime(now)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	if err := appendSessionControlEventSQL(ctx, s.eventsW, target, raw, now); err != nil {
+	tx, err := s.eventsW.BeginTx(ctx, nil)
+	if err != nil {
 		return err
 	}
-	s.outbox.notify()
-	return nil
+	defer tx.Rollback()
+	if err := appendSessionControlEventSQL(ctx, tx, target, raw, now); err != nil {
+		return err
+	}
+	if _, err := incrementRendererSessionRevisionSQL(ctx, tx, target, now); err != nil {
+		return err
+	}
+	return s.commitOutboxTx(tx)
 }
 
-// AppendSessionControlEventWithActivity records the transport command and its
-// activity audit row in one events.db transaction. Use it for control surfaces
-// where publishing without the audit row would create an incomplete trail.
+// AppendSessionControlEventWithActivity records the transport command, bumps
+// the target Renderer Session's monotonic revision, and records its activity
+// audit row in one events.db transaction. Use it for control surfaces where
+// publishing without the audit row or revision bump would create an incomplete
+// trail.
 func (s *Store) AppendSessionControlEventWithActivity(ctx context.Context, target SessionID, payload SessionControlPayload, activity ActivityEntry, now time.Time) error {
 	raw, err := sessionControlPayloadJSON(target, payload)
 	if err != nil {
 		return err
 	}
+	now = normalizeTime(now)
 	if activity.OccurredAt.IsZero() {
 		activity.OccurredAt = now
 	}
@@ -657,6 +668,9 @@ func (s *Store) AppendSessionControlEventWithActivity(ctx context.Context, targe
 	}
 	defer tx.Rollback()
 	if err := appendSessionControlEventSQL(ctx, tx, target, raw, now); err != nil {
+		return err
+	}
+	if _, err := incrementRendererSessionRevisionSQL(ctx, tx, target, now); err != nil {
 		return err
 	}
 	if err := appendActivitySQL(ctx, tx, activity); err != nil {

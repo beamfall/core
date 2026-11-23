@@ -637,6 +637,18 @@
       ]
     },
     {
+      "field": "controlrenderersession",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "command",
+        "revision",
+        "sessionID",
+        "snapshot",
+        "status"
+      ]
+    },
+    {
       "field": "controlsession",
       "effect": "write",
       "tier": "session",
@@ -2907,6 +2919,7 @@
         "libraryID",
         "mediaID",
         "positionSeconds",
+        "revision",
         "sessionID",
         "title",
         "transcoding"
