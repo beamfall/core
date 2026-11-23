@@ -214,3 +214,41 @@ func serveStreamForWithAuth(t *testing.T, srv *Server, authorize func(*http.Requ
 	}
 	<-done
 }
+
+// ADR-0240 D3/D4: /v1/playback-control carries no controller identity or
+// revision, so a player display is unreachable through it for any key, with or
+// without a Profile binding, and nothing reaches the display's event stream.
+func TestV1PlaybackControlRefusesPlayerTargets(t *testing.T) {
+	ctx := context.Background()
+	srv, st := newTestServerWithStore(t)
+	now := time.Now().UTC()
+	player, err := st.CreateProfile(ctx, "Lounge TV", store.ProfilePlayer, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.EnrollDevice(ctx,
+		store.Device{
+			ID: "device-lounge-tv", Name: "Lounge TV", Role: store.DeviceRoleViewer,
+			Surface: store.DeviceSurfaceTVOSViewer, SecretHash: store.HashDeviceSecret("lounge-secret"),
+			PlayerProfileID: player.ID, PlayerDisplayName: "Lounge TV", PlayerBindingGeneration: 1,
+		},
+		store.Session{ID: "session-lounge-tv", DeviceID: "device-lounge-tv", ProfileID: player.ID, ExpiresAt: now.Add(time.Hour)},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordStreamToken(ctx, "session-lounge-tv", player.ID, "device-lounge-tv", "media-direct", "media-alpha", false, now.Add(time.Hour)); err != nil {
+		t.Fatalf("RecordStreamToken: %v", err)
+	}
+	for _, key := range []string{
+		mintKey(t, st, "unbound-control", "", store.ScopePlaybackControl),
+		mintKey(t, st, "player-control", player.ID, store.ScopePlaybackControl),
+	} {
+		rec := v1Post(t, srv, "/v1/playback-control", key, `{"sessionID":"session-lounge-tv","command":"pause"}`)
+		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "session not found") {
+			t.Fatalf("POST /v1/playback-control to player = %d %s, want 404 session not found", rec.Code, rec.Body.String())
+		}
+	}
+	if body := collectSSE(t, srv, authorizeViewer); strings.Contains(body, store.SessionControlKind) {
+		t.Fatalf("refused player command reached the event stream:\n%s", body)
+	}
+}

@@ -36,6 +36,7 @@ type V1Store interface {
 	ActiveSessions(ctx context.Context, now time.Time, filter store.LibraryFilter) ([]store.ActiveSession, error)
 	GrantedSessions(ctx context.Context, now time.Time, filter store.LibraryFilter) ([]store.ActiveSession, error)
 	LibraryRoots(ctx context.Context, libraryID store.LibraryID) ([]string, error)
+	Profile(ctx context.Context, id store.ProfileID) (store.Profile, error)
 	AppendSessionControlEventWithActivity(ctx context.Context, target store.SessionID, payload store.SessionControlPayload, activity store.ActivityEntry, now time.Time) error
 	BackupIngest(ctx context.Context, req store.BackupIngestRequest) (store.BackupIngestResult, error)
 	BackupIngestStatus(ctx context.Context, profileID store.ProfileID, libraryID store.LibraryID) (store.BackupIngestPolicy, error)
@@ -583,6 +584,14 @@ func (s *Server) v1PlaybackControl(w http.ResponseWriter, r *http.Request) {
 		playing = append(playing, activeSession.MediaID)
 	}
 	if !foundVisible {
+		writeError(w, r, http.StatusNotFound, "session not found")
+		return
+	}
+	// A player display is driven only through controlRendererSession by its
+	// controllers (ADR-0240 D3, D4). This route has no controller identity or
+	// revision, so every player target answers exactly like a missing session.
+	targetProfile, err := s.v1.Profile(r.Context(), target.ProfileID)
+	if err != nil || targetProfile.Kind == store.ProfilePlayer {
 		writeError(w, r, http.StatusNotFound, "session not found")
 		return
 	}
