@@ -1,0 +1,5 @@
+- [x] Pin plugin SDK v0.4.13 and plugin-karaoke v0.1.14
+- [x] Set `selectPlays` on cards, search cards and `media(id)` from the Library plugin's engagement posture
+- [x] Graph test for a select-plays plugin, a plugin that does not declare it, and a plugin-less Library
+- [x] Regenerate the wire contract artifacts
+- [x] Publish client-core-wire 2.52.0

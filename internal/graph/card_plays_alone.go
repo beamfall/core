@@ -6,33 +6,44 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
-// annotatePlaysAlone sets PlaysAlone on each Media item whose Library plugin
-// declares that its Media play alone (CORE-3147). It runs after
-// AnnotateMediaClass, which supplies each item's Library. Core passes the
-// declaration through and never derives it from a class or a plugin name.
-// Entities, plugin-less Libraries and non-declaring plugins leave it false.
+// selectFlags are a Library plugin's per-Media Select and queue declarations.
+type selectFlags struct {
+	playsAlone  bool
+	selectPlays bool
+}
+
+// annotatePlaysAlone sets PlaysAlone and SelectPlays on each Media item whose
+// Library plugin declares that its Media play alone (CORE-3147) or play on
+// Select (CORE-3307). It runs after AnnotateMediaClass, which supplies each
+// item's Library. Core passes the declarations through and never derives them
+// from a class or a plugin name. Entities, plugin-less Libraries and
+// non-declaring plugins leave both false.
 func (h *Handler) annotatePlaysAlone(ctx context.Context, items []store.SourceItem) {
-	alone := map[store.LibraryID]bool{}
+	byLibrary := map[store.LibraryID]selectFlags{}
 	for i := range items {
 		item := &items[i]
 		if item.Kind == "entity" || item.LibraryID == "" {
 			continue
 		}
-		playsAlone, seen := alone[item.LibraryID]
+		flags, seen := byLibrary[item.LibraryID]
 		if !seen {
-			playsAlone = h.libraryPlaysAlone(ctx, item.LibraryID)
-			alone[item.LibraryID] = playsAlone
+			flags = h.librarySelectFlags(ctx, item.LibraryID)
+			byLibrary[item.LibraryID] = flags
 		}
-		item.PlaysAlone = playsAlone
+		item.PlaysAlone = flags.playsAlone
+		item.SelectPlays = flags.selectPlays
 	}
 }
 
-// libraryPlaysAlone reports whether a Library's plugin declares that its Media
-// play alone. A plugin-less Library does not.
-func (h *Handler) libraryPlaysAlone(ctx context.Context, libraryID store.LibraryID) bool {
+// librarySelectFlags reads a Library plugin's PlaysAlone and SelectPlays
+// declarations. A plugin-less Library declares neither.
+func (h *Handler) librarySelectFlags(ctx context.Context, libraryID store.LibraryID) selectFlags {
 	if libraryID == "" {
-		return false
+		return selectFlags{}
 	}
 	bundle, found := h.libraryBundle(ctx, libraryID)
-	return found && bundle.Engagement.PlaysAlone
+	if !found {
+		return selectFlags{}
+	}
+	return selectFlags{playsAlone: bundle.Engagement.PlaysAlone, selectPlays: bundle.Engagement.SelectPlays}
 }
