@@ -41,6 +41,7 @@ import {
   nextRecoveryStep,
   resetRecoveryBudget,
 } from "./hlsRecovery";
+import { sleepHoldsAutoplay, sleepStopMark } from "./listening";
 import {
   attachCaptionElements,
   captionLocale,
@@ -797,6 +798,9 @@ export function usePlayer(
     // playback last started (here or remotely), holds this load's own starts,
     // reloads (recovery, a renewed token) included.
     let startMark = remotePlayStateMark();
+    // Likewise a sleep timer that stopped playback after this load began, or
+    // after playback last started: a skip still loading must not play on (CORE-3365).
+    let sleepMark = sleepStopMark();
     setState(emptyState());
     const reloading = retryFromRef.current?.mediaID === mediaID;
     const retryFrom = reloading ? (retryFromRef.current?.position ?? 0) : 0;
@@ -1015,7 +1019,10 @@ export function usePlayer(
       const onPlay = () => {
         // The play event is queued: one from before a remote pause fires after
         // that pause has applied, and a paused element has not started.
-        if (!video.paused) startMark = remotePlayStateMark();
+        if (!video.paused) {
+          startMark = remotePlayStateMark();
+          sleepMark = sleepStopMark();
+        }
       };
       videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate], ["play", onPlay]);
       for (const [type, listener] of videoListeners) video.addEventListener(type, listener);
@@ -1137,7 +1144,10 @@ export function usePlayer(
       ) => {
         const useHlsJs = engine === "hlsjs";
         const streamURL = target.url ?? "";
-        const shouldPlay = () => options.play && !remoteHoldsAutoplay(mediaID, startMark);
+        const shouldPlay = () =>
+          options.play &&
+          !remoteHoldsAutoplay(mediaID, startMark) &&
+          !sleepHoldsAutoplay(sleepMark);
         // hls.js takes the resume point as its startPosition and loads (and
         // seeks to) it directly; only the native <video src> route seeks on
         // metadata, so a resumed HLS session never fetches from 0 first.
