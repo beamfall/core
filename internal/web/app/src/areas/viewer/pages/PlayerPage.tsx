@@ -1655,6 +1655,7 @@ function FeaturePlayer({
           artworkURL={stage.artworkURL}
           mediaID={mediaId}
           songScale={songScale}
+          durationSeconds={infoIsCurrent ? state.info?.timeline?.durationSeconds : undefined}
           onNext={playNext}
           nextTitle={nextTitle}
           onPrevious={playPrevious}

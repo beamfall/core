@@ -1,10 +1,11 @@
 import { Maximize2, Pause, Play, SkipForward, X } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, type RefObject, useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
-import { formatAriaTime, formatClockTime } from "../lib/transport";
+import { formatAriaTime, formatClockTime, playbackDurationSeconds } from "../lib/transport";
 import { useRemotePlayerTarget } from "../remote/remoteControl";
 import { NeighbourTip } from "./NeighbourTip";
 import { useWaveform, type WaveformInput } from "./useWaveform";
+import { markViewerIntent } from "./viewerIntent";
 import { WaveformBars } from "./WaveformBars";
 
 // The docked mini player (CORE-1633): the audio Media playing while the
@@ -20,6 +21,7 @@ export function MiniPlayer({
   artworkURL,
   mediaID,
   songScale,
+  durationSeconds,
   onNext,
   nextTitle,
   onPrevious,
@@ -35,6 +37,11 @@ export function MiniPlayer({
   mediaID: string;
   /** Song seconds per stream second (CORE-1659): times read in song time. */
   songScale: number;
+  /**
+   * The server's probed length in song seconds: a live transcode's
+   * `video.duration` only covers what has been encoded so far.
+   */
+  durationSeconds?: number;
   onNext?: () => void;
   /** The queue's next title, named on Next as the full player does. */
   nextTitle?: string;
@@ -63,7 +70,7 @@ export function MiniPlayer({
       setPaused(video.paused);
       setTime({
         current: video.currentTime * songScale,
-        duration: Number.isFinite(video.duration) ? video.duration * songScale : 0,
+        duration: playbackDurationSeconds(durationSeconds, video.duration * songScale),
       });
     };
     sync();
@@ -72,7 +79,7 @@ export function MiniPlayer({
     return () => {
       for (const name of events) video.removeEventListener(name, sync);
     };
-  }, [videoRef, songScale]);
+  }, [videoRef, songScale, durationSeconds]);
 
   // Commands from the Profile's other devices keep driving the docked player
   // (CORE-1678), as they drive the full player's transport.
@@ -97,6 +104,8 @@ export function MiniPlayer({
     const video = videoRef.current;
     if (!video || time.duration <= 0) return;
     const clamped = Math.max(0, Math.min(time.duration, songSeconds));
+    // A Watch Party keeps this seek rather than correcting it back (CORE-1677).
+    markViewerIntent();
     video.currentTime = clamped / songScale;
     setTime((prev) => ({ ...prev, current: clamped }));
   }
