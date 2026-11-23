@@ -1058,8 +1058,9 @@ function FeaturePlayer({
   // drops the skip, so it never overrides the listener's newer choice, and so
   // does an advance withdrawn mid-fade (a Watch Party now leads, the item
   // plays alone): the item fades back in. Docking and reordering do not: the
-  // listener still asked for the item the card named.
-  useEffect(
+  // listener still asked for the item the card named. A layout cleanup, so the
+  // drop lands before the fade's last frame can run.
+  useLayoutEffect(
     () => () => cancelFadeAdvance(),
     [mediaId, stageOwner, epoch, partyLeads, playsAloneRead],
   );
