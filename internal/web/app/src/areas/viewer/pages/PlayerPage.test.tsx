@@ -1695,6 +1695,59 @@ describe("PlayerPage server Play Queue", () => {
     expect(vi.mocked(usePlayer).mock.lastCall?.[3]).toBe(b.id);
   });
 
+  it("Play now on the Playing next card advances at once, on the same stage, with the next art and artist", async () => {
+    // Once the card is up, queue reads hang: Play now must not wait on one.
+    let queueHangs = false;
+    graphql.mockImplementation(async (query, variables) => {
+      if (!query.startsWith("query MusicQueueMedia")) {
+        return queueHangs ? new Promise<never>(() => {}) : readQueue();
+      }
+      const id = (variables as { id: string }).id;
+      return {
+        media: {
+          id,
+          title: id === c.id ? "C" : "B",
+          favorited: false,
+          artworkSlots: { poster: `/art/${id}.jpg` },
+          credits: [
+            {
+              entityID: `artist-${id}`,
+              title: id === c.id ? "Cee" : "Bee",
+              kind: "artist",
+              archetype: "person",
+              relation: "by",
+            },
+          ],
+        },
+        currentSession: serverSession,
+      };
+    });
+    renderQueue();
+    await screen.findByRole("heading", { name: "B" });
+    const stage = document.querySelector(".bf-audio-stage");
+    const video = document.querySelector("video");
+    expect(stage).not.toBeNull();
+    expect(video).not.toBeNull();
+    if (!video) return;
+    // The last seconds of B bring up the card.
+    Object.defineProperty(video, "duration", { configurable: true, value: 200 });
+    video.currentTime = 195;
+    act(() => {
+      video.dispatchEvent(new Event("timeupdate"));
+    });
+    const card = await screen.findByRole("region", { name: "Playing next: C by Cee" });
+    expect(card.querySelector(".bf-playing-next-art")).toHaveAttribute("src", `/art/${c.id}.jpg`);
+    expect(within(card).getByText("Cee")).toBeInTheDocument();
+
+    queueHangs = true;
+    fireEvent.click(within(card).getByRole("button", { name: "Play now" }));
+    expect(screen.queryByRole("region", { name: /Playing next/ })).toBeNull();
+    await waitFor(() => expect(playingID()).toBe(c.id));
+    await screen.findByRole("heading", { name: "C" });
+    // The stage, and the visuals on it, stay mounted across the advance.
+    expect(document.querySelector(".bf-audio-stage")).toBe(stage);
+  });
+
   it("waits for scoped metadata when starting a queue on the currently playing track", async () => {
     const catalogInfo = { id: a.id, title: "Catalog track title", favorited: false, credits: [] };
     vi.mocked(fetchMedia).mockResolvedValueOnce(catalogInfo);
