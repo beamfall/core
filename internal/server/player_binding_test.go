@@ -180,6 +180,10 @@ func TestServerPlayerBoundManagerDeviceResolvesAsViewer(t *testing.T) {
 	if scope.DeviceRole != store.DeviceRoleViewer || scope.Admin {
 		t.Fatalf("bound scope role=%q admin=%v, want viewer and no admin", scope.DeviceRole, scope.Admin)
 	}
+	// Build provenance keeps the enrolled class: a manager-only build stays valid.
+	if scope.EnrolledDeviceRole != store.DeviceRoleManager || compatEnrollment(scope).Role != capabilities.EnrollmentRoleManager {
+		t.Fatalf("bound enrolled role=%q provenance role=%q, want manager", scope.EnrolledDeviceRole, compatEnrollment(scope).Role)
+	}
 
 	exportReq := httptest.NewRequest(http.MethodGet, subscriptionExportPath, nil)
 	authBound(exportReq)

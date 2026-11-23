@@ -147,10 +147,14 @@ type Scope struct {
 	IntegrationScopes []store.IntegrationScope
 	DeviceID          store.DeviceID
 	DeviceRole        store.DeviceRole
-	DistributionClass store.DeviceDistributionClass
-	ProfileID         store.ProfileID
-	Profile           store.ProfileKind
-	Revealed          bool
+	// EnrolledDeviceRole is the role the Device was enrolled with. It differs
+	// from DeviceRole only for a player-bound Device (ADR-0240), whose effective
+	// role is viewer; build provenance still checks the enrolled role.
+	EnrolledDeviceRole store.DeviceRole
+	DistributionClass  store.DeviceDistributionClass
+	ProfileID          store.ProfileID
+	Profile            store.ProfileKind
+	Revealed           bool
 	// Admin is true when the session currently holds an Admin Session:
 	// an adult Profile whose session was re-authenticated with
 	// the server admin password within the short-lived window. It gates the
@@ -657,6 +661,7 @@ func (s *Service) scope(ctx context.Context, sessionID store.SessionID, credenti
 		SessionKind:             session.Kind,
 		DeviceID:                session.DeviceID,
 		DeviceRole:              role,
+		EnrolledDeviceRole:      device.Role,
 		DistributionClass:       device.DistributionClass,
 		DeviceSurface:           device.Surface,
 		PlayerProfileID:         device.PlayerProfileID,

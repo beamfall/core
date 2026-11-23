@@ -129,13 +129,22 @@ func compatEnrollmentRole(scope auth.Scope) capabilities.EnrollmentRole {
 		return capabilities.EnrollmentRoleAdminToken
 	case scope.APIKeyID != "":
 		return capabilities.EnrollmentRoleAPIKey
-	case scope.DeviceRole == store.DeviceRoleManager:
+	case enrolledRole(scope) == store.DeviceRoleManager:
 		return capabilities.EnrollmentRoleManager
-	case scope.DeviceRole == store.DeviceRoleViewer:
+	case enrolledRole(scope) == store.DeviceRoleViewer:
 		return capabilities.EnrollmentRoleViewer
 	default:
 		return ""
 	}
+}
+
+// enrolledRole is the Device's enrolled role for build provenance: a
+// player-bound Device authorizes as viewer but keeps its enrolled build class.
+func enrolledRole(scope auth.Scope) store.DeviceRole {
+	if scope.EnrolledDeviceRole != "" {
+		return scope.EnrolledDeviceRole
+	}
+	return scope.DeviceRole
 }
 
 func compatAuthFingerprint(scope auth.Scope) string {
