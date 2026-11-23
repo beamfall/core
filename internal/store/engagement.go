@@ -894,7 +894,12 @@ func boolToInt(value bool) int {
 // visibility (reveal, certification, trash, Library allowlist) rides on
 // mediaForEntitySQL's standard LibraryFilter funnel; a container hidden under
 // the filter is skipped whole.
-func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
+//
+// A non-empty class keeps the shelf to one media class (CORE-3331): only
+// engagement with Media of that class makes a container engaged, and only a
+// child of that class can be its frontier. Home's Up Next reads video and
+// Continue Listening audio, so episodes and tracks never share a shelf.
+func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, class MediaClass, limit, offset int) ([]SourceItem, error) {
 	containerKinds := s.containerKindsLocked()
 	if len(containerKinds) == 0 {
 		return []SourceItem{}, nil
@@ -941,12 +946,17 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 		for _, id := range chunk {
 			args = append(args, id)
 		}
-		// #nosec G202 -- only generated placeholders are interpolated; every value is a bound arg.
+		classClause := ""
+		if class != "" {
+			classClause = ` AND er.to_media_id IN (SELECT id FROM media WHERE media_class = ?)`
+			args = append(args, string(class))
+		}
+		// #nosec G202 -- only generated placeholders and a fixed clause are interpolated; every value is a bound arg.
 		relationRows, err := s.catalogR.QueryContext(ctx, `
 			SELECT er.from_entity_id, er.to_media_id
 			FROM entity_relation er
 			JOIN entity container ON container.id = er.from_entity_id AND container.kind IN (`+kindPlaceholders+`)
-			WHERE er.sort_order IS NOT NULL AND er.to_media_id IN (`+sqlPlaceholders(len(chunk))+`)
+			WHERE er.sort_order IS NOT NULL AND er.to_media_id IN (`+sqlPlaceholders(len(chunk))+`)`+classClause+`
 		`, args...)
 		if err != nil {
 			return nil, err
@@ -1023,7 +1033,7 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 		if anyHeld(held, up) || anyHeld(held, siblings) {
 			continue
 		}
-		frontier, err := s.nextUpFrontierSQL(ctx, profileID, filter, containerID, siblings)
+		frontier, err := s.nextUpFrontierSQL(ctx, profileID, filter, class, containerID, siblings)
 		if err != nil {
 			return nil, err
 		}
@@ -1235,8 +1245,9 @@ func (s *Store) nextUpGroupSQL(ctx context.Context, containerID EntityID, kinds 
 // nextUpFrontierSQL finds the frontier of containerID within its ordered
 // siblings: its first visible non-extra, complete child the Profile has not
 // watched, else the first such child of a later sibling, reading one sibling
-// at a time and stopping at the first hit.
-func (s *Store) nextUpFrontierSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, containerID EntityID, siblings []EntityID) (*SourceItem, error) {
+// at a time and stopping at the first hit. A non-empty class skips children
+// of other classes.
+func (s *Store) nextUpFrontierSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, class MediaClass, containerID EntityID, siblings []EntityID) (*SourceItem, error) {
 	after := false
 	for _, sibling := range siblings {
 		if sibling == containerID {
@@ -1252,7 +1263,7 @@ func (s *Store) nextUpFrontierSQL(ctx context.Context, profileID ProfileID, filt
 		if err != nil {
 			return nil, err
 		}
-		frontier, err := s.nextUpFirstUnwatchedSQL(ctx, profileID, children)
+		frontier, err := s.nextUpFirstUnwatchedSQL(ctx, profileID, class, children)
 		if err != nil || frontier != nil {
 			return frontier, err
 		}
@@ -1268,8 +1279,9 @@ func (s *Store) nextUpFrontierSQL(ctx context.Context, profileID ProfileID, filt
 // Source), so the exclusion is applied here at the shelf, not in it. A shelf
 // offers no Version choice, so a child with a recorded premature EOF is
 // skipped, as Continue Watching skips it. Children are checked in bounded
-// chunks, and only the remaining candidates are stat-checked for EOF.
-func (s *Store) nextUpFirstUnwatchedSQL(ctx context.Context, profileID ProfileID, children []SourceItem) (*SourceItem, error) {
+// chunks, and only the remaining candidates are stat-checked for EOF. A
+// non-empty class skips children of any other media class.
+func (s *Store) nextUpFirstUnwatchedSQL(ctx context.Context, profileID ProfileID, class MediaClass, children []SourceItem) (*SourceItem, error) {
 	for start := 0; start < len(children); start += engagementChunkSize {
 		chunk := children[start:min(start+engagementChunkSize, len(children))]
 		ids := make([]MediaID, len(chunk))
@@ -1279,6 +1291,15 @@ func (s *Store) nextUpFirstUnwatchedSQL(ctx context.Context, profileID ProfileID
 		extras, err := s.extraMediaIDsSQL(ctx, ids)
 		if err != nil {
 			return nil, err
+		}
+		if class != "" {
+			other, err := s.nextUpOtherClassSQL(ctx, class, ids)
+			if err != nil {
+				return nil, err
+			}
+			for id := range other {
+				extras[id] = true // skipped exactly as an Extra is
+			}
 		}
 		watched, err := s.nextUpWatchedSQL(ctx, profileID, ids)
 		if err != nil {
@@ -1302,6 +1323,34 @@ func (s *Store) nextUpFirstUnwatchedSQL(ctx context.Context, profileID ProfileID
 		}
 	}
 	return nil, nil
+}
+
+// nextUpOtherClassSQL reads which of ids (at most engagementChunkSize) are
+// Media of a class other than class.
+func (s *Store) nextUpOtherClassSQL(ctx context.Context, class MediaClass, ids []MediaID) (map[MediaID]bool, error) {
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, string(class))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT id FROM media
+		WHERE media_class <> ? AND id IN (`+sqlPlaceholders(len(ids))+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	other := map[MediaID]bool{}
+	for rows.Next() {
+		var id MediaID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		other[id] = true
+	}
+	return other, rows.Err()
 }
 
 // nextUpWatchedSQL reads which of ids (at most engagementChunkSize) the
