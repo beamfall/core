@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -53,13 +54,13 @@ func TestPlayerControllersGraphOwnerOnlyAndProfileField(t *testing.T) {
 	// Non-admin cannot call playerControllers or setPlayerControllers.
 	_, errs := post(t, h,
 		`{"query":"query C($p: String!){ playerControllers(profileID: $p){ allAdults include exclude } }","variables":{"p":"`+string(player.ID)+`"}}`,
-		authorizeViewer)
+		withPlayerControl(authorizeViewer))
 	if len(errs) == 0 || errs[0].Extensions.Code != ErrorCodeForbidden {
 		t.Fatalf("non-admin playerControllers = %#v, want FORBIDDEN", errs)
 	}
 	_, errs = post(t, h,
 		`{"query":"mutation S($p: String!, $a: Boolean){ setPlayerControllers(profileID: $p, allAdults: $a){ id } }","variables":{"p":"`+string(player.ID)+`","a":false}}`,
-		authorizeViewer)
+		withPlayerControl(authorizeViewer))
 	if len(errs) == 0 || errs[0].Extensions.Code != ErrorCodeForbidden {
 		t.Fatalf("non-admin setPlayerControllers = %#v, want FORBIDDEN", errs)
 	}
@@ -67,7 +68,7 @@ func TestPlayerControllersGraphOwnerOnlyAndProfileField(t *testing.T) {
 	// Owner reads via createProfile / setPlayerWalkUp / playerControllers / setPlayerControllers.
 	data, errs := post(t, h,
 		`{"query":"mutation C($name: String!, $kind: String!){ createProfile(name: $name, kind: $kind){ id kind playerControllers { profileID allAdults include exclude } } }","variables":{"name":"Lounge TV","kind":"player"}}`,
-		authorizeManager)
+		withPlayerControl(authorizeManager))
 	if len(errs) != 0 {
 		t.Fatalf("createProfile(player) errors = %#v", errs)
 	}
@@ -79,7 +80,7 @@ func TestPlayerControllersGraphOwnerOnlyAndProfileField(t *testing.T) {
 
 	data, errs = post(t, h,
 		`{"query":"mutation S($p: String!, $a: Boolean, $i: [String!], $e: [String!]){ setPlayerControllers(profileID: $p, allAdults: $a, include: $i, exclude: $e){ id playerControllers { allAdults include exclude } } }","variables":{"p":"`+created.ID+`","a":false,"i":["profile-managed"],"e":["profile-default"]}}`,
-		authorizeManager)
+		withPlayerControl(authorizeManager))
 	if len(errs) != 0 {
 		t.Fatalf("setPlayerControllers errors = %#v", errs)
 	}
@@ -93,7 +94,7 @@ func TestPlayerControllersGraphOwnerOnlyAndProfileField(t *testing.T) {
 
 	data, errs = post(t, h,
 		`{"query":"query C($p: String!){ playerControllers(profileID: $p){ profileID allAdults include exclude } }","variables":{"p":"`+created.ID+`"}}`,
-		authorizeManager)
+		withPlayerControl(authorizeManager))
 	if len(errs) != 0 {
 		t.Fatalf("playerControllers errors = %#v", errs)
 	}
@@ -172,7 +173,7 @@ func TestPlayerControlNonLeakingRefusalsAndVerbTable(t *testing.T) {
 		"commandID":        "cmd_ctrl_seed_0001",
 		"command":          "display-message",
 		"text":             "Ready",
-	}, authorizeViewer)
+	}, withPlayerControl(authorizeViewer))
 	if len(errs) != 0 {
 		t.Fatalf("seed controller display-message errors = %#v", errs)
 	}
@@ -210,7 +211,7 @@ func TestPlayerControlNonLeakingRefusalsAndVerbTable(t *testing.T) {
 	}
 	for _, tc := range nonCtrlCases {
 		t.Run("non-controller/"+tc.name, func(t *testing.T) {
-			_, errs := controlRendererSessionVars(t, h, tc.vars, authorizeManaged)
+			_, errs := controlRendererSessionVars(t, h, tc.vars, withPlayerControl(authorizeManaged))
 			if len(errs) == 0 || errs[0].Message != "unknown session" || errs[0].Extensions.Code != ErrorCodeNotFound {
 				t.Fatalf("errors = %#v, want NOT_FOUND unknown session", errs)
 			}
@@ -220,7 +221,7 @@ func TestPlayerControlNonLeakingRefusalsAndVerbTable(t *testing.T) {
 	h.EventStreamClosed(displaySess)
 	_, errs = controlRendererSessionVars(t, h, map[string]any{
 		"sessionID": string(displaySess), "expectedRevision": 1, "commandID": "cmd_nonctrl_off_1", "command": "stop",
-	}, authorizeManaged)
+	}, withPlayerControl(authorizeManaged))
 	if len(errs) == 0 || errs[0].Message != "unknown session" || errs[0].Extensions.Code != ErrorCodeNotFound {
 		t.Fatalf("non-controller offline errors = %#v, want NOT_FOUND unknown session", errs)
 	}
@@ -238,7 +239,7 @@ func TestPlayerControlNonLeakingRefusalsAndVerbTable(t *testing.T) {
 		"commandID":        "cmd_managed_locked_play",
 		"command":          "play-media",
 		"mediaID":          string(mediaLockedID),
-	}, authorizeManaged)
+	}, withPlayerControl(authorizeManaged))
 	if len(errs) == 0 || errs[0].Message != "unknown media" {
 		t.Fatalf("managed locked play-media = %#v, want unknown media", errs)
 	}
@@ -250,7 +251,7 @@ func TestPlayerControlNonLeakingRefusalsAndVerbTable(t *testing.T) {
 		"commandID":        "cmd_adult_restricted_play",
 		"command":          "play-media",
 		"mediaID":          "media-archive",
-	}, authorizeRevealed)
+	}, withPlayerControl(authorizeRevealed))
 	if len(errs) == 0 || errs[0].Message != "display cannot play this media" || errs[0].Extensions.Code != ErrorCodeForbidden {
 		t.Fatalf("revealed adult restricted play-media = %#v, want FORBIDDEN display cannot play this media", errs)
 	}
@@ -262,7 +263,7 @@ func TestPlayerControlNonLeakingRefusalsAndVerbTable(t *testing.T) {
 		"commandID":        "cmd_managed_beta_play",
 		"command":          "play-media",
 		"mediaID":          string(mediaBetaID),
-	}, authorizeManaged)
+	}, withPlayerControl(authorizeManaged))
 	if len(errs) != 0 {
 		t.Fatalf("managed play-media(media-beta) errors = %#v", errs)
 	}
@@ -282,7 +283,7 @@ func TestPlayerControlNonLeakingRefusalsAndVerbTable(t *testing.T) {
 		"expectedRevision": 2,
 		"commandID":        "cmd_managed_pause_locked",
 		"command":          "pause",
-	}, authorizeManaged)
+	}, withPlayerControl(authorizeManaged))
 	if len(errs) != 0 {
 		t.Fatalf("managed pause on locked item errors = %#v", errs)
 	}
@@ -292,7 +293,7 @@ func TestPlayerControlNonLeakingRefusalsAndVerbTable(t *testing.T) {
 		"expectedRevision": 3,
 		"commandID":        "cmd_managed_resume_locked",
 		"command":          "resume",
-	}, authorizeManaged)
+	}, withPlayerControl(authorizeManaged))
 	if len(errs) == 0 || errs[0].Extensions.Code != ErrorCodeForbidden {
 		t.Fatalf("managed resume on locked item = %#v, want FORBIDDEN", errs)
 	}
@@ -307,7 +308,7 @@ func TestPlayerControlNonLeakingRefusalsAndVerbTable(t *testing.T) {
 		"expectedRevision": 3,
 		"commandID":        "cmd_managed_pause_invis",
 		"command":          "pause",
-	}, authorizeManaged)
+	}, withPlayerControl(authorizeManaged))
 	if len(errs) == 0 || errs[0].Extensions.Code != ErrorCodeForbidden {
 		t.Fatalf("managed pause on invisible item = %#v, want FORBIDDEN", errs)
 	}
@@ -317,7 +318,7 @@ func TestPlayerControlNonLeakingRefusalsAndVerbTable(t *testing.T) {
 		"expectedRevision": 3,
 		"commandID":        "cmd_managed_stop_invis",
 		"command":          "stop",
-	}, authorizeManaged)
+	}, withPlayerControl(authorizeManaged))
 	if len(errs) != 0 {
 		t.Fatalf("managed stop on invisible item errors = %#v", errs)
 	}
@@ -364,7 +365,7 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 	if _, err := st.SetPlayerControllers(ctx, player.ID, true, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	data, errs := post(t, h, `{"query":"query { playerDisplays { handle sessionID displayName presence } }"}`, authorizeManaged)
+	data, errs := post(t, h, `{"query":"query { playerDisplays { handle sessionID displayName presence } }"}`, withPlayerControl(authorizeManaged))
 	if len(errs) != 0 {
 		t.Fatalf("non-controller playerDisplays errors = %#v", errs)
 	}
@@ -383,7 +384,7 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 	}
 
 	// Ready state before playback starts.
-	data, errs = post(t, h, `{"query":"query { playerDisplays { handle sessionID playerProfileID displayName presence lastSeenAt currentItem { mediaID title libraryID artworkURL privateItem label positionSeconds durationSeconds } } }"}`, authorizeViewer)
+	data, errs = post(t, h, `{"query":"query { playerDisplays { handle sessionID playerProfileID displayName presence lastSeenAt currentItem { mediaID title libraryID artworkURL privateItem label positionSeconds durationSeconds } } }"}`, withPlayerControl(authorizeViewer))
 	if len(errs) != 0 {
 		t.Fatalf("viewer playerDisplays errors = %#v", errs)
 	}
@@ -427,7 +428,7 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 	}
 
 	// Viewer (adult with library-local) sees full title/mediaID/libraryID/position/duration.
-	data, errs = post(t, h, `{"query":"query { playerDisplays { handle sessionID presence currentItem { mediaID title libraryID artworkURL privateItem label positionSeconds durationSeconds } } }"}`, authorizeViewer)
+	data, errs = post(t, h, `{"query":"query { playerDisplays { handle sessionID presence currentItem { mediaID title libraryID artworkURL privateItem label positionSeconds durationSeconds } } }"}`, withPlayerControl(authorizeViewer))
 	if len(errs) != 0 {
 		t.Fatalf("viewer playing playerDisplays errors = %#v", errs)
 	}
@@ -441,7 +442,7 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 	}
 
 	// Managed controller (without library-local) sees "Private item" with position & duration only!
-	data, errs = post(t, h, `{"query":"query { playerDisplays { handle sessionID presence currentItem { mediaID title libraryID artworkURL privateItem label positionSeconds durationSeconds } } }"}`, authorizeManaged)
+	data, errs = post(t, h, `{"query":"query { playerDisplays { handle sessionID presence currentItem { mediaID title libraryID artworkURL privateItem label positionSeconds durationSeconds } } }"}`, withPlayerControl(authorizeManaged))
 	if len(errs) != 0 {
 		t.Fatalf("managed playing playerDisplays errors = %#v", errs)
 	}
@@ -459,12 +460,12 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 	// Advance the revision with a transport command that leaves playback active.
 	if _, errs := controlRendererSessionVars(t, h, map[string]any{
 		"sessionID": string(displaySess), "expectedRevision": 1, "commandID": "cmd_snap_seed_0001", "command": "pause",
-	}, authorizeViewer); len(errs) != 0 {
+	}, withPlayerControl(authorizeViewer)); len(errs) != 0 {
 		t.Fatalf("seed stop errors = %#v", errs)
 	}
 	data, errs = controlRendererSessionVars(t, h, map[string]any{
 		"sessionID": string(displaySess), "expectedRevision": 1, "commandID": "cmd_snap_conflict_1", "command": "stop",
-	}, authorizeManaged)
+	}, withPlayerControl(authorizeManaged))
 	if len(errs) != 0 {
 		t.Fatalf("managed conflict errors = %#v", errs)
 	}
@@ -482,7 +483,7 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 	clock = clock.Add(59 * time.Second)
 	h.EventStreamHeartbeat(displaySess) // touch at +59s refreshes window
 	clock = clock.Add(59 * time.Second) // 59s since last touch -> still online!
-	data, errs = post(t, h, `{"query":"query { playerDisplays { presence } }"}`, authorizeViewer)
+	data, errs = post(t, h, `{"query":"query { playerDisplays { presence } }"}`, withPlayerControl(authorizeViewer))
 	if len(errs) != 0 {
 		t.Fatal(errs)
 	}
@@ -492,7 +493,7 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 	}
 
 	clock = clock.Add(2 * time.Second) // 61s since last heartbeat -> offline!
-	data, errs = post(t, h, `{"query":"query { playerDisplays { presence lastSeenAt currentItem { privateItem } } }"}`, authorizeViewer)
+	data, errs = post(t, h, `{"query":"query { playerDisplays { presence lastSeenAt currentItem { privateItem } } }"}`, withPlayerControl(authorizeViewer))
 	if len(errs) != 0 {
 		t.Fatal(errs)
 	}
@@ -503,7 +504,7 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 	}
 	_, errs = controlRendererSessionVars(t, h, map[string]any{
 		"sessionID": string(displaySess), "expectedRevision": 2, "commandID": "cmd_offline_ctrl_1", "command": "stop",
-	}, authorizeViewer)
+	}, withPlayerControl(authorizeViewer))
 	if len(errs) == 0 || errs[0].Message != "display offline" || errs[0].Extensions.Code != ErrorCodeConflict || errs[0].Extensions.Reason != ErrorReasonDisplayOffline {
 		t.Fatalf("offline controller errors = %#v, want CONFLICT/DISPLAY_OFFLINE display offline", errs)
 	}
@@ -543,7 +544,7 @@ func TestPlayerControlRateLimitPerControllerProfile(t *testing.T) {
 			"expectedRevision": i,
 			"commandID":        "cmd_rate_limit_" + string(rune('a'+i/26)) + string(rune('a'+i%26)) + "_01",
 			"command":          "stop",
-		}, authorizeViewer)
+		}, withPlayerControl(authorizeViewer))
 		if len(errs) != 0 {
 			t.Fatalf("command %d unexpected error = %#v", i+1, errs)
 		}
@@ -555,7 +556,7 @@ func TestPlayerControlRateLimitPerControllerProfile(t *testing.T) {
 		"expectedRevision": 30,
 		"commandID":        "cmd_rate_limit_31_01",
 		"command":          "stop",
-	}, authorizeViewer)
+	}, withPlayerControl(authorizeViewer))
 	if len(errs) == 0 || errs[0].Extensions.Code != ErrorCodeThrottled || !strings.Contains(errs[0].Message, "throttled") {
 		t.Fatalf("31st command errors = %#v, want THROTTLED", errs)
 	}
@@ -566,7 +567,7 @@ func TestPlayerControlRateLimitPerControllerProfile(t *testing.T) {
 		"expectedRevision": 30,
 		"commandID":        "cmd_rate_limit_other_1",
 		"command":          "stop",
-	}, authorizeAdult2)
+	}, withPlayerControl(authorizeAdult2))
 	if len(errs) != 0 {
 		t.Fatalf("second controller errors = %#v", errs)
 	}
@@ -579,7 +580,7 @@ func TestPlayerControlRateLimitPerControllerProfile(t *testing.T) {
 		"expectedRevision": 31,
 		"commandID":        "cmd_rate_limit_after_1",
 		"command":          "stop",
-	}, authorizeViewer)
+	}, withPlayerControl(authorizeViewer))
 	if len(errs) != 0 {
 		t.Fatalf("post-window command errors = %#v", errs)
 	}
@@ -603,14 +604,84 @@ func TestLegacyControlSessionRefusesPlayerTargetForController(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := `{"query":"mutation { controlSession(sessionID: \"` + string(displaySess) + `\", command: \"stop\") { command } }"}`
-	_, errs := post(t, h, body, authorizeViewer)
+	_, errs := post(t, h, body, withPlayerControl(authorizeViewer))
 	if len(errs) == 0 || errs[0].Message != "unknown session" {
 		t.Fatalf("legacy controlSession on a player target errors = %#v, want unknown session", errs)
 	}
 	_, errs = controlRendererSessionVars(t, h, map[string]any{
 		"sessionID": string(displaySess), "expectedRevision": 0, "commandID": "cmd_legacy_contrast_01", "command": "stop",
-	}, authorizeViewer)
+	}, withPlayerControl(authorizeViewer))
 	if len(errs) != 0 {
 		t.Fatalf("controlRendererSession by the same controller errors = %#v", errs)
+	}
+}
+
+// withPlayerControl declares player-control on top of authorize, as a current
+// controller build does (ADR-0240 D11).
+func withPlayerControl(authorize func(*http.Request)) func(*http.Request) {
+	return func(req *http.Request) {
+		authorize(req)
+		*req = *req.WithContext(auth.WithClientCapabilities(req.Context(), []string{string(capabilities.CapabilityPlayerControl)}))
+	}
+}
+
+// TestOlderControllerWithoutPlayerControlSeesNoPlayerRows pins ADR-0240 D11: a
+// controller build that never declared player-control gets the listing it had
+// before Player Profiles existed, and the same profile with the capability
+// gets the rows.
+func TestOlderControllerWithoutPlayerControlSeesNoPlayerRows(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	clock := time.Now().UTC().Truncate(time.Millisecond)
+	h := newTestHandlerWithStore(st)
+	h.nowFunc = func() time.Time { return clock }
+
+	player, displaySess := setupPlayerDisplayFixture(t, st, h, &clock)
+	if _, err := st.SetPlayerControllers(ctx, player.ID, true, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	const displaysQuery = `{"query":"query { playerDisplays { handle displayName } }"}`
+	for _, tc := range []struct {
+		name      string
+		authorize func(*http.Request)
+		want      int
+	}{
+		{"older controller", authorizeRevealed, 0},
+		{"player-control controller", withPlayerControl(authorizeRevealed), 1},
+	} {
+		data, errs := post(t, h, displaysQuery, tc.authorize)
+		if len(errs) != 0 {
+			t.Fatalf("%s playerDisplays errors = %#v", tc.name, errs)
+		}
+		var displays []PlayerDisplayInfo
+		mustUnmarshal(t, data["playerDisplays"], &displays)
+		if len(displays) != tc.want {
+			t.Fatalf("%s playerDisplays = %+v, want %d rows", tc.name, displays, tc.want)
+		}
+	}
+
+	_, errs := controlRendererSessionVars(t, h, map[string]any{
+		"sessionID": string(displaySess), "expectedRevision": 0, "commandID": "cmd_older_ctrl_0001", "command": "stop",
+	}, authorizeRevealed)
+	if len(errs) == 0 || errs[0].Message != "unknown session" {
+		t.Fatalf("older controller controlRendererSession errors = %#v, want unknown session", errs)
+	}
+
+	var session PartySessionInfo
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyStart(libraryIDs: ["library-local"]) {
+		id availableDisplays { handle }
+	} }`, nil, "partyStart", &session)
+	if len(session.AvailableDisplays) != 1 {
+		t.Fatalf("player-control availableDisplays = %+v", session.AvailableDisplays)
+	}
+	handle := session.AvailableDisplays[0].Handle
+	var older PartySessionInfo
+	execGraph(t, h, authorizeRevealed, `query { partySession { id availableDisplays { handle } } }`, nil, "partySession", &older)
+	if older.ID != session.ID || older.AvailableDisplays == nil || len(older.AvailableDisplays) != 0 {
+		t.Fatalf("older controller partySession = %+v, want an empty availableDisplays", older)
+	}
+	_, errs = post(t, h, `{"query":"mutation { partyScreenAddDisplay(handle: \"`+handle+`\") { screen { id } } }"}`, authorizeRevealed)
+	if len(errs) == 0 || errs[0].Message != "display not found" {
+		t.Fatalf("older controller partyScreenAddDisplay errors = %#v, want display not found", errs)
 	}
 }

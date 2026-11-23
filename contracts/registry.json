@@ -149,6 +149,17 @@
       "knownDrift": []
     },
     {
+      "boundary": "player-profile-wire",
+      "producer": "beamfall",
+      "artifact": "contracts/player-profile/v1/fixtures.json",
+      "version": "1.0.0",
+      "activeArtifactVersion": "1.0.0",
+      "license": "AGPL",
+      "consumers": ["beamfall-apple", "beamfall-android"],
+      "conformanceTest": "internal/conformance/player_profile_wire_contract_test.go - ADR-0240 D11 fixtures decode strictly into core's Player Profile response types and re-encode byte-identically; consumer kits vendor fixtures.json one-way",
+      "knownDrift": []
+    },
+    {
       "boundary": "offline-pack-wrap-vectors",
       "producer": "beamfall",
       "artifact": "internal/conformance/testdata/offlinepack-wrap/v1.0.0/vectors.json",

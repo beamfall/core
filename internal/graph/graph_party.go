@@ -247,7 +247,7 @@ func (h *Handler) partyScreenInfo(screen store.PartyScreenView) PartyScreenInfo 
 	return info
 }
 
-func (h *Handler) partySessionInfo(ctx context.Context, view store.PartyView) *PartySessionInfo {
+func (h *Handler) partySessionInfo(ctx context.Context, view store.PartyView, playerControl bool) *PartySessionInfo {
 	session := view.Session
 	info := &PartySessionInfo{
 		ID: session.ID, JoinCode: session.JoinCode, JoinPath: PartyJoinPath(session.JoinCode),
@@ -261,7 +261,10 @@ func (h *Handler) partySessionInfo(ctx context.Context, view store.PartyView) *P
 		Skipped:           h.partyEntryInfos(view.Skipped),
 		Participants:      make([]PartyParticipantInfo, len(view.Participants)),
 		Screens:           make([]PartyScreenInfo, len(view.Screens)),
-		AvailableDisplays: h.partyAvailableDisplays(ctx, session.HostProfileID, session.LibraryIDs, view.Screens),
+		AvailableDisplays: []PartyAvailableDisplayInfo{},
+	}
+	if playerControl {
+		info.AvailableDisplays = h.partyAvailableDisplays(ctx, session.HostProfileID, session.LibraryIDs, view.Screens)
 	}
 	for i, participant := range view.Participants {
 		info.Participants[i] = PartyParticipantInfo{
@@ -393,7 +396,7 @@ func (h *Handler) partySessionRead(ctx context.Context, scope auth.Scope) (*Part
 			return nil, err
 		}
 	}
-	return h.partySessionInfo(ctx, view), nil
+	return h.partySessionInfo(ctx, view, declaresPlayerControl(scope)), nil
 }
 
 // partyStageRead resolves partyStage for the caller's own screen registration.
@@ -702,6 +705,9 @@ func (h *Handler) partyScreenAddDisplayWrite(ctx context.Context, scope auth.Sco
 	handle := trimmedVariable(req, "handle")
 	if handle == "" {
 		return PartyScreenJoinResult{}, clientError("handle is required")
+	}
+	if !declaresPlayerControl(scope) {
+		return PartyScreenJoinResult{}, clientError("display not found")
 	}
 	carrier := trimmedVariable(req, "carrier")
 	var joinView store.PartyScreenJoinView

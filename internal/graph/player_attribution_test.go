@@ -105,6 +105,7 @@ func setupPlayerAttributionHarness(t *testing.T) (
 		req.Header.Set("X-Beamfall-Session", "session-alice")
 		req.Header.Set("X-Beamfall-Device", "device-alice")
 		req.Header.Set("X-Beamfall-Device-Secret", "alice-sec")
+		*req = *req.WithContext(auth.WithClientCapabilities(req.Context(), []string{string(capabilities.CapabilityPlayerControl)}))
 	}
 
 	bob, err = st.CreateProfile(ctx, "Bob", store.ProfileAdult, all)
@@ -121,6 +122,7 @@ func setupPlayerAttributionHarness(t *testing.T) (
 		req.Header.Set("X-Beamfall-Session", "session-bob")
 		req.Header.Set("X-Beamfall-Device", "device-bob")
 		req.Header.Set("X-Beamfall-Device-Secret", "bob-sec")
+		*req = *req.WithContext(auth.WithClientCapabilities(req.Context(), []string{string(capabilities.CapabilityPlayerControl)}))
 	}
 
 	authDisplay = func(req *http.Request) {
@@ -392,6 +394,7 @@ func TestPlayerAttributionOldGenerationDeletedOriginatorWalkUpAndAmbient(t *test
 		req.Header.Set("X-Beamfall-Session", "session-charlie")
 		req.Header.Set("X-Beamfall-Device", "device-charlie")
 		req.Header.Set("X-Beamfall-Device-Secret", "c-sec")
+		*req = *req.WithContext(auth.WithClientCapabilities(req.Context(), []string{string(capabilities.CapabilityPlayerControl)}))
 	}
 	_, errs = controlRendererSessionVars(t, h, map[string]any{
 		"sessionID": string(displaySess2), "expectedRevision": 1, "commandID": "cmd_charlie_pending1",

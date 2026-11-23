@@ -398,7 +398,7 @@ func (h *Handler) authorizeSessionControl(
 	}
 
 	if targetProfile.Kind == store.ProfilePlayer {
-		if !rendererControl {
+		if !rendererControl || !declaresPlayerControl(scope) {
 			return store.Session{}, nil, "", nil, clientError("unknown session")
 		}
 		return h.authorizePlayerSessionControl(ctx, scope, target, targetProfile, command, args, now)

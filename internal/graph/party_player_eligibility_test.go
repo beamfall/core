@@ -36,21 +36,21 @@ func TestPartyStageBindingTwoRegistrationsAndNonLeakingRefusal(t *testing.T) {
 	h := newTestHandlerWithStore(st)
 
 	var session PartySessionInfo
-	execGraph(t, h, authorizeRevealed, `mutation { partyStart(libraryIDs: ["library-local", "library-archive"]) { id } }`, nil, "partyStart", &session)
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdd(mediaID: "media-alpha", participantName: "Avery") { id } }`, nil, "partyAdd", &session)
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyStart(libraryIDs: ["library-local", "library-archive"]) { id } }`, nil, "partyStart", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdd(mediaID: "media-alpha", participantName: "Avery") { id } }`, nil, "partyAdd", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
 
 	// One Session registers two screens, each keeping its own flags.
 	var scr1, scr2 PartyScreenInfo
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Main Popout", kind: "popout", carrier: "local") { id lead ticker } }`, session.ID), nil, "partyScreenRegister", &scr1)
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Booth", kind: "joined", carrier: "local") { id lead ticker } }`, session.ID), nil, "partyScreenRegister", &scr2)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Main Popout", kind: "popout", carrier: "local") { id lead ticker } }`, session.ID), nil, "partyScreenRegister", &scr1)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Booth", kind: "joined", carrier: "local") { id lead ticker } }`, session.ID), nil, "partyScreenRegister", &scr2)
 	if scr1.Ticker || !scr2.Ticker {
 		t.Fatalf("flags = (%v, %v), want (false, true)", scr1.Ticker, scr2.Ticker)
 	}
 
 	var st1, st2 PartyStageInfo
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`{ partyStage(sessionID: %q, screenID: %q) { sessionID ticker lead current { id mediaID title } } }`, session.ID, scr1.ID), nil, "partyStage", &st1)
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`{ partyStage(sessionID: %q, screenID: %q) { sessionID ticker lead current { id mediaID title } } }`, session.ID, scr2.ID), nil, "partyStage", &st2)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`{ partyStage(sessionID: %q, screenID: %q) { sessionID ticker lead current { id mediaID title } } }`, session.ID, scr1.ID), nil, "partyStage", &st1)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`{ partyStage(sessionID: %q, screenID: %q) { sessionID ticker lead current { id mediaID title } } }`, session.ID, scr2.ID), nil, "partyStage", &st2)
 	if st1.Ticker || !st1.Lead || !st2.Ticker || st2.Lead {
 		t.Fatalf("stage flags mismatch: st1=%+v st2=%+v", st1, st2)
 	}
@@ -60,8 +60,8 @@ func TestPartyStageBindingTwoRegistrationsAndNonLeakingRefusal(t *testing.T) {
 		b, _ := json.Marshal(map[string]any{"query": q})
 		return string(b)
 	}
-	_, errOther := post(t, h, marshalQuery(fmt.Sprintf(`query { partyStage(sessionID: %q, screenID: %q) { sessionID } }`, session.ID, scr1.ID)), authorizeViewer)
-	_, errMissing := post(t, h, marshalQuery(fmt.Sprintf(`query { partyStage(sessionID: %q, screenID: %q) { sessionID } }`, session.ID, "screen-does-not-exist")), authorizeViewer)
+	_, errOther := post(t, h, marshalQuery(fmt.Sprintf(`query { partyStage(sessionID: %q, screenID: %q) { sessionID } }`, session.ID, scr1.ID)), withPlayerControl(authorizeViewer))
+	_, errMissing := post(t, h, marshalQuery(fmt.Sprintf(`query { partyStage(sessionID: %q, screenID: %q) { sessionID } }`, session.ID, "screen-does-not-exist")), withPlayerControl(authorizeViewer))
 	if len(errOther) != 1 || len(errMissing) != 1 ||
 		errOther[0].Message != errMissing[0].Message ||
 		errOther[0].Extensions.Code != ErrorCodeNotFound ||
@@ -83,14 +83,14 @@ func TestPartyScreenLeadRefusesWhenAccessScheduleCloses(t *testing.T) {
 	}
 
 	var session PartySessionInfo
-	execGraph(t, h, authorizeRevealed, `mutation { partyStart(libraryIDs: ["library-local"]) { id } }`, nil, "partyStart", &session)
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdd(mediaID: "media-alpha", participantName: "Avery") { id } }`, nil, "partyAdd", &session)
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyStart(libraryIDs: ["library-local"]) { id } }`, nil, "partyStart", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdd(mediaID: "media-alpha", participantName: "Avery") { id } }`, nil, "partyAdd", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
 	var popout, joined PartyScreenInfo
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Host", kind: "popout", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &popout)
-	execGraph(t, h, authorizeManaged, fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Joined", kind: "joined", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &joined)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Host", kind: "popout", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &popout)
+	execGraph(t, h, withPlayerControl(authorizeManaged), fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Joined", kind: "joined", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &joined)
 	const selectLead = `mutation { partyScreenLead(screenID: %q) { id screens { id lead } } }`
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(selectLead, joined.ID), nil, "partyScreenLead", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(selectLead, joined.ID), nil, "partyScreenLead", &session)
 	if len(session.Screens) != 2 {
 		t.Fatalf("screens while schedule is open = %+v, want both registrations", session.Screens)
 	}
@@ -105,11 +105,11 @@ func TestPartyScreenLeadRefusesWhenAccessScheduleCloses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, errs := post(t, h, string(requestBody), authorizeRevealed)
+	_, errs := post(t, h, string(requestBody), withPlayerControl(authorizeRevealed))
 	if len(errs) != 1 || errs[0].Extensions.Code != ErrorCodeForbidden || errs[0].Message != "screen cannot play the current entry" {
 		t.Fatalf("selecting lead after the schedule closes = %#v, want ineligible refusal", errs)
 	}
-	execGraph(t, h, authorizeRevealed, `{ partySession { id screens { id lead } } }`, nil, "partySession", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `{ partySession { id screens { id lead } } }`, nil, "partySession", &session)
 	if len(session.Screens) != 2 {
 		t.Fatalf("screens after schedule closes = %+v, want both registrations", session.Screens)
 	}
@@ -158,24 +158,24 @@ func TestPartyStageEligibilityPerScreenAndRelockSwitchProfile(t *testing.T) {
 
 	// Host (revealed) starts party with local, archive, and certLib.
 	var session PartySessionInfo
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyStart(libraryIDs: ["library-local", "library-archive", %q]) { id } }`, certLib.ID), nil, "partyStart", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`mutation { partyStart(libraryIDs: ["library-local", "library-archive", %q]) { id } }`, certLib.ID), nil, "partyStart", &session)
 	// Current = media-archive (restricted); UpNext[0] = lockedMedia (visible in managed LibraryFilter, denied in PlaybackFilter); UpNext[1] = media-archive.
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdd(mediaID: "media-archive", participantName: "Rowan") { id } }`, nil, "partyAdd", &session)
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyAdd(mediaID: %q, participantName: "Casey") { id } }`, lockedMedia), nil, "partyAdd", &session)
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdd(mediaID: "media-archive", participantName: "Blake") { id } }`, nil, "partyAdd", &session)
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdd(mediaID: "media-archive", participantName: "Rowan") { id } }`, nil, "partyAdd", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`mutation { partyAdd(mediaID: %q, participantName: "Casey") { id } }`, lockedMedia), nil, "partyAdd", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdd(mediaID: "media-archive", participantName: "Blake") { id } }`, nil, "partyAdd", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
 
 	// Host screen (revealed) + ordinary joined screen on session-default (unrevealed) + managed screen (session-managed).
 	var hostScr, unrevScr, managedScr PartyScreenInfo
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Host", kind: "popout", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &hostScr)
-	execGraph(t, h, authorizeViewer, fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Viewer", kind: "joined", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &unrevScr)
-	execGraph(t, h, authorizeManaged, fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Managed", kind: "joined", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &managedScr)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Host", kind: "popout", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &hostScr)
+	execGraph(t, h, withPlayerControl(authorizeViewer), fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Viewer", kind: "joined", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &unrevScr)
+	execGraph(t, h, withPlayerControl(authorizeManaged), fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Managed", kind: "joined", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &managedScr)
 
 	const stageQ = `{ partyStage(sessionID: %q, screenID: %q) { current { id mediaID title artworkURL participantName ineligible label } playback { entryID } upNext { id mediaID title artworkURL participantName ineligible label } } }`
 	var hostStage, unrevStage, managedStage PartyStageInfo
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(stageQ, session.ID, hostScr.ID), nil, "partyStage", &hostStage)
-	execGraph(t, h, authorizeViewer, fmt.Sprintf(stageQ, session.ID, unrevScr.ID), nil, "partyStage", &unrevStage)
-	execGraph(t, h, authorizeManaged, fmt.Sprintf(stageQ, session.ID, managedScr.ID), nil, "partyStage", &managedStage)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(stageQ, session.ID, hostScr.ID), nil, "partyStage", &hostStage)
+	execGraph(t, h, withPlayerControl(authorizeViewer), fmt.Sprintf(stageQ, session.ID, unrevScr.ID), nil, "partyStage", &unrevStage)
+	execGraph(t, h, withPlayerControl(authorizeManaged), fmt.Sprintf(stageQ, session.ID, managedScr.ID), nil, "partyStage", &managedStage)
 
 	// Eligible host screen sees full metadata.
 	if hostStage.Current == nil || hostStage.Current.MediaID != "media-archive" || hostStage.Current.Title == "" || hostStage.Current.Ineligible {
@@ -203,8 +203,8 @@ func TestPartyStageEligibilityPerScreenAndRelockSwitchProfile(t *testing.T) {
 	}
 
 	// Advance to lockedMedia: managed screen uses PlaybackFilter for current -> ineligible ("Up next: Casey")!
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
-	execGraph(t, h, authorizeManaged, fmt.Sprintf(stageQ, session.ID, managedScr.ID), nil, "partyStage", &managedStage)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
+	execGraph(t, h, withPlayerControl(authorizeManaged), fmt.Sprintf(stageQ, session.ID, managedScr.ID), nil, "partyStage", &managedStage)
 	if managedStage.Current == nil || !managedStage.Current.Ineligible || managedStage.Current.MediaID != "" || managedStage.Current.Title != "" || managedStage.Current.Label != "Up next: Casey" || managedStage.Playback != nil {
 		t.Fatalf("managed current for locked media = %+v, playback=%+v", managedStage.Current, managedStage.Playback)
 	}
@@ -232,7 +232,7 @@ func TestPartyStageEligibilityPerScreenAndRelockSwitchProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Advance back to a restricted item (media-archive).
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
 	var jordanStage PartyStageInfo
 	execGraph(t, h, authJordan, fmt.Sprintf(stageQ, session.ID, jordanScr.ID), nil, "partyStage", &jordanStage)
 	if jordanStage.Current == nil || jordanStage.Current.MediaID != "media-archive" || jordanStage.Current.Ineligible {
@@ -302,7 +302,7 @@ func TestPartyPlayerDisplayJoinLeadInPartyD4AndRelease(t *testing.T) {
 
 	// Host starts party with local + archive.
 	var session PartySessionInfo
-	execGraph(t, h, authorizeRevealed, `mutation { partyStart(libraryIDs: ["library-local", "library-archive"]) {
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyStart(libraryIDs: ["library-local", "library-archive"]) {
 		id availableDisplays { handle displayName presence joined coversLibraries missingLibraryIDs }
 	} }`, nil, "partyStart", &session)
 	// Screens list offers only controlled displays (Karaoke room TV, NOT Bedroom TV).
@@ -319,21 +319,21 @@ func TestPartyPlayerDisplayJoinLeadInPartyD4AndRelease(t *testing.T) {
 		b, _ := json.Marshal(map[string]any{"query": q})
 		return string(b)
 	}
-	_, unctrlErrs := post(t, h, marshalQuery(fmt.Sprintf(`mutation { partyScreenAddDisplay(handle: %q) { screen { id } } }`, bedroomHandle)), authorizeRevealed)
+	_, unctrlErrs := post(t, h, marshalQuery(fmt.Sprintf(`mutation { partyScreenAddDisplay(handle: %q) { screen { id } } }`, bedroomHandle)), withPlayerControl(authorizeRevealed))
 	if len(unctrlErrs) != 1 || unctrlErrs[0].Extensions.Code != ErrorCodeNotFound {
 		t.Fatalf("add uncontrolled display = %#v, want NOT_FOUND", unctrlErrs)
 	}
 
 	// Register popout lead + queue restricted media-archive then unrestricted media-alpha.
 	var popout PartyScreenInfo
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Host Popout", kind: "popout", carrier: "local") { id lead } }`, session.ID), nil, "partyScreenRegister", &popout)
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdd(mediaID: "media-archive", participantName: "Rowan") { id } }`, nil, "partyAdd", &session)
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdd(mediaID: "media-alpha", participantName: "Avery") { id } }`, nil, "partyAdd", &session)
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Host Popout", kind: "popout", carrier: "local") { id lead } }`, session.ID), nil, "partyScreenRegister", &popout)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdd(mediaID: "media-archive", participantName: "Rowan") { id } }`, nil, "partyAdd", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdd(mediaID: "media-alpha", participantName: "Avery") { id } }`, nil, "partyAdd", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
 
 	// Host adds Karaoke room TV -> joins as follower, reports missing library-archive.
 	var joinRes PartyScreenJoinResult
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyScreenAddDisplay(handle: %q) {
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`mutation { partyScreenAddDisplay(handle: %q) {
 		coversLibraries missingLibraryIDs
 		screen { id kind lead ticker playerDisplay playerDisplayHandle }
 		session { id screens { id lead playerDisplay } availableDisplays { handle joined } }
@@ -344,14 +344,14 @@ func TestPartyPlayerDisplayJoinLeadInPartyD4AndRelease(t *testing.T) {
 	}
 
 	// While media-archive (ineligible for display) is current, choosing display as lead is refused; popout stays lead.
-	_, leadErrs := post(t, h, marshalQuery(fmt.Sprintf(`mutation { partyScreenLead(screenID: %q) { id } }`, joinRes.Screen.ID)), authorizeRevealed)
+	_, leadErrs := post(t, h, marshalQuery(fmt.Sprintf(`mutation { partyScreenLead(screenID: %q) { id } }`, joinRes.Screen.ID)), withPlayerControl(authorizeRevealed))
 	if len(leadErrs) != 1 || leadErrs[0].Extensions.Code != ErrorCodeForbidden {
 		t.Fatalf("ineligible partyScreenLead = %#v, want FORBIDDEN", leadErrs)
 	}
 
 	// Advance to media-alpha (eligible for display) -> display CAN be chosen lead.
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyScreenLead(screenID: %q) { id screens { id lead } } }`, joinRes.Screen.ID), nil, "partyScreenLead", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`mutation { partyScreenLead(screenID: %q) { id screens { id lead } } }`, joinRes.Screen.ID), nil, "partyScreenLead", &session)
 	var dispLead bool
 	for _, scr := range session.Screens {
 		if scr.ID == joinRes.Screen.ID {
@@ -381,8 +381,8 @@ func TestPartyPlayerDisplayJoinLeadInPartyD4AndRelease(t *testing.T) {
 	}
 	// If the rotation advances to an entry the chosen-lead display cannot play, the pop-out leads instead,
 	// and media-alpha is no longer admitted as the current party item.
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdd(mediaID: "media-archive", participantName: "Blake") { id } }`, nil, "partyAdd", &session)
-	execGraph(t, h, authorizeRevealed, `mutation { partyAdvance { id screens { id lead } } }`, nil, "partyAdvance", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdd(mediaID: "media-archive", participantName: "Blake") { id } }`, nil, "partyAdd", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyAdvance { id screens { id lead } } }`, nil, "partyAdvance", &session)
 	var popoutLeads, displayLeads bool
 	for _, scr := range session.Screens {
 		if scr.ID == popout.ID {
@@ -407,7 +407,7 @@ func TestPartyPlayerDisplayJoinLeadInPartyD4AndRelease(t *testing.T) {
 		"expectedRevision": 0,
 		"commandID":        "cmd_party_pause_0001",
 		"command":          "pause",
-	}, authorizeViewer)
+	}, withPlayerControl(authorizeViewer))
 	if len(inPartyErrs) != 1 || inPartyErrs[0].Extensions.Code != ErrorCodeConflict ||
 		inPartyErrs[0].Extensions.Reason != ErrorReasonDisplayInParty ||
 		!strings.Contains(inPartyErrs[0].Message, "in party") {
@@ -418,7 +418,7 @@ func TestPartyPlayerDisplayJoinLeadInPartyD4AndRelease(t *testing.T) {
 		"expectedRevision": 0,
 		"commandID":        "cmd_party_nonctrl_01",
 		"command":          "pause",
-	}, authorizeManaged)
+	}, withPlayerControl(authorizeManaged))
 	if len(nonCtrlErrs) != 1 || nonCtrlErrs[0].Extensions.Code != ErrorCodeNotFound || nonCtrlErrs[0].Message != "unknown session" {
 		t.Fatalf("non-controller D4 while in party = %#v, want NOT_FOUND unknown session", nonCtrlErrs)
 	}
@@ -429,7 +429,7 @@ func TestPartyPlayerDisplayJoinLeadInPartyD4AndRelease(t *testing.T) {
 		"expectedRevision": 0,
 		"commandID":        "cmd_party_stop_00001",
 		"command":          "stop",
-	}, authorizeViewer)
+	}, withPlayerControl(authorizeViewer))
 	if len(stopErrs) != 0 {
 		t.Fatalf("stop in party errors = %#v", stopErrs)
 	}
@@ -449,17 +449,17 @@ func TestPartyPlayerDisplayJoinLeadInPartyD4AndRelease(t *testing.T) {
 		"commandID":        "cmd_after_stop_play1",
 		"command":          "play-media",
 		"mediaID":          "media-alpha",
-	}, authorizeViewer)
+	}, withPlayerControl(authorizeViewer))
 	if len(postStopPlayErrs) != 0 {
 		t.Fatalf("play-media after stop release errors = %#v", postStopPlayErrs)
 	}
 
 	// Re-join display, then remove host from controllers list -> releases display!
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyScreenAddDisplay(handle: %q) { screen { id } } }`, displayHandle), nil, "partyScreenAddDisplay", &joinRes)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`mutation { partyScreenAddDisplay(handle: %q) { screen { id } } }`, displayHandle), nil, "partyScreenAddDisplay", &joinRes)
 	if _, err := st.SetPlayerControllers(ctx, player.ID, false, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	execGraph(t, h, authorizeRevealed, `{ partySession { id screens { id } } }`, nil, "partySession", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `{ partySession { id screens { id } } }`, nil, "partySession", &session)
 	if len(session.Screens) != 1 || session.Screens[0].ID != popout.ID {
 		t.Fatalf("screens after controller removal = %+v, want only popout", session.Screens)
 	}
@@ -468,7 +468,7 @@ func TestPartyPlayerDisplayJoinLeadInPartyD4AndRelease(t *testing.T) {
 	if _, err := st.SetPlayerControllers(ctx, player.ID, true, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyScreenAddDisplay(handle: %q) { screen { id } } }`, displayHandle), nil, "partyScreenAddDisplay", &joinRes)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), fmt.Sprintf(`mutation { partyScreenAddDisplay(handle: %q) { screen { id } } }`, displayHandle), nil, "partyScreenAddDisplay", &joinRes)
 	// Demote a second adult host -> managed via UpdateProfileSettings -> lazily releases on next party change!
 	host2, err := st.CreateProfile(ctx, "Second Host", store.ProfileAdult, store.LibraryFilter{AllLibraries: true})
 	if err != nil {
@@ -488,14 +488,14 @@ func TestPartyPlayerDisplayJoinLeadInPartyD4AndRelease(t *testing.T) {
 	}
 	// End first party, start party as host2, join display, demote host2 -> managed, then run partyUpdate!
 	var ended bool
-	execGraph(t, h, authorizeRevealed, `mutation { partyEnd }`, nil, "partyEnd", &ended)
-	execGraph(t, h, authHost2, `mutation { partyStart(libraryIDs: ["library-local"]) { id } }`, nil, "partyStart", &session)
-	execGraph(t, h, authHost2, fmt.Sprintf(`mutation { partyScreenAddDisplay(handle: %q) { screen { id } } }`, displayHandle), nil, "partyScreenAddDisplay", &joinRes)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyEnd }`, nil, "partyEnd", &ended)
+	execGraph(t, h, withPlayerControl(authHost2), `mutation { partyStart(libraryIDs: ["library-local"]) { id } }`, nil, "partyStart", &session)
+	execGraph(t, h, withPlayerControl(authHost2), fmt.Sprintf(`mutation { partyScreenAddDisplay(handle: %q) { screen { id } } }`, displayHandle), nil, "partyScreenAddDisplay", &joinRes)
 	managedKind := store.ProfileManaged
 	if _, err := st.UpdateProfileSettings(ctx, host2.ID, store.ProfileSettings{Kind: &managedKind}); err != nil {
 		t.Fatal(err)
 	}
-	execGraph(t, h, authHost2, `mutation { partyUpdate(autoAdd: true) { id screens { id } } }`, nil, "partyUpdate", &session)
+	execGraph(t, h, withPlayerControl(authHost2), `mutation { partyUpdate(autoAdd: true) { id screens { id } } }`, nil, "partyUpdate", &session)
 	if len(session.Screens) != 0 {
 		t.Fatalf("screens after lazy host demotion = %+v, want empty", session.Screens)
 	}
@@ -507,7 +507,7 @@ func TestPartyStageAndD4RejectGuestTokens(t *testing.T) {
 	ctx := context.Background()
 
 	var session PartySessionInfo
-	execGraph(t, h, authorizeRevealed, `mutation { partyStart(libraryIDs: ["library-local"]) { id joinCode } }`, nil, "partyStart", &session)
+	execGraph(t, h, withPlayerControl(authorizeRevealed), `mutation { partyStart(libraryIDs: ["library-local"]) { id joinCode } }`, nil, "partyStart", &session)
 	if _, err := st.JoinParty(ctx, session.JoinCode, "Guest Casey", "guest-token-hash-only"); err != nil {
 		t.Fatal(err)
 	}

@@ -376,8 +376,14 @@ func (h *Handler) playerDisplayHandle(deviceID store.DeviceID) string {
 	return string(deviceID)
 }
 
+// declaresPlayerControl reports whether the caller's client declared
+// player-control. Older controllers never see player rows (ADR-0240 D11).
+func declaresPlayerControl(scope auth.Scope) bool {
+	return scope.HasClientCapability(string(capabilities.CapabilityPlayerControl))
+}
+
 func (h *Handler) playerDisplays(ctx context.Context, scope auth.Scope) ([]PlayerDisplayInfo, error) {
-	if scope.ProfileID == "" || scope.IsPlayerBound() {
+	if scope.ProfileID == "" || scope.IsPlayerBound() || !declaresPlayerControl(scope) {
 		return []PlayerDisplayInfo{}, nil
 	}
 	bound, err := h.store.PlayerBoundDevices(ctx)
