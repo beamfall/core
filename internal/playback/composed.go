@@ -77,7 +77,7 @@ func (s *Service) SetPictureComposer(composer PictureComposer) {
 // composed encode (CORE-3149: the xBR upscale replaced nearest-neighbour;
 // CORE-3150: the Oscillux CD+G presenter replaced xBR). Bump it with every
 // re-pin of the presenter module that changes its frames.
-const composedGraphicsRecipe = "oscillux-cdg-v0.2.19"
+const composedGraphicsRecipe = "oscillux-cdg-v0.2.20"
 
 func (p ComposedPicture) validate() error {
 	if (p.GraphicsPath == "") == (p.TimedText == "") {
