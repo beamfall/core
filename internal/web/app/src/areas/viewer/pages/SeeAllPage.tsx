@@ -18,7 +18,11 @@ import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
-import { groupByContainer, groupsNewByContainer } from "../lib/containerGroups";
+import {
+  groupByContainer,
+  groupsNewByContainer,
+  withContainerPoster,
+} from "../lib/containerGroups";
 import {
   fetchSectionItems,
   findHomeRecentSection,
@@ -141,14 +145,15 @@ function SeeAllResults({
   const seenEpochRef = useRef(engagementEpoch);
   // A new-items shelf's See All folds the same way the shelf does (CORE-2823),
   // over everything paged in so far, so a container split across pages still
-  // reads as one card.
-  const items = useMemo(
-    () =>
-      ctx && groupsNewByContainer(ctx.section)
-        ? groupByContainer(loaded, (count) => t("cardNewCount", { count }))
-        : loaded,
-    [ctx, loaded, t],
-  );
+  // reads as one card; on an entity page it does not fold, as the shelf does not.
+  // Continue Watching draws its items with their container's poster, as its shelf does.
+  const items = useMemo(() => {
+    if (!ctx) return loaded;
+    if (ctx.section.source?.kind === "continue-watching") return loaded.map(withContainerPoster);
+    return !ctx.entityID && groupsNewByContainer(ctx.section)
+      ? groupByContainer(loaded, (count) => t("cardNewCount", { count }))
+      : loaded;
+  }, [ctx, loaded, t]);
   const gridRef = useRef<HTMLUListElement | null>(null);
   const gridWindow = useVirtualGrid({
     gridRef,
