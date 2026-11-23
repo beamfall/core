@@ -129,13 +129,22 @@ func compatEnrollmentRole(scope auth.Scope) capabilities.EnrollmentRole {
 		return capabilities.EnrollmentRoleAdminToken
 	case scope.APIKeyID != "":
 		return capabilities.EnrollmentRoleAPIKey
-	case scope.DeviceRole == store.DeviceRoleManager:
+	case enrolledRole(scope) == store.DeviceRoleManager:
 		return capabilities.EnrollmentRoleManager
-	case scope.DeviceRole == store.DeviceRoleViewer:
+	case enrolledRole(scope) == store.DeviceRoleViewer:
 		return capabilities.EnrollmentRoleViewer
 	default:
 		return ""
 	}
+}
+
+// enrolledRole is the Device's enrolled role for build provenance: a
+// player-bound Device authorizes as viewer but keeps its enrolled build class.
+func enrolledRole(scope auth.Scope) store.DeviceRole {
+	if scope.EnrolledDeviceRole != "" {
+		return scope.EnrolledDeviceRole
+	}
+	return scope.DeviceRole
 }
 
 func compatAuthFingerprint(scope auth.Scope) string {
@@ -163,6 +172,7 @@ func compatAuthFingerprint(scope auth.Scope) string {
 		AllLibraries            bool     `json:"allLibraries"`
 		PlayerProfileID         string   `json:"playerProfileID,omitempty"`
 		PlayerBindingGeneration int      `json:"playerBindingGeneration,omitempty"`
+		EnrolledDeviceRole      string   `json:"enrolledDeviceRole,omitempty"`
 	}{
 		DeviceID:                string(scope.DeviceID),
 		DeviceRole:              string(scope.DeviceRole),
@@ -177,6 +187,11 @@ func compatAuthFingerprint(scope auth.Scope) string {
 		AllLibraries:            scope.AllLibraries,
 		PlayerProfileID:         string(scope.PlayerProfileID),
 		PlayerBindingGeneration: scope.PlayerBindingGeneration,
+	}
+	// A player-bound Device authorizes as viewer but passes provenance on its
+	// enrolled role, so a change to that role must invalidate the decision.
+	if enrolled := enrolledRole(scope); enrolled != scope.DeviceRole {
+		canonical.EnrolledDeviceRole = string(enrolled)
 	}
 	encoded, _ := json.Marshal(canonical)
 	sum := sha256.Sum256(encoded)
