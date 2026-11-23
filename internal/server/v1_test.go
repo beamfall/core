@@ -1289,3 +1289,29 @@ func TestV1SessionsExcludeIdlePlaybacksButControlReachesThem(t *testing.T) {
 		t.Fatalf("POST /v1/playback-control (idle) = %d, want 202: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestV1SessionsRevealSuppressesRestrictedMedia(t *testing.T) {
+	srv, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	future := time.Now().UTC().Add(time.Hour)
+	if err := st.RecordStreamToken(ctx, "session-default", "profile-default", "device-tv", "media-direct", "media-archive", true, future); err != nil {
+		t.Fatalf("RecordStreamToken: %v", err)
+	}
+	boundKey := mintKey(t, st, "bound-sessions-reveal", "profile-default", store.ScopeReadSessions)
+
+	rec := v1Get(t, srv, "/v1/sessions", boundKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /v1/sessions = %d: %s", rec.Code, rec.Body.String())
+	}
+	var listed v1SessionsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode /v1/sessions: %v", err)
+	}
+	if len(listed.Sessions) != 1 || listed.Sessions[0].SessionID != "session-default" {
+		t.Fatalf("/v1/sessions = %#v, want session-default", listed.Sessions)
+	}
+	s := listed.Sessions[0]
+	if s.MediaID != "" || s.Title != "" || s.LibraryID != "" {
+		t.Fatalf("unrevealed /v1/sessions leaked restricted media identity: %q/%q/%q", s.MediaID, s.Title, s.LibraryID)
+	}
+}

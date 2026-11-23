@@ -399,10 +399,9 @@ func (s *Server) v1MediaByExternalID(w http.ResponseWriter, r *http.Request) {
 }
 
 // v1SessionItem is the wire shape for one active playback session on the /v1/
-// sessions surface. Media-identifying fields are empty when the
-// session is playing Media the key cannot currently see — the store's
-// ActiveSessions read suppresses Title/LibraryID under the LibraryFilter, so
-// the Reveal contract holds here exactly as on the Console dashboard.
+// sessions surface. Media-identifying fields (MediaID, Title, LibraryID) are
+// empty when the session is playing Media the key cannot currently see,
+// upholding ADR-0035 §7.
 type v1SessionItem struct {
 	SessionID       string `json:"sessionID"`
 	ProfileID       string `json:"profileID"`
@@ -448,11 +447,15 @@ func (s *Server) v1Sessions(w http.ResponseWriter, r *http.Request) {
 		if scope.ProfileID != "" && session.ProfileID != scope.ProfileID {
 			continue
 		}
+		mediaID := string(session.MediaID)
+		if session.Title == "" {
+			mediaID = ""
+		}
 		out = append(out, v1SessionItem{
 			SessionID:       string(session.SessionID),
 			ProfileID:       string(session.ProfileID),
 			DeviceName:      session.DeviceName,
-			MediaID:         string(session.MediaID),
+			MediaID:         mediaID,
 			Title:           session.Title,
 			LibraryID:       string(session.LibraryID),
 			Transcoding:     session.Transcoding,

@@ -102,13 +102,13 @@ func TestProfileSessionsRevealSuppressesRestrictedMedia(t *testing.T) {
 	if len(got) != 1 || got[0].SessionID != "session-default" {
 		t.Fatalf("unrevealed listed = %#v, want session-default", got)
 	}
-	if got[0].Title != "" || got[0].LibraryID != "" {
-		t.Errorf("unrevealed caller leaked restricted media identity: %q/%q", got[0].Title, got[0].LibraryID)
+	if got[0].MediaID != "" || got[0].Title != "" || got[0].LibraryID != "" {
+		t.Errorf("unrevealed caller leaked restricted media identity: %q/%q/%q", got[0].MediaID, got[0].Title, got[0].LibraryID)
 	}
 
 	// A revealed same-Profile caller (session-revealed) sees the Media identity.
 	data, errs = post(t, handler,
-		`{"query":"query { profileSessions { sessionID mediaID title } }"}`,
+		`{"query":"query { profileSessions { sessionID mediaID title libraryID } }"}`,
 		authorizeRevealed)
 	if len(errs) != 0 {
 		t.Fatalf("revealed profileSessions errors = %#v", errs)
@@ -116,8 +116,8 @@ func TestProfileSessionsRevealSuppressesRestrictedMedia(t *testing.T) {
 	if err := json.Unmarshal(data["profileSessions"], &got); err != nil {
 		t.Fatalf("decode revealed profileSessions: %v", err)
 	}
-	if len(got) != 1 || got[0].Title != "Archive Media" {
-		t.Fatalf("revealed caller media = %#v, want Archive Media title present", got)
+	if len(got) != 1 || got[0].MediaID != "media-archive" || got[0].Title != "Archive Media" || got[0].LibraryID == "" {
+		t.Fatalf("revealed caller media = %#v, want media-archive/Archive Media/libraryID present", got)
 	}
 }
 

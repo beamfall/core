@@ -27,12 +27,12 @@ import (
 // same-Profile, reveal-permitted subscribers (server.eventPermitted).
 
 // ProfileSessionInfo is one active playback session in the caller's Profile on
-// the Ambient Remote enumeration. Title/libraryID are empty when
+// the Ambient Remote enumeration. MediaID, Title, and LibraryID are empty when
 // the session is playing Media outside the caller's current visibility (a
 // restricted Library the caller has not revealed) — the session is still listed
 // so the remote sees the device is active, but its identifying fields are
-// suppressed, the same hidden==shape rule the live-sessions dashboard follows.
-// "Current" marks the caller's own session so the remote can exclude itself.
+// suppressed (ADR-0035 §7). "Current" marks the caller's own session so the
+// remote can exclude itself.
 type ProfileSessionInfo struct {
 	SessionID       string `json:"sessionID"`
 	DeviceID        string `json:"deviceID"`
@@ -69,13 +69,19 @@ func (h *Handler) profileSessions(ctx context.Context, scope auth.Scope) ([]Prof
 		if s.ProfileID != scope.ProfileID {
 			continue // same-Profile only: never list another Profile's session
 		}
+		// ADR-0035 §7: clear MediaID alongside Title/LibraryID when the
+		// Media is outside the caller's visibility so no identity leaks.
+		mediaID := string(s.MediaID)
+		if s.Title == "" {
+			mediaID = ""
+		}
 		out = append(out, ProfileSessionInfo{
 			SessionID:       string(s.SessionID),
 			DeviceID:        string(s.DeviceID),
 			DeviceName:      s.DeviceName,
 			DeviceRole:      string(s.DeviceRole),
 			Current:         s.SessionID == scope.SessionID,
-			MediaID:         string(s.MediaID),
+			MediaID:         mediaID,
 			Title:           s.Title,
 			LibraryID:       string(s.LibraryID),
 			Transcoding:     s.Transcoding,
