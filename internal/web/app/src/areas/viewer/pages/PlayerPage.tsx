@@ -1066,15 +1066,14 @@ function FeaturePlayer({
             : issued
               ? () => openNextRef.current.advanceToNext(issued)
               : () => openNextRef.current.playNext?.();
-        // A relock mid-fade voids a choice made under the revealed session.
-        // Withdrawn without moving on, the item joins its next one again (CORE-3360).
+        // A relock mid-fade voids a choice made under the revealed session. The
+        // skip still holds the track's end: the relock, not the old queue, decides
+        // what plays next. Withdrawn without moving on, the item joins its next
+        // one again (CORE-3360).
         const left = mediaId || "";
         fadeAdvance(
           video,
-          () => {
-            if (chosenUnder?.aborted) return false;
-            return advance();
-          },
+          () => (chosenUnder?.aborted ? undefined : advance()),
           video ? () => rejoinSkip(video, left) : undefined,
         );
       }

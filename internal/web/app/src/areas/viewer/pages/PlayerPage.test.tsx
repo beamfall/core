@@ -2636,8 +2636,10 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
   it("drops a Play now still fading out when the identity relocks under it", async () => {
     const epoch = new AbortController();
     setIdentityEpochSignal(epoch.signal);
-    await playNowAudibly();
+    const video = await playNowAudibly();
     epoch.abort();
+    // The track ends before the relock renders: its end does not play the old queue's next.
+    fireEvent.ended(video);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 600));
     });
