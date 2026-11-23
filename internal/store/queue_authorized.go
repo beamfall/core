@@ -175,7 +175,7 @@ func (s *Store) writeQueue(ctx context.Context, auth QueueWriteAuthorization, ta
 		return err
 	}
 
-	catalog, closeCatalog, err := beginQueuePolicyTx(ctx, s.catalogW)
+	catalog, closeCatalog, err := beginCatalogPolicyTx(ctx, s.catalogW)
 	if err != nil {
 		return err
 	}
@@ -235,9 +235,9 @@ func (s *Store) writeQueue(ctx context.Context, auth QueueWriteAuthorization, ta
 	return events.Commit()
 }
 
-// beginQueuePolicyTx lets cancellation abort connection acquisition and the
-// queue write while keeping policy locks held until the write finishes.
-func beginQueuePolicyTx(ctx context.Context, db *sql.DB) (*sql.Tx, func(), error) {
+// beginCatalogPolicyTx lets cancellation abort connection acquisition while
+// keeping policy locks held until the dependent write finishes.
+func beginCatalogPolicyTx(ctx context.Context, db *sql.DB) (*sql.Tx, func(), error) {
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -273,7 +273,7 @@ func (s *Store) queueEncryptedReaders(ctx context.Context, catalog *sql.Tx, filt
 			!library.Encrypted || !libraryVisible(library, filter) {
 			continue
 		}
-		tx, closeTx, err := beginQueuePolicyTx(ctx, db.writer)
+		tx, closeTx, err := beginCatalogPolicyTx(ctx, db.writer)
 		if err != nil {
 			release()
 			return nil, nil, err

@@ -225,17 +225,32 @@ func (s *Store) CreatePlaybackGrant(ctx context.Context, g PlaybackGrant, expect
 
 	s.sessionBindMu.RLock()
 	defer s.sessionBindMu.RUnlock()
-	if g.OriginatorProfileID != "" {
-		// Catalog authorization and the grant live in separate databases.
-		// Keep permission writes off from the final check through commit.
-		s.mu.Lock()
-		defer s.mu.Unlock()
-	} else {
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return false, err
+	}
+	if g.OriginatorProfileID != "" {
+		// Take the catalog writers in catalog-before-events order. BEGIN
+		// IMMEDIATE fences permission changes through the events commit
+		// while WAL readers and upload body reads continue under mu.RLock.
+		_, releaseCatalog, err := beginCatalogPolicyTx(ctx, s.catalogW)
+		if err != nil {
+			return false, err
+		}
+		defer releaseCatalog()
+		plane, err := s.catalogPlaneForMediaLocked(ctx, g.MediaID)
+		var invalid ValidationError
+		if err != nil && !errors.As(err, &invalid) {
+			return false, err
+		}
+		if plane.encrypted {
+			_, releasePlane, err := beginCatalogPolicyTx(ctx, plane.writer)
+			if err != nil {
+				return false, err
+			}
+			defer releasePlane()
+		}
 	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {

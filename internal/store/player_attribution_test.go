@@ -177,15 +177,38 @@ func TestPlayerCommandedOriginatorResumeAndGrantLifecycle(t *testing.T) {
 		t.Fatalf("originator changed after Bob pause: %+v ok=%v err=%v", attrAfterPause, ok, err)
 	}
 
-	// Create playback grant bound to Alice + gen 1.
-	if published, err := st.CreatePlaybackGrant(ctx, PlaybackGrant{
+	// A slow upload holds the shared store lock while reading its body.
+	// Publishing Alice's grant and reading an unrelated session must both
+	// complete while that lock is held.
+	grant := PlaybackGrant{
 		GrantID: "pg-1", SessionID: "sess-tv", DeviceID: "device-karaoke-tv",
 		ProfileID: player.ID, MediaID: "media-alpha",
 		OriginatorProfileID: alice.ID, OriginatorSessionID: "sess-alice",
 		PlayerBindingGeneration: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
-	}, 2, PlayerOriginatorPolicy{}); err != nil || !published {
-		t.Fatalf("CreatePlaybackGrant = %v, %v", published, err)
 	}
+	func() {
+		st.mu.RLock()
+		defer st.mu.RUnlock()
+		publication := make(chan error, 1)
+		go func() {
+			published, err := st.CreatePlaybackGrant(ctx, grant, 2, PlayerOriginatorPolicy{})
+			if err == nil && !published {
+				err = ValidationError("grant was refused")
+			}
+			publication <- err
+		}()
+		select {
+		case err := <-publication:
+			if err != nil {
+				t.Fatalf("CreatePlaybackGrant: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("grant publication waited on the shared store lock")
+		}
+		if _, err := st.Session(ctx, "session-default"); err != nil {
+			t.Fatalf("unrelated session read: %v", err)
+		}
+	}()
 	policy := ResumePolicy{Class: MediaClassVideo}
 	report := func(session SessionID, generation int, grant string, seq *int64, pos int, finished bool) (PlayerReportResolution, error) {
 		return st.RecordPlayerPlaybackReport(ctx, session, "device-karaoke-tv", player.ID, generation, PlaybackProgress{
