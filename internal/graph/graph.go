@@ -4933,27 +4933,26 @@ func (h *Handler) reportPlaybackForScope(ctx context.Context, scope auth.Scope, 
 	if !scope.IsPlayerBound() {
 		return h.recordPlaybackProgress(ctx, scope, media, report, finished)
 	}
-	grantID := strings.TrimSpace(report.GrantID)
-	if strings.Contains(grantID, ".") && h.tokens != nil {
+	report.GrantID = strings.TrimSpace(report.GrantID)
+	if strings.Contains(report.GrantID, ".") && h.tokens != nil {
 		for _, target := range []streamtoken.Target{streamtoken.TargetMediaDirect, streamtoken.TargetMediaHLS} {
-			if tokGrant, err := h.tokens.UnverifiedGrant(grantID, target); err == nil && tokGrant.GrantID != "" {
-				grantID = tokGrant.GrantID
+			if tokGrant, err := h.tokens.Verify(report.GrantID, target, scope); err == nil && tokGrant.MediaID == media.ID && tokGrant.GrantID != "" {
+				report.GrantID = tokGrant.GrantID
 				break
 			}
 		}
 	}
-	res, err := h.store.ResolvePlayerPlaybackReport(
+	report.MediaID = media.ID
+	report.PlayMethod = h.heldPlayMethod(scope.SessionID, media.ID)
+	res, err := h.store.RecordPlayerPlaybackReport(
 		ctx,
 		scope.SessionID,
 		scope.DeviceID,
 		scope.ProfileID,
 		scope.PlayerBindingGeneration,
-		media.ID,
-		grantID,
-		report.ReportSequence,
-		report.PositionSeconds,
-		report.DurationSeconds,
+		report,
 		finished,
+		h.resumePolicy(ctx, media),
 		h.now().UTC(),
 	)
 	if err != nil {
@@ -4970,7 +4969,10 @@ func (h *Handler) reportPlaybackForScope(ctx context.Context, scope auth.Scope, 
 		DeviceID:  scope.DeviceID,
 		SessionID: scope.SessionID,
 	}
-	return h.recordPlaybackProgress(ctx, attributionScope, media, report, finished)
+	seq, prevDirty := h.stagePlaybackDirty(attributionScope.ProfileID)
+	paused := report.Paused != nil && *report.Paused && !finished
+	h.publishPlaybackProgress(ctx, attributionScope, media, res.PriorProgress, res.Progress, paused, finished, true, seq, prevDirty)
+	return res.Progress, nil
 }
 
 // notePlaybackActivity keeps the calling session's playback of a Media on the
@@ -5036,19 +5038,6 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		h.retainPlaybackDirty(scope.ProfileID, h.now().UTC())
 		return store.PlaybackProgress{}, err
 	}
-	// Scrobble: on the unwatched→watched transition, notify the
-	// observer (the Scrobble Integration Plugin). It is best-effort and
-	// non-blocking (the plugin enqueues and returns) — a third-party service must
-	// never slow or fail the playback write. External IDs are resolved here (the
-	// generic identity handles); the plugin maps them to each service.
-	if h.watchedObserver != nil && progress.Watched && !priorProgress.Watched {
-		h.notifyWatched(ctx, scope.ProfileID, media)
-	}
-	now := h.now().UTC()
-	pausedEdge := h.notePlaybackPaused(scope, media.ID, paused, now)
-	immediate := finished ||
-		progress.Watched != priorProgress.Watched ||
-		pausedEdge
 	// Another report for this Profile staged between our prior read and our
 	// write: the readback can match the stale prior while other pages already
 	// display that report's value, so this write must still invalidate them.
@@ -5057,14 +5046,26 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		progress.PositionSeconds != priorProgress.PositionSeconds ||
 		progress.DurationSeconds != priorProgress.DurationSeconds ||
 		progress.Watched != priorProgress.Watched
+	h.publishPlaybackProgress(ctx, scope, media, priorProgress, progress, paused, finished, changed, seq, prevDirty)
+	return progress, nil
+}
+
+func (h *Handler) publishPlaybackProgress(ctx context.Context, scope auth.Scope, media store.Media, priorProgress, progress store.PlaybackProgress, paused, finished, changed bool, seq, prevDirty uint64) {
+	// The scrobble observer handles the unwatched→watched transition under the
+	// credited Profile and must never slow or fail the durable playback write.
+	if h.watchedObserver != nil && progress.Watched && !priorProgress.Watched {
+		h.notifyWatched(ctx, scope.ProfileID, media)
+	}
+	now := h.now().UTC()
+	pausedEdge := h.notePlaybackPaused(scope, media.ID, paused, now)
+	immediate := finished || progress.Watched != priorProgress.Watched || pausedEdge
 	if !immediate && !changed {
 		h.unstagePlaybackDirty(scope.ProfileID, seq, prevDirty)
-		return progress, nil
+		return
 	}
 	if !h.notifyPlaybackProgressAt(ctx, scope, seq, immediate, now) && pausedEdge {
 		h.clearPlaybackPaused(scope, media.ID)
 	}
-	return progress, nil
 }
 
 const (

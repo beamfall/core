@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -177,14 +179,36 @@ func TestPlayerDisplayWalkUpOffPlaysPartyCurrentAndGuestsBlocked(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Joined player display with walk-up off can call /api/playback-info for current party media-alpha.
-	body, _ := json.Marshal(playback.InfoRequest{MediaID: "media-alpha"})
-	pbReq := httptest.NewRequest(http.MethodPost, "/api/playback-info", bytes.NewReader(body))
+	// The joined display must get a usable stream for the current party item.
+	mediaPath := filepath.Join(t.TempDir(), "alpha.mp4")
+	if err := os.WriteFile(mediaPath, []byte("beamfall-media-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetPrimaryMediaFile(ctx, "media-alpha", mediaPath); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(playback.InfoRequest{
+		MediaID: "media-alpha",
+		CapabilityProfile: playback.CapabilityProfile{
+			Client: "tvos", Containers: []string{"mp4"}, DirectCodecs: []string{"h264"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pbReq := newJSONRequest(http.MethodPost, "/api/playback-info", bytes.NewReader(body))
 	authTV(pbReq)
 	pbRec := httptest.NewRecorder()
 	srv.ServeHTTP(pbRec, pbReq)
-	if pbRec.Code == http.StatusForbidden {
-		t.Fatalf("joined display playback-info for current party item got 403: %s", pbRec.Body.String())
+	if pbRec.Code != http.StatusOK {
+		t.Fatalf("joined display playback-info = %d: %s", pbRec.Code, pbRec.Body.String())
+	}
+	var info playback.InfoResponse
+	if err := json.Unmarshal(pbRec.Body.Bytes(), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Decision == "unavailable" || info.GrantID == "" || len(info.Streams) == 0 || info.Streams[0].URL == "" {
+		t.Fatalf("joined display received no playable stream: %+v", info)
 	}
 
 	// Guest token cannot access /api/events or /api/graphql.

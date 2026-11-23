@@ -394,10 +394,19 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 	}
 
 	// Start playback of media-alpha with an active playback grant attributed to originator profile-default.
+	payload, err := store.NewSessionControlPayload(store.SessionCommandPlayMedia, store.SessionControlArgs{MediaID: "media-alpha"}, "device-mac", player.ID, "media-alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ControlRendererSessionForPlayer(ctx, displaySess, 0, "cmd_obs_play_alpha1", payload, nil, clock, store.PlayerControlGuard{
+		PlayerProfileID: player.ID, CallerProfileID: "profile-default", CallerSessionID: "session-default", BindingGeneration: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.RecordStreamToken(ctx, displaySess, player.ID, "device-karaoke-tv", "media-direct", "media-alpha", false, clock.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CreatePlaybackGrant(ctx, store.PlaybackGrant{
+	if published, err := st.CreatePlaybackGrant(ctx, store.PlaybackGrant{
 		GrantID:                 "pg-observation-alpha",
 		SessionID:               displaySess,
 		DeviceID:                "device-karaoke-tv",
@@ -408,8 +417,8 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 		PlayerBindingGeneration: 1,
 		CreatedAt:               clock,
 		ExpiresAt:               clock.Add(time.Hour),
-	}); err != nil {
-		t.Fatal(err)
+	}, 1); err != nil || !published {
+		t.Fatalf("publish observation grant = %v, %v", published, err)
 	}
 	if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
 		ProfileID: "profile-default", MediaID: "media-alpha", PositionSeconds: 42, DurationSeconds: 120,
@@ -447,14 +456,14 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 	}
 
 	// Conflict snapshot on stale expectedRevision also applies D6 per observing controller.
-	// Advance rev 0 -> 1 via stop.
+	// Advance the revision with a transport command that leaves playback active.
 	if _, errs := controlRendererSessionVars(t, h, map[string]any{
-		"sessionID": string(displaySess), "expectedRevision": 0, "commandID": "cmd_snap_seed_0001", "command": "stop",
+		"sessionID": string(displaySess), "expectedRevision": 1, "commandID": "cmd_snap_seed_0001", "command": "pause",
 	}, authorizeViewer); len(errs) != 0 {
 		t.Fatalf("seed stop errors = %#v", errs)
 	}
 	data, errs = controlRendererSessionVars(t, h, map[string]any{
-		"sessionID": string(displaySess), "expectedRevision": 0, "commandID": "cmd_snap_conflict_1", "command": "stop",
+		"sessionID": string(displaySess), "expectedRevision": 1, "commandID": "cmd_snap_conflict_1", "command": "stop",
 	}, authorizeManaged)
 	if len(errs) != 0 {
 		t.Fatalf("managed conflict errors = %#v", errs)
@@ -493,7 +502,7 @@ func TestPlayerDisplaysObservationPrivateItemAndPresence(t *testing.T) {
 		t.Fatalf("presence at 61s without heartbeat = %+v, want offline with lastSeenAt and nil currentItem", viewerDisplays[0])
 	}
 	_, errs = controlRendererSessionVars(t, h, map[string]any{
-		"sessionID": string(displaySess), "expectedRevision": 1, "commandID": "cmd_offline_ctrl_1", "command": "stop",
+		"sessionID": string(displaySess), "expectedRevision": 2, "commandID": "cmd_offline_ctrl_1", "command": "stop",
 	}, authorizeViewer)
 	if len(errs) == 0 || errs[0].Message != "display offline" || errs[0].Extensions.Code != ErrorCodeConflict || errs[0].Extensions.Reason != ErrorReasonDisplayOffline {
 		t.Fatalf("offline controller errors = %#v, want CONFLICT/DISPLAY_OFFLINE display offline", errs)

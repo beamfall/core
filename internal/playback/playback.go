@@ -979,7 +979,8 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	resp.Loudness = main.loudnessInfo
 	resp.SelectedSubtitleTrack = main.subtitles.selection
 	resp.SubtitlesUnavailableReason = main.subtitles.unavailableReason
-	if nextID := strings.TrimSpace(req.NextMediaID); nextID != "" {
+	// Commanded and party eligibility is evaluated when an item becomes current.
+	if nextID := strings.TrimSpace(req.NextMediaID); nextID != "" && (!scope.IsPlayerBound() || scope.WalkUpEnabled) {
 		// Best-effort: any next item that cannot be served — unknown,
 		// outside the session scope, or with no playable file — is silently
 		// omitted; current playback is never affected.
@@ -1094,8 +1095,15 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 // audio Media served through a transcode, which it then forces.
 func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
 	lookupFilter := scope.LibraryFilter()
+	var commandRevision int64
 	if scope.IsPlayerBound() {
 		lookupFilter = scope.PlaybackFilter()
+		if suffix == mainSuffix && s.store != nil {
+			commandRevision, err = s.store.RendererSessionRevision(ctx, scope.SessionID)
+			if err != nil {
+				return decision{}, err
+			}
+		}
 	}
 	media, err := s.decisionLookup.Media(ctx, store.MediaID(mediaID), lookupFilter)
 	if err != nil {
@@ -1110,15 +1118,17 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	if scope.IsPlayerBound() {
 		resumeProfileID = ""
 		if suffix == mainSuffix {
-			grant, resumeID, allowed, err := s.preparePlayerPlaybackGrant(ctx, scope, media)
+			grant, allowed, err := s.preparePlayerPlaybackGrant(ctx, scope, media, commandRevision)
 			if err != nil {
 				return decision{}, err
 			}
 			if !allowed {
 				return unavailableDecision(), nil
 			}
-			resumeProfileID = resumeID
 			playerGrant = grant
+			if grant != nil {
+				resumeProfileID = grant.OriginatorProfileID
+			}
 		}
 	}
 	parent := ctx
@@ -1172,8 +1182,12 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 		grantToSave.LastDurationSeconds = dec.timeline.DurationSeconds
 		grantToSave.CreatedAt = now
 		grantToSave.ExpiresAt = now.Add(tokenLifetime)
-		if err := s.store.CreatePlaybackGrant(parent, grantToSave); err != nil {
+		published, err := s.store.CreatePlaybackGrant(parent, grantToSave, commandRevision)
+		if err != nil {
 			return decision{}, err
+		}
+		if !published {
+			return unavailableDecision(), nil
 		}
 		dec.grantID = grantToSave.GrantID
 	}
@@ -1186,52 +1200,45 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	return dec, nil
 }
 
-func (s *Service) preparePlayerPlaybackGrant(ctx context.Context, scope auth.Scope, media store.Media) (*store.PlaybackGrant, store.ProfileID, bool, error) {
+func (s *Service) preparePlayerPlaybackGrant(ctx context.Context, scope auth.Scope, media store.Media, revision int64) (*store.PlaybackGrant, bool, error) {
 	if s.store == nil {
-		return nil, "", true, nil
+		return nil, true, nil
 	}
 	now := s.now().UTC()
-	var originatorProfileID store.ProfileID
-	var originatorSessionID store.SessionID
-	walkUp := false
-
-	attr, hasAttr, err := s.store.ActivePlayerCommandedAttribution(ctx, scope.SessionID, media.ID, now)
+	party, err := s.store.IsPlayerPartyCurrentMedia(ctx, scope.SessionID, media.ID)
 	if err != nil {
-		return nil, "", false, err
+		return nil, false, err
 	}
-	if hasAttr {
-		if attr.PlayerBindingGeneration != scope.PlayerBindingGeneration {
-			_ = s.store.SkipPlayerCommandedAttribution(ctx, scope.SessionID, media.ID)
-			return nil, "", false, nil
-		}
-		if attr.OriginatorProfileID != "" {
-			ok, err := s.originatorPlaybackAllowed(ctx, scope.PlayerProfileID, attr.OriginatorProfileID, attr.OriginatorSessionID, media.ID)
-			if err != nil {
-				return nil, "", false, err
-			}
-			if !ok {
-				_ = s.store.SkipPlayerCommandedAttribution(ctx, scope.SessionID, media.ID)
-				return nil, "", false, nil
-			}
-			originatorProfileID = attr.OriginatorProfileID
-			originatorSessionID = attr.OriginatorSessionID
-		}
-	} else {
-		commanded, err := s.store.IsPlayerCommandedMedia(ctx, scope.SessionID, media.ID, now)
+	var attr store.PlayerCommandedAttribution
+	var walkUp bool
+	if !party {
+		var commanded bool
+		attr, commanded, err = s.store.ActivePlayerCommandedAttribution(ctx, scope.SessionID, media.ID, now)
 		if err != nil {
-			return nil, "", false, err
+			return nil, false, err
 		}
-		if !commanded && !scope.WalkUpEnabled {
-			return nil, "", false, nil
-		}
-		if !commanded && scope.WalkUpEnabled {
+		if commanded {
+			allowed := false
+			if attr.PlayerBindingGeneration == scope.PlayerBindingGeneration {
+				allowed, err = s.originatorPlaybackAllowed(ctx, scope.PlayerProfileID, attr.OriginatorProfileID, attr.OriginatorSessionID, media.ID)
+				if err != nil {
+					return nil, false, err
+				}
+			}
+			if !allowed {
+				return nil, false, s.store.SkipPlayerCommandedAttribution(ctx, scope.SessionID, media.ID, revision)
+			}
+		} else {
+			if !scope.WalkUpEnabled {
+				return nil, false, nil
+			}
 			walkUp = true
 		}
 	}
 
 	grantID, err := store.NewPlaybackGrantID()
 	if err != nil {
-		return nil, "", false, err
+		return nil, false, err
 	}
 	return &store.PlaybackGrant{
 		GrantID:                 grantID,
@@ -1239,11 +1246,11 @@ func (s *Service) preparePlayerPlaybackGrant(ctx context.Context, scope auth.Sco
 		DeviceID:                scope.DeviceID,
 		ProfileID:               scope.ProfileID,
 		MediaID:                 media.ID,
-		OriginatorProfileID:     originatorProfileID,
-		OriginatorSessionID:     originatorSessionID,
+		OriginatorProfileID:     attr.OriginatorProfileID,
+		OriginatorSessionID:     attr.OriginatorSessionID,
 		PlayerBindingGeneration: scope.PlayerBindingGeneration,
 		WalkUp:                  walkUp,
-	}, originatorProfileID, true, nil
+	}, true, nil
 }
 
 func (s *Service) originatorPlaybackAllowed(ctx context.Context, playerProfileID, originatorProfileID store.ProfileID, originatorSessionID store.SessionID, mediaID store.MediaID) (bool, error) {

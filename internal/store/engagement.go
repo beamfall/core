@@ -466,13 +466,17 @@ func (s *Store) PlaybackProgressFor(ctx context.Context, profileID ProfileID, me
 	if err := s.guardLocked(); err != nil {
 		return PlaybackProgress{}, false, err
 	}
+	return playbackProgressForSQL(ctx, s.eventsR, profileID, mediaID)
+}
+
+func playbackProgressForSQL(ctx context.Context, q queryRower, profileID ProfileID, mediaID MediaID) (PlaybackProgress, bool, error) {
 	var progress PlaybackProgress
 	var watched int
 	var updated int64
 	var occurred sql.NullInt64
 	var eventTime sql.NullInt64
 	var runID, importerID, matchMethod sql.NullString
-	err := s.eventsR.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT profile_id, media_id, position_seconds, duration_seconds, watched, updated_at_ms, play_count, provenance, occurred_at_ms, import_run_id, import_importer_id, import_match_method, event_time_ms
 		FROM playback_progress
 		WHERE profile_id = ? AND media_id = ?

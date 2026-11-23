@@ -2669,11 +2669,15 @@ func (s *Store) IsPlayerPartyCurrentMedia(ctx context.Context, authSessionID Ses
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	return s.isPlayerPartyCurrentMediaLocked(ctx, s.eventsR, authSessionID, mediaID)
+}
+
+func (s *Store) isPlayerPartyCurrentMediaLocked(ctx context.Context, q queryRower, authSessionID SessionID, mediaID MediaID) (bool, error) {
 	nowMS := timeToMillis(s.serverNow())
 	var row partyScreenRow
 	var hostProfileID ProfileID
 	var authSess, devID string
-	err := s.eventsR.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT s.screen_id, s.profile_id, s.auth_session_id, s.device_id, s.binding_generation, p.host_profile_id
 		FROM party_screen s
 		JOIN party_session p ON p.session_id = s.session_id

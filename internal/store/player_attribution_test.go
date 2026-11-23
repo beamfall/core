@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -177,75 +178,157 @@ func TestPlayerCommandedOriginatorResumeAndGrantLifecycle(t *testing.T) {
 	}
 
 	// Create playback grant bound to Alice + gen 1.
-	if err := st.CreatePlaybackGrant(ctx, PlaybackGrant{
+	if published, err := st.CreatePlaybackGrant(ctx, PlaybackGrant{
 		GrantID: "pg-1", SessionID: "sess-tv", DeviceID: "device-karaoke-tv",
 		ProfileID: player.ID, MediaID: "media-alpha",
 		OriginatorProfileID: alice.ID, OriginatorSessionID: "sess-alice",
 		PlayerBindingGeneration: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
-	}); err != nil {
-		t.Fatalf("CreatePlaybackGrant: %v", err)
+	}, 2); err != nil || !published {
+		t.Fatalf("CreatePlaybackGrant = %v, %v", published, err)
+	}
+	policy := ResumePolicy{Class: MediaClassVideo}
+	report := func(session SessionID, generation int, grant string, seq *int64, pos int, finished bool) (PlayerReportResolution, error) {
+		return st.RecordPlayerPlaybackReport(ctx, session, "device-karaoke-tv", player.ID, generation, PlaybackProgress{
+			MediaID: "media-alpha", GrantID: grant, ReportSequence: seq, PositionSeconds: pos, DurationSeconds: 120,
+		}, finished, policy, now)
 	}
 
 	// Report seq 1 -> accepted for Alice.
 	seq1 := int64(1)
-	r1, err := st.ResolvePlayerPlaybackReport(ctx, "sess-tv", "device-karaoke-tv", player.ID, 1, "media-alpha", "pg-1", &seq1, 55, 120, false, now)
-	if err != nil || !r1.Accepted || r1.OriginatorProfileID != alice.ID {
+	r1, err := report("sess-tv", 1, "pg-1", &seq1, 55, false)
+	if err != nil || !r1.Accepted || r1.OriginatorProfileID != alice.ID || r1.Progress.PositionSeconds != 55 {
 		t.Fatalf("seq 1 resolution = %+v, %v", r1, err)
 	}
 
 	// Duplicate (pg-1, seq 1) -> dropped!
-	dup, err := st.ResolvePlayerPlaybackReport(ctx, "sess-tv", "device-karaoke-tv", player.ID, 1, "media-alpha", "pg-1", &seq1, 55, 120, false, now)
+	dup, err := report("sess-tv", 1, "pg-1", &seq1, 55, false)
 	if err != nil || dup.Accepted || !dup.Duplicate {
 		t.Fatalf("duplicate resolution = %+v, %v, want duplicate dropped", dup, err)
 	}
 
-	// Finish at seq 2 -> accepted and ends grant.
+	// Fail after the canonical event append and after the in-transaction grant
+	// and sequence writes, then retry the exact same completion.
 	seq2 := int64(2)
-	r2, err := st.ResolvePlayerPlaybackReport(ctx, "sess-tv", "device-karaoke-tv", player.ID, 1, "media-alpha", "pg-1", &seq2, 120, 120, true, now)
-	if err != nil || !r2.Accepted || !r2.Ended {
+	if _, err := st.eventsW.ExecContext(ctx, `
+		CREATE TRIGGER fail_player_progress BEFORE UPDATE ON playback_progress
+		WHEN NEW.profile_id = OLD.profile_id AND NEW.media_id = 'media-alpha'
+		BEGIN
+			SELECT CASE WHEN EXISTS (
+				SELECT 1 FROM playback_grant_report r JOIN playback_grant g USING (grant_id)
+				WHERE g.grant_id = 'pg-1' AND r.seq = 2 AND g.ended_at_ms IS NOT NULL
+			) THEN RAISE(ABORT, 'injected attributed projection failure')
+			ELSE RAISE(ABORT, 'report did not reach expected transaction stage') END;
+		END
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := report("sess-tv", 1, "pg-1", &seq2, 120, true); err == nil || !strings.Contains(err.Error(), "injected attributed projection failure") {
+		t.Fatalf("injected completion = %v", err)
+	}
+	progress, ok, err := st.PlaybackProgressFor(ctx, alice.ID, "media-alpha")
+	if err != nil || !ok || progress.PositionSeconds != 55 || progress.Watched {
+		t.Fatalf("progress after rollback = %+v, %v, %v", progress, ok, err)
+	}
+	if _, ok, err := st.ActivePlayerCommandedAttribution(ctx, "sess-tv", "media-alpha", now); err != nil || !ok {
+		t.Fatalf("command was consumed by failed completion: active=%v, err=%v", ok, err)
+	}
+	if _, err := st.eventsW.ExecContext(ctx, `DROP TRIGGER fail_player_progress`); err != nil {
+		t.Fatal(err)
+	}
+	r2, err := report("sess-tv", 1, "pg-1", &seq2, 120, true)
+	if err != nil || !r2.Accepted || !r2.Ended || !r2.Progress.Watched || r2.Progress.PlayCount != 1 {
 		t.Fatalf("seq 2 finish resolution = %+v, %v", r2, err)
 	}
 
 	// Report at seq 3 on ended grant -> dropped!
 	seq3 := int64(3)
-	r3, err := st.ResolvePlayerPlaybackReport(ctx, "sess-tv", "device-karaoke-tv", player.ID, 1, "media-alpha", "pg-1", &seq3, 120, 120, false, now)
+	r3, err := report("sess-tv", 1, "pg-1", &seq3, 120, false)
 	if err != nil || r3.Accepted || r3.DropReason != "grant-ended" {
 		t.Fatalf("post-finish resolution = %+v, %v, want grant-ended", r3, err)
 	}
 
-	// New grant pg-2, then rebind device (generation 1 -> 2): old grant cancelled & gen mismatch drops report.
-	if err := st.CreatePlaybackGrant(ctx, PlaybackGrant{
-		GrantID: "pg-2", SessionID: "sess-tv", DeviceID: "device-karaoke-tv",
+	// Capture Alice's decision, then replace it with Bob's command for the
+	// same Media at the same timestamp. Publish Bob before Alice resumes.
+	if _, err := st.ControlRendererSessionForPlayer(ctx, "sess-tv", 2, "cmd_alice_delayed_1", playPayload, nil, now, guardAlice); err != nil {
+		t.Fatal(err)
+	}
+	delayed := PlaybackGrant{
+		GrantID: "pg-delayed", SessionID: "sess-tv", DeviceID: "device-karaoke-tv",
 		ProfileID: player.ID, MediaID: "media-alpha",
 		OriginatorProfileID: alice.ID, OriginatorSessionID: "sess-alice",
 		PlayerBindingGeneration: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
-	}); err != nil {
+	}
+	guardBob := PlayerControlGuard{PlayerProfileID: player.ID, CallerProfileID: bob.ID, BindingGeneration: 1}
+	bobPayload, err := NewSessionControlPayload(SessionCommandPlayMedia, SessionControlArgs{MediaID: "media-alpha"}, "device-bob", player.ID, "media-alpha")
+	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.ControlRendererSessionForPlayer(ctx, "sess-tv", 3, "cmd_bob_replaces_1", bobPayload, nil, now, guardBob); err != nil {
+		t.Fatal(err)
+	}
+	bobGrant := delayed
+	bobGrant.GrantID, bobGrant.OriginatorProfileID, bobGrant.OriginatorSessionID = "pg-2", bob.ID, ""
+	if err := st.SkipPlayerCommandedAttribution(ctx, delayed.SessionID, delayed.MediaID, 3); err != nil {
+		t.Fatal(err)
+	}
+	if published, err := st.CreatePlaybackGrant(ctx, bobGrant, 4); err != nil || !published {
+		t.Fatalf("publish Bob's grant = %v, %v", published, err)
+	}
+	if published, err := st.CreatePlaybackGrant(ctx, delayed, 3); err != nil || published {
+		t.Fatalf("publish stale grant = %v, %v", published, err)
+	}
+	active, ok, err := st.ActivePlaybackGrantForSession(ctx, "sess-tv", "media-alpha", now)
+	if err != nil || !ok || active.GrantID != bobGrant.GrantID {
+		t.Fatalf("active grant after stale publish = %+v, %v, %v", active, ok, err)
+	}
+	if _, ok, err := st.PlaybackGrant(ctx, delayed.GrantID); err != nil || ok {
+		t.Fatalf("stale grant persisted = %v, %v", ok, err)
+	}
+
+	// Matching media, originator, generation and timestamps still cannot
+	// authorize a decision captured before a replacement command.
+	delayedBob := bobGrant
+	delayedBob.GrantID = "pg-delayed-bob"
+	if _, err := st.ControlRendererSessionForPlayer(ctx, "sess-tv", 4, "cmd_bob_repeats_01", bobPayload, nil, now, guardBob); err != nil {
+		t.Fatal(err)
+	}
+	bobGrant.GrantID = "pg-bob-current"
+	if published, err := st.CreatePlaybackGrant(ctx, bobGrant, 5); err != nil || !published {
+		t.Fatalf("publish Bob's replacement grant = %v, %v", published, err)
+	}
+	if published, err := st.CreatePlaybackGrant(ctx, delayedBob, 4); err != nil || published {
+		t.Fatalf("publish stale grant with identical attribution = %v, %v", published, err)
+	}
+
+	// Rebinding invalidates Bob's grant.
 	if _, err := st.SetDevicePlayerBinding(ctx, "device-karaoke-tv", player.ID, "Rebound TV"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.RenewDeviceSession(ctx, "device-karaoke-tv", "sess-tv-2", now.Add(24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	rOldGen, err := st.ResolvePlayerPlaybackReport(ctx, "sess-tv-2", "device-karaoke-tv", player.ID, 2, "media-alpha", "pg-2", &seq1, 60, 120, false, now)
+	rOldGen, err := report("sess-tv-2", 2, bobGrant.GrantID, &seq1, 60, false)
 	if err != nil || rOldGen.Accepted {
 		t.Fatalf("old generation resolution = %+v, %v, want dropped", rOldGen, err)
 	}
 
 	// Deleted originator on an active grant finishes without recording.
-	if err := st.CreatePlaybackGrant(ctx, PlaybackGrant{
+	guardBob.BindingGeneration = 2
+	if _, err := st.ControlRendererSessionForPlayer(ctx, "sess-tv-2", 0, "cmd_bob_new_binding_1", bobPayload, nil, now, guardBob); err != nil {
+		t.Fatal(err)
+	}
+	if published, err := st.CreatePlaybackGrant(ctx, PlaybackGrant{
 		GrantID: "pg-3", SessionID: "sess-tv-2", DeviceID: "device-karaoke-tv",
 		ProfileID: player.ID, MediaID: "media-alpha",
 		OriginatorProfileID: bob.ID, PlayerBindingGeneration: 2,
 		CreatedAt: now, ExpiresAt: now.Add(time.Hour),
-	}); err != nil {
-		t.Fatal(err)
+	}, 1); err != nil || !published {
+		t.Fatalf("publish rebound grant = %v, %v", published, err)
 	}
 	if err := st.DeleteProfile(ctx, bob.ID); err != nil {
 		t.Fatal(err)
 	}
-	rDeleted, err := st.ResolvePlayerPlaybackReport(ctx, "sess-tv-2", "device-karaoke-tv", player.ID, 2, "media-alpha", "pg-3", &seq1, 120, 120, true, now)
+	rDeleted, err := report("sess-tv-2", 2, "pg-3", &seq1, 120, true)
 	if err != nil || rDeleted.Accepted || !rDeleted.Ended || rDeleted.DropReason != "originator-unavailable" {
 		t.Fatalf("deleted originator resolution = %+v, %v, want originator-unavailable & ended", rDeleted, err)
 	}

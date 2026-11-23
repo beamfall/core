@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"time"
+
+	"github.com/beamfall/core/internal/serverrole"
 )
 
 // PlayerCommandedAttribution records the server-bound originator of a
@@ -52,6 +54,8 @@ type PlayerReportResolution struct {
 	GrantID             string
 	OriginatorProfileID ProfileID
 	Ended               bool
+	PriorProgress       PlaybackProgress
+	Progress            PlaybackProgress
 }
 
 // NewPlaybackGrantID returns a random opaque server-issued playback grant ID.
@@ -75,10 +79,14 @@ func (s *Store) ActivePlayerCommandedAttribution(ctx context.Context, sessionID 
 	if err := s.guardLocked(); err != nil {
 		return PlayerCommandedAttribution{}, false, err
 	}
+	return activePlayerCommandedAttributionSQL(ctx, s.eventsR, sessionID, mediaID, now)
+}
+
+func activePlayerCommandedAttributionSQL(ctx context.Context, q queryRower, sessionID SessionID, mediaID MediaID, now time.Time) (PlayerCommandedAttribution, bool, error) {
 	cutoffMS := timeToMillis(normalizeTime(now).Add(-PlayerCommandedWindow))
 	var out PlayerCommandedAttribution
 	var commandedAtMS int64
-	err := s.eventsR.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT session_id, media_id, originator_profile_id, originator_session_id,
 		       player_binding_generation, commanded_at_ms
 		FROM player_commanded_media
@@ -107,7 +115,7 @@ func (s *Store) ActivePlayerCommandedAttribution(ctx context.Context, sessionID 
 // SkipPlayerCommandedAttribution marks a pending commanded entry inactive for
 // attribution so it cannot become current again after failing becoming-current
 // checks (e.g. deleted originator Profile).
-func (s *Store) SkipPlayerCommandedAttribution(ctx context.Context, sessionID SessionID, mediaID MediaID) error {
+func (s *Store) SkipPlayerCommandedAttribution(ctx context.Context, sessionID SessionID, mediaID MediaID, revision int64) error {
 	if sessionID == "" || mediaID == "" {
 		return nil
 	}
@@ -120,18 +128,20 @@ func (s *Store) SkipPlayerCommandedAttribution(ctx context.Context, sessionID Se
 		UPDATE player_commanded_media
 		SET active_for_attribution = 0
 		WHERE session_id = ? AND media_id = ?
-	`, sessionID, mediaID)
+		  AND COALESCE((SELECT revision FROM renderer_session_revision WHERE session_id = ?), 0) = ?
+	`, sessionID, mediaID, sessionID, revision)
 	return err
 }
 
 // CreatePlaybackGrant persists a newly issued playback grant and cancels any
-// earlier active grant on the same display Session.
-func (s *Store) CreatePlaybackGrant(ctx context.Context, g PlaybackGrant) error {
+// earlier active grant on the same display Session. It returns false if
+// playback authorization changed while the stream decision was in flight.
+func (s *Store) CreatePlaybackGrant(ctx context.Context, g PlaybackGrant, expectedRevision int64) (bool, error) {
 	if g.GrantID == "" || g.SessionID == "" || g.ProfileID == "" || g.MediaID == "" {
-		return ValidationError("playback grant is incomplete")
+		return false, ValidationError("playback grant is incomplete")
 	}
 	if g.ExpiresAt.IsZero() {
-		return ValidationError("playback grant expiry is required")
+		return false, ValidationError("playback grant expiry is required")
 	}
 	createdAt := normalizeTime(g.CreatedAt)
 	expiresAt := g.ExpiresAt.UTC()
@@ -139,19 +149,64 @@ func (s *Store) CreatePlaybackGrant(ctx context.Context, g PlaybackGrant) error 
 	expiresMS := timeToMillis(expiresAt)
 	pruneBeforeMS := timeToMillis(createdAt.Add(-24 * time.Hour))
 
+	s.sessionBindMu.RLock()
+	defer s.sessionBindMu.RUnlock()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return err
+		return false, err
 	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback()
 
+	var revision int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE((SELECT revision FROM renderer_session_revision WHERE session_id = ?), 0)
+	`, g.SessionID).Scan(&revision); err != nil {
+		return false, err
+	}
+	if revision != expectedRevision {
+		return false, nil
+	}
+	live, walkUp, err := s.livePlayerPlaybackScopeLocked(ctx, g.SessionID, g.DeviceID, g.ProfileID, g.PlayerBindingGeneration)
+	if err != nil || !live {
+		return false, err
+	}
+	party, err := s.isPlayerPartyCurrentMediaLocked(ctx, tx, g.SessionID, g.MediaID)
+	if err != nil {
+		return false, err
+	}
+	switch {
+	case g.OriginatorProfileID != "":
+		if party {
+			return false, nil
+		}
+		attr, active, err := activePlayerCommandedAttributionSQL(ctx, tx, g.SessionID, g.MediaID, createdAt)
+		if err != nil || !active {
+			return false, err
+		}
+		if attr.OriginatorProfileID != g.OriginatorProfileID || attr.OriginatorSessionID != g.OriginatorSessionID ||
+			attr.PlayerBindingGeneration != g.PlayerBindingGeneration {
+			return false, nil
+		}
+		if allowed, err := isPlayerControllerLocked(ctx, s.catalogR, g.ProfileID, g.OriginatorProfileID); err != nil || !allowed {
+			return false, err
+		}
+	case g.WalkUp:
+		if !walkUp {
+			return false, nil
+		}
+	default:
+		if !party {
+			return false, nil
+		}
+	}
+
 	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_grant WHERE expires_at_ms <= ?`, pruneBeforeMS); err != nil {
-		return err
+		return false, err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE playback_grant
@@ -159,7 +214,7 @@ func (s *Store) CreatePlaybackGrant(ctx context.Context, g PlaybackGrant) error 
 		WHERE session_id = ? AND grant_id <> ?
 		  AND ended_at_ms IS NULL AND cancelled_at_ms IS NULL
 	`, createdMS, g.SessionID, g.GrantID); err != nil {
-		return err
+		return false, err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO playback_grant(
@@ -175,9 +230,12 @@ func (s *Store) CreatePlaybackGrant(ctx context.Context, g PlaybackGrant) error 
 		boolToInt(g.WalkUp), boolToInt(g.Ambient), g.LastPositionSeconds, g.LastDurationSeconds,
 		createdMS, expiresMS,
 	); err != nil {
-		return err
+		return false, err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // PlaybackGrant loads a persisted playback grant by ID.
@@ -272,31 +330,47 @@ type queryScanner interface {
 	Scan(dest ...any) error
 }
 
-// ResolvePlayerPlaybackReport verifies a Player display's progress/completion
-// report against its playback grant, binding generation, and (grant, seq)
-// idempotency ledger. It resolves the originator Profile exclusively from the
-// server-side grant (never from client input). Reports that are duplicates, on
-// ended/cancelled/expired grants, on older binding generations, on walk-up or
-// ambient grants, or for a deleted/disabled originator are dropped cleanly.
-func (s *Store) ResolvePlayerPlaybackReport(
+// livePlayerPlaybackScopeLocked checks the catalog binding while the caller
+// holds sessionBindMu and mu for the life of the events transaction.
+func (s *Store) livePlayerPlaybackScopeLocked(ctx context.Context, sessionID SessionID, deviceID DeviceID, profileID ProfileID, generation int) (live, walkUp bool, err error) {
+	var walkUpEnabled int
+	err = s.catalogR.QueryRowContext(ctx, `
+		SELECT p.walk_up_enabled
+		FROM auth_session a
+		JOIN device d ON d.id = a.device_id
+		JOIN profile p ON p.id = d.player_profile_id
+		WHERE a.id = ? AND a.profile_id = p.id AND p.id = ? AND p.disabled = 0
+		  AND d.id = ? AND d.revoked = 0 AND d.player_binding_generation = ?
+	`, sessionID, profileID, deviceID, generation).Scan(&walkUpEnabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, false, nil
+	}
+	return err == nil, walkUpEnabled != 0, err
+}
+
+// RecordPlayerPlaybackReport fences the report against its explicitly named
+// grant and commits the originator's engagement with the grant and sequence
+// updates. The caller's report never determines the originator Profile.
+func (s *Store) RecordPlayerPlaybackReport(
 	ctx context.Context,
 	sessionID SessionID,
 	deviceID DeviceID,
 	playerProfileID ProfileID,
 	bindingGeneration int,
-	mediaID MediaID,
-	grantID string,
-	seq *int64,
-	positionSeconds int,
-	durationSeconds int,
+	report PlaybackProgress,
 	finished bool,
+	policy ResumePolicy,
 	now time.Time,
 ) (PlayerReportResolution, error) {
+	seq := report.ReportSequence
 	if seq != nil && *seq < 0 {
 		return PlayerReportResolution{}, ValidationError("sequence must be a non-negative integer")
 	}
-	if sessionID == "" || mediaID == "" {
+	if sessionID == "" || report.MediaID == "" {
 		return PlayerReportResolution{DropReason: "missing-session-or-media"}, nil
+	}
+	if report.GrantID == "" {
+		return PlayerReportResolution{DropReason: "missing-grant"}, nil
 	}
 	now = normalizeTime(now)
 	nowMS := timeToMillis(now)
@@ -308,23 +382,12 @@ func (s *Store) ResolvePlayerPlaybackReport(
 	if err := s.guardLocked(); err != nil {
 		return PlayerReportResolution{}, err
 	}
-
-	// Re-check the device's live binding generation in catalog.db while holding
-	// sessionBindMu.RLock() so a concurrent rebind cannot race with this report.
-	var liveRevoked, liveGen int
-	var livePlayerProfile string
-	err := s.catalogR.QueryRowContext(ctx, `
-		SELECT d.revoked, COALESCE(d.player_profile_id, ''), d.player_binding_generation
-		FROM auth_session a
-		JOIN device d ON d.id = a.device_id
-		WHERE a.id = ?
-	`, sessionID).Scan(&liveRevoked, &livePlayerProfile, &liveGen)
-	if errors.Is(err, sql.ErrNoRows) || liveRevoked != 0 ||
-		ProfileID(livePlayerProfile) != playerProfileID || liveGen != bindingGeneration {
-		return PlayerReportResolution{DropReason: "binding-generation-mismatch"}, nil
-	}
+	live, _, err := s.livePlayerPlaybackScopeLocked(ctx, sessionID, deviceID, playerProfileID, bindingGeneration)
 	if err != nil {
 		return PlayerReportResolution{}, err
+	}
+	if !live {
+		return PlayerReportResolution{DropReason: "binding-generation-mismatch"}, nil
 	}
 
 	tx, err := s.eventsW.BeginTx(ctx, nil)
@@ -333,28 +396,15 @@ func (s *Store) ResolvePlayerPlaybackReport(
 	}
 	defer tx.Rollback()
 
-	var row *sql.Row
-	if grantID != "" {
-		row = tx.QueryRowContext(ctx, `
-			SELECT grant_id, session_id, device_id, profile_id, media_id,
-			       originator_profile_id, originator_session_id, player_binding_generation,
-			       walk_up, ambient, last_position_seconds, last_duration_seconds,
-			       created_at_ms, expires_at_ms, ended_at_ms, cancelled_at_ms
-			FROM playback_grant
-			WHERE grant_id = ?
-		`, grantID)
-	} else {
-		row = tx.QueryRowContext(ctx, `
-			SELECT grant_id, session_id, device_id, profile_id, media_id,
-			       originator_profile_id, originator_session_id, player_binding_generation,
-			       walk_up, ambient, last_position_seconds, last_duration_seconds,
-			       created_at_ms, expires_at_ms, ended_at_ms, cancelled_at_ms
-			FROM playback_grant
-			WHERE session_id = ? AND media_id = ?
-			ORDER BY created_at_ms DESC, rowid DESC
-			LIMIT 1
-		`, sessionID, mediaID)
-	}
+	row := tx.QueryRowContext(ctx, `
+		SELECT grant_id, session_id, device_id, profile_id, media_id,
+		       originator_profile_id, originator_session_id, player_binding_generation,
+		       walk_up, ambient, last_position_seconds, last_duration_seconds,
+		       created_at_ms, expires_at_ms, ended_at_ms, cancelled_at_ms
+		FROM playback_grant
+		WHERE grant_id = ?
+	`, report.GrantID)
+
 	g, err := scanPlaybackGrant(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PlayerReportResolution{DropReason: "unknown-grant"}, nil
@@ -363,7 +413,7 @@ func (s *Store) ResolvePlayerPlaybackReport(
 		return PlayerReportResolution{}, err
 	}
 
-	if g.SessionID != sessionID || (g.DeviceID != "" && deviceID != "" && g.DeviceID != deviceID) || g.MediaID != mediaID {
+	if g.SessionID != sessionID || (g.DeviceID != "" && deviceID != "" && g.DeviceID != deviceID) || g.MediaID != report.MediaID {
 		return PlayerReportResolution{DropReason: "grant-scope-mismatch", GrantID: g.GrantID}, nil
 	}
 	if !g.EndedAt.IsZero() {
@@ -375,7 +425,7 @@ func (s *Store) ResolvePlayerPlaybackReport(
 	if !g.ExpiresAt.After(now) {
 		return PlayerReportResolution{DropReason: "grant-expired", GrantID: g.GrantID}, nil
 	}
-	if g.PlayerBindingGeneration != liveGen || g.ProfileID != ProfileID(livePlayerProfile) {
+	if g.PlayerBindingGeneration != bindingGeneration || g.ProfileID != playerProfileID {
 		return PlayerReportResolution{DropReason: "binding-generation-mismatch", GrantID: g.GrantID}, nil
 	}
 
@@ -401,8 +451,8 @@ func (s *Store) ResolvePlayerPlaybackReport(
 		}
 	}
 
-	pos := max(positionSeconds, 0)
-	dur := max(durationSeconds, 0)
+	pos := max(report.PositionSeconds, 0)
+	dur := max(report.DurationSeconds, 0)
 	if finished {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE playback_grant
@@ -411,12 +461,14 @@ func (s *Store) ResolvePlayerPlaybackReport(
 		`, nowMS, pos, dur, g.GrantID); err != nil {
 			return PlayerReportResolution{}, err
 		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE player_commanded_media
-			SET active_for_attribution = 0
-			WHERE session_id = ? AND media_id = ?
-		`, sessionID, mediaID); err != nil {
-			return PlayerReportResolution{}, err
+		if g.OriginatorProfileID != "" {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE player_commanded_media
+				SET active_for_attribution = 0
+				WHERE session_id = ? AND media_id = ?
+			`, sessionID, g.MediaID); err != nil {
+				return PlayerReportResolution{}, err
+			}
 		}
 	} else {
 		if _, err := tx.ExecContext(ctx, `
@@ -447,10 +499,10 @@ func (s *Store) ResolvePlayerPlaybackReport(
 	err = s.catalogR.QueryRowContext(ctx, `
 		SELECT kind, disabled FROM profile WHERE id = ?
 	`, g.OriginatorProfileID).Scan(&origKind, &origDisabled)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return PlayerReportResolution{}, err
+	}
 	if errors.Is(err, sql.ErrNoRows) || origDisabled != 0 || origKind == ProfilePlayer {
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return PlayerReportResolution{}, err
-		}
 		if err := tx.Commit(); err != nil {
 			return PlayerReportResolution{}, err
 		}
@@ -461,6 +513,30 @@ func (s *Store) ResolvePlayerPlaybackReport(
 		}, nil
 	}
 
+	if err := s.guardAuthority(serverrole.FaceEngagement); err != nil {
+		return PlayerReportResolution{}, err
+	}
+	report.ProfileID = g.OriginatorProfileID
+	report.DeviceID = deviceID
+	event, err := newPlaybackProgressEvent(report, finished, policy, EngagementProvenance{}, nowMS)
+	if err != nil {
+		return PlayerReportResolution{}, err
+	}
+	prior, _, err := playbackProgressForSQL(ctx, tx, report.ProfileID, report.MediaID)
+	if err != nil {
+		return PlayerReportResolution{}, err
+	}
+	if err := appendPlaybackProjectionEvent(ctx, tx, event); err != nil {
+		return PlayerReportResolution{}, err
+	}
+	if err := applyPlaybackProjectionEvent(ctx, tx, event); err != nil {
+		return PlayerReportResolution{}, err
+	}
+	progress, _, err := playbackProgressForSQL(ctx, tx, report.ProfileID, report.MediaID)
+	if err != nil {
+		return PlayerReportResolution{}, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return PlayerReportResolution{}, err
 	}
@@ -469,6 +545,8 @@ func (s *Store) ResolvePlayerPlaybackReport(
 		GrantID:             g.GrantID,
 		OriginatorProfileID: g.OriginatorProfileID,
 		Ended:               finished,
+		PriorProgress:       prior,
+		Progress:            progress,
 	}, nil
 }
 
@@ -522,6 +600,16 @@ func recordPlayerCommandedMediaWithOriginatorSQL(
 	`, sessionID, mediaID); err != nil {
 		return err
 	}
+	// A completion for an earlier play of this same Media must not clear
+	// the replacement command before the display has requested its grant.
+	if _, err := exec.ExecContext(ctx, `
+		UPDATE playback_grant
+		SET cancelled_at_ms = ?
+		WHERE session_id = ? AND media_id = ?
+		  AND ended_at_ms IS NULL AND cancelled_at_ms IS NULL
+	`, nowMS, sessionID, mediaID); err != nil {
+		return err
+	}
 	_, err := exec.ExecContext(ctx, `
 		INSERT INTO player_commanded_media(
 			session_id, media_id, commanded_at_ms,
@@ -539,11 +627,18 @@ func recordPlayerCommandedMediaWithOriginatorSQL(
 }
 
 func stopPlayerSessionPlaybackSQL(ctx context.Context, exec sqlExecer, sessionID SessionID, now time.Time) error {
-	_, err := exec.ExecContext(ctx, `
+	if _, err := exec.ExecContext(ctx, `
 		UPDATE player_commanded_media
 		SET active_for_attribution = 0
 		WHERE session_id = ? AND active_for_attribution <> 0
-	`, sessionID)
+	`, sessionID); err != nil {
+		return err
+	}
+	_, err := exec.ExecContext(ctx, `
+		UPDATE playback_grant
+		SET cancelled_at_ms = ?
+		WHERE session_id = ? AND ended_at_ms IS NULL AND cancelled_at_ms IS NULL
+	`, timeToMillis(now), sessionID)
 	return err
 }
 
