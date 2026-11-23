@@ -172,6 +172,7 @@ func compatAuthFingerprint(scope auth.Scope) string {
 		AllLibraries            bool     `json:"allLibraries"`
 		PlayerProfileID         string   `json:"playerProfileID,omitempty"`
 		PlayerBindingGeneration int      `json:"playerBindingGeneration,omitempty"`
+		EnrolledDeviceRole      string   `json:"enrolledDeviceRole,omitempty"`
 	}{
 		DeviceID:                string(scope.DeviceID),
 		DeviceRole:              string(scope.DeviceRole),
@@ -186,6 +187,11 @@ func compatAuthFingerprint(scope auth.Scope) string {
 		AllLibraries:            scope.AllLibraries,
 		PlayerProfileID:         string(scope.PlayerProfileID),
 		PlayerBindingGeneration: scope.PlayerBindingGeneration,
+	}
+	// A player-bound Device authorizes as viewer but passes provenance on its
+	// enrolled role, so a change to that role must invalidate the decision.
+	if enrolled := enrolledRole(scope); enrolled != scope.DeviceRole {
+		canonical.EnrolledDeviceRole = string(enrolled)
 	}
 	encoded, _ := json.Marshal(canonical)
 	sum := sha256.Sum256(encoded)

@@ -184,6 +184,11 @@ func TestServerPlayerBoundManagerDeviceResolvesAsViewer(t *testing.T) {
 	if scope.EnrolledDeviceRole != store.DeviceRoleManager || compatEnrollment(scope).Role != capabilities.EnrollmentRoleManager {
 		t.Fatalf("bound enrolled role=%q provenance role=%q, want manager", scope.EnrolledDeviceRole, compatEnrollment(scope).Role)
 	}
+	demoted := scope
+	demoted.EnrolledDeviceRole = store.DeviceRoleViewer
+	if compatAuthFingerprint(demoted) == compatAuthFingerprint(scope) {
+		t.Fatal("demoting the enrolled role kept the compat fingerprint; a cached manager-build decision would survive")
+	}
 
 	exportReq := httptest.NewRequest(http.MethodGet, subscriptionExportPath, nil)
 	authBound(exportReq)
