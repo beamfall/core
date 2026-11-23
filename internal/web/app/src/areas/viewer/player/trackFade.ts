@@ -9,13 +9,82 @@ export const PLAY_WAIT_MS = 5_000;
 
 // A skip the listener asks for (Play now) fades the playing track out, moves
 // on, and fades the next track in once it plays, instead of cutting. Like the
-// sleep timer's fade (CORE-2960) it rides the element's volume, which the
-// gapless bridge follows; only the listener's own volume changes are saved.
-// A volume the listener sets mid-fade is theirs: the fade stops and keeps it,
-// and the skip still happens.
+// sleep timer's fade (useSleepTimer) it rides the element's volume, which the
+// gapless bridge follows, through one volume hold per element; only the
+// listener's own volume changes are saved. A volume the listener sets mid-fade
+// is theirs: the fade stops and keeps it, and the skip still happens.
+
+/** Equal-power gain at progress `t` (0 to 1) of a fade out: a quarter cosine. */
+export function fadeOutGain(t: number): number {
+  return Math.cos((Math.min(1, Math.max(0, t)) * Math.PI) / 2);
+}
+
+/** Equal-power gain at progress `t` (0 to 1) of a fade in: a quarter sine. */
+export function fadeInGain(t: number): number {
+  return Math.sin((Math.min(1, Math.max(0, t)) * Math.PI) / 2);
+}
+
+/**
+ * A fade's hold on an element's volume. It writes the listener's level times
+ * a gain, and tells a level the listener set apart from its own writes.
+ */
+export type VolumeHold = {
+  /** The listener's level when the hold began. */
+  readonly base: number;
+  /** Sets the element to `base * gain`; does nothing once the hold is gone. */
+  write: (gain: number) => void;
+  /** Whether the element's volume is no longer the hold's last write: the listener set it. */
+  theirs: () => boolean;
+  /** Whether this is still the element's hold: a newer fade takes it over. */
+  held: () => boolean;
+  /** Lets go; with `restore`, the listener's level comes back unless they set their own. */
+  release: (restore: boolean) => void;
+};
+
+const holds = new WeakMap<HTMLMediaElement, VolumeHold & { level: () => number }>();
+
+/**
+ * Holds the element's volume for a fade. A hold already on the element ends
+ * without restoring, and the new one starts from the listener's level it kept,
+ * so two fades never both write and the level saved is always the listener's.
+ */
+export function holdVolume(video: HTMLMediaElement): VolumeHold {
+  const prior = holds.get(video);
+  const base = prior ? prior.level() : video.volume;
+  if (prior) holds.delete(video);
+  let written = video.volume;
+  const theirs = () => video.volume !== written;
+  const hold = {
+    base,
+    write: (gain: number) => {
+      if (holds.get(video) !== hold) return;
+      written = Math.max(0, Math.min(1, base * gain));
+      video.volume = written;
+    },
+    theirs,
+    held: () => holds.get(video) === hold,
+    level: () => (theirs() ? video.volume : base),
+    release: (restore: boolean) => {
+      if (holds.get(video) !== hold) return;
+      holds.delete(video);
+      if (restore && !theirs()) video.volume = base;
+    },
+  };
+  holds.set(video, hold);
+  return hold;
+}
+
+/** Whether a fade holds the element's volume. */
+export function volumeHeld(video: HTMLMediaElement): boolean {
+  return holds.has(video);
+}
+
+/** The listener's volume while a fade holds the element lower, for saving and showing. */
+export function fadeBaseVolume(video: HTMLMediaElement): number {
+  return holds.get(video)?.level() ?? video.volume;
+}
 
 type Run = {
-  level: () => number;
   supersede: () => void;
   cancel: () => void;
   finish: () => void;
@@ -23,11 +92,6 @@ type Run = {
 const runs = new WeakMap<HTMLMediaElement, Run>();
 // Skips still fading out, on any element: a retried track mounts a new one.
 const fadingOut = new Set<Run>();
-
-/** The listener's volume while a skip fade holds the element lower, for saving. */
-export function fadeBaseVolume(video: HTMLMediaElement): number {
-  return runs.get(video)?.level() ?? video.volume;
-}
 
 /** Drops every skip still fading out, without moving on: the listener chose something else first. */
 export function cancelFadeAdvance() {
@@ -50,24 +114,19 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   if (!video) return advance();
   // A second skip mid-fade replaces the first: its level comes back, and only the newer skip happens.
   runs.get(video)?.supersede();
-  const base = video.volume;
-  if (video.paused || listenerMuted(video) || base === 0) return advance();
+  if (video.paused || listenerMuted(video) || fadeBaseVolume(video) === 0) return advance();
 
-  let written = base;
+  const hold = holdVolume(video);
   let frame = 0;
   let wait: ReturnType<typeof setTimeout> | undefined;
   let advanced = false;
-  const write = (level: number) => {
-    written = Math.max(0, Math.min(1, base * level));
-    video.volume = written;
-  };
-  const theirs = () => video.volume !== written;
+  const theirs = hold.theirs;
   const done = (restore: boolean) => {
     cancelAnimationFrame(frame);
     clearTimeout(wait);
     video.removeEventListener("loadstart", loading);
     video.removeEventListener("playing", fadeIn);
-    if (restore && !theirs()) video.volume = base;
+    hold.release(restore);
     fadingOut.delete(run);
     if (runs.get(video) === run) runs.delete(video);
   };
@@ -77,8 +136,6 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     advance();
   };
   const run: Run = {
-    // A level the listener set while the next track loads is theirs.
-    level: () => (theirs() ? video.volume : base),
     supersede: () => done(true),
     cancel: () => {
       if (!advanced) done(true);
@@ -92,18 +149,18 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     },
   };
   const stop = () => done(true);
-  // Equal power: out follows a quarter cosine, in a quarter sine, so the level sounds even.
-  const ramp = (shape: (t: number) => number, then: () => void) => {
+  // Equal power, so the level sounds even.
+  const ramp = (gain: (t: number) => number, then: () => void) => {
     const started = performance.now();
     const step = () => {
-      // The listener's own volume ends the fade early; the skip they asked for still happens.
-      if (theirs()) {
+      // The listener's own volume, or a newer fade, ends this one early; the skip still happens.
+      if (theirs() || !hold.held()) {
         done(false);
         if (!advanced) go();
         return;
       }
       const t = Math.min(1, (performance.now() - started) / TRACK_FADE_MS);
-      write(shape((t * Math.PI) / 2));
+      hold.write(gain(t));
       if (t < 1) frame = requestAnimationFrame(step);
       else then();
     };
@@ -113,7 +170,7 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     video?.removeEventListener("loadstart", loading);
     video?.removeEventListener("playing", fadeIn);
     clearTimeout(wait);
-    ramp(Math.sin, stop);
+    ramp(fadeInGain, stop);
   }
   function loading() {
     video?.removeEventListener("loadstart", loading);
@@ -122,7 +179,7 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   }
   runs.set(video, run);
   fadingOut.add(run);
-  ramp(Math.cos, () => {
+  ramp(fadeOutGain, () => {
     video.addEventListener("loadstart", loading);
     video.addEventListener("playing", fadeIn);
     wait = setTimeout(fadeIn, LOAD_WAIT_MS);

@@ -6,6 +6,7 @@ import {
   PREF_KEYS,
   parsePlaybackSpeed,
 } from "../lib/preferences";
+import { fadeOutGain } from "./trackFade";
 
 // Listening controls for the audio stage (CORE-2960): speed, removing long
 // pauses and the sleep timer. Pure helpers; the hooks live in useListening.ts.
@@ -151,8 +152,12 @@ export function chapterSleep(
 }
 
 export const SLEEP_MINUTES = [15, 30, 45, 60] as const;
-/** The volume fades out over the timer's last seconds, then playback pauses. */
-export const SLEEP_FADE_SECONDS = 10;
+/**
+ * The volume fades out over the timer's last seconds, then playback pauses: at
+ * most this long, and a quarter of the timer when it is set with less than
+ * four times that left.
+ */
+export const SLEEP_FADE_SECONDS = 45;
 /**
  * End of item pauses this many listening seconds before the end, so the queue
  * does not advance at any speed.
@@ -180,7 +185,16 @@ export function sleepRemaining(
   return Math.max(0, timer.kind === "item" ? left - SLEEP_END_LEAD_SECONDS : left);
 }
 
-/** The share of the listener's volume left as the timer runs out. */
-export function sleepFade(remaining: number): number {
-  return Math.min(1, Math.max(0, remaining / SLEEP_FADE_SECONDS));
+/** How long the fade lasts for a timer set with `total` listening seconds left. */
+export function sleepFadeSeconds(total: number): number {
+  return Math.min(SLEEP_FADE_SECONDS, Math.max(0, total / 4));
+}
+
+/**
+ * The share of the listener's volume left with `remaining` seconds to go, for
+ * a fade that began `from` seconds out: equal power, the Play now fade's curve.
+ */
+export function sleepFade(remaining: number, from: number): number {
+  if (!(from > 0) || remaining >= from) return 1;
+  return fadeOutGain(1 - Math.max(0, remaining) / from);
 }

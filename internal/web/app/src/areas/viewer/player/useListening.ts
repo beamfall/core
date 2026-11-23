@@ -8,8 +8,10 @@ import {
   type SilentSpan,
   type SleepTimer,
   sleepFade,
+  sleepFadeSeconds,
   sleepRemaining,
 } from "./listening";
+import { holdVolume, type VolumeHold, volumeHeld } from "./trackFade";
 
 type VideoRef = RefObject<HTMLVideoElement | null>;
 
@@ -133,10 +135,18 @@ export function useLongPauseSkip(
   return { mapped: spans !== null, saved };
 }
 
+/** How often the volume steps while the sleep timer fades it, so the fade sounds smooth. */
+export const SLEEP_FADE_STEP_MS = 50;
+
 /**
  * The sleep timer (CORE-2960): after a number of minutes, at the end of this
- * item or at the end of this chapter, the volume fades out over 10 seconds,
- * then playback pauses and the volume comes back. An item or chapter timer
+ * item or at the end of this chapter, the volume fades out over the last
+ * stretch (up to 45 seconds, equal power), then playback pauses and the
+ * listener's volume comes back, so the next play is not silent. A volume the
+ * listener sets, a pause or a play, or a Play now skip ends the fade cleanly:
+ * the level is theirs again, and what is left of the timer fades afresh from
+ * it, so the stop never cuts. Cancelling or changing the timer gives the level
+ * straight back. An item or chapter timer
  * ends with its item. It runs only while `enabled`; `durationSeconds` is the
  * server's duration, which a live transcode's element does not know yet.
  */
@@ -174,48 +184,73 @@ export function useSleepTimer(
       setRemaining(null);
       return;
     }
-    // The volume before the fade, given back when the timer ends either way.
-    // A volume the listener sets mid-fade is theirs: the fade restarts from it.
-    let base: number | null = null;
-    let faded = 0;
+    // The fade's hold on the volume, and the seconds left when it began: a
+    // fade the listener interrupts starts again from their level over what is left.
+    let hold: VolumeHold | null = null;
+    let from = 0;
+    // The fade's length, fixed by the time left when the timer is first measured.
+    let fadeSeconds: number | null =
+      timer.kind === "minutes" ? sleepFadeSeconds(timer.minutes * 60) : null;
     let finish: ReturnType<typeof setTimeout> | undefined;
-    const restore = () => {
-      if (base !== null && video.volume === faded) video.volume = base;
-      base = null;
+    let stepping: ReturnType<typeof setInterval> | undefined;
+    const letGo = () => {
+      clearInterval(stepping);
+      stepping = undefined;
+      hold?.release(true);
+      hold = null;
     };
-    const tick = () => {
-      clearTimeout(finish);
-      const left = sleepRemaining(timer, Date.now(), {
+    const measure = () =>
+      sleepRemaining(timer, Date.now(), {
         currentTime: video.currentTime,
         playbackRate: video.playbackRate,
         duration: playbackDurationSeconds(durationRef.current, video.duration) || Number.NaN,
       });
+    const fade = (left: number) => {
+      // The listener's own volume, or a skip's fade, ends this fade, keeping their level.
+      if (hold && (hold.theirs() || !hold.held())) {
+        hold.release(false);
+        hold = null;
+      }
+      if (fadeSeconds === null || left >= fadeSeconds || video.paused) {
+        letGo();
+        return;
+      }
+      if (!hold) {
+        if (volumeHeld(video)) return; // A skip is fading; this fade starts once it is done.
+        hold = holdVolume(video);
+        from = left;
+        stepping ??= setInterval(() => fade(measure()), SLEEP_FADE_STEP_MS);
+      }
+      hold.write(sleepFade(left, from));
+    };
+    const tick = () => {
+      clearTimeout(finish);
+      const left = measure();
       setRemaining(Number.isFinite(left) ? left : null);
       if (left <= 0) {
         video.pause();
-        restore();
+        letGo();
         setState(null);
         return;
       }
+      if (fadeSeconds === null && Number.isFinite(left)) fadeSeconds = sleepFadeSeconds(left);
       // The last moments land on a timer of their own, so a fast speed cannot
       // carry the item past its end between ticks.
       if (left < 0.5 && !video.paused) finish = setTimeout(tick, left * 1000);
-      if (base !== null && video.volume !== faded) base = null;
-      const fade = sleepFade(left);
-      if (fade < 1 && !video.paused) {
-        base ??= video.volume;
-        video.volume = base * fade;
-        faded = video.volume;
-      } else {
-        restore();
-      }
+      fade(left);
     };
     tick();
     const interval = setInterval(tick, 250);
+    // A pause gives the level back at once; a play starts what is left of the fade afresh.
+    const playState = () => tick();
+    video.addEventListener("pause", playState);
+    video.addEventListener("play", playState);
     return () => {
       clearInterval(interval);
       clearTimeout(finish);
-      restore();
+      video.removeEventListener("pause", playState);
+      video.removeEventListener("play", playState);
+      letGo();
     };
   }, [videoRef, timer, enabled]);
 
