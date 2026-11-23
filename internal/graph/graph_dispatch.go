@@ -706,6 +706,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"partyscreenreport":                  newFieldHandler("partyScreenReport", "party", fieldMutation, roleSession, 159),
 	"partyscreenticker":                  newFieldHandler("partyScreenTicker", "party", fieldMutation, roleSession, 159),
 	"partyscreendrop":                    newFieldHandler("partyScreenDrop", "party", fieldMutation, roleSession, 159),
+	"partyscreenadddisplay":              newFieldHandler("partyScreenAddDisplay", "party", fieldMutation, roleSession, 159),
+	"partyscreenlead":                    newFieldHandler("partyScreenLead", "party", fieldMutation, roleSession, 159),
 	"playqueue":                          newFieldHandler("playQueue", "queue", fieldRead, roleSession, 30),
 	"queueaddmany":                       newFieldHandler("queueAddMany", "queue", fieldMutation, roleSession, 30),
 	"queuemoveentry":                     newFieldHandler("queueMoveEntry", "queue", fieldMutation, roleSession, 30),
@@ -4866,7 +4868,7 @@ func dispatchFieldBlock159(dispatch *fieldDispatchContext) response {
 		}
 	}
 	if fields["partystage"] {
-		result, err := h.partyStageRead(ctx, req)
+		result, err := h.partyStageRead(ctx, scope, req)
 		if resp := resolveField(dispatch, "partystage", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
@@ -4934,6 +4936,14 @@ func dispatchFieldBlock159(dispatch *fieldDispatchContext) response {
 	if fields["partyscreendrop"] {
 		result, err := h.partyScreenDropWrite(ctx, scope, req)
 		return resolveField(dispatch, "partyscreendrop", result, err)
+	}
+	if fields["partyscreenadddisplay"] {
+		result, err := h.partyScreenAddDisplayWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreenadddisplay", result, err)
+	}
+	if fields["partyscreenlead"] {
+		result, err := h.partyScreenLeadWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreenlead", result, err)
 	}
 	return response{}
 }

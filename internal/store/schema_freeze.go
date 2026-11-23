@@ -131,7 +131,11 @@ package store
 // attribution and adds playback_grant + playback_grant_report for server-bound
 // display playback attribution and idempotent report handling, off the
 // entity-query hot path.
+// Events 0033 (CORE-3313) adds auth_session_id, device_id,
+// binding_generation, and chosen_lead to party_screen for session-bound
+// stage reads, player display joining, and release tracking, off the
+// entity-query hot path.
 const (
-	schemaFreezeEventsMigrations           = 32
+	schemaFreezeEventsMigrations           = 33
 	schemaFreezeEncryptedLibraryMigrations = 13
 )

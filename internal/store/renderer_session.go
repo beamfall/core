@@ -271,8 +271,10 @@ func (s *Store) controlRendererSession(
 	if err := s.guardLocked(); err != nil {
 		return RendererSessionControlResult{}, err
 	}
+	var targetDeviceID DeviceID
 	if guard != nil {
-		if err := s.verifyPlayerControlLocked(ctx, target, *guard); err != nil {
+		var err error
+		if targetDeviceID, err = s.verifyPlayerControlLocked(ctx, target, *guard); err != nil {
 			return RendererSessionControlResult{}, err
 		}
 	}
@@ -316,6 +318,17 @@ func (s *Store) controlRendererSession(
 		return stored, nil
 	case !errors.Is(err, sql.ErrNoRows):
 		return RendererSessionControlResult{}, err
+	}
+
+	wrotePartyOutbox := false
+	if guard != nil && payload.Command != SessionCommandStop {
+		inParty, err := s.playerDeviceInLivePartyTx(ctx, tx, targetDeviceID, target, nowMS, &wrotePartyOutbox)
+		if err != nil {
+			return RendererSessionControlResult{}, err
+		}
+		if inParty {
+			return RendererSessionControlResult{}, ErrDisplayInParty
+		}
 	}
 
 	var currentRevision int64
@@ -362,6 +375,9 @@ func (s *Store) controlRendererSession(
 	}
 	if guard != nil && payload.Command == SessionCommandStop {
 		if err := stopPlayerSessionPlaybackSQL(ctx, tx, target, now); err != nil {
+			return RendererSessionControlResult{}, err
+		}
+		if err := s.dropPartyScreensForStopTx(ctx, tx, targetDeviceID, target, nowMS, &wrotePartyOutbox); err != nil {
 			return RendererSessionControlResult{}, err
 		}
 	}

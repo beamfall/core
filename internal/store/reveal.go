@@ -190,5 +190,37 @@ func (s *Store) SetSessionRevealed(ctx context.Context, id SessionID, revealed b
 	if affected == 0 {
 		return errors.New("session not found")
 	}
+	if !revealed {
+		_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE session_id = ? AND restricted = 1`, id)
+	}
 	return nil
+}
+
+// SessionRestrictedStreamMediaIDs returns the Media IDs of active restricted
+// playback grants held by session id, used to detach in-flight transcodes on
+// relock (ADR-0004 §4, ADR-0240 D10).
+func (s *Store) SessionRestrictedStreamMediaIDs(ctx context.Context, id SessionID) ([]MediaID, error) {
+	if id == "" {
+		return nil, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := s.eventsR.QueryContext(ctx,
+		`SELECT DISTINCT media_id FROM stream_token_ledger WHERE session_id = ? AND restricted = 1`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []MediaID
+	for rows.Next() {
+		var mediaID MediaID
+		if err := rows.Scan(&mediaID); err != nil {
+			return nil, err
+		}
+		ids = append(ids, mediaID)
+	}
+	return ids, rows.Err()
 }

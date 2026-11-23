@@ -97,6 +97,9 @@ const (
 	// event stream is disconnected or has not sent a heartbeat within 60 s
 	// (ADR-0240 D9).
 	ErrorReasonDisplayOffline ErrorReason = "DISPLAY_OFFLINE"
+	// ErrorReasonDisplayInParty: a controller sent a non-stop D4 command to a
+	// player display that is currently joined to a party session (ADR-0240 D10).
+	ErrorReasonDisplayInParty ErrorReason = "DISPLAY_IN_PARTY"
 )
 
 // ErrorReasons returns the closed reason vocabulary in its documented order.
@@ -109,6 +112,7 @@ func ErrorReasons() []ErrorReason {
 		ErrorReasonAccessScheduleEnded,
 		ErrorReasonUpdateRequired,
 		ErrorReasonDisplayOffline,
+		ErrorReasonDisplayInParty,
 	}
 }
 
@@ -283,6 +287,9 @@ var clientErrorCodes = map[string]ErrorCode{
 	"bound player device cannot switch profiles":                     ErrorCodeForbidden,
 	"player display cannot list profiles":                            ErrorCodeForbidden,
 	"player display cannot modify profile settings":                  ErrorCodeForbidden,
+	"player display cannot register a stage screen":                  ErrorCodeForbidden,
+	"player display cannot host a party":                             ErrorCodeForbidden,
+	"screen cannot play the current entry":                           ErrorCodeForbidden,
 	"target profile must be kind player":                             ErrorCodeInvalid,
 	"controllers apply to player profiles only":                      ErrorCodeInvalid,
 	"player profile cannot be a controller":                          ErrorCodeInvalid,
@@ -298,6 +305,8 @@ var clientErrorCodes = map[string]ErrorCode{
 
 	"access request already resolved":                ErrorCodeConflict,
 	"display offline":                                ErrorCodeConflict,
+	"display in party":                               ErrorCodeConflict,
+	"display already in a party":                     ErrorCodeConflict,
 	"commandID already used for a different command": ErrorCodeConflict,
 	"follow the subscription first":                  ErrorCodeConflict, // CORE-2958
 	"no backup key is waiting to be saved":           ErrorCodeConflict,

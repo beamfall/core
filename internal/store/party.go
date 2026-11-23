@@ -69,6 +69,15 @@ var (
 	// ErrPartyInvalid marks a rejected argument; PartyInputError carries the
 	// client-facing message.
 	ErrPartyInvalid = errors.New("invalid party request")
+	// ErrDisplayInParty reports a D4 command (other than stop) targeting a
+	// player display that is currently joined to a live party session.
+	ErrDisplayInParty = errors.New("display in party")
+	// ErrPartyDisplayAlreadyJoined reports adding a player display that is
+	// already active in another live party session.
+	ErrPartyDisplayAlreadyJoined = errors.New("display already in a party")
+	// ErrPartyScreenIneligibleLead reports choosing a screen as lead that
+	// cannot play the party's current entry.
+	ErrPartyScreenIneligibleLead = errors.New("screen cannot play the current entry")
 )
 
 // PartyInputError is a rejected party argument with a client-safe message.
@@ -116,6 +125,8 @@ type PartyEntryView struct {
 	PitchSemitones  int
 	AddedAt         time.Time
 	LastPlayedAt    time.Time
+	Ineligible      bool
+	Label           string
 }
 
 // PartyParticipantView is one participant still in the session.
@@ -139,16 +150,27 @@ type PartyPlaybackView struct {
 
 // PartyScreenView is one active stage screen.
 type PartyScreenView struct {
-	ID         string
-	ProfileID  ProfileID
-	Name       string
-	Kind       string
-	Carrier    string
-	Lead       bool
-	Ticker     bool
-	OffsetMS   int64
-	RTTMS      int64
-	ReportedAt time.Time
+	ID                string
+	ProfileID         ProfileID
+	AuthSessionID     SessionID
+	DeviceID          DeviceID
+	BindingGeneration int
+	ChosenLead        bool
+	Name              string
+	Kind              string
+	Carrier           string
+	Lead              bool
+	Ticker            bool
+	OffsetMS          int64
+	RTTMS             int64
+	ReportedAt        time.Time
+}
+
+// PartyScreenJoinView is the result of adding a player display to a party.
+type PartyScreenJoinView struct {
+	Screen            PartyScreenView
+	CoversLibraries   bool
+	MissingLibraryIDs []LibraryID
 }
 
 // PartyView is a session as its host sees it.
@@ -177,6 +199,7 @@ type PartyStageView struct {
 	Playback    *PartyPlaybackView
 	UpNext      []PartyEntryView
 	Ticker      bool
+	Lead        bool
 	JoinCode    string
 }
 
@@ -247,6 +270,10 @@ type partyEntryRow struct {
 type partyScreenRow struct {
 	id                  string
 	profileID           ProfileID
+	authSessionID       SessionID
+	deviceID            DeviceID
+	bindingGeneration   int
+	chosenLead          bool
 	name, kind, carrier string
 	ticker              bool
 	offsetMS, rttMS     int64
@@ -337,26 +364,83 @@ func partyName(name string) (string, error) {
 // partyWrite runs fn in one events transaction after ending expired sessions,
 // so the live-host and live-code indexes never see a stale session.
 func (s *Store) partyWrite(ctx context.Context, fn func(tx *sql.Tx, nowMS int64) error) error {
+	return s.partyWriteOutbox(ctx, func(tx *sql.Tx, nowMS int64, _ *bool) error {
+		return fn(tx, nowMS)
+	})
+}
+
+func (s *Store) partyWriteOutbox(ctx context.Context, fn func(tx *sql.Tx, nowMS int64, wroteOutbox *bool) error) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	return s.partyWriteOutboxLocked(ctx, fn)
+}
+
+func (s *Store) partyWriteOutboxLocked(ctx context.Context, fn func(tx *sql.Tx, nowMS int64, wroteOutbox *bool) error) error {
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	nowMS := timeToMillis(s.serverNow())
+	wroteOutbox := false
+	if err := s.expirePartySessionsTx(ctx, tx, nowMS, &wroteOutbox); err != nil {
+		return err
+	}
+	if err := fn(tx, nowMS, &wroteOutbox); err != nil {
+		return err
+	}
+	if wroteOutbox {
+		return s.commitOutboxTx(tx)
+	}
+	return tx.Commit()
+}
+
+func (s *Store) expirePartySessionsTx(ctx context.Context, tx *sql.Tx, nowMS int64, wroteOutbox *bool) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT s.screen_id, s.session_id, s.auth_session_id, s.profile_id, p.host_profile_id, s.device_id
+		FROM party_screen s
+		JOIN party_session p ON p.session_id = s.session_id
+		WHERE p.ended_at_ms IS NULL AND p.expires_at_ms <= ? AND s.dropped_at_ms IS NULL AND s.device_id <> ''
+	`, nowMS)
+	if err != nil {
+		return err
+	}
+	var expiredDisplays []PartyStageEventPayload
+	for rows.Next() {
+		var p PartyStageEventPayload
+		if err := rows.Scan(&p.ScreenID, &p.PartySessionID, &p.AuthSessionID, &p.ProfileID, &p.HostProfileID, &p.DeviceID); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		p.Action = PartyStageActionReleased
+		p.Reason = "ended"
+		expiredDisplays = append(expiredDisplays, p)
+	}
+	if err := closeRows(rows); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE party_screen SET dropped_at_ms = ?
+		WHERE dropped_at_ms IS NULL AND session_id IN (
+			SELECT session_id FROM party_session WHERE ended_at_ms IS NULL AND expires_at_ms <= ?
+		)`, nowMS, nowMS); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE party_session SET ended_at_ms = expires_at_ms
 		WHERE ended_at_ms IS NULL AND expires_at_ms <= ?`, nowMS); err != nil {
 		return err
 	}
-	if err := fn(tx, nowMS); err != nil {
-		return err
+	for _, p := range expiredDisplays {
+		if err := appendPartyStageEventSQL(ctx, tx, p, nowMS); err != nil {
+			return err
+		}
+		*wroteOutbox = true
 	}
-	return tx.Commit()
+	return nil
 }
 
 func livePartySessionByHost(ctx context.Context, q partyQuerier, host ProfileID, nowMS int64) (PartySession, error) {
@@ -529,7 +613,19 @@ func freePartyJoinCode(ctx context.Context, tx *sql.Tx) (string, error) {
 // partyHostWrite runs a host mutation against the host's live session and
 // refreshes the session's stored visibility from the host's current one.
 func (s *Store) partyHostWrite(ctx context.Context, host ProfileID, filter LibraryFilter, fn func(tx *sql.Tx, session PartySession, nowMS int64) error) error {
-	return s.partyWrite(ctx, func(tx *sql.Tx, nowMS int64) error {
+	return s.partyHostWriteAction(ctx, host, filter, PartyStageActionChanged, func(tx *sql.Tx, session PartySession, nowMS int64, _ *bool) error {
+		return fn(tx, session, nowMS)
+	})
+}
+
+func (s *Store) partyHostWriteAction(
+	ctx context.Context,
+	host ProfileID,
+	filter LibraryFilter,
+	notifyAction string,
+	fn func(tx *sql.Tx, session PartySession, nowMS int64, wroteOutbox *bool) error,
+) error {
+	return s.partyWriteOutbox(ctx, func(tx *sql.Tx, nowMS int64, wroteOutbox *bool) error {
 		session, err := livePartySessionByHost(ctx, tx, host, nowMS)
 		if err != nil {
 			return err
@@ -546,13 +642,22 @@ func (s *Store) partyHostWrite(ctx context.Context, host ProfileID, filter Libra
 			return err
 		}
 		session.hostFilter = narrowed
-		return fn(tx, session, nowMS)
+		if err := fn(tx, session, nowMS, wroteOutbox); err != nil {
+			return err
+		}
+		return s.reconcileAndNotifyPartyDisplaysTx(ctx, tx, session.ID, session.HostProfileID, nowMS, notifyAction, wroteOutbox)
 	})
 }
 
 // PartySessionForHost returns the host's live session as the host sees it.
 func (s *Store) PartySessionForHost(ctx context.Context, host ProfileID, filter LibraryFilter) (PartyView, bool, error) {
-	view, err := s.readPartyView(ctx, func(q partyQuerier, nowMS int64) (PartySession, error) {
+	return s.PartySessionForHostWithFilters(ctx, host, filter, nil)
+}
+
+// PartySessionForHostWithFilters returns the host's live session with optional
+// per-screen playback filters used to evaluate lead eligibility.
+func (s *Store) PartySessionForHostWithFilters(ctx context.Context, host ProfileID, filter LibraryFilter, screenPlaybackFilters map[string]LibraryFilter) (PartyView, bool, error) {
+	view, err := s.readPartyView(ctx, screenPlaybackFilters, func(q partyQuerier, nowMS int64) (PartySession, error) {
 		session, err := livePartySessionByHost(ctx, q, host, nowMS)
 		if err != nil {
 			return PartySession{}, err
@@ -567,7 +672,7 @@ func (s *Store) PartySessionForHost(ctx context.Context, host ProfileID, filter 
 	return view, err == nil, err
 }
 
-func (s *Store) readPartyView(ctx context.Context, find func(q partyQuerier, nowMS int64) (PartySession, error)) (PartyView, error) {
+func (s *Store) readPartyView(ctx context.Context, screenPlaybackFilters map[string]LibraryFilter, find func(q partyQuerier, nowMS int64) (PartySession, error)) (PartyView, error) {
 	view, err := func() (PartyView, error) {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
@@ -586,6 +691,8 @@ func (s *Store) readPartyView(ctx context.Context, find func(q partyQuerier, now
 		if err != nil {
 			return PartyView{}, err
 		}
+		state.screens = s.filterValidPartyScreensLocked(ctx, session.HostProfileID, state.screens)
+		s.markPartyLeadLocked(ctx, &state, screenPlaybackFilters)
 		return s.buildPartyViewLocked(ctx, state, nowMS)
 	}()
 	if err != nil {
@@ -634,8 +741,8 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 	if err := closeRows(rows); err != nil {
 		return partyState{}, err
 	}
-	rows, err = q.QueryContext(ctx, `SELECT screen_id, profile_id, name, kind, carrier, ticker, offset_ms, rtt_ms,
-			registered_at_ms, COALESCE(reported_at_ms, 0)
+	rows, err = q.QueryContext(ctx, `SELECT screen_id, profile_id, auth_session_id, device_id, binding_generation, chosen_lead,
+			name, kind, carrier, ticker, offset_ms, rtt_ms, registered_at_ms, COALESCE(reported_at_ms, 0)
 		FROM party_screen WHERE session_id = ? AND dropped_at_ms IS NULL
 		ORDER BY registered_at_ms, screen_id`, session.ID)
 	if err != nil {
@@ -643,12 +750,17 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 	}
 	for rows.Next() {
 		var row partyScreenRow
-		var ticker int
-		if err := rows.Scan(&row.id, &row.profileID, &row.name, &row.kind, &row.carrier, &ticker, &row.offsetMS, &row.rttMS,
+		var ticker, chosenLead int
+		var authSess, devID string
+		if err := rows.Scan(&row.id, &row.profileID, &authSess, &devID, &row.bindingGeneration, &chosenLead,
+			&row.name, &row.kind, &row.carrier, &ticker, &row.offsetMS, &row.rttMS,
 			&row.registeredAtMS, &row.reportedAtMS); err != nil {
 			_ = rows.Close()
 			return partyState{}, err
 		}
+		row.authSessionID = SessionID(authSess)
+		row.deviceID = DeviceID(devID)
+		row.chosenLead = chosenLead == 1
 		row.ticker = ticker == 1
 		row.lastSeenMS = max(row.registeredAtMS, row.reportedAtMS)
 		row.active = nowMS-row.lastSeenMS < partyScreenSilence.Milliseconds()
@@ -657,7 +769,7 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 	if err := closeRows(rows); err != nil {
 		return partyState{}, err
 	}
-	markPartyLead(state.screens)
+	markPartyLead(state.screens, nil)
 	return state, nil
 }
 
@@ -669,15 +781,38 @@ func closeRows(rows *sql.Rows) error {
 	return rows.Close()
 }
 
-// markPartyLead marks the first active popout screen, or with none the first
-// active joined screen, as the lead.
-func markPartyLead(screens []partyScreenRow) {
-	for _, kind := range []string{"popout", "joined"} {
-		for i := range screens {
-			if screens[i].active && screens[i].kind == kind {
-				screens[i].lead = true
-				return
-			}
+// markPartyLead marks the chosen lead (if active and able to play the current
+// entry), else the first eligible active popout screen, else the first eligible
+// active ordinary joined screen, as the lead.
+func markPartyLead(screens []partyScreenRow, canPlayCurrent func(partyScreenRow) bool) {
+	for i := range screens {
+		screens[i].lead = false
+	}
+	canLead := func(screen partyScreenRow) bool {
+		if !screen.active {
+			return false
+		}
+		if canPlayCurrent != nil && !canPlayCurrent(screen) {
+			return false
+		}
+		return true
+	}
+	for i := range screens {
+		if screens[i].chosenLead && canLead(screens[i]) {
+			screens[i].lead = true
+			return
+		}
+	}
+	for i := range screens {
+		if screens[i].kind == "popout" && canLead(screens[i]) {
+			screens[i].lead = true
+			return
+		}
+	}
+	for i := range screens {
+		if screens[i].kind == "joined" && screens[i].deviceID == "" && canLead(screens[i]) {
+			screens[i].lead = true
+			return
 		}
 	}
 }
@@ -901,7 +1036,9 @@ func (st partyState) lastPlayed(entry partyEntryRow) time.Time {
 
 func (row partyScreenRow) view() PartyScreenView {
 	return PartyScreenView{
-		ID: row.id, ProfileID: row.profileID, Name: row.name, Kind: row.kind, Carrier: row.carrier,
+		ID: row.id, ProfileID: row.profileID, AuthSessionID: row.authSessionID,
+		DeviceID: row.deviceID, BindingGeneration: row.bindingGeneration, ChosenLead: row.chosenLead,
+		Name: row.name, Kind: row.kind, Carrier: row.carrier,
 		Lead: row.lead, Ticker: row.ticker, OffsetMS: row.offsetMS, RTTMS: row.rttMS,
 		ReportedAt: millisToTime(row.reportedAtMS),
 	}
@@ -1007,18 +1144,63 @@ func (s *Store) UpdatePartySession(ctx context.Context, host ProfileID, filter L
 }
 
 // EndPartySession ends the host's live session, which refuses every guest
-// token it issued. It reports whether a session was live.
+// token it issued and releases any joined player displays. It reports whether a
+// session was live.
 func (s *Store) EndPartySession(ctx context.Context, host ProfileID) (bool, error) {
 	ended := false
-	err := s.partyWrite(ctx, func(tx *sql.Tx, nowMS int64) error {
+	err := s.partyWriteOutbox(ctx, func(tx *sql.Tx, nowMS int64, wroteOutbox *bool) error {
+		session, err := livePartySessionByHost(ctx, tx, host, nowMS)
+		if errors.Is(err, ErrPartyNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		rows, err := tx.QueryContext(ctx, `
+			SELECT screen_id, auth_session_id, profile_id, device_id
+			FROM party_screen
+			WHERE session_id = ? AND dropped_at_ms IS NULL AND device_id <> ''
+		`, session.ID)
+		if err != nil {
+			return err
+		}
+		var displays []PartyStageEventPayload
+		for rows.Next() {
+			var p PartyStageEventPayload
+			if err := rows.Scan(&p.ScreenID, &p.AuthSessionID, &p.ProfileID, &p.DeviceID); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			p.PartySessionID = session.ID
+			p.HostProfileID = session.HostProfileID
+			p.Action = PartyStageActionReleased
+			p.Reason = "ended"
+			displays = append(displays, p)
+		}
+		if err := closeRows(rows); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ?
+			WHERE session_id = ? AND dropped_at_ms IS NULL`, nowMS, session.ID); err != nil {
+			return err
+		}
 		result, err := tx.ExecContext(ctx, `UPDATE party_session SET ended_at_ms = ?
-			WHERE host_profile_id = ? AND ended_at_ms IS NULL`, nowMS, host)
+			WHERE session_id = ? AND ended_at_ms IS NULL`, nowMS, session.ID)
 		if err != nil {
 			return err
 		}
 		n, err := result.RowsAffected()
 		ended = n > 0
-		return err
+		if err != nil {
+			return err
+		}
+		for _, p := range displays {
+			if err := appendPartyStageEventSQL(ctx, tx, p, nowMS); err != nil {
+				return err
+			}
+			*wroteOutbox = true
+		}
+		return nil
 	})
 	return ended, err
 }
@@ -1225,7 +1407,7 @@ func (s *Store) AdvanceParty(ctx context.Context, host ProfileID, filter Library
 	fromEntryID = strings.TrimSpace(fromEntryID)
 	if fromEntryID != "" {
 		advanced := false
-		err := s.partyWrite(ctx, func(tx *sql.Tx, nowMS int64) error {
+		err := s.partyWriteOutbox(ctx, func(tx *sql.Tx, nowMS int64, wroteOutbox *bool) error {
 			session, err := scanPartySession(tx.QueryRowContext(ctx, `SELECT `+partySessionColumns+`
 				FROM party_session WHERE current_entry_id = ? AND host_profile_id <> ?
 					AND ended_at_ms IS NULL AND expires_at_ms > ?
@@ -1240,8 +1422,22 @@ func (s *Store) AdvanceParty(ctx context.Context, host ProfileID, filter Library
 			if session, err = s.partyLiveSessionLocked(ctx, session); err != nil {
 				return err
 			}
+			if err := s.reconcilePartyPlayerDisplaysTx(ctx, tx, session.ID, session.HostProfileID, nowMS, wroteOutbox); err != nil {
+				return err
+			}
+			var stillRegistered int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM party_screen WHERE session_id = ? AND profile_id = ? AND dropped_at_ms IS NULL`,
+				session.ID, host).Scan(&stillRegistered); err != nil {
+				return err
+			}
+			if stillRegistered == 0 {
+				return nil
+			}
 			advanced = true
-			return s.advancePartyLocked(ctx, tx, session, nowMS)
+			if err := s.advancePartyLocked(ctx, tx, session, nowMS); err != nil {
+				return err
+			}
+			return s.notifyActivePartyDisplaysTx(ctx, tx, session.ID, session.HostProfileID, nowMS, PartyStageActionChanged, wroteOutbox)
 		})
 		if err != nil || advanced {
 			return err
@@ -1383,9 +1579,40 @@ func (s *Store) SetPartyScreenTicker(ctx context.Context, host ProfileID, filter
 
 // DropPartyScreen removes a screen from the session.
 func (s *Store) DropPartyScreen(ctx context.Context, host ProfileID, filter LibraryFilter, screenID string) error {
-	return s.partyHostWrite(ctx, host, filter, func(tx *sql.Tx, session PartySession, nowMS int64) error {
-		return requirePartyScreenUpdate(tx.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ?
-			WHERE screen_id = ? AND session_id = ? AND dropped_at_ms IS NULL`, nowMS, strings.TrimSpace(screenID), session.ID))
+	screenID = strings.TrimSpace(screenID)
+	return s.partyHostWriteAction(ctx, host, filter, PartyStageActionChanged, func(tx *sql.Tx, session PartySession, nowMS int64, wroteOutbox *bool) error {
+		var authSess, profID, devID string
+		err := tx.QueryRowContext(ctx, `
+			SELECT auth_session_id, profile_id, device_id
+			FROM party_screen
+			WHERE screen_id = ? AND session_id = ? AND dropped_at_ms IS NULL
+		`, screenID, session.ID).Scan(&authSess, &profID, &devID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return partyInvalid("screen not found")
+		}
+		if err != nil {
+			return err
+		}
+		if err := requirePartyScreenUpdate(tx.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ?
+			WHERE screen_id = ? AND session_id = ? AND dropped_at_ms IS NULL`, nowMS, screenID, session.ID)); err != nil {
+			return err
+		}
+		if devID != "" || authSess != "" {
+			if err := appendPartyStageEventSQL(ctx, tx, PartyStageEventPayload{
+				PartySessionID: session.ID,
+				ScreenID:       screenID,
+				AuthSessionID:  SessionID(authSess),
+				ProfileID:      ProfileID(profID),
+				HostProfileID:  session.HostProfileID,
+				DeviceID:       DeviceID(devID),
+				Action:         PartyStageActionReleased,
+				Reason:         "dropped",
+			}, nowMS); err != nil {
+				return err
+			}
+			*wroteOutbox = true
+		}
+		return nil
 	})
 }
 
@@ -1404,14 +1631,17 @@ func requirePartyScreenUpdate(result sql.Result, err error) error {
 }
 
 // RegisterPartyScreen registers a stage screen for a live session. The first
-// popout is the lead, and a joined screen leads only while no popout is
-// active; the lead's ticker starts off and every other screen's on.
-func (s *Store) RegisterPartyScreen(ctx context.Context, sessionID string, profile ProfileID, name, kind, carrier string) (PartyScreenView, error) {
+// popout is the lead, and an ordinary joined screen leads only while no popout
+// is active; the lead's ticker starts off and every other screen's on.
+func (s *Store) RegisterPartyScreen(ctx context.Context, sessionID string, profile ProfileID, authSessionID SessionID, name, kind, carrier string) (PartyScreenView, error) {
 	if kind != "popout" && kind != "joined" {
 		return PartyScreenView{}, partyInvalid("kind must be popout or joined")
 	}
 	if carrier != "local" && carrier != "relay" {
 		return PartyScreenView{}, partyInvalid("carrier must be local or relay")
+	}
+	if authSessionID == "" {
+		return PartyScreenView{}, partyInvalid("session is required")
 	}
 	name, err := partyName(name)
 	if err != nil {
@@ -1427,76 +1657,135 @@ func (s *Store) RegisterPartyScreen(ctx context.Context, sessionID string, profi
 		if err != nil {
 			return err
 		}
+		state.screens = s.filterValidPartyScreensLocked(ctx, session.HostProfileID, state.screens)
 		id, err := newPartyID("screen-")
 		if err != nil {
 			return err
 		}
-		candidate := partyScreenRow{id: id, kind: kind, registeredAtMS: nowMS, active: true}
+		candidate := partyScreenRow{id: id, profileID: profile, authSessionID: authSessionID, kind: kind, registeredAtMS: nowMS, active: true}
 		screens := append(slices.Clone(state.screens), candidate)
-		markPartyLead(screens)
-		lead := screens[len(screens)-1].lead
+		tmpState := state
+		tmpState.screens = screens
+		s.markPartyLeadLocked(ctx, &tmpState, nil)
+		lead := tmpState.screens[len(tmpState.screens)-1].lead
 		if _, err := tx.ExecContext(ctx, `INSERT INTO party_screen
-			(screen_id, session_id, profile_id, name, kind, carrier, ticker, registered_at_ms)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, session.ID, profile, name, kind, carrier, boolInt(!lead), nowMS); err != nil {
+			(screen_id, session_id, profile_id, auth_session_id, name, kind, carrier, ticker, registered_at_ms)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, session.ID, profile, authSessionID, name, kind, carrier, boolInt(!lead), nowMS); err != nil {
 			return err
 		}
-		view = PartyScreenView{ID: id, ProfileID: profile, Name: name, Kind: kind, Carrier: carrier, Lead: lead, Ticker: !lead}
+		view = PartyScreenView{
+			ID: id, ProfileID: profile, AuthSessionID: authSessionID,
+			Name: name, Kind: kind, Carrier: carrier, Lead: lead, Ticker: !lead,
+		}
 		return nil
 	})
 	return view, err
 }
 
 // ReportPartyScreen records a screen's measured clock offset and round trip.
-// Only the registering Profile may report.
-func (s *Store) ReportPartyScreen(ctx context.Context, screenID string, profile ProfileID, offsetMS, rttMS int64) error {
+// Only the registering Session may report.
+func (s *Store) ReportPartyScreen(ctx context.Context, screenID string, profile ProfileID, authSessionID SessionID, offsetMS, rttMS int64) error {
 	if rttMS < 0 {
 		return partyInvalid("rttMS must not be negative")
 	}
+	if authSessionID == "" {
+		return partyInvalid("screen not found")
+	}
 	return s.partyWrite(ctx, func(tx *sql.Tx, nowMS int64) error {
 		return requirePartyScreenUpdate(tx.ExecContext(ctx, `UPDATE party_screen SET offset_ms = ?, rtt_ms = ?, reported_at_ms = ?
-			WHERE screen_id = ? AND profile_id = ? AND dropped_at_ms IS NULL
+			WHERE screen_id = ? AND profile_id = ? AND auth_session_id = ? AND dropped_at_ms IS NULL
 				AND session_id IN (SELECT session_id FROM party_session WHERE ended_at_ms IS NULL)`,
-			offsetMS, rttMS, nowMS, strings.TrimSpace(screenID), profile))
+			offsetMS, rttMS, nowMS, strings.TrimSpace(screenID), profile, authSessionID))
 	})
 }
 
-// PartyStage returns what a stage screen of a live session renders.
-func (s *Store) PartyStage(ctx context.Context, sessionID, screenID string) (PartyStageView, error) {
+// PartyStage returns what a stage screen of a live session renders for its
+// owning Session, filtered by that Session's current LibraryFilter and
+// PlaybackFilter.
+func (s *Store) PartyStage(ctx context.Context, sessionID, screenID string, callerSession SessionID, libraryFilter, playbackFilter LibraryFilter, screenPlaybackFilters map[string]LibraryFilter) (PartyStageView, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	screenID = strings.TrimSpace(screenID)
+	if screenID == "" {
+		return PartyStageView{}, partyInvalid("screenID is required")
+	}
+	if callerSession == "" {
+		return PartyStageView{}, partyInvalid("screen not found")
+	}
 	var nowMS int64
-	view, err := s.readPartyView(ctx, func(q partyQuerier, now int64) (PartySession, error) {
-		nowMS = now
-		session, err := livePartySessionByID(ctx, q, strings.TrimSpace(sessionID), now)
-		if err != nil || strings.TrimSpace(screenID) == "" {
-			return session, err
+	var callerScreen partyScreenRow
+	var lazyDrop bool
+	var lazyDropHost ProfileID
+	var lazyDropParty string
+	view, err := s.readPartyView(ctx, func() map[string]LibraryFilter {
+		if screenPlaybackFilters == nil {
+			return map[string]LibraryFilter{screenID: playbackFilter}
 		}
-		var registered int
-		if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM party_screen
-			WHERE screen_id = ? AND session_id = ? AND dropped_at_ms IS NULL`,
-			strings.TrimSpace(screenID), session.ID).Scan(&registered); err != nil {
+		cloned := make(map[string]LibraryFilter, len(screenPlaybackFilters)+1)
+		for k, v := range screenPlaybackFilters {
+			cloned[k] = v
+		}
+		cloned[screenID] = playbackFilter
+		return cloned
+	}(), func(q partyQuerier, now int64) (PartySession, error) {
+		nowMS = now
+		session, err := livePartySessionByID(ctx, q, sessionID, now)
+		if err != nil {
 			return PartySession{}, err
 		}
-		if registered == 0 {
+		var ticker, chosenLead int
+		var authSess, devID string
+		err = q.QueryRowContext(ctx, `SELECT screen_id, profile_id, auth_session_id, device_id, binding_generation, chosen_lead,
+				name, kind, carrier, ticker, offset_ms, rtt_ms, registered_at_ms, COALESCE(reported_at_ms, 0)
+			FROM party_screen
+			WHERE screen_id = ? AND session_id = ? AND auth_session_id = ? AND dropped_at_ms IS NULL`,
+			screenID, session.ID, callerSession).
+			Scan(&callerScreen.id, &callerScreen.profileID, &authSess, &devID, &callerScreen.bindingGeneration, &chosenLead,
+				&callerScreen.name, &callerScreen.kind, &callerScreen.carrier, &ticker, &callerScreen.offsetMS, &callerScreen.rttMS,
+				&callerScreen.registeredAtMS, &callerScreen.reportedAtMS)
+		if errors.Is(err, sql.ErrNoRows) {
 			return PartySession{}, partyInvalid("screen not found")
+		}
+		if err != nil {
+			return PartySession{}, err
+		}
+		callerScreen.authSessionID = SessionID(authSess)
+		callerScreen.deviceID = DeviceID(devID)
+		callerScreen.chosenLead = chosenLead == 1
+		callerScreen.ticker = ticker == 1
+		if callerScreen.deviceID != "" {
+			valid, reason := s.isPartyPlayerScreenValidLocked(ctx, session.HostProfileID, callerScreen)
+			if !valid {
+				lazyDrop = true
+				lazyDropHost = session.HostProfileID
+				lazyDropParty = session.ID
+				_ = reason
+				return PartySession{}, partyInvalid("screen not found")
+			}
 		}
 		return session, nil
 	})
+	if lazyDrop {
+		_ = s.dropStalePartyDisplay(ctx, callerScreen, lazyDropParty, lazyDropHost)
+	}
 	if err != nil {
 		return PartyStageView{}, err
 	}
+
 	stage := PartyStageView{
 		SessionID: view.Session.ID, ServerNowMS: nowMS, Current: view.Current, Playback: view.Playback,
-		UpNext: view.Waiting[:min(len(view.Waiting), PartyUpNext)], Ticker: true, JoinCode: view.Session.JoinCode,
+		UpNext: view.Waiting[:min(len(view.Waiting), PartyUpNext)], Ticker: callerScreen.ticker, JoinCode: view.Session.JoinCode,
 	}
 	for _, screen := range view.Screens {
-		if screen.ID == strings.TrimSpace(screenID) {
+		if screen.ID == screenID {
 			stage.Ticker = screen.Ticker
+			stage.Lead = screen.Lead
 		}
 	}
-	if stage.Ticker && screenID != "" {
-		// A screen silent long enough to leave the active list keeps its flag.
-		if ticker, ok := s.partyScreenTicker(ctx, view.Session.ID, strings.TrimSpace(screenID)); ok {
-			stage.Ticker = ticker
-		}
+
+	// Per-screen eligibility (ADR-0240 D10): current picture/stream require
+	// PlaybackFilter; ticker titles/artwork require LibraryFilter.
+	if err := s.filterPartyStageForScreen(ctx, &stage, libraryFilter, playbackFilter); err != nil {
+		return PartyStageView{}, err
 	}
 	return stage, nil
 }
@@ -1597,7 +1886,7 @@ func (s *Store) PartyGuestByToken(ctx context.Context, tokenHash string) (PartyG
 // visibility.
 func (s *Store) PartyGuestView(ctx context.Context, tokenHash string) (PartyGuest, PartyView, error) {
 	var guest PartyGuest
-	view, err := s.readPartyView(ctx, func(q partyQuerier, nowMS int64) (PartySession, error) {
+	view, err := s.readPartyView(ctx, nil, func(q partyQuerier, nowMS int64) (PartySession, error) {
 		var err error
 		if guest, err = partyGuestByToken(ctx, q, tokenHash, nowMS); err != nil {
 			return PartySession{}, err
@@ -1785,6 +2074,813 @@ func deletePartyProfileTx(ctx context.Context, tx *sql.Tx, profileID ProfileID) 
 		if _, err := tx.ExecContext(ctx, statement, profileID); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// AddPartyPlayerDisplay joins a controlled player display to the host's live
+// party as a follower and reports whether the display's Libraries cover the
+// party's opened Libraries.
+func (s *Store) AddPartyPlayerDisplay(ctx context.Context, host ProfileID, filter LibraryFilter, display PlayerDisplay, carrier string) (PartyScreenJoinView, error) {
+	if carrier == "" {
+		carrier = "local"
+	}
+	if carrier != "local" && carrier != "relay" {
+		return PartyScreenJoinView{}, partyInvalid("carrier must be local or relay")
+	}
+	if display.DeviceID == "" || display.PlayerProfileID == "" || display.SessionID == "" {
+		return PartyScreenJoinView{}, partyInvalid("display not found")
+	}
+	name := strings.TrimSpace(display.DisplayName)
+	if name == "" {
+		name = strings.TrimSpace(display.DeviceName)
+	}
+	if name == "" {
+		name = "Display"
+	}
+	if utf8.RuneCountInString(name) > partyNameMaxRunes {
+		runes := []rune(name)
+		name = string(runes[:partyNameMaxRunes])
+	}
+
+	var out PartyScreenJoinView
+	err := s.partyHostWriteAction(ctx, host, filter, "", func(tx *sql.Tx, session PartySession, nowMS int64, wroteOutbox *bool) error {
+		if err := s.reconcilePartyPlayerDisplaysTx(ctx, tx, session.ID, session.HostProfileID, nowMS, wroteOutbox); err != nil {
+			return err
+		}
+		var otherSession string
+		err := tx.QueryRowContext(ctx, `
+			SELECT s.session_id
+			FROM party_screen s
+			JOIN party_session p ON p.session_id = s.session_id
+			WHERE s.device_id = ? AND s.dropped_at_ms IS NULL AND s.session_id <> ?
+				AND p.ended_at_ms IS NULL AND p.expires_at_ms > ?
+			LIMIT 1
+		`, display.DeviceID, session.ID, nowMS).Scan(&otherSession)
+		if err == nil {
+			return ErrPartyDisplayAlreadyJoined
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+
+		covers, missing, err := s.playerDisplayLibraryCoverageLocked(ctx, display.PlayerProfileID, session.LibraryIDs)
+		if err != nil {
+			return err
+		}
+		out.CoversLibraries = covers
+		out.MissingLibraryIDs = missing
+
+		var existing partyScreenRow
+		var ticker, chosenLead int
+		var authSess, devID string
+		err = tx.QueryRowContext(ctx, `
+			SELECT screen_id, profile_id, auth_session_id, device_id, binding_generation, chosen_lead,
+				name, kind, carrier, ticker, offset_ms, rtt_ms, registered_at_ms, COALESCE(reported_at_ms, 0)
+			FROM party_screen
+			WHERE session_id = ? AND device_id = ? AND dropped_at_ms IS NULL
+			LIMIT 1
+		`, session.ID, display.DeviceID).Scan(
+			&existing.id, &existing.profileID, &authSess, &devID, &existing.bindingGeneration, &chosenLead,
+			&existing.name, &existing.kind, &existing.carrier, &ticker, &existing.offsetMS, &existing.rttMS,
+			&existing.registeredAtMS, &existing.reportedAtMS,
+		)
+		if err == nil {
+			existing.authSessionID = SessionID(authSess)
+			existing.deviceID = DeviceID(devID)
+			existing.chosenLead = chosenLead == 1
+			existing.ticker = ticker == 1
+			out.Screen = existing.view()
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+
+		id, err := newPartyID("screen-")
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO party_screen
+			(screen_id, session_id, profile_id, auth_session_id, device_id, binding_generation, chosen_lead, name, kind, carrier, ticker, registered_at_ms)
+			VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'joined', ?, 1, ?)`,
+			id, session.ID, display.PlayerProfileID, display.SessionID, display.DeviceID, display.BindingGeneration, name, carrier, nowMS); err != nil {
+			return err
+		}
+		out.Screen = PartyScreenView{
+			ID:                id,
+			ProfileID:         display.PlayerProfileID,
+			AuthSessionID:     display.SessionID,
+			DeviceID:          display.DeviceID,
+			BindingGeneration: display.BindingGeneration,
+			Name:              name,
+			Kind:              "joined",
+			Carrier:           carrier,
+			Lead:              false,
+			Ticker:            true,
+		}
+		if err := appendPartyStageEventSQL(ctx, tx, PartyStageEventPayload{
+			PartySessionID: session.ID,
+			ScreenID:       id,
+			AuthSessionID:  display.SessionID,
+			ProfileID:      display.PlayerProfileID,
+			HostProfileID:  session.HostProfileID,
+			DeviceID:       display.DeviceID,
+			Action:         PartyStageActionJoined,
+			Lead:           false,
+		}, nowMS); err != nil {
+			return err
+		}
+		*wroteOutbox = true
+		return nil
+	})
+	return out, err
+}
+
+// SetPartyScreenLead selects screenID as the preferred lead screen for the
+// host's live party, refusing if a current entry exists that screenID cannot
+// play under its current PlaybackFilter.
+func (s *Store) SetPartyScreenLead(ctx context.Context, host ProfileID, filter LibraryFilter, screenID string, screenPlaybackFilters map[string]LibraryFilter) error {
+	screenID = strings.TrimSpace(screenID)
+	if screenID == "" {
+		return partyInvalid("screenID is required")
+	}
+	return s.partyHostWriteAction(ctx, host, filter, PartyStageActionChanged, func(tx *sql.Tx, session PartySession, nowMS int64, wroteOutbox *bool) error {
+		if err := s.reconcilePartyPlayerDisplaysTx(ctx, tx, session.ID, session.HostProfileID, nowMS, wroteOutbox); err != nil {
+			return err
+		}
+		state, err := loadPartyState(ctx, tx, session, nowMS)
+		if err != nil {
+			return err
+		}
+		var target *partyScreenRow
+		for i := range state.screens {
+			if state.screens[i].id == screenID {
+				target = &state.screens[i]
+				break
+			}
+		}
+		if target == nil {
+			return partyInvalid("screen not found")
+		}
+		if current, ok := state.currentEntry(); ok {
+			pbFilter, has := screenPlaybackFilters[screenID]
+			if !has {
+				pbFilter = s.screenFallbackPlaybackFilterLocked(ctx, *target)
+			}
+			visible, err := s.visibleMediaIDsSQL(ctx, []MediaID{current.mediaID}, pbFilter)
+			if err != nil {
+				return err
+			}
+			if _, ok := visible[current.mediaID]; !ok {
+				return ErrPartyScreenIneligibleLead
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE party_screen SET chosen_lead = 0 WHERE session_id = ?`, session.ID); err != nil {
+			return err
+		}
+		return requirePartyScreenUpdate(tx.ExecContext(ctx, `UPDATE party_screen SET chosen_lead = 1 WHERE screen_id = ? AND session_id = ? AND dropped_at_ms IS NULL`,
+			screenID, session.ID))
+	})
+}
+
+// PartyLibraryCoverage reports whether playerProfileID's visible Libraries
+// cover every Library in partyLibraryIDs.
+func (s *Store) PartyLibraryCoverage(ctx context.Context, playerProfileID ProfileID, partyLibraryIDs []LibraryID) (bool, []LibraryID, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, nil, err
+	}
+	return s.playerDisplayLibraryCoverageLocked(ctx, playerProfileID, partyLibraryIDs)
+}
+
+func (s *Store) playerDisplayLibraryCoverageLocked(ctx context.Context, playerProfileID ProfileID, partyLibraryIDs []LibraryID) (bool, []LibraryID, error) {
+	profile, err := s.profileSQL(ctx, playerProfileID)
+	if err != nil {
+		return false, nil, err
+	}
+	libraries, err := loadLibraries(ctx, s.catalogR)
+	if err != nil {
+		return false, nil, err
+	}
+	byID := make(map[LibraryID]Library, len(libraries))
+	for _, lib := range libraries {
+		byID[lib.ID] = lib
+	}
+	playerFilter := LibraryFilter{AllowedIDs: profile.Library, Revealed: false}
+	missing := []LibraryID{}
+	for _, id := range partyLibraryIDs {
+		lib, ok := byID[id]
+		if !ok || !libraryVisible(lib, playerFilter) {
+			missing = append(missing, id)
+		}
+	}
+	return len(missing) == 0, missing, nil
+}
+
+func (s *Store) filterPartyStageForScreen(ctx context.Context, stage *PartyStageView, libraryFilter, playbackFilter LibraryFilter) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	if stage.Current != nil && stage.Current.MediaID != "" {
+		visible, err := s.visibleMediaIDsSQL(ctx, []MediaID{stage.Current.MediaID}, playbackFilter)
+		if err != nil {
+			return err
+		}
+		if _, ok := visible[stage.Current.MediaID]; !ok {
+			redacted := *stage.Current
+			redacted.MediaID = ""
+			redacted.Title = ""
+			redacted.Subtitle = ""
+			redacted.DurationSeconds = 0
+			redacted.LastPlayedAt = time.Time{}
+			redacted.Ineligible = true
+			if redacted.ParticipantName != "" {
+				redacted.Label = "Up next: " + redacted.ParticipantName
+			} else {
+				redacted.Label = "Up next"
+			}
+			stage.Current = &redacted
+			stage.Playback = nil
+		}
+	}
+	if len(stage.UpNext) > 0 {
+		ids := make([]MediaID, 0, len(stage.UpNext))
+		for _, entry := range stage.UpNext {
+			if entry.MediaID != "" {
+				ids = append(ids, entry.MediaID)
+			}
+		}
+		visible, err := s.visibleMediaIDsSQL(ctx, ids, libraryFilter)
+		if err != nil {
+			return err
+		}
+		for i := range stage.UpNext {
+			if stage.UpNext[i].MediaID == "" {
+				continue
+			}
+			if _, ok := visible[stage.UpNext[i].MediaID]; !ok {
+				stage.UpNext[i].MediaID = ""
+				stage.UpNext[i].Title = ""
+				stage.UpNext[i].Subtitle = ""
+				stage.UpNext[i].DurationSeconds = 0
+				stage.UpNext[i].LastPlayedAt = time.Time{}
+				stage.UpNext[i].Ineligible = true
+				stage.UpNext[i].Label = stage.UpNext[i].ParticipantName
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Store) filterValidPartyScreensLocked(ctx context.Context, hostProfileID ProfileID, screens []partyScreenRow) []partyScreenRow {
+	if len(screens) == 0 {
+		return screens
+	}
+	out := make([]partyScreenRow, 0, len(screens))
+	for _, screen := range screens {
+		if screen.deviceID != "" {
+			valid, _ := s.isPartyPlayerScreenValidLocked(ctx, hostProfileID, screen)
+			if !valid {
+				continue
+			}
+		}
+		out = append(out, screen)
+	}
+	return out
+}
+
+func (s *Store) markPartyLeadLocked(ctx context.Context, state *partyState, screenPlaybackFilters map[string]LibraryFilter) {
+	current, hasCurrent := state.currentEntry()
+	if !hasCurrent {
+		markPartyLead(state.screens, nil)
+		return
+	}
+	playable := map[string]bool{}
+	for _, screen := range state.screens {
+		if !screen.active {
+			continue
+		}
+		pbFilter, ok := screenPlaybackFilters[screen.id]
+		if !ok {
+			pbFilter = s.screenFallbackPlaybackFilterLocked(ctx, screen)
+		}
+		visible, err := s.visibleMediaIDsSQL(ctx, []MediaID{current.mediaID}, pbFilter)
+		if err == nil {
+			_, playable[screen.id] = visible[current.mediaID]
+		}
+	}
+	markPartyLead(state.screens, func(screen partyScreenRow) bool {
+		return playable[screen.id]
+	})
+}
+
+func (s *Store) screenFallbackPlaybackFilterLocked(ctx context.Context, screen partyScreenRow) LibraryFilter {
+	if screen.deviceID == "" && screen.authSessionID != "" {
+		var profileID ProfileID
+		var revealed int
+		if err := s.catalogR.QueryRowContext(ctx, `SELECT profile_id, revealed FROM auth_session WHERE id = ?`, screen.authSessionID).Scan(&profileID, &revealed); err == nil {
+			if prof, err := s.profileSQL(ctx, profileID); err == nil && !prof.Disabled {
+				return LibraryFilter{
+					AllowedIDs:   prof.Library,
+					Revealed:     revealed != 0 && prof.Kind == ProfileAdult,
+					PlaybackGate: true,
+				}
+			}
+			return LibraryFilter{PlaybackGate: true}
+		}
+	}
+	prof, err := s.profileSQL(ctx, screen.profileID)
+	if err != nil || prof.Disabled {
+		return LibraryFilter{PlaybackGate: true}
+	}
+	return LibraryFilter{
+		AllowedIDs:   prof.Library,
+		Revealed:     false,
+		PlaybackGate: true,
+	}
+}
+
+// isPartyPlayerScreenValidLocked reports whether a joined player display screen
+// is still validly bound at its join generation and controlled by hostProfileID.
+// When false, the returned reason is "rebound" or "controller-removed".
+func (s *Store) isPartyPlayerScreenValidLocked(ctx context.Context, hostProfileID ProfileID, screen partyScreenRow) (bool, string) {
+	if screen.deviceID == "" {
+		return true, ""
+	}
+	var revoked, generation int
+	var playerProfileID string
+	err := s.catalogR.QueryRowContext(ctx, `
+		SELECT revoked, COALESCE(player_profile_id, ''), player_binding_generation
+		FROM device WHERE id = ?
+	`, screen.deviceID).Scan(&revoked, &playerProfileID, &generation)
+	if err != nil || revoked != 0 || ProfileID(playerProfileID) != screen.profileID || generation != screen.bindingGeneration {
+		return false, "rebound"
+	}
+	isCtrl, err := isPlayerControllerLocked(ctx, s.catalogR, screen.profileID, hostProfileID)
+	if err != nil || !isCtrl {
+		return false, "controller-removed"
+	}
+	return true, ""
+}
+
+func (s *Store) reconcilePartyPlayerDisplaysTx(ctx context.Context, tx *sql.Tx, partySessionID string, hostProfileID ProfileID, nowMS int64, wroteOutbox *bool) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT screen_id, profile_id, auth_session_id, device_id, binding_generation
+		FROM party_screen
+		WHERE session_id = ? AND dropped_at_ms IS NULL AND device_id <> ''
+	`, partySessionID)
+	if err != nil {
+		return err
+	}
+	var screens []partyScreenRow
+	for rows.Next() {
+		var row partyScreenRow
+		var authSess, devID string
+		if err := rows.Scan(&row.id, &row.profileID, &authSess, &devID, &row.bindingGeneration); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		row.authSessionID = SessionID(authSess)
+		row.deviceID = DeviceID(devID)
+		screens = append(screens, row)
+	}
+	if err := closeRows(rows); err != nil {
+		return err
+	}
+	for _, screen := range screens {
+		valid, reason := s.isPartyPlayerScreenValidLocked(ctx, hostProfileID, screen)
+		if valid {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ? WHERE screen_id = ? AND dropped_at_ms IS NULL`, nowMS, screen.id); err != nil {
+			return err
+		}
+		if reason == "controller-removed" {
+			if err := appendPartyStageEventSQL(ctx, tx, PartyStageEventPayload{
+				PartySessionID: partySessionID,
+				ScreenID:       screen.id,
+				AuthSessionID:  screen.authSessionID,
+				ProfileID:      screen.profileID,
+				HostProfileID:  hostProfileID,
+				DeviceID:       screen.deviceID,
+				Action:         PartyStageActionReleased,
+				Reason:         reason,
+			}, nowMS); err != nil {
+				return err
+			}
+			*wroteOutbox = true
+		}
+	}
+	return nil
+}
+
+func (s *Store) notifyActivePartyDisplaysTx(ctx context.Context, tx *sql.Tx, partySessionID string, hostProfileID ProfileID, nowMS int64, action string, wroteOutbox *bool) error {
+	if action == "" {
+		return nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT screen_id, profile_id, auth_session_id, device_id
+		FROM party_screen
+		WHERE session_id = ? AND dropped_at_ms IS NULL AND device_id <> ''
+	`, partySessionID)
+	if err != nil {
+		return err
+	}
+	var payloads []PartyStageEventPayload
+	for rows.Next() {
+		var p PartyStageEventPayload
+		if err := rows.Scan(&p.ScreenID, &p.ProfileID, &p.AuthSessionID, &p.DeviceID); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		p.PartySessionID = partySessionID
+		p.HostProfileID = hostProfileID
+		p.Action = action
+		payloads = append(payloads, p)
+	}
+	if err := closeRows(rows); err != nil {
+		return err
+	}
+	for _, p := range payloads {
+		if err := appendPartyStageEventSQL(ctx, tx, p, nowMS); err != nil {
+			return err
+		}
+		*wroteOutbox = true
+	}
+	return nil
+}
+
+func (s *Store) reconcileAndNotifyPartyDisplaysTx(ctx context.Context, tx *sql.Tx, partySessionID string, hostProfileID ProfileID, nowMS int64, action string, wroteOutbox *bool) error {
+	if err := s.reconcilePartyPlayerDisplaysTx(ctx, tx, partySessionID, hostProfileID, nowMS, wroteOutbox); err != nil {
+		return err
+	}
+	return s.notifyActivePartyDisplaysTx(ctx, tx, partySessionID, hostProfileID, nowMS, action, wroteOutbox)
+}
+
+func (s *Store) dropStalePartyDisplay(ctx context.Context, screen partyScreenRow, partySessionID string, hostProfileID ProfileID) error {
+	return s.partyWriteOutbox(ctx, func(tx *sql.Tx, nowMS int64, wroteOutbox *bool) error {
+		valid, reason := s.isPartyPlayerScreenValidLocked(ctx, hostProfileID, screen)
+		if valid {
+			return nil
+		}
+		res, err := tx.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ? WHERE screen_id = ? AND dropped_at_ms IS NULL`, nowMS, screen.id)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil || n == 0 {
+			return err
+		}
+		if reason == "controller-removed" {
+			if err := appendPartyStageEventSQL(ctx, tx, PartyStageEventPayload{
+				PartySessionID: partySessionID,
+				ScreenID:       screen.id,
+				AuthSessionID:  screen.authSessionID,
+				ProfileID:      screen.profileID,
+				HostProfileID:  hostProfileID,
+				DeviceID:       screen.deviceID,
+				Action:         PartyStageActionReleased,
+				Reason:         reason,
+			}, nowMS); err != nil {
+				return err
+			}
+			*wroteOutbox = true
+		}
+		return nil
+	})
+}
+
+func (s *Store) releaseIneligiblePartyDisplaysForPlayerLocked(ctx context.Context, playerProfileID ProfileID) {
+	if playerProfileID == "" || s.eventsW == nil {
+		return
+	}
+	_ = s.partyWriteOutboxLocked(ctx, func(tx *sql.Tx, nowMS int64, wroteOutbox *bool) error {
+		rows, err := tx.QueryContext(ctx, `
+			SELECT s.screen_id, s.session_id, s.profile_id, s.auth_session_id, s.device_id, s.binding_generation, p.host_profile_id
+			FROM party_screen s
+			JOIN party_session p ON p.session_id = s.session_id
+			WHERE s.profile_id = ? AND s.device_id <> '' AND s.dropped_at_ms IS NULL
+				AND p.ended_at_ms IS NULL AND p.expires_at_ms > ?
+		`, playerProfileID, nowMS)
+		if err != nil {
+			return err
+		}
+		type item struct {
+			screen        partyScreenRow
+			partyID       string
+			hostProfileID ProfileID
+		}
+		var items []item
+		for rows.Next() {
+			var it item
+			var authSess, devID string
+			if err := rows.Scan(&it.screen.id, &it.partyID, &it.screen.profileID, &authSess, &devID, &it.screen.bindingGeneration, &it.hostProfileID); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			it.screen.authSessionID = SessionID(authSess)
+			it.screen.deviceID = DeviceID(devID)
+			items = append(items, it)
+		}
+		if err := closeRows(rows); err != nil {
+			return err
+		}
+		for _, it := range items {
+			valid, reason := s.isPartyPlayerScreenValidLocked(ctx, it.hostProfileID, it.screen)
+			if valid {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ? WHERE screen_id = ? AND dropped_at_ms IS NULL`, nowMS, it.screen.id); err != nil {
+				return err
+			}
+			if reason == "controller-removed" {
+				if err := appendPartyStageEventSQL(ctx, tx, PartyStageEventPayload{
+					PartySessionID: it.partyID,
+					ScreenID:       it.screen.id,
+					AuthSessionID:  it.screen.authSessionID,
+					ProfileID:      it.screen.profileID,
+					HostProfileID:  it.hostProfileID,
+					DeviceID:       it.screen.deviceID,
+					Action:         PartyStageActionReleased,
+					Reason:         reason,
+				}, nowMS); err != nil {
+					return err
+				}
+				*wroteOutbox = true
+			}
+		}
+		return nil
+	})
+}
+
+// PartyScreenOwnedBySession reports whether screenID is an active screen
+// belonging to authSessionID in a live party session.
+func (s *Store) PartyScreenOwnedBySession(ctx context.Context, screenID string, authSessionID SessionID) (bool, error) {
+	screenID = strings.TrimSpace(screenID)
+	if screenID == "" || authSessionID == "" {
+		return false, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	nowMS := timeToMillis(s.serverNow())
+	var row partyScreenRow
+	var partyID string
+	var hostProfileID ProfileID
+	var authSess, devID string
+	err := s.eventsR.QueryRowContext(ctx, `
+		SELECT s.screen_id, s.session_id, s.profile_id, s.auth_session_id, s.device_id, s.binding_generation, p.host_profile_id
+		FROM party_screen s
+		JOIN party_session p ON p.session_id = s.session_id
+		WHERE s.screen_id = ? AND s.auth_session_id = ? AND s.dropped_at_ms IS NULL
+			AND p.ended_at_ms IS NULL AND p.expires_at_ms > ?
+	`, screenID, authSessionID, nowMS).Scan(&row.id, &partyID, &row.profileID, &authSess, &devID, &row.bindingGeneration, &hostProfileID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	row.authSessionID = SessionID(authSess)
+	row.deviceID = DeviceID(devID)
+	if row.deviceID != "" {
+		valid, _ := s.isPartyPlayerScreenValidLocked(ctx, hostProfileID, row)
+		return valid, nil
+	}
+	return true, nil
+}
+
+// IsPlayerPartyCurrentMedia reports whether authSessionID holds an active
+// party stage screen on a live party whose current entry is mediaID (and for
+// player displays, whose host remains a controller at the current binding
+// generation).
+func (s *Store) IsPlayerPartyCurrentMedia(ctx context.Context, authSessionID SessionID, mediaID MediaID) (bool, error) {
+	if authSessionID == "" || mediaID == "" {
+		return false, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	nowMS := timeToMillis(s.serverNow())
+	var row partyScreenRow
+	var hostProfileID ProfileID
+	var authSess, devID string
+	err := s.eventsR.QueryRowContext(ctx, `
+		SELECT s.screen_id, s.profile_id, s.auth_session_id, s.device_id, s.binding_generation, p.host_profile_id
+		FROM party_screen s
+		JOIN party_session p ON p.session_id = s.session_id
+		JOIN party_entry e ON e.entry_id = p.current_entry_id AND e.session_id = p.session_id
+		WHERE s.auth_session_id = ? AND s.dropped_at_ms IS NULL
+			AND p.ended_at_ms IS NULL AND p.expires_at_ms > ?
+			AND e.state = 'current' AND e.media_id = ?
+		LIMIT 1
+	`, authSessionID, nowMS, mediaID).Scan(&row.id, &row.profileID, &authSess, &devID, &row.bindingGeneration, &hostProfileID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	row.authSessionID = SessionID(authSess)
+	row.deviceID = DeviceID(devID)
+	if row.deviceID != "" {
+		valid, _ := s.isPartyPlayerScreenValidLocked(ctx, hostProfileID, row)
+		return valid, nil
+	}
+	return true, nil
+}
+
+// IsPlayerDeviceInLiveParty reports whether deviceID or authSessionID is
+// currently joined to a live party session (lazily releasing stale entries).
+func (s *Store) IsPlayerDeviceInLiveParty(ctx context.Context, deviceID DeviceID, authSessionID SessionID, now time.Time) (bool, error) {
+	if deviceID == "" && authSessionID == "" {
+		return false, nil
+	}
+	var inParty bool
+	err := s.partyWriteOutbox(ctx, func(tx *sql.Tx, nowMS int64, wroteOutbox *bool) error {
+		var err error
+		inParty, err = s.playerDeviceInLivePartyTx(ctx, tx, deviceID, authSessionID, nowMS, wroteOutbox)
+		return err
+	})
+	return inParty, err
+}
+
+// PlayerDevicesInLiveParty returns the set of device IDs currently joined to a
+// live party session.
+func (s *Store) PlayerDevicesInLiveParty(ctx context.Context) (map[DeviceID]bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	nowMS := timeToMillis(s.serverNow())
+	rows, err := s.eventsR.QueryContext(ctx, `
+		SELECT s.screen_id, s.profile_id, s.auth_session_id, s.device_id, s.binding_generation, p.host_profile_id
+		FROM party_screen s
+		JOIN party_session p ON p.session_id = s.session_id
+		WHERE s.device_id <> '' AND s.dropped_at_ms IS NULL
+			AND p.ended_at_ms IS NULL AND p.expires_at_ms > ?
+	`, nowMS)
+	if err != nil {
+		return nil, err
+	}
+	out := map[DeviceID]bool{}
+	for rows.Next() {
+		var row partyScreenRow
+		var authSess, devID string
+		var hostProfileID ProfileID
+		if err := rows.Scan(&row.id, &row.profileID, &authSess, &devID, &row.bindingGeneration, &hostProfileID); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		row.authSessionID = SessionID(authSess)
+		row.deviceID = DeviceID(devID)
+		if valid, _ := s.isPartyPlayerScreenValidLocked(ctx, hostProfileID, row); valid {
+			out[row.deviceID] = true
+		}
+	}
+	return out, closeRows(rows)
+}
+
+func (s *Store) playerDeviceInLivePartyTx(ctx context.Context, tx *sql.Tx, deviceID DeviceID, authSessionID SessionID, nowMS int64, wroteOutbox *bool) (bool, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT s.screen_id, s.session_id, s.profile_id, s.auth_session_id, s.device_id, s.binding_generation, p.host_profile_id
+		FROM party_screen s
+		JOIN party_session p ON p.session_id = s.session_id
+		WHERE (s.device_id = ? OR (? <> '' AND s.auth_session_id = ?))
+			AND s.dropped_at_ms IS NULL AND p.ended_at_ms IS NULL AND p.expires_at_ms > ?
+	`, deviceID, authSessionID, authSessionID, nowMS)
+	if err != nil {
+		return false, err
+	}
+	type candidate struct {
+		screen        partyScreenRow
+		partyID       string
+		hostProfileID ProfileID
+	}
+	var items []candidate
+	for rows.Next() {
+		var it candidate
+		var authSess, devID string
+		if err := rows.Scan(&it.screen.id, &it.partyID, &it.screen.profileID, &authSess, &devID, &it.screen.bindingGeneration, &it.hostProfileID); err != nil {
+			_ = rows.Close()
+			return false, err
+		}
+		it.screen.authSessionID = SessionID(authSess)
+		it.screen.deviceID = DeviceID(devID)
+		items = append(items, it)
+	}
+	if err := closeRows(rows); err != nil {
+		return false, err
+	}
+	inParty := false
+	for _, it := range items {
+		valid, reason := s.isPartyPlayerScreenValidLocked(ctx, it.hostProfileID, it.screen)
+		if valid {
+			inParty = true
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ? WHERE screen_id = ? AND dropped_at_ms IS NULL`, nowMS, it.screen.id); err != nil {
+			return false, err
+		}
+		if reason == "controller-removed" {
+			if err := appendPartyStageEventSQL(ctx, tx, PartyStageEventPayload{
+				PartySessionID: it.partyID,
+				ScreenID:       it.screen.id,
+				AuthSessionID:  it.screen.authSessionID,
+				ProfileID:      it.screen.profileID,
+				HostProfileID:  it.hostProfileID,
+				DeviceID:       it.screen.deviceID,
+				Action:         PartyStageActionReleased,
+				Reason:         reason,
+			}, nowMS); err != nil {
+				return false, err
+			}
+			*wroteOutbox = true
+		}
+	}
+	return inParty, nil
+}
+
+// PartyActiveScreens returns the active (non-dropped) screen rows for
+// partySessionID so the graph layer can resolve auth-backed playback filters.
+func (s *Store) PartyActiveScreens(ctx context.Context, partySessionID string) ([]PartyScreenView, error) {
+	if partySessionID == "" {
+		return nil, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := s.eventsR.QueryContext(ctx, `
+		SELECT screen_id, profile_id, auth_session_id, device_id, binding_generation, chosen_lead
+		FROM party_screen
+		WHERE session_id = ? AND dropped_at_ms IS NULL
+	`, partySessionID)
+	if err != nil {
+		return nil, err
+	}
+	var out []PartyScreenView
+	for rows.Next() {
+		var v PartyScreenView
+		var authSess, devID string
+		var chosenLead int
+		if err := rows.Scan(&v.ID, &v.ProfileID, &authSess, &devID, &v.BindingGeneration, &chosenLead); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		v.AuthSessionID = SessionID(authSess)
+		v.DeviceID = DeviceID(devID)
+		v.ChosenLead = chosenLead == 1
+		out = append(out, v)
+	}
+	return out, closeRows(rows)
+}
+
+func (s *Store) dropPartyScreensForStopTx(ctx context.Context, tx *sql.Tx, deviceID DeviceID, target SessionID, nowMS int64, wroteOutbox *bool) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT s.screen_id, s.session_id, s.profile_id, s.auth_session_id, s.device_id, p.host_profile_id
+		FROM party_screen s
+		JOIN party_session p ON p.session_id = s.session_id
+		WHERE ((? <> '' AND s.device_id = ?) OR s.auth_session_id = ?) AND s.dropped_at_ms IS NULL
+	`, deviceID, deviceID, target)
+	if err != nil {
+		return err
+	}
+	var payloads []PartyStageEventPayload
+	for rows.Next() {
+		var p PartyStageEventPayload
+		if err := rows.Scan(&p.ScreenID, &p.PartySessionID, &p.ProfileID, &p.AuthSessionID, &p.DeviceID, &p.HostProfileID); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		p.Action = PartyStageActionReleased
+		p.Reason = "stopped"
+		payloads = append(payloads, p)
+	}
+	if err := closeRows(rows); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE party_screen SET dropped_at_ms = ?
+		WHERE ((? <> '' AND device_id = ?) OR auth_session_id = ?) AND dropped_at_ms IS NULL
+	`, nowMS, deviceID, deviceID, target); err != nil {
+		return err
+	}
+	for _, p := range payloads {
+		if err := appendPartyStageEventSQL(ctx, tx, p, nowMS); err != nil {
+			return err
+		}
+		*wroteOutbox = true
 	}
 	return nil
 }

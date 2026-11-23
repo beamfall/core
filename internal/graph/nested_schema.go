@@ -237,6 +237,8 @@ var resultTypes = map[string]any{
 	"partyscreenreport":                  partyBooleanResult{},
 	"partyscreenticker":                  PartySessionInfo{},
 	"partyscreendrop":                    PartySessionInfo{},
+	"partyscreenadddisplay":              PartyScreenJoinResult{},
+	"partyscreenlead":                    PartySessionInfo{},
 	"queueaddmany":                       PlayQueueInfo{},
 	"queuemoveentry":                     PlayQueueInfo{},
 	"queueremoveentry":                   PlayQueueInfo{},
@@ -518,7 +520,7 @@ var fieldArguments = map[string][]NestedArgument{
 	"preplayqueue":      {{Name: "mediaID", Kind: "string"}},
 	"searchresult":      {{Name: "limit", Kind: "int", Optional: true}, searchModeArgument(), {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}},
 	"partystage": {
-		{Name: "screenID", Kind: "string", Optional: true},
+		{Name: "screenID", Kind: "string"},
 		{Name: "sessionID", Kind: "string"},
 	},
 	"partystart": {
@@ -598,6 +600,15 @@ var fieldArguments = map[string][]NestedArgument{
 		{Name: "ticker", Kind: "boolean"},
 	},
 	"partyscreendrop": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "screenID", Kind: "string"},
+	},
+	"partyscreenadddisplay": {
+		{Name: "carrier", Kind: "string", Optional: true, Enum: []string{"local", "relay"}},
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "handle", Kind: "string"},
+	},
+	"partyscreenlead": {
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "screenID", Kind: "string"},
 	},
