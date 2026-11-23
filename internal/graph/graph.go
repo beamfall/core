@@ -4936,7 +4936,7 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		pausedEdge
 	// Another report for this Profile staged between our prior read and our
 	// write: the readback can match the stale prior while other pages already
-	// show that report's value, so this write must still invalidate them.
+	// display that report's value, so this write must still invalidate them.
 	raced := scope.ProfileID != "" && seq != seqBefore+1
 	changed := raced || !priorExists ||
 		progress.PositionSeconds != priorProgress.PositionSeconds ||
