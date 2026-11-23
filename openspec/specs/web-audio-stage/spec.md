@@ -132,14 +132,32 @@ items, and activating a row SHALL play that item.
 ### Requirement: Audio warns before playing next
 
 During the final 12 seconds of an audio item that has a next item, the audio stage SHALL show a
-Playing next card with the next title and the seconds left. The card SHALL NOT change when or
-whether playback advances. Seeking out of the final 12 seconds SHALL hide it, and Hide SHALL
-dismiss it for the rest of that item.
+Playing next card with the next title and the seconds left, and the next item's picture and artist
+when its read has them. A picture that fails to load SHALL be left out. Waiting on the card SHALL
+NOT change when or whether playback advances. Seeking out of the final 12 seconds SHALL hide it,
+and Hide SHALL dismiss it for the rest of that item.
 
 #### Scenario: Track nears its end
 
 - **WHEN** an audio item with a next item reaches 10 seconds from its end
 - **THEN** the Playing next card shows the next title and "10"
+
+#### Scenario: Next item has a picture and an artist
+
+- **WHEN** the card shows and the next item's read has a poster and a person credit "Cee"
+- **THEN** the card shows that picture and "Cee", and its region is named "Playing next: C by Cee"
+
+### Requirement: Play now crossfades to the next item
+
+Play now on the Playing next card SHALL hide the card at once and move to the next item, fading the
+playing item out and the next item in instead of cutting. It SHALL keep any volume the listener
+sets during the fade without saving the faded levels.
+
+#### Scenario: Play now
+
+- **WHEN** the listener presses Play now on the card while the item plays
+- **THEN** the card hides at once, the playing item fades out, the next item plays and fades in,
+  and the audio stage and its visual stay mounted
 
 ### Requirement: Ambient mode protects OLED screens
 
@@ -159,3 +177,20 @@ without continuous motion.
 
 - **WHEN** the stage is idle in Ambient mode and the pointer moves
 - **THEN** the chrome shows and the stage returns to full brightness
+
+### Requirement: Listening controls live in the Settings sheet
+
+On the audio stage, the Speed, Remove long pauses and Sleep timer controls SHALL appear as rows in
+the transport's Settings sheet, not on the stage. Their pickers SHALL open within the sheet, and
+choosing from them SHALL NOT close it. Radio tuning controls SHALL sit in the player bar beside
+Back and SHALL NOT overlap it.
+
+#### Scenario: Opening Settings on the audio stage
+
+- **WHEN** a listener opens Settings while an audio track plays on the audio stage
+- **THEN** the sheet lists Playback speed, Remove long pauses and Sleep timer rows, and the stage shows none of them
+
+#### Scenario: Radio station playing
+
+- **WHEN** a radio station plays on the audio stage
+- **THEN** its tuning selects appear in the player bar after Back, without overlapping it
