@@ -205,7 +205,7 @@ export function RenamePage() {
           <PathPickerField
             id="rename-folder"
             label={t("renameFolderLabel")}
-            role="libraryRoot"
+            role="incomingFolder"
             value={folder}
             onChange={setFolder}
             libraryID={libraryID || undefined}

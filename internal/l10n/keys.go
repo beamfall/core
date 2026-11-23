@@ -38,12 +38,13 @@ const (
 	WatchPartyParticipantFallback     Key = "watch_party.participant_fallback"
 )
 
-// Library folder check refusals (CORE-1598), shown next to the folder field.
+// Library folder check refusals (CORE-1598, CORE-1202), shown next to the folder field.
 const (
 	LibraryRootMissing    Key = "library_root.missing"
 	LibraryRootCantOpen   Key = "library_root.cant_open"
 	LibraryRootNotFolder  Key = "library_root.not_folder"
 	LibraryRootUnreadable Key = "library_root.unreadable"
+	LibraryRootOverlaps   Key = "library_root.overlaps"
 )
 
 // Setup and sign-in hints sent with the lan_hostname_not_allowed code (CORE-1600).

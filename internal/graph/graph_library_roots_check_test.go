@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -136,4 +137,85 @@ func setLibraryRootsBody(libraryID string, roots ...string) string {
 		panic(err)
 	}
 	return `{"query":"mutation($libraryID: String!, $roots: [String!]!) { setLibraryRoots(libraryID: $libraryID, roots: $roots) { id } }","variables":` + string(variables) + `}`
+}
+
+// CORE-1202: createLibrary and setLibraryRoots refuse folders that equal,
+// contain or sit inside another library's folder, matching PathPicker's
+// eligibility rule.
+func TestLibraryMutationsRefuseOverlappingRootAndKeepState(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	openManagerAdminSession(t, st)
+
+	base := t.TempDir()
+	tvRoot := filepath.Join(base, "tv")
+	tvChild := filepath.Join(tvRoot, "nested")
+	filmsRoot := filepath.Join(base, "films")
+	filmsChild := filepath.Join(filmsRoot, "extra")
+	if err := os.MkdirAll(tvChild, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filmsChild, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateLibraryWithRoots(t.Context(), "TV", false, "", "profile-default", []string{tvRoot}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetLibraryRoots(t.Context(), "library-local", []string{filmsRoot}); err != nil {
+		t.Fatal(err)
+	}
+
+	post := func(body string) []graphError {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader([]byte(body)))
+		authorizeManager(req)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		var resp struct {
+			Errors []graphError `json:"errors"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp.Errors
+	}
+	libraryCount := func() int {
+		t.Helper()
+		libraries, err := st.Libraries(t.Context(), store.LibraryFilter{Revealed: true, AllLibraries: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(libraries)
+	}
+
+	before := libraryCount()
+	for _, overlap := range []string{tvRoot, base, tvChild} {
+		variables, err := json.Marshal(map[string]any{"title": "Overlap", "roots": []string{overlap}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		errs := post(`{"query":"mutation($title: String!, $roots: [String!]) { createLibrary(title: $title, roots: $roots) { id } }","variables":` + string(variables) + `}`)
+		want := "The folder " + overlap + " is already part of a library."
+		if len(errs) != 1 || errs[0].Message != want {
+			t.Fatalf("createLibrary(%q) errors = %#v, want %q", overlap, errs, want)
+		}
+	}
+	if after := libraryCount(); after != before {
+		t.Fatalf("refused createLibrary changed Library count %d -> %d", before, after)
+	}
+
+	for _, overlap := range []string{tvRoot, base, tvChild, filmsChild} {
+		errs := post(setLibraryRootsBody("library-local", filmsRoot, overlap))
+		want := "The folder " + overlap + " is already part of a library."
+		if len(errs) != 1 || errs[0].Message != want {
+			t.Fatalf("setLibraryRoots(%q) errors = %#v, want %q", overlap, errs, want)
+		}
+	}
+	rootsAfter, err := st.LibraryRoots(t.Context(), "library-local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(rootsAfter, []string{filmsRoot}) {
+		t.Fatalf("refused setLibraryRoots changed roots to %q", rootsAfter)
+	}
 }

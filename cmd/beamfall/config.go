@@ -320,6 +320,17 @@ func applyConfigDocument(ctx context.Context, backend configBackend, desired con
 		}
 	}
 
+	// Folder identity (symlinks, case) is a property of the host that owns the
+	// folders, so only a backend on this host checks overlap before the first
+	// write. Through --server the server checks every Library write itself, but
+	// it runs after the worker and plugin writes: those are idempotent, so a
+	// re-run after fixing the document converges.
+	if _, local := backend.(*storeConfigBackend); local {
+		if err := checkConfigRootOverlap(current.Libraries, creates, rootWrites); err != nil {
+			return 0, err
+		}
+	}
+
 	var changed int
 	if desired.BackgroundWorkers != current.BackgroundWorkers {
 		if err := backend.setBackgroundWorkers(ctx, desired.BackgroundWorkers); err != nil {
@@ -349,6 +360,50 @@ func applyConfigDocument(ctx context.Context, backend configBackend, desired con
 		changed += write.added
 	}
 	return changed, nil
+}
+
+// checkConfigRootOverlap refuses a document whose added folders overlap another
+// Library's folder, whether that Library is live or declared in the same
+// document, so the refusal comes before the first write. It resolves folders on
+// this host, so it serves only the local store backend.
+func checkConfigRootOverlap(live []configLiveLibrary, creates []configLibraryDocItem, writes []configRootsWrite) error {
+	type folder struct{ lib, title, root string }
+	var all, added []folder
+	titles := make(map[string]string, len(live))
+	have := make(map[string]map[string]bool, len(live))
+	for _, lib := range live {
+		titles[lib.ID] = lib.Title
+		have[lib.ID] = make(map[string]bool, len(lib.Roots))
+		for _, root := range lib.Roots {
+			have[lib.ID][root] = true
+			all = append(all, folder{lib.ID, lib.Title, root})
+		}
+	}
+	for i, lib := range creates {
+		for _, root := range lib.Roots {
+			f := folder{fmt.Sprintf("new-%d", i), lib.Title, root}
+			all, added = append(all, f), append(added, f)
+		}
+	}
+	for _, write := range writes {
+		for _, root := range write.roots {
+			if !have[write.libraryID][root] {
+				f := folder{write.libraryID, titles[write.libraryID], root}
+				all, added = append(all, f), append(added, f)
+			}
+		}
+	}
+	for _, a := range added {
+		for _, other := range all {
+			if a.lib == other.lib && a.root == other.root {
+				continue
+			}
+			if store.LibraryRootsOverlap(a.root, other.root) {
+				return fmt.Errorf("library %q: folder %s overlaps the folder %s of library %q", a.title, a.root, other.root, other.title)
+			}
+		}
+	}
+	return nil
 }
 
 // mergeLibraryRoots returns the union of a live Library's roots and the desired

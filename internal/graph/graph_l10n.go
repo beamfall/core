@@ -18,6 +18,7 @@ var libraryRootKeys = map[store.LibraryRootReason]l10n.Key{
 	store.LibraryRootCantOpen:   l10n.LibraryRootCantOpen,
 	store.LibraryRootNotFolder:  l10n.LibraryRootNotFolder,
 	store.LibraryRootUnreadable: l10n.LibraryRootUnreadable,
+	store.LibraryRootOverlaps:   l10n.LibraryRootOverlaps,
 }
 
 // localizeLibraryRootError lets graphFailMessage render a folder-check refusal

@@ -1,8 +1,8 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchLibraries } from "@/lib/graphql";
+import { fetchLibraries, fetchPathPicker } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { enqueueConvertJob, fetchConvertJobs } from "../lib/powertools";
 import { ConvertPage } from "./ConvertPage";
@@ -77,5 +77,48 @@ describe("ConvertPage", () => {
     );
     // The Convert action disables itself once the server is known unwired.
     expect(screen.getByRole("button", { name: "Convert" })).toBeDisabled();
+  });
+
+  it("browses the source with incomingFolder so folders inside the library stay selectable", async () => {
+    vi.mocked(fetchConvertJobs).mockResolvedValue([]);
+    vi.mocked(fetchPathPicker).mockImplementation(async ({ role, path }) => ({
+      runtime: "bare",
+      roles: ["libraryRoot", "incomingFolder"],
+      role,
+      purposeKey: `pathPicker.${role}`,
+      previewTimeoutMs: 75,
+      maxPreviewEntries: 5,
+      roots: [{ name: "srv", path: "/srv", entryClass: "ordinary" }],
+      entries: path
+        ? [
+            {
+              name: "Movies",
+              path,
+              kind: "folder",
+              accessError: "none",
+              entryClass: "ordinary",
+              selectable: role !== "libraryRoot",
+              reasonCode: role === "libraryRoot" ? "overlaps-library-root" : undefined,
+              mediaCount: 2,
+              previewTimeoutMs: 75,
+              maxPreviewEntries: 5,
+              truncated: false,
+              children: [],
+            },
+          ]
+        : [],
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole("button", { name: "Convert" });
+
+    await user.type(screen.getByLabelText("Source file or folder"), "/srv/Movies");
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+
+    const browser = await screen.findByRole("group", { name: "Folder browser" });
+    expect(await within(browser).findByRole("button", { name: "Use this folder" })).toBeEnabled();
+    expect(fetchPathPicker).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "incomingFolder", path: "/srv/Movies" }),
+    );
   });
 });

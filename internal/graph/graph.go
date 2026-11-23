@@ -2993,6 +2993,9 @@ func (h *Handler) createLibrary(ctx context.Context, scope auth.Scope, req reque
 	if err := store.CheckLibraryRoots(roots); err != nil {
 		return LibraryInfo{}, localizeLibraryRootError(err)
 	}
+	if err := h.store.CheckLibraryRootsOverlap(ctx, "", nil, roots); err != nil {
+		return LibraryInfo{}, localizeLibraryRootError(err)
+	}
 	var library store.Library
 	var err error
 	if scope.ProfileID == "" {
@@ -3118,6 +3121,9 @@ func (h *Handler) setLibraryRoots(ctx context.Context, scope auth.Scope, req req
 		return LibraryInfo{}, err
 	}
 	if err := store.CheckAddedLibraryRoots(saved, roots); err != nil {
+		return LibraryInfo{}, localizeLibraryRootError(err)
+	}
+	if err := h.store.CheckLibraryRootsOverlap(ctx, store.LibraryID(libraryID), saved, roots); err != nil {
 		return LibraryInfo{}, localizeLibraryRootError(err)
 	}
 	if err := h.store.SetLibraryRoots(ctx, store.LibraryID(libraryID), roots); err != nil {

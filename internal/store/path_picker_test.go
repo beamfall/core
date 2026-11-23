@@ -207,6 +207,63 @@ func TestPathPickerRoleEligibilityAndPreview(t *testing.T) {
 	}
 }
 
+func TestPathPickerLibraryRootRefusesFoldersOverlappingAnotherLibrary(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	tv := filepath.Join(base, "tv")
+	season := filepath.Join(tv, "season1")
+	free := filepath.Join(base, "music")
+	for _, dir := range []string{season, free} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{base}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.SetLibraryRoots(ctx, "library-local", []string{tv}); err != nil {
+		t.Fatal(err)
+	}
+	canonicalBase, err := canonicalExistingPath(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, path := range map[string]string{"equal": tv, "parent": base, "child": season} {
+		picker, err := st.PathPicker(ctx, PathPickerRequest{Role: PathRoleLibraryRoot, Path: path, Depth: 1})
+		if err != nil {
+			t.Fatalf("%s PathPicker: %v", name, err)
+		}
+		if len(picker.Entries) != 1 || picker.Entries[0].Selectable || picker.Entries[0].ReasonCode != "overlaps-library-root" {
+			t.Fatalf("%s entry = %#v, want unselectable with overlaps-library-root", name, picker.Entries)
+		}
+	}
+	// The parent's children are judged one by one: the other Library's folder
+	// is refused, a free sibling stays selectable.
+	parent, err := st.PathPicker(ctx, PathPickerRequest{Role: PathRoleLibraryRoot, Path: canonicalBase, Depth: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reasons := map[string]string{}
+	selectable := map[string]bool{}
+	for _, child := range parent.Entries[0].Children {
+		reasons[child.Name], selectable[child.Name] = child.ReasonCode, child.Selectable
+	}
+	if selectable["tv"] || reasons["tv"] != "overlaps-library-root" || !selectable["music"] || reasons["music"] != "" {
+		t.Fatalf("children selectable=%v reasons=%v, want tv refused and music selectable", selectable, reasons)
+	}
+	// Other roles keep browsing library folders.
+	picker, err := st.PathPicker(ctx, PathPickerRequest{Role: PathRoleBackupDestination, Path: tv, Depth: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(picker.Entries) != 1 || !picker.Entries[0].Selectable {
+		t.Fatalf("backupDestination entry = %#v, want selectable", picker.Entries)
+	}
+}
+
 func TestPathPickerHidesDotChildrenButBrowsesDotPathDirectly(t *testing.T) {
 	ctx := context.Background()
 	base := t.TempDir()
@@ -415,5 +472,33 @@ func TestPathPickerListsLinkedFoldersWithoutReadingThem(t *testing.T) {
 	}
 	if len(refused.Entries) != 1 || refused.Entries[0].Selectable || refused.Entries[0].ReasonCode != "outside-roots" || refused.Entries[0].MediaCount != 0 {
 		t.Fatalf("linked-outside opened as %#v, want outside-roots", refused.Entries)
+	}
+}
+
+func TestPathPickerLibraryRootIgnoresEditedLibrarysOwnRoots(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	tv := filepath.Join(base, "tv")
+	season := filepath.Join(tv, "season1")
+	if err := os.MkdirAll(season, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{base}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.SetLibraryRoots(ctx, "library-local", []string{tv}); err != nil {
+		t.Fatal(err)
+	}
+	// Editing library-local replaces its roots, so its own folder never blocks.
+	for name, path := range map[string]string{"equal": tv, "child": season} {
+		picker, err := st.PathPicker(ctx, PathPickerRequest{Role: PathRoleLibraryRoot, LibraryID: "library-local", Path: path, Depth: 1})
+		if err != nil {
+			t.Fatalf("%s PathPicker: %v", name, err)
+		}
+		if len(picker.Entries) != 1 || !picker.Entries[0].Selectable || picker.Entries[0].ReasonCode != "" {
+			t.Fatalf("%s entry = %#v, want selectable for the edited library", name, picker.Entries)
+		}
 	}
 }

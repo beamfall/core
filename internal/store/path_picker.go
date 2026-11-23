@@ -257,12 +257,19 @@ func (s *Store) PathPicker(ctx context.Context, req PathPickerRequest) (PathPick
 		PreviewTimeoutMs:  int(pathPickerPreviewTimeoutDuration / time.Millisecond),
 		MaxPreviewEntries: pathPickerMaxPreview,
 	}
+	var libraryFolders []string
+	if req.Role == PathRoleLibraryRoot {
+		var err error
+		if libraryFolders, err = s.liveLibraryRootsLocked(ctx, req.LibraryID); err != nil {
+			return PathPickerContract{}, err
+		}
+	}
 	target := strings.TrimSpace(req.Path)
 	if target == "" {
 		contract.Entries = make([]PathPickerEntry, 0, len(roots))
 		for _, root := range roots {
 			entry := pathPickerEntryFromRoot(root)
-			s.applyPathPickerEligibility(ctx, &entry, req)
+			s.applyPathPickerEligibility(ctx, &entry, req, libraryFolders)
 			contract.Entries = append(contract.Entries, entry)
 		}
 		return contract, nil
@@ -296,7 +303,7 @@ func (s *Store) PathPicker(ctx context.Context, req PathPickerRequest) (PathPick
 	if err != nil {
 		return PathPickerContract{}, err
 	}
-	s.applyPathPickerEligibility(ctx, &entry, req)
+	s.applyPathPickerEligibility(ctx, &entry, req, libraryFolders)
 	contract.Entries = []PathPickerEntry{entry}
 	return contract, nil
 }
@@ -508,7 +515,11 @@ func pathPickerLooksLikeMedia(name string) bool {
 	}
 }
 
-func (s *Store) applyPathPickerEligibility(ctx context.Context, entry *PathPickerEntry, req PathPickerRequest) {
+// applyPathPickerEligibility marks what the role cannot use. libraryFolders is
+// every live Library's folder except the edited Library's own (its roots are
+// replaced by the request, as in CheckLibraryRootsOverlap), listed once for the
+// libraryRoot role.
+func (s *Store) applyPathPickerEligibility(ctx context.Context, entry *PathPickerEntry, req PathPickerRequest, libraryFolders []string) {
 	if entry.AccessError != "" && entry.AccessError != "none" {
 		entry.Selectable = false
 		if entry.ReasonCode == "" {
@@ -525,8 +536,15 @@ func (s *Store) applyPathPickerEligibility(ctx context.Context, entry *PathPicke
 			entry.ReasonCode = "not-inside-library-root"
 		}
 	}
+	// A folder that equals, holds or sits inside another Library's folder would
+	// feed two Libraries (CORE-1202); its subfolders stay browsable.
+	if req.Role == PathRoleLibraryRoot && entry.Selectable && entry.Kind == "folder" &&
+		slices.ContainsFunc(libraryFolders, func(folder string) bool { return LibraryRootsOverlap(entry.Path, folder) }) {
+		entry.Selectable = false
+		entry.ReasonCode = "overlaps-library-root"
+	}
 	for i := range entry.Children {
-		s.applyPathPickerEligibility(ctx, &entry.Children[i], req)
+		s.applyPathPickerEligibility(ctx, &entry.Children[i], req, libraryFolders)
 	}
 }
 

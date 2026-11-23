@@ -1,11 +1,13 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -37,6 +39,69 @@ func CheckAddedLibraryRoots(saved, submitted []string) error {
 		}
 		if err := checkLibraryRoot(root); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// CheckLibraryRootsOverlap refuses a submitted root that equals, holds or sits
+// inside a folder of another live Library, or of another submitted root, so one
+// folder never feeds two Libraries (CORE-1202). saved is the Library's current
+// roots (nil for a new Library): a kept root is never refused, and a Library's
+// own other roots are not "another Library". libraryID is that Library, or empty
+// for a new one.
+func (s *Store) CheckLibraryRootsOverlap(ctx context.Context, libraryID LibraryID, saved, submitted []string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	others, err := s.liveLibraryRootsLocked(ctx, libraryID)
+	if err != nil {
+		return err
+	}
+	return checkLibraryRootsOverlap(saved, submitted, others)
+}
+
+// liveLibraryRootsLocked lists the folders of every live Library except
+// exceptID, with the Store's read lock held.
+func (s *Store) liveLibraryRootsLocked(ctx context.Context, exceptID LibraryID) ([]string, error) {
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT lr.root
+		FROM library_roots AS lr
+		JOIN library AS l ON l.id = lr.library_id
+		WHERE l.trashed_at_ms IS NULL AND lr.library_id <> ?
+		ORDER BY lr.root`, exceptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var roots []string
+	for rows.Next() {
+		var root string
+		if err := rows.Scan(&root); err != nil {
+			return nil, err
+		}
+		roots = append(roots, root)
+	}
+	return roots, rows.Err()
+}
+
+func checkLibraryRootsOverlap(saved, submitted, others []string) error {
+	kept := make(map[string]bool, len(saved))
+	for _, root := range saved {
+		kept[cleanLibraryRoot(root)] = true
+	}
+	for i, root := range submitted {
+		cleaned := cleanLibraryRoot(root)
+		if kept[cleaned] {
+			continue
+		}
+		overlapsOther := func(other string) bool { return LibraryRootsOverlap(cleaned, other) }
+		overlapsPeer := func(peer string) bool { return cleanLibraryRoot(peer) != cleaned && LibraryRootsOverlap(cleaned, peer) }
+		if slices.ContainsFunc(others, overlapsOther) ||
+			slices.ContainsFunc(submitted[:i], overlapsPeer) || slices.ContainsFunc(submitted[i+1:], overlapsPeer) {
+			return &LibraryRootError{Reason: LibraryRootOverlaps, Path: cleaned}
 		}
 	}
 	return nil
@@ -88,6 +153,7 @@ const (
 	LibraryRootCantOpen   LibraryRootReason = "cant-open"
 	LibraryRootNotFolder  LibraryRootReason = "not-folder"
 	LibraryRootUnreadable LibraryRootReason = "unreadable"
+	LibraryRootOverlaps   LibraryRootReason = "overlaps"
 )
 
 // LibraryRootError is a CheckLibraryRoots refusal. It unwraps to the English
@@ -111,6 +177,8 @@ func (e *LibraryRootError) validation() ValidationError {
 		return ValidationError(e.Path + " is a file, not a folder.")
 	case LibraryRootUnreadable:
 		return ValidationError("The server doesn't have permission to read " + e.Path + ".")
+	case LibraryRootOverlaps:
+		return ValidationError("The folder " + e.Path + " is already part of a library.")
 	default:
 		return ValidationError("The server can't open " + e.Path + ".")
 	}
