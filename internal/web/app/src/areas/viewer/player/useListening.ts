@@ -11,7 +11,13 @@ import {
   sleepFadeSeconds,
   sleepRemaining,
 } from "./listening";
-import { dropFadeAdvance, holdVolume, type VolumeHold, volumeHeld } from "./trackFade";
+import {
+  cancelFadeAdvance,
+  dropFadeAdvance,
+  holdVolume,
+  type VolumeHold,
+  volumeHeld,
+} from "./trackFade";
 
 type VideoRef = RefObject<HTMLVideoElement | null>;
 
@@ -229,6 +235,8 @@ export function useSleepTimer(
       setRemaining(Number.isFinite(left) ? left : null);
       if (left <= 0) {
         // A skip still under way would start the next item, or leave it faded, after the stop.
+        // Any element: a retried track mounts a new one (following it is CORE-3365).
+        cancelFadeAdvance();
         dropFadeAdvance(video);
         video.pause();
         letGo();
