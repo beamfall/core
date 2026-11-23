@@ -114,6 +114,20 @@ describe("autoSkipSegmentAt", () => {
     const segment = autoSkipSegmentAt(markers, 1230, allOn);
     expect(segment?.endSeconds).toBe(1260);
   });
+
+  it("auto-skips an ad segment when prefs.ad is enabled (ADR-0193)", () => {
+    const withAd = [
+      ...markers,
+      { title: "Sponsor break", startSeconds: 100, endSeconds: 130, segmentKind: "ad" },
+    ];
+    expect(autoSkipSegmentAt(withAd, 110, { ...allOn, ad: false })).toBeNull();
+    expect(autoSkipSegmentAt(withAd, 110, { ...allOn, ad: true })).toEqual({
+      segmentKind: "ad",
+      startSeconds: 100,
+      endSeconds: 130,
+      title: "Sponsor break",
+    });
+  });
 });
 
 describe("autoSkipSegmentKey", () => {

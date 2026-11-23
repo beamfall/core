@@ -99,6 +99,33 @@ describe("SearchPage mode exposure", () => {
     expect(screen.queryByRole("heading", { name: "Search results" })).toBeNull();
   });
 
+  it("clears an in-flight search without leaving search controls disabled", async () => {
+    let inflightSignal: AbortSignal | undefined;
+    vi.mocked(searchResult).mockImplementation((term, _mode, signal) => {
+      if (term === "hang") {
+        inflightSignal = signal;
+        return new Promise(() => {});
+      }
+      return Promise.resolve({
+        mode: "keyword",
+        items: [{ id: "m2", kind: "media", title: "Fresh Hit", mode: "keyword", score: 0 }],
+        restrictedResultsPresent: false,
+      });
+    });
+
+    const user = userEvent.setup();
+    renderPage("/search?q=hang");
+    await waitFor(() => expect(inflightSignal).toBeDefined());
+
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(inflightSignal?.aborted).toBe(true);
+    expect(screen.getByLabelText("Search")).toHaveValue("");
+    expect(screen.getByLabelText("Search")).toBeEnabled();
+
+    await user.type(screen.getByLabelText("Search"), "fresh");
+    expect(await screen.findByText("Fresh Hit")).toBeInTheDocument();
+  });
+
   it("renders restricted-result empties exactly like normal no-match empties", async () => {
     vi.mocked(searchResult).mockResolvedValue({
       mode: "keyword",

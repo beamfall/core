@@ -94,7 +94,7 @@ beforeEach(() => {
 });
 
 describe("MyDataPage delete", () => {
-  it("retries deleteMyEngagement with the Reveal PIN when required", async () => {
+  it("retries deleteMyEngagement with the masked Reveal PIN dialog and never calls window.prompt", async () => {
     vi.mocked(deleteMyEngagement)
       .mockRejectedValueOnce(new Error("reveal pin required"))
       .mockResolvedValueOnce({ scope: "all" });
@@ -105,9 +105,76 @@ describe("MyDataPage delete", () => {
     await user.click(await screen.findByRole("button", { name: "Delete all my engagement" }));
 
     await waitFor(() => expect(deleteMyEngagement).toHaveBeenNthCalledWith(1, "all"));
-    expect(prompt).toHaveBeenCalledWith("Enter your Reveal PIN to confirm deletion.");
-    expect(deleteMyEngagement).toHaveBeenNthCalledWith(2, "all", "1234");
+    expect(prompt).not.toHaveBeenCalled();
+
+    const pinInput = await screen.findByLabelText("PIN");
+    expect(pinInput).toHaveAttribute("type", "password");
+    await user.type(pinInput, "1234");
+    await user.click(
+      screen.getByRole("dialog").querySelector('button[type="submit"]') as HTMLElement,
+    );
+
+    await waitFor(() => expect(deleteMyEngagement).toHaveBeenNthCalledWith(2, "all", "1234"));
     expect(await screen.findByText("Your engagement data was deleted.")).toBeInTheDocument();
+  });
+});
+
+describe("MyDataPage export and local date bounds", () => {
+  it("attaches the export anchor before click and revokes the blob URL asynchronously after click", async () => {
+    let anchorConnectedAtClick = false;
+    let revokedAtClick = false;
+    const createSpy = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mydata-export");
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      anchorConnectedAtClick = this.isConnected;
+      revokedAtClick = revokeSpy.mock.calls.length > 0;
+    });
+
+    try {
+      const user = userEvent.setup();
+      renderPage();
+      await user.click(screen.getByText("Export my engagement"));
+      await user.click(await screen.findByRole("button", { name: "Download my data" }));
+
+      expect(clickSpy).toHaveBeenCalledOnce();
+      expect(anchorConnectedAtClick).toBe(true);
+      expect(revokedAtClick).toBe(false);
+      await waitFor(() => expect(revokeSpy).toHaveBeenCalledWith("blob:mydata-export"));
+    } finally {
+      createSpy.mockRestore();
+      revokeSpy.mockRestore();
+      clickSpy.mockRestore();
+    }
+  });
+
+  it("builds event-log date bounds in local time so a UTC+10 day covers the local day", async () => {
+    const previousTZ = process.env.TZ;
+    process.env.TZ = "Australia/Brisbane";
+    try {
+      const user = userEvent.setup();
+      renderPage();
+      await user.click(screen.getByText("Activity log"));
+
+      const fromInput = await screen.findByLabelText("From");
+      const toInput = screen.getByLabelText("To");
+      await user.type(fromInput, "2026-08-22");
+      await user.type(toInput, "2026-08-22");
+      await user.click(screen.getByRole("button", { name: "Apply filters" }));
+
+      await waitFor(() =>
+        expect(fetchMyEngagementLog).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            from: "2026-08-21T14:00:00Z",
+            to: "2026-08-22T13:59:59.999Z",
+          }),
+        ),
+      );
+    } finally {
+      if (previousTZ === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTZ;
+    }
   });
 });
 

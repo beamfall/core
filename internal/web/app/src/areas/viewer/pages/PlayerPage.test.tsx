@@ -1548,7 +1548,8 @@ describe("PlayerPage class-narrowed queue (CORE-1490, CORE-1309)", () => {
     });
     const stage = document.querySelector(".bf-audio-stage");
     expect(stage).not.toBeNull();
-    expect(stage).toHaveTextContent("Alpha");
+    // The history title stays off until the media read settles on the item.
+    expect(stage).not.toHaveTextContent("Alpha");
     expect(stage?.querySelector("[data-visualizer-slot]")).not.toBeNull();
     // Only the track remains, so there is no "1 of 2" and no next to declare.
     expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe("");
@@ -3908,5 +3909,96 @@ describe("PlayerPage in a Watch Party (CORE-1766)", () => {
       { title: "Alpha", queue, queueIdentity: "viewer-1" },
     );
     expect(vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onNextInQueue).toBeTypeOf("function");
+  });
+});
+
+describe("PlayerPage autoskip.ad and container skip interval", () => {
+  beforeEach(() => {
+    viewer.revealed = true;
+    viewer.profileID = "profile-a";
+    viewer.identity = "viewer-1";
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(PlayerTransport).mockClear();
+    vi.mocked(fetchMedia).mockReset().mockResolvedValue(null);
+    vi.mocked(fetchClientPrefs).mockReset().mockResolvedValue([]);
+    vi.mocked(setClientPref).mockReset().mockResolvedValue({ key: "" });
+  });
+
+  afterEach(() => {
+    viewer.revealed = true;
+    viewer.profileID = "profile-a";
+    viewer.identity = "viewer-1";
+    vi.restoreAllMocks();
+  });
+
+  it("wires autoskip.ad into useAutoSkip to skip ad markers (ADR-0193)", async () => {
+    vi.mocked(fetchClientPrefs).mockResolvedValue([{ key: "autoskip.ad", value: "on" }]);
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        markers: [{ title: "Ad", startSeconds: 10, endSeconds: 40, segmentKind: "ad" }],
+      }),
+    );
+
+    const video = stageVideo();
+    await waitFor(() => expect(fetchClientPrefs).toHaveBeenCalled());
+    act(() => {
+      video.currentTime = 15;
+      fireEvent.timeUpdate(video);
+    });
+    expect(video.currentTime).toBe(40);
+  });
+
+  it("keys the skip-interval override by container entity ID so it carries across items", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      id: "media-alpha",
+      title: "Part 1",
+      favorited: false,
+      credits: [
+        {
+          entityID: "container-series-1",
+          title: "Series One",
+          kind: "series",
+          archetype: "container",
+          relation: "part-of",
+        },
+      ],
+    });
+    renderPlayer(playerState({ phase: "playing" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.showSkipIntervalCollection).toBe(
+        "Series One",
+      ),
+    );
+    await act(async () => {
+      vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onShowSkipIntervalChange?.("30");
+    });
+    expect(setClientPref).toHaveBeenCalledWith(
+      "playback.skip-interval.show.container-series-1",
+      "30",
+    );
+    expect(vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.skipInterval).toBe(30);
+  });
+
+  it("shows no history title for an item the read finds unavailable", async () => {
+    viewer.revealed = false;
+    vi.mocked(fetchMedia).mockRejectedValue(new ApiError("unknown media", 200));
+    renderPlayer(playerState({ phase: "playing" }), { title: "Restricted Title" });
+
+    await waitFor(() => expect(fetchMedia).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText("Restricted Title")).toBeNull());
+    expect(document.body.textContent).not.toContain("Restricted Title");
+    expect(document.title).not.toContain("Restricted Title");
+  });
+
+  it("shows no history title while the media read is still pending", async () => {
+    viewer.revealed = false;
+    vi.mocked(fetchMedia).mockReturnValue(new Promise(() => undefined));
+    renderPlayer(playerState({ phase: "playing" }), { title: "Pending Title" });
+
+    await waitFor(() => expect(fetchMedia).toHaveBeenCalled());
+    expect(document.body.textContent).not.toContain("Pending Title");
+    expect(document.title).not.toContain("Pending Title");
   });
 });

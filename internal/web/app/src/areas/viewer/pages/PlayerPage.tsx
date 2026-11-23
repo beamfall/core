@@ -64,6 +64,7 @@ import { playbackDurationSeconds } from "../lib/transport";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
+  navTitleFor,
   type PlayQueueItem,
   queueForPlaying,
   queueNeighbours,
@@ -379,7 +380,12 @@ function FeaturePlayer({
   // read below fills in the title for a deep link, plus artwork and credits.
   const navState = serverQueueRun ? {} : readPlayerNavState(entry.state, identity);
   const queueIdentity = navState.queueIdentity;
-  const navTitle = navState.title || media?.title || "";
+  // Undocked, a title an older history entry carries shows only once the read
+  // for this route has settled on an available item: while it is pending, or
+  // after it settles null or fails, the loading / unavailable copy stands in.
+  // The mini player names a track it is already playing, so it keeps its title.
+  const titleSettled = docked || (mediaReadIsCurrent && !!mediaRead.info);
+  const navTitle = titleSettled ? navState.title || media?.title || "" : "";
   // Docked, the browse page under the mini player names the tab (CORE-2322).
   // A Revealed session may be playing a restricted title, which stays out of
   // the browser history (tab titles are kept there).
@@ -676,7 +682,7 @@ function FeaturePlayer({
       const state = musicProfile
         ? { selectPartyTitle }
         : {
-            title,
+            title: navTitleFor(identity, title),
             skipPrePlay: true,
             selectPartyTitle,
             ...(catalogQueue ? { queue: catalogQueue, queueIdentity } : {}),
@@ -688,7 +694,7 @@ function FeaturePlayer({
       }
       navigate(`${mediaPath("watch", id)}${search}`, { replace: true, state });
     },
-    [navigate, catalogQueue, queueIdentity, docked, onAdvanceDocked],
+    [navigate, catalogQueue, queueIdentity, docked, onAdvanceDocked, identity],
   );
 
   // Watch Party (CORE-1677): the party moves every member's player to the
@@ -1058,6 +1064,7 @@ function FeaturePlayer({
       intro: resolvedPrefs.autoSkipIntro,
       recap: resolvedPrefs.autoSkipRecap,
       credits: resolvedPrefs.autoSkipCredits,
+      ad: resolvedPrefs.autoSkipAd,
     },
     songScale,
     autoSkipLead: watchParty.autoSkipLead,
@@ -1166,19 +1173,6 @@ function FeaturePlayer({
     };
   }, [mediaId, editedKeys]);
 
-  const setShowSkipInterval = useCallback(
-    (value: SkipInterval | "") => {
-      if (!collectionID) return;
-      const key = skipIntervalOverrideKey(collectionID);
-      setClientPrefs((prefs) => [
-        ...prefs.filter((pref) => pref.key !== key),
-        ...(value ? [{ key, value }] : []),
-      ]);
-      void setClientPref(key, value).catch(() => {});
-    },
-    [collectionID],
-  );
-
   // Subtitle appearance roams with the Profile (subtitle.* keys, CORE-1681).
   // Writes go out one at a time so a slow earlier write cannot land last, and
   // a write still queued when its identity epoch ends is dropped.
@@ -1200,6 +1194,13 @@ function FeaturePlayer({
       }
     },
     [editedKeys],
+  );
+  const setShowSkipInterval = useCallback(
+    (value: SkipInterval | "") => {
+      if (!collectionID) return;
+      storePrefs([{ key: skipIntervalOverrideKey(collectionID), value }]);
+    },
+    [collectionID, storePrefs],
   );
   const setSubtitleAppearance = useCallback(
     (field: SubtitleAppearanceField, value: string) =>

@@ -182,7 +182,7 @@ export function ProfileSettingsPage() {
             title={t("settingsTitle")}
             lead={t("settingsLead")}
           />
-          <AdvancedSettingsSwitch className="mb-5 sm:mt-2" />
+          {!managed && <AdvancedSettingsSwitch className="mb-5 sm:mt-2" />}
         </header>
 
         {saveError && (
@@ -191,7 +191,7 @@ export function ProfileSettingsPage() {
           </p>
         )}
 
-        {profile && (
+        {!managed && profile && (
           <section aria-label={t("avatarHeading")}>
             <CollapsibleCard title={t("avatarHeading")} lead={t("avatarLead")}>
               {avatarError && (
@@ -212,67 +212,69 @@ export function ProfileSettingsPage() {
 
         {/* Appearance (CORE-1179): the scheme is this device's choice; the theme preset roams
             with the Profile through theme.preset and re-skins the app as soon as it is picked. */}
-        <section aria-label={t("settingsAppearanceHeading")}>
-          <CollapsibleCard
-            title={t("settingsAppearanceHeading")}
-            lead={t("settingsAppearanceLead")}
-            defaultOpen
-          >
-            <div className="settings-row flex items-center justify-between gap-4">
-              <Label htmlFor="settings-scheme">{t("settingsSchemeLabel")}</Label>
-              <Select
-                value={schemePreference}
-                onValueChange={(v) => setSchemePreference(v as SchemePreference)}
-              >
-                <SelectTrigger id="settings-scheme" className="w-44">
-                  <SelectValue>{(v: SchemePreference) => t(SCHEME_LABELS[v])}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {SCHEME_PREFERENCES.map((scheme) => (
-                    <SelectItem key={scheme} value={scheme}>
-                      {t(SCHEME_LABELS[scheme])}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="settings-row flex items-center justify-between gap-4">
-              <Label htmlFor="settings-theme">{t("settingsThemeLabel")}</Label>
-              <Select
-                value={preset}
-                onValueChange={(v) => {
-                  const save = themeSave.current;
-                  const seq = ++save.latest;
-                  save.pending += 1;
-                  save.latestFailed = false;
-                  setPreset(v as string);
-                  void persist(PREF_KEYS.themePreset, v as string, {}).then((saved) => {
-                    save.pending -= 1;
-                    if (saved && seq > save.confirmed) {
-                      save.confirmed = seq;
-                      save.confirmedPreset = v as string;
-                      if (save.latestFailed) setPreset(v as string);
-                    } else if (!saved && seq === save.latest) {
-                      save.latestFailed = true;
-                      setPreset(save.confirmedPreset);
-                    }
-                  });
-                }}
-              >
-                <SelectTrigger id="settings-theme" className="w-44">
-                  <SelectValue>{(v: string) => t(presetLabel(v))}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {THEME_PRESETS.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {t(p.nameKey as StringKey)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CollapsibleCard>
-        </section>
+        {!managed && (
+          <section aria-label={t("settingsAppearanceHeading")}>
+            <CollapsibleCard
+              title={t("settingsAppearanceHeading")}
+              lead={t("settingsAppearanceLead")}
+              defaultOpen
+            >
+              <div className="settings-row flex items-center justify-between gap-4">
+                <Label htmlFor="settings-scheme">{t("settingsSchemeLabel")}</Label>
+                <Select
+                  value={schemePreference}
+                  onValueChange={(v) => setSchemePreference(v as SchemePreference)}
+                >
+                  <SelectTrigger id="settings-scheme" className="w-44">
+                    <SelectValue>{(v: SchemePreference) => t(SCHEME_LABELS[v])}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SCHEME_PREFERENCES.map((scheme) => (
+                      <SelectItem key={scheme} value={scheme}>
+                        {t(SCHEME_LABELS[scheme])}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="settings-row flex items-center justify-between gap-4">
+                <Label htmlFor="settings-theme">{t("settingsThemeLabel")}</Label>
+                <Select
+                  value={preset}
+                  onValueChange={(v) => {
+                    const save = themeSave.current;
+                    const seq = ++save.latest;
+                    save.pending += 1;
+                    save.latestFailed = false;
+                    setPreset(v as string);
+                    void persist(PREF_KEYS.themePreset, v as string, {}).then((saved) => {
+                      save.pending -= 1;
+                      if (saved && seq > save.confirmed) {
+                        save.confirmed = seq;
+                        save.confirmedPreset = v as string;
+                        if (save.latestFailed) setPreset(v as string);
+                      } else if (!saved && seq === save.latest) {
+                        save.latestFailed = true;
+                        setPreset(save.confirmedPreset);
+                      }
+                    });
+                  }}
+                >
+                  <SelectTrigger id="settings-theme" className="w-44">
+                    <SelectValue>{(v: string) => t(presetLabel(v))}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {THEME_PRESETS.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {t(p.nameKey as StringKey)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CollapsibleCard>
+          </section>
+        )}
 
         <section aria-label={t("settingsPlaybackHeading")}>
           <CollapsibleCard title={t("settingsPlaybackHeading")} defaultOpen>
@@ -307,6 +309,15 @@ export function ProfileSettingsPage() {
                 onChange={(on) =>
                   persist(PREF_KEYS.autoSkipCredits, encodeBool(on), {
                     autoSkipCredits: on,
+                  })
+                }
+              />
+              <ToggleRow
+                labelKey="settingsAutoSkipAd"
+                checked={prefs.autoSkipAd}
+                onChange={(on) =>
+                  persist(PREF_KEYS.autoSkipAd, encodeBool(on), {
+                    autoSkipAd: on,
                   })
                 }
               />
@@ -367,160 +378,170 @@ export function ProfileSettingsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="settings-row flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <ToggleRow
-                  labelKey="settingsPrePlay"
-                  checked={prefs.prePlayEnabled}
-                  onChange={(on) =>
-                    persist(PREF_KEYS.prePlayEnabled, encodeBool(on), {
-                      prePlayEnabled: on,
-                    })
-                  }
-                />
-                <span className="text-sm text-[var(--text-muted)]">{t("settingsPrePlayLead")}</span>
-              </div>
-              {prefs.prePlayEnabled ? (
-                <div className="flex items-center justify-between gap-4">
-                  <Label htmlFor="settings-preplay-extras">{t("settingsPrePlayExtrasLabel")}</Label>
-                  <Select
-                    value={prefs.prePlayExtras}
-                    onValueChange={(v) =>
-                      persist(PREF_KEYS.prePlayExtras, v, {
-                        prePlayExtras: v as PrePlayExtras,
-                      })
-                    }
-                  >
-                    <SelectTrigger id="settings-preplay-extras" className="w-28">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PRE_PLAY_EXTRAS.map((n) => (
-                        <SelectItem key={n} value={n}>
-                          {n}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            {!managed && (
+              <>
+                <div className="settings-row flex flex-col gap-3">
+                  <div className="flex flex-col gap-1">
+                    <ToggleRow
+                      labelKey="settingsPrePlay"
+                      checked={prefs.prePlayEnabled}
+                      onChange={(on) =>
+                        persist(PREF_KEYS.prePlayEnabled, encodeBool(on), {
+                          prePlayEnabled: on,
+                        })
+                      }
+                    />
+                    <span className="text-sm text-[var(--text-muted)]">
+                      {t("settingsPrePlayLead")}
+                    </span>
+                  </div>
+                  {prefs.prePlayEnabled ? (
+                    <div className="flex items-center justify-between gap-4">
+                      <Label htmlFor="settings-preplay-extras">
+                        {t("settingsPrePlayExtrasLabel")}
+                      </Label>
+                      <Select
+                        value={prefs.prePlayExtras}
+                        onValueChange={(v) =>
+                          persist(PREF_KEYS.prePlayExtras, v, {
+                            prePlayExtras: v as PrePlayExtras,
+                          })
+                        }
+                      >
+                        <SelectTrigger id="settings-preplay-extras" className="w-28">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PRE_PLAY_EXTRAS.map((n) => (
+                            <SelectItem key={n} value={n}>
+                              {n}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
 
-            <Advanced keep={prefs.trimSilence}>
+                <Advanced keep={prefs.trimSilence}>
+                  <div className="settings-row flex flex-col gap-1">
+                    <ToggleRow
+                      labelKey="settingsTrimSilence"
+                      checked={prefs.trimSilence}
+                      onChange={(on) =>
+                        persist(PREF_KEYS.trimSilence, encodeBool(on), {
+                          trimSilence: on,
+                        })
+                      }
+                    />
+                    <span className="text-sm text-[var(--text-muted)]">
+                      {t("settingsTrimSilenceLead")}
+                    </span>
+                  </div>
+                </Advanced>
+
+                <Advanced keep={prefs.skipInterval !== SKIP_INTERVAL_DEFAULT}>
+                  <div className="settings-row flex items-center justify-between gap-4">
+                    <Label htmlFor="settings-skip-interval">{t("settingsSkipIntervalLabel")}</Label>
+                    <Select
+                      value={prefs.skipInterval}
+                      onValueChange={(v) =>
+                        persist(PREF_KEYS.skipInterval, v, {
+                          skipInterval: v as SkipInterval,
+                        })
+                      }
+                    >
+                      <SelectTrigger id="settings-skip-interval" className="w-28">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SKIP_INTERVALS.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {t("secondsShort", { seconds: s })}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </Advanced>
+
+                <Advanced keep={prefs.downstreamAudio !== DOWNSTREAM_AUDIO_DEFAULT}>
+                  <div className="settings-row flex items-center justify-between gap-4">
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="settings-downstream-audio">
+                        {t("settingsDownstreamAudioLabel")}
+                      </Label>
+                      <span className="text-sm text-[var(--text-muted)]">
+                        {t("settingsDownstreamAudioLead")}
+                      </span>
+                    </div>
+                    <Select
+                      value={prefs.downstreamAudio}
+                      onValueChange={(v) =>
+                        persist(PREF_KEYS.downstreamAudio, v, {
+                          downstreamAudio: v as DownstreamAudioMode,
+                        })
+                      }
+                    >
+                      <SelectTrigger id="settings-downstream-audio" className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DOWNSTREAM_AUDIO_MODES.map((mode) => (
+                          <SelectItem key={mode} value={mode}>
+                            {t(
+                              mode === "surround"
+                                ? "settingsDownstreamAudioSurround"
+                                : "settingsDownstreamAudioStereo",
+                            )}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </Advanced>
+              </>
+            )}
+          </CollapsibleCard>
+        </section>
+
+        {!managed && (
+          <section aria-label={t("hiddenItemsLabel")}>
+            <CollapsibleCard title={t("hiddenItemsLabel")} defaultOpen>
               <div className="settings-row flex flex-col gap-1">
                 <ToggleRow
-                  labelKey="settingsTrimSilence"
-                  checked={prefs.trimSilence}
+                  labelKey="hideWatched"
+                  checked={prefs.hideWatched}
                   onChange={(on) =>
-                    persist(PREF_KEYS.trimSilence, encodeBool(on), {
-                      trimSilence: on,
-                    })
+                    void persist(PREF_KEYS.hideWatched, encodeBool(on), {
+                      hideWatched: on,
+                    }).then(notifyEngagementChanged)
                   }
                 />
-                <span className="text-sm text-[var(--text-muted)]">
-                  {t("settingsTrimSilenceLead")}
-                </span>
+                <span className="text-sm text-[var(--text-muted)]">{t("hideWatchedLead")}</span>
               </div>
-            </Advanced>
-
-            <Advanced keep={prefs.skipInterval !== SKIP_INTERVAL_DEFAULT}>
-              <div className="settings-row flex items-center justify-between gap-4">
-                <Label htmlFor="settings-skip-interval">{t("settingsSkipIntervalLabel")}</Label>
-                <Select
-                  value={prefs.skipInterval}
-                  onValueChange={(v) =>
-                    persist(PREF_KEYS.skipInterval, v, {
-                      skipInterval: v as SkipInterval,
-                    })
-                  }
-                >
-                  <SelectTrigger id="settings-skip-interval" className="w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SKIP_INTERVALS.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {t("secondsShort", { seconds: s })}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="settings-row flex flex-col gap-1">
+                {/* On by default: the stored key turns the spoiler guard off (CORE-3057). */}
+                <ToggleRow
+                  labelKey="spoilerGuardSetting"
+                  checked={!prefs.showUnplayedDetails}
+                  onChange={(on) => {
+                    const value = encodeBool(!on);
+                    // The guard takes the save only for the identity that made it.
+                    const owner = viewerIdentity;
+                    void persist(PREF_KEYS.showUnplayedDetails, value, {
+                      showUnplayedDetails: !on,
+                    }).then((saved) => {
+                      if (saved) applySpoilerPref(owner, PREF_KEYS.showUnplayedDetails, value);
+                    });
+                  }}
+                />
+                <span className="text-sm text-[var(--text-muted)]">{t("spoilerGuardLead")}</span>
               </div>
-            </Advanced>
-
-            <Advanced keep={prefs.downstreamAudio !== DOWNSTREAM_AUDIO_DEFAULT}>
-              <div className="settings-row flex items-center justify-between gap-4">
-                <div className="flex flex-col gap-1">
-                  <Label htmlFor="settings-downstream-audio">
-                    {t("settingsDownstreamAudioLabel")}
-                  </Label>
-                  <span className="text-sm text-[var(--text-muted)]">
-                    {t("settingsDownstreamAudioLead")}
-                  </span>
-                </div>
-                <Select
-                  value={prefs.downstreamAudio}
-                  onValueChange={(v) =>
-                    persist(PREF_KEYS.downstreamAudio, v, {
-                      downstreamAudio: v as DownstreamAudioMode,
-                    })
-                  }
-                >
-                  <SelectTrigger id="settings-downstream-audio" className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DOWNSTREAM_AUDIO_MODES.map((mode) => (
-                      <SelectItem key={mode} value={mode}>
-                        {t(
-                          mode === "surround"
-                            ? "settingsDownstreamAudioSurround"
-                            : "settingsDownstreamAudioStereo",
-                        )}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </Advanced>
-          </CollapsibleCard>
-        </section>
-
-        <section aria-label={t("hiddenItemsLabel")}>
-          <CollapsibleCard title={t("hiddenItemsLabel")} defaultOpen>
-            <div className="settings-row flex flex-col gap-1">
-              <ToggleRow
-                labelKey="hideWatched"
-                checked={prefs.hideWatched}
-                onChange={(on) =>
-                  void persist(PREF_KEYS.hideWatched, encodeBool(on), {
-                    hideWatched: on,
-                  }).then(notifyEngagementChanged)
-                }
-              />
-              <span className="text-sm text-[var(--text-muted)]">{t("hideWatchedLead")}</span>
-            </div>
-            <div className="settings-row flex flex-col gap-1">
-              {/* On by default: the stored key turns the spoiler guard off (CORE-3057). */}
-              <ToggleRow
-                labelKey="spoilerGuardSetting"
-                checked={!prefs.showUnplayedDetails}
-                onChange={(on) => {
-                  const value = encodeBool(!on);
-                  // The guard takes the save only for the identity that made it.
-                  const owner = viewerIdentity;
-                  void persist(PREF_KEYS.showUnplayedDetails, value, {
-                    showUnplayedDetails: !on,
-                  }).then((saved) => {
-                    if (saved) applySpoilerPref(owner, PREF_KEYS.showUnplayedDetails, value);
-                  });
-                }}
-              />
-              <span className="text-sm text-[var(--text-muted)]">{t("spoilerGuardLead")}</span>
-            </div>
-            <HiddenItemsRow />
-          </CollapsibleCard>
-        </section>
+              <HiddenItemsRow />
+            </CollapsibleCard>
+          </section>
+        )}
 
         <section aria-label={t("settingsAccessibilityHeading")}>
           <CollapsibleCard title={t("settingsAccessibilityHeading")} defaultOpen>

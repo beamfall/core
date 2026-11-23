@@ -3,8 +3,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { buttonVariants } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
+import { useViewerIdentity } from "@/lib/session";
 import { mediaPath } from "../lib/mediaAddress";
-import type { PlayerNavState } from "../lib/watchQueue";
+import { navTitleFor, type PlayerNavState } from "../lib/watchQueue";
 import { useHomeNetwork, watchPartyInviteState } from "../lib/watchTogether";
 import { getWatchParty, startWatchParty, useWatchPartyState } from "../player/watchPartyStore";
 
@@ -23,6 +24,7 @@ export function WatchTogetherButton({
 }) {
   const t = useT();
   const navigate = useNavigate();
+  const identity = useViewerIdentity();
   const home = useHomeNetwork();
   const party = useWatchPartyState();
   const [busy, setBusy] = useState(false);
@@ -43,7 +45,7 @@ export function WatchTogetherButton({
     // The party timeline already holds the start position; skip pre-play so the
     // player opens straight on the title the party is watching.
     const state: PlayerNavState & { skipPrePlay: true } = {
-      title,
+      title: navTitleFor(identity, title),
       skipPrePlay: true,
       ...watchPartyInviteState(),
     };

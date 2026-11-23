@@ -66,8 +66,18 @@ export function LayoutView({
     layout: Layout | null;
     states: Record<string, SectionHydrationState>;
   }>({ layout, states: {} });
-  // field → value selections, keyed by the filter-bar that owns them.
-  const [filterSelections, setFilterSelections] = useState<Record<string, FieldFilters>>({});
+  // field → value selections, keyed by the filter-bar Section id and scoped to
+  // the active Layout and navigation context so selections never leak across nodes.
+  const filterScope = `${layout?.id ?? ""}\0${libraryID}\0${entityID}\0${navigationID ?? ""}`;
+  const [filterState, setFilterState] = useState<{
+    scope: string;
+    selections: Record<string, FieldFilters>;
+  }>({ scope: filterScope, selections: {} });
+  // A selection belongs to the node it was made on: leaving the scope drops it,
+  // so returning later does not resurrect it.
+  const filterInScope = filterState.scope === filterScope;
+  if (!filterInScope) setFilterState({ scope: filterScope, selections: {} });
+  const filterSelections = filterInScope ? filterState.selections : {};
 
   const { sections, homeRecent, homeHero, homeContinue } = useMemo(() => {
     const all = layout?.sections || [];
@@ -115,7 +125,8 @@ export function LayoutView({
   const extraFiltersForIndex = (index: number): FieldFilters | null => {
     for (const [barIndex, targetIndex] of filterTargets) {
       if (targetIndex === index) {
-        return filterSelections[barIndex] || null;
+        const barID = sections[barIndex]?.id;
+        return (barID ? filterSelections[barID] : undefined) || null;
       }
     }
     return null;
@@ -232,15 +243,16 @@ export function LayoutView({
     return /^#[0-9a-fA-F]{6}$/.test(accent) ? { ["--library-accent" as string]: accent } : {};
   }, [manifest, libraryID]);
 
-  function toggleFilter(barIndex: number, field: string, value: string) {
-    setFilterSelections((prev) => {
-      const current = { ...(prev[barIndex] || {}) };
+  function toggleFilter(barID: string, field: string, value: string) {
+    setFilterState((prev) => {
+      const base = prev.scope === filterScope ? prev.selections : {};
+      const current = { ...(base[barID] || {}) };
       if (current[field] === value) {
         delete current[field];
       } else {
         current[field] = value;
       }
-      return { ...prev, [barIndex]: current };
+      return { scope: filterScope, selections: { ...base, [barID]: current } };
     });
   }
 
@@ -253,7 +265,7 @@ export function LayoutView({
   // around it already has its header, and the library onboarding empty state
   // (first scan, migrate) does not belong inside an Entity (CORE-1786).
   if (!layout || !sections.length) {
-    return entityID ? null : <LibraryEmpty />;
+    return entityID ? null : <LibraryEmpty isManager={isManager} />;
   }
 
   function retrySections() {
@@ -289,7 +301,7 @@ export function LayoutView({
         <LoadFailed onRetry={retrySections} />
       ) : aggregateEmpty ? (
         entityID ? null : (
-          <HiddenAwareEmpty fallback={<LibraryEmpty />} />
+          <HiddenAwareEmpty fallback={<LibraryEmpty isManager={isManager} />} />
         )
       ) : (
         renderOrder.map(({ section, index }) => {
@@ -303,8 +315,8 @@ export function LayoutView({
               <FilterBar
                 key={section.id}
                 section={section}
-                selected={filterSelections[index] || {}}
-                onToggle={(field, value) => toggleFilter(index, field, value)}
+                selected={filterSelections[section.id] || {}}
+                onToggle={(field, value) => toggleFilter(section.id, field, value)}
               />
             );
           }
@@ -354,50 +366,50 @@ export function LayoutView({
       )}
     </div>
   );
+}
 
-  function LoadFailed({ onRetry }: { onRetry: () => void }) {
+function LoadFailed({ onRetry }: { onRetry: () => void }) {
+  const t = useT();
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <ErrorState message="couldNotReachServer" />
+      <Button type="button" variant="outline" onClick={onRetry}>
+        {t("tryAgain")}
+      </Button>
+    </div>
+  );
+}
+
+// Empty-as-activation (onboarding-funnel §6). For the OWNER/manager an empty
+// browse is an activation surface: a headline + a forward action (start the
+// first scan / migrate) so a fresh install never sits inert. For every other
+// surface — a managed/locked Profile, or any Reveal-filtered no-access empty —
+// it stays the EXACT inert empty, byte-indistinguishable from genuine-empty
+// (no count, no "restricted", no activation CTA that could betray hidden
+// content). The activation treatment is gated STRICTLY behind isManager, per
+// ADR-0101 §2 / ADR-0004: no-access ≡ empty/absent.
+function LibraryEmpty({ isManager }: { isManager: boolean }) {
+  const t = useT();
+  if (!isManager) {
     return (
-      <div className="flex flex-col items-start gap-3">
-        <ErrorState message="couldNotReachServer" />
-        <Button type="button" variant="outline" onClick={onRetry}>
-          {t("tryAgain")}
-        </Button>
+      <div className="bf-empty flex flex-col gap-2" role="status">
+        <p className="text-lg font-semibold text-[var(--text-primary)]">{t("libraryEmptyTitle")}</p>
+        <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyLead")}</p>
       </div>
     );
   }
-
-  // Empty-as-activation (onboarding-funnel §6). For the OWNER/manager an empty
-  // browse is an activation surface: a headline + a forward action (start the
-  // first scan / migrate) so a fresh install never sits inert. For every other
-  // surface — a managed/locked Profile, or any Reveal-filtered no-access empty —
-  // it stays the EXACT inert empty, byte-indistinguishable from genuine-empty
-  // (no count, no "restricted", no activation CTA that could betray hidden
-  // content). The activation treatment is gated STRICTLY behind isManager, per
-  // ADR-0101 §2 / ADR-0004: no-access ≡ empty/absent.
-  function LibraryEmpty() {
-    if (!isManager) {
-      return (
-        <div className="bf-empty flex flex-col gap-2" role="status">
-          <p className="text-lg font-semibold text-[var(--text-primary)]">
-            {t("libraryEmptyTitle")}
-          </p>
-          <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyLead")}</p>
-        </div>
-      );
-    }
-    return (
-      <div className="bf-empty flex flex-col gap-3" role="status">
-        <p className="text-lg font-semibold text-[var(--text-primary)]">
-          {t("libraryEmptyOwnerTitle")}
-        </p>
-        <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyOwnerLead")}</p>
-        <div className="mt-2 flex flex-wrap items-start justify-center gap-2">
-          <FirstScanButton />
-          <Link to="/console/migrate" className={buttonVariants({ variant: "outline" })}>
-            {t("libraryEmptyMigrate")}
-          </Link>
-        </div>
+  return (
+    <div className="bf-empty flex flex-col gap-3" role="status">
+      <p className="text-lg font-semibold text-[var(--text-primary)]">
+        {t("libraryEmptyOwnerTitle")}
+      </p>
+      <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyOwnerLead")}</p>
+      <div className="mt-2 flex flex-wrap items-start justify-center gap-2">
+        <FirstScanButton />
+        <Link to="/console/migrate" className={buttonVariants({ variant: "outline" })}>
+          {t("libraryEmptyMigrate")}
+        </Link>
       </div>
-    );
-  }
+    </div>
+  );
 }

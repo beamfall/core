@@ -338,12 +338,26 @@ describe("ProfileSettingsPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides recommendations opt-in for a managed Profile and shows the managed note", async () => {
+  it("shows only the ADR-0082 §37 harmless subset for a managed Profile and shows the managed note", async () => {
     setProfileKind("managed");
     renderPage();
 
-    await screen.findByRole("switch", { name: "Skip intros" });
+    expect(await screen.findByRole("switch", { name: "Skip intros" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Skip recaps" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Skip credits" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Skip ads" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Default playback speed")).toBeInTheDocument();
+    expect(screen.getByLabelText("Ask if anyone is still watching")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Reduce motion" })).toBeInTheDocument();
+
     expect(screen.queryByRole("switch", { name: "Personalized recommendations" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Show advanced settings" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Play intros and previews first" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Hide watched" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Hide details of unwatched items" })).toBeNull();
+    expect(screen.queryByLabelText("Theme")).toBeNull();
+    expect(screen.queryByLabelText("Color scheme")).toBeNull();
+    expect(screen.queryByRole("group", { name: "Colour" })).toBeNull();
     expect(screen.getByText(/set by the person who runs the server/i)).toBeInTheDocument();
   });
 

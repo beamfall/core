@@ -1,4 +1,5 @@
 import type { SourceItem } from "@/lib/graphql/types";
+import { viewerIdentityRevealed } from "@/lib/viewerCache";
 
 // The play queue a catalog surface hands the player (CORE-1143). A card that
 // starts playback carries the playable siblings it was shown with — an album's
@@ -57,6 +58,16 @@ export interface PlayerNavState {
    * Opening the full player from the mini player carries it unchanged.
    */
   startID?: string;
+}
+
+/**
+ * The title a watch navigation may write into history state. A Revealed session
+ * may be playing restricted Media, and a history entry outlives the session: it
+ * carries no title then, and the player names the item from its media read.
+ * `identity` is the viewer identity the navigation is made under.
+ */
+export function navTitleFor(identity: string | null, title: string): string | undefined {
+  return viewerIdentityRevealed(identity) ? undefined : title;
 }
 
 /** A new playback-start identity for {@link PlayerNavState.startID}. */

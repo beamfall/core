@@ -41,7 +41,8 @@ const recent: Section = {
   kind: "shelf",
   source: { kind: "recently-added" },
 };
-const manifest = {
+let manifest = {
+  generatedAt: "t0",
   navigation: [{ id: "home", layoutID: "home", view: "layout" }],
   layouts: [{ id: "home", sections: [recent] }],
 };
@@ -75,6 +76,7 @@ function renderSeeAll(state: SeeAllContext | HomeLibrarySeeAllState) {
 afterEach(() => {
   cleanup();
   identity = "revealed";
+  manifest = { ...manifest, generatedAt: "t0" };
   vi.mocked(fetchHomeLibraries).mockReset();
   vi.mocked(fetchSectionItems).mockReset();
   vi.restoreAllMocks();
@@ -294,6 +296,35 @@ describe("See All rendering contract", () => {
       })),
     );
   }, 15_000);
+
+  it("reads the first page again when the manifest refreshes", async () => {
+    vi.mocked(fetchHomeLibraries).mockResolvedValue([{ id: "lib", title: "Library" }]);
+    vi.mocked(fetchSectionItems)
+      .mockResolvedValueOnce(rows.slice(0, 60))
+      .mockResolvedValueOnce(rows.slice(60, 61))
+      .mockResolvedValueOnce(rows.slice(1, 61));
+    const user = userEvent.setup();
+    const view = renderSeeAll(scopedHome);
+    await screen.findByRole("link", { name: "Item 0" });
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(fetchSectionItems).toHaveBeenCalledTimes(2));
+
+    manifest = { ...manifest, generatedAt: "t1" };
+    view.rerender(
+      <I18nProvider>
+        <MemoryRouter initialEntries={[{ pathname: "/seeall/source", state: scopedHome }]}>
+          <Routes>
+            <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    await screen.findByRole("link", { name: "Item 1" });
+    expect(screen.queryByRole("link", { name: "Item 0" })).toBeNull();
+    expect(vi.mocked(fetchSectionItems).mock.calls[2]?.[1]).toMatchObject({
+      paging: { limit: 60, offset: 0 },
+    });
+  });
 
   it.each([
     { name: "hidden", libraries: [{ id: "lib", title: "Library", showOnHome: false }] },

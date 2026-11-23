@@ -10,6 +10,7 @@ export const profileSearchStrings = {
     settingsAutoSkipIntro: "Skip intros",
     settingsAutoSkipRecap: "Skip recaps",
     settingsAutoSkipCredits: "Skip credits",
+    settingsAutoSkipAd: "Skip ads",
     settingsPlaybackSpeedLabel: "Default playback speed",
     settingsTrimSilence: "Remove long pauses",
     settingsTrimSilenceLead: "Skips long silent gaps when the server has found them in the file.",
@@ -60,6 +61,7 @@ export const profileSearchStrings = {
     settingsAutoSkipIntro: "Sauter les introductions",
     settingsAutoSkipRecap: "Sauter les résumés",
     settingsAutoSkipCredits: "Sauter le générique",
+    settingsAutoSkipAd: "Sauter les publicités",
     settingsPlaybackSpeedLabel: "Vitesse de lecture par défaut",
     settingsTrimSilence: "Supprimer les longues pauses",
     settingsTrimSilenceLead:
@@ -111,6 +113,7 @@ export const profileSearchStrings = {
     settingsAutoSkipIntro: "Intros überspringen",
     settingsAutoSkipRecap: "Rückblicke überspringen",
     settingsAutoSkipCredits: "Abspann überspringen",
+    settingsAutoSkipAd: "Werbung überspringen",
     settingsPlaybackSpeedLabel: "Standard-Wiedergabegeschwindigkeit",
     settingsTrimSilence: "Lange Pausen entfernen",
     settingsTrimSilenceLead:
@@ -163,6 +166,7 @@ export const profileSearchStrings = {
     settingsAutoSkipIntro: "Omitir introducciones",
     settingsAutoSkipRecap: "Omitir resúmenes",
     settingsAutoSkipCredits: "Omitir créditos",
+    settingsAutoSkipAd: "Omitir anuncios",
     settingsPlaybackSpeedLabel: "Velocidad de reproducción predeterminada",
     settingsTrimSilence: "Quitar pausas largas",
     settingsTrimSilenceLead:
@@ -215,6 +219,7 @@ export const profileSearchStrings = {
     settingsAutoSkipIntro: "Pular aberturas",
     settingsAutoSkipRecap: "Pular recapitulações",
     settingsAutoSkipCredits: "Pular créditos",
+    settingsAutoSkipAd: "Pular anúncios",
     settingsPlaybackSpeedLabel: "Velocidade de reprodução padrão",
     settingsTrimSilence: "Remover pausas longas",
     settingsTrimSilenceLead:
