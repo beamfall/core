@@ -100,8 +100,12 @@ func catalogArguments(field string) []string {
 	out := make([]string, 0, len(args))
 	for _, arg := range args {
 		text := arg.Name + ": " + arg.Kind
-		if len(arg.Enum) > 0 {
-			text += " (" + strings.Join(arg.Enum, "|") + ")"
+		forms := slices.Clone(arg.Enum)
+		for _, prefix := range arg.Prefixes {
+			forms = append(forms, prefix+"<name>")
+		}
+		if len(forms) > 0 {
+			text += " (" + strings.Join(forms, "|") + ")"
 		}
 		if arg.Optional {
 			text += " optional"

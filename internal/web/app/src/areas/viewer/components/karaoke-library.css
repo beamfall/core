@@ -168,7 +168,49 @@
   color: var(--text-primary);
 }
 
+/* CORE-3369: format, duet and guide-vocal filters, one value per field. */
+.bf-songbook-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.bf-songbook-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-songbook-filter:hover {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
+
+.bf-songbook-filter[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  color: var(--text-primary);
+}
+
+.bf-songbook-filter-count {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 .bf-songbook-sort:focus-visible,
+.bf-songbook-filter:focus-visible,
 .bf-singer-chip:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;

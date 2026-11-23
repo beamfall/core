@@ -501,7 +501,7 @@ var fieldArguments = map[string][]NestedArgument{
 	"importstatus":      {{Name: "jobID", Kind: "string"}},
 	"itemstate":         {{Name: "entityID", Kind: "string", Optional: true}, {Name: "mediaID", Kind: "string", Optional: true}},
 	"libraryentities":   libraryEntitiesArguments(),
-	"libraryitems":      append([]NestedArgument{{Name: "categoryCounts", Kind: "boolean", Optional: true}}, libraryItemsArguments()...),
+	"libraryitems":      libraryItemsFieldArguments(),
 	"media":             {{Name: "id", Kind: "string"}},
 	"mediafields":       {{Name: "mediaID", Kind: "string"}},
 	"mediafiles":        {{Name: "mediaID", Kind: "string"}},
@@ -697,6 +697,25 @@ func libraryItemsArguments() []NestedArgument {
 	}
 }
 
+// libraryItemsFieldArguments is libraryItems' declaration: the shared browse
+// arguments plus categoryCounts, and a sort that also takes "field:<name>"
+// for a Sortable text field of the Library's plugin (libraryEntities refuses
+// that form, so it keeps the closed sort enum).
+func libraryItemsFieldArguments() []NestedArgument {
+	args := append([]NestedArgument{
+		{Name: "categoryCounts", Kind: "boolean", Optional: true},
+		{Name: "facetFields", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string"}},
+		{Name: "fieldFilters", Kind: "map", Optional: true, Elem: &NestedArgument{Kind: "string"}},
+	}, libraryItemsArguments()...)
+	slices.SortFunc(args, func(a, b NestedArgument) int { return strings.Compare(a.Name, b.Name) })
+	for i := range args {
+		if args[i].Name == "sort" {
+			args[i].Prefixes = []string{libraryFieldSortPrefix}
+		}
+	}
+	return args
+}
+
 func entityFilterArgument() NestedArgument {
 	return NestedArgument{Name: "entityFilter", Kind: "object", Optional: true, Fields: []NestedArgument{
 		{Name: "kind", Kind: "string"},
@@ -825,12 +844,15 @@ func checkArgumentNodes(field string, args []NestedArgument) {
 
 // NestedArgument is one server-owned GraphQL argument declaration for a
 // top-level field. Object fields and list/map elements recurse through the same
-// node shape; Enum records closed parser vocabularies.
+// node shape; Enum records closed parser vocabularies. Prefixes records open
+// forms beside the enum: a value that is a prefix followed by a name the
+// server validates at request time (libraryItems' "field:<name>" sort).
 type NestedArgument struct {
 	Name     string           `json:"name,omitempty"`
 	Kind     string           `json:"kind"`
 	Optional bool             `json:"optional,omitempty"`
 	Enum     []string         `json:"enum,omitempty"`
+	Prefixes []string         `json:"prefixes,omitempty"`
 	Elem     *NestedArgument  `json:"elem,omitempty"`
 	AnyOf    []NestedArgument `json:"anyOf,omitempty"`
 	Fields   []NestedArgument `json:"fields,omitempty"`

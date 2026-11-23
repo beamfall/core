@@ -3,6 +3,7 @@ package graph
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -305,4 +306,25 @@ func TestNestedSchemaHasCorrectedRecursiveMetadata(t *testing.T) {
 	if children.Elem == nil || children.Elem.Kind != "object" || !children.Elem.Recursive {
 		t.Fatalf("candidate foldertree.children = %+v, want recursive object element", children)
 	}
+}
+
+// CORE-3367: libraryItems publishes its open "field:<name>" sort beside the
+// closed enum, and libraryEntities, which refuses that form, does not.
+func TestLibraryItemsPublishesFieldSort(t *testing.T) {
+	sort := nestedArgument(t, topLevel(t, "libraryitems").Arguments, "sort")
+	if !slices.Equal(sort.Prefixes, []string{"field:"}) || !slices.Contains(sort.Enum, "title") {
+		t.Fatalf("libraryItems sort = %+v, want title in enum and field: prefix", sort)
+	}
+	if entities := nestedArgument(t, topLevel(t, "libraryentities").Arguments, "sort"); len(entities.Prefixes) != 0 {
+		t.Fatalf("libraryEntities sort prefixes = %v, want none", entities.Prefixes)
+	}
+	for _, line := range catalogArguments("libraryitems") {
+		if strings.HasPrefix(line, "sort: ") {
+			if !strings.Contains(line, "|field:<name>)") {
+				t.Fatalf("catalog sort = %q, want field:<name>", line)
+			}
+			return
+		}
+	}
+	t.Fatal("catalog libraryItems has no sort argument")
 }

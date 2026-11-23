@@ -14458,6 +14458,22 @@
           ]
         },
         {
+          "name": "facetFields",
+          "kind": "list",
+          "optional": true,
+          "elem": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "fieldFilters",
+          "kind": "map",
+          "optional": true,
+          "elem": {
+            "kind": "string"
+          }
+        },
+        {
           "name": "groupFilters",
           "kind": "map",
           "optional": true,
@@ -14520,6 +14536,9 @@
             "release-date",
             "title",
             "year"
+          ],
+          "prefixes": [
+            "field:"
           ]
         },
         {
@@ -14555,6 +14574,58 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "fields",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "counts",
+                    "kind": "list",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "field",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "values",
+                    "kind": "list",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "counts",
+                  "kind": "list",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "field",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "values",
+                  "kind": "list",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                }
+              ]
             },
             {
               "name": "groupings",

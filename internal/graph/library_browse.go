@@ -47,8 +47,19 @@ type LibraryItemsGrouping struct {
 // that can match something.
 type LibraryItemsFacets struct {
 	Groupings []LibraryItemsGrouping `json:"groupings"`
-	Decades   []int                  `json:"decades"`
-	Qualities []string               `json:"qualities"`
+	// Fields lists the values of each requested facetFields entry, in
+	// request order (CORE-3369).
+	Fields    []LibraryItemsField `json:"fields"`
+	Decades   []int               `json:"decades"`
+	Qualities []string            `json:"qualities"`
+}
+
+// LibraryItemsField is one Filterable text Media field's values in the
+// browsed Library, most items first, with the item count of each.
+type LibraryItemsField struct {
+	Field  string   `json:"field"`
+	Values []string `json:"values"`
+	Counts []int    `json:"counts"`
 }
 
 // LibraryItemsLetter is where one title initial starts in a title-sorted
@@ -77,7 +88,7 @@ type LibraryItemsResponse struct {
 func emptyLibraryItems() LibraryItemsResponse {
 	return LibraryItemsResponse{
 		Items:   []SourceItem{},
-		Facets:  LibraryItemsFacets{Groupings: []LibraryItemsGrouping{}, Decades: []int{}, Qualities: []string{}},
+		Facets:  LibraryItemsFacets{Groupings: []LibraryItemsGrouping{}, Fields: []LibraryItemsField{}, Decades: []int{}, Qualities: []string{}},
 		Letters: []LibraryItemsLetter{},
 	}
 }
@@ -94,9 +105,13 @@ func (h *Handler) libraryItems(ctx context.Context, scope auth.Scope, req reques
 		return LibraryItemsResponse{}, err
 	}
 	query.FacetMembers = boolVar(req, "categoryCounts")
-	if query.Sort == store.LibraryBrowseSortField {
-		// Which fields sort describes the Library's plugin, so a Library the
-		// caller cannot see answers as empty, the same as an unknown one.
+	if err := libraryItemsFieldQuery(req, &query); err != nil {
+		return LibraryItemsResponse{}, err
+	}
+	if query.Sort == store.LibraryBrowseSortField || len(query.FieldFilters) > 0 || len(query.FacetFields) > 0 {
+		// Which fields sort, filter and facet describes the Library's plugin,
+		// so a Library the caller cannot see answers as empty, the same as an
+		// unknown one.
 		visible, err := h.store.LibraryVisible(ctx, query.LibraryID, scope.LibraryFilter())
 		if err != nil {
 			return LibraryItemsResponse{}, err
@@ -154,6 +169,9 @@ func (h *Handler) libraryItems(ctx context.Context, scope auth.Scope, req reques
 			BrowseCounts: counts,
 			BrowseLabels: names,
 		})
+	}
+	for _, facet := range result.Facets.Fields {
+		resp.Facets.Fields = append(resp.Facets.Fields, LibraryItemsField{Field: facet.Field, Values: facet.Values, Counts: facet.Counts})
 	}
 	if result.Facets.Decades != nil {
 		resp.Facets.Decades = result.Facets.Decades
@@ -267,6 +285,57 @@ func libraryItemsQuery(scope auth.Scope, req request) (store.LibraryBrowseQuery,
 	}, nil
 }
 
+// libraryItemsFieldQuery reads libraryItems' text Media field filters and
+// facets (CORE-3369); libraryBrowseMediaFields then checks them against the
+// Library plugin's Filterable text fields.
+func libraryItemsFieldQuery(req request, query *store.LibraryBrowseQuery) error {
+	// fieldFilters maps a Filterable text Media field to the one value
+	// selected for it, matched exactly as facets report it (CORE-3369). A
+	// malformed argument is refused: dropping it would widen the results.
+	var fieldFilters map[string]string
+	if raw, present := req.Variables["fieldFilters"]; present && raw != nil {
+		filters, ok := raw.(map[string]any)
+		if !ok {
+			return clientError("fieldFilters must be an object of field values")
+		}
+		if len(filters) > maxLibraryGroupFilters {
+			return clientError("too many fieldFilters")
+		}
+		for field, value := range filters {
+			text, _ := value.(string)
+			if field == "" || field != strings.TrimSpace(field) || text == "" || text != strings.TrimSpace(text) {
+				return clientError("fieldFilters requires a field and a value")
+			}
+			if fieldFilters == nil {
+				fieldFilters = map[string]string{}
+			}
+			fieldFilters[field] = text
+		}
+	}
+	var facetFields []string
+	if raw, present := req.Variables["facetFields"]; present && raw != nil {
+		fields, ok := raw.([]any)
+		if !ok {
+			return clientError("facetFields must be a list of field names")
+		}
+		if len(fields) > maxLibraryGroupFilters {
+			return clientError("too many facetFields")
+		}
+		for _, value := range fields {
+			field, _ := value.(string)
+			if field == "" || field != strings.TrimSpace(field) {
+				return clientError("facetFields requires field names")
+			}
+			if !slices.Contains(facetFields, field) {
+				facetFields = append(facetFields, field)
+			}
+		}
+	}
+	query.FieldFilters = fieldFilters
+	query.FacetFields = facetFields
+	return nil
+}
+
 // Resolve each visible member once across all category values. The store's
 // facet membership already excludes hidden, trashed and muted Media.
 func (h *Handler) categoryBrowseUnits(ctx context.Context, facets []store.LibraryBrowseEntityFacet) (map[store.MediaID]store.SourceItem, error) {
@@ -319,13 +388,18 @@ func categoryBrowseCounts(facet store.LibraryBrowseEntityFacet, units map[store.
 // libraryBrowseMediaFields checks a field sort against the Library plugin's
 // declarations and lets the text filter also match the plugin's Searchable
 // text Media fields. A field the plugin does not declare Sortable text is a
-// client error, never a silent title sort.
+// client error, never a silent title sort; likewise a field filter or facet
+// on a field it does not declare Filterable text.
 func libraryBrowseMediaFields(bundle plugin.Bundle, query *store.LibraryBrowseQuery) error {
 	sortable := false
+	filterable := map[string]bool{}
 	for _, field := range bundle.MediaFields {
 		if field.Type != "text" {
 			continue
 		}
+		// A Sensitive field's values never leave the server through a facet
+		// or answer a filter probe.
+		filterable[field.Name] = field.Filterable && !field.Sensitive
 		if field.Searchable {
 			query.TextFields = append(query.TextFields, field.Name)
 		}
@@ -335,6 +409,16 @@ func libraryBrowseMediaFields(bundle plugin.Bundle, query *store.LibraryBrowseQu
 	}
 	if query.Sort == store.LibraryBrowseSortField && !sortable {
 		return clientError("sort is not a supported library sort")
+	}
+	for field := range query.FieldFilters {
+		if !filterable[field] {
+			return clientError("fieldFilters is not a supported library field filter")
+		}
+	}
+	for _, field := range query.FacetFields {
+		if !filterable[field] {
+			return clientError("facetFields is not a supported library field filter")
+		}
 	}
 	return nil
 }
