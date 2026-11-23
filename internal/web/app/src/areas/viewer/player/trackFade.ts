@@ -14,7 +14,12 @@ export const PLAY_WAIT_MS = 5_000;
 // A volume the listener sets mid-fade is theirs: the fade stops and keeps it,
 // and the skip still happens.
 
-type Run = { level: () => number; supersede: () => void; cancel: () => void };
+type Run = {
+  level: () => number;
+  supersede: () => void;
+  cancel: () => void;
+  finish: () => void;
+};
 const runs = new WeakMap<HTMLMediaElement, Run>();
 // Skips still fading out, on any element: a retried track mounts a new one.
 const fadingOut = new Set<Run>();
@@ -29,9 +34,15 @@ export function cancelFadeAdvance() {
   for (const run of [...fadingOut]) run.cancel();
 }
 
-/** Whether a skip is still fading out: its advance owns what plays next. */
-export function skipFadingOut(): boolean {
-  return fadingOut.size > 0;
+/**
+ * Moves every skip still fading out on at once: the track ended, so nothing is
+ * left to fade, and the listener's pick owns what plays next. Needs no
+ * animation frame, so a hidden tab still advances. Returns whether one did.
+ */
+export function finishFadeAdvance(): boolean {
+  const pending = [...fadingOut];
+  for (const run of pending) run.finish();
+  return pending.length > 0;
 }
 
 /** Runs `advance` after a short fade out, then fades the element back in once it plays again. */
@@ -71,6 +82,13 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     supersede: () => done(true),
     cancel: () => {
       if (!advanced) done(true);
+    },
+    // The track ended: the listener's level comes back at once, with no fade
+    // in to wait on frames, and the skip happens.
+    finish: () => {
+      if (advanced) return;
+      done(true);
+      go();
     },
   };
   const stop = () => done(true);
