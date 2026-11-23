@@ -2146,7 +2146,7 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 		// value selects a valued predicate Source's band (resume-progress /
 		// availability, ADR-0052 §2.6); echoed back from the manifest like the
 		// other Source parameters. An unrecognized value yields an empty feed.
-		Value: trimmedVariable(req, "value"),
+		Value: sourceValueVar(req),
 		// The History page searches and narrows the played kinds (CORE-3333).
 		Played: played,
 	})
