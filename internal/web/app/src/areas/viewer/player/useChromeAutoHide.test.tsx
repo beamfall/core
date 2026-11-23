@@ -64,6 +64,39 @@ describe("useChromeAutoHide (CORE-2322)", () => {
       expect(css.slice(guard, rule).includes("}"), file).toBe(false);
     }
   });
+
+  it("rebinds to the new stage and video after an error screen and a retry", () => {
+    function Remount({ mounted }: { mounted: boolean }) {
+      const stageRef = useRef<HTMLDivElement>(null);
+      const videoRef = useRef<HTMLVideoElement>(null);
+      const { chromeHidden } = useChromeAutoHide({
+        stageRef,
+        videoRef,
+        menuOpen: false,
+        mounted,
+      });
+      return mounted ? (
+        <div ref={stageRef} data-testid="stage" data-hidden={String(chromeHidden)}>
+          <video ref={videoRef} />
+        </div>
+      ) : (
+        <p>Playback failed</p>
+      );
+    }
+    const { container, getByTestId, rerender } = render(<Remount mounted />);
+    rerender(<Remount mounted={false} />);
+    rerender(<Remount mounted />);
+    const video = playingVideo(container);
+    act(() => {
+      video.dispatchEvent(new Event("play"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(3500);
+    });
+    expect(getByTestId("stage").dataset.hidden).toBe("true");
+    fireEvent.pointerMove(getByTestId("stage"));
+    expect(getByTestId("stage").dataset.hidden).toBe("false");
+  });
 });
 
 // CORE-3351: the music stage dims instead of hiding when idle.
@@ -188,14 +221,26 @@ describe("music stage idle dim (CORE-3351)", () => {
     expect(start).toBeGreaterThan(-1);
     const block = css.slice(start, css.indexOf("}", css.indexOf(") {", start)) + 1);
     for (const awake of [
-      ".bf-transport:hover",
-      ".bf-transport :focus-visible",
-      ".bf-player-bar:hover",
       ".bf-player-bar :focus-visible",
+      ".bf-player-stage :focus-visible",
+      ".bf-queue-drawer",
       '[aria-expanded="true"]',
     ]) {
       expect(block).toContain(awake);
     }
+    // Hover wakes only on hover-capable input: a tap leaves a sticky :hover.
+    expect(block).not.toContain(":hover");
+    const hover = css.indexOf("@media (hover: hover) {", start);
+    expect(hover).toBeGreaterThan(-1);
+    const hoverBlock = css.slice(hover, css.indexOf("}", hover) + 1);
+    expect(hoverBlock).toContain(".bf-transport:hover");
+    expect(hoverBlock).toContain(".bf-player-bar:hover");
+    expect(hoverBlock).toContain("--bf-idle-chrome: initial;");
+    // Touch hit-testing follows the same awake conditions as the opacity.
+    const touch = css.indexOf("@media not all and (pointer: fine) {", start);
+    const touchBlock = css.slice(touch, css.indexOf("pointer-events: none;", touch));
+    expect(touchBlock.split(".bf-player-stage :focus-visible").length - 1).toBe(2);
+    expect(touchBlock.split('[aria-expanded="true"]').length - 1).toBe(2);
     const chrome = Number(/--bf-idle-chrome:\s*([\d.]+)/.exec(block)?.[1]);
     const card = Number(/--bf-idle-card:\s*([\d.]+)/.exec(block)?.[1]);
     expect(chrome).toBeGreaterThan(0);

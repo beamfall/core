@@ -664,10 +664,16 @@ function FeaturePlayer({
   // reversing CORE-1637's exemption): the controls, top bar and artwork recede
   // to translucent so an unattended Now Playing screen is not glaring, but stay
   // findable. Ambient mode keeps its own, longer idle.
+  const stageMounted = !(
+    !queueAllowed ||
+    (queueReadFailed && !queueReady) ||
+    (queueReady && (state.phase === "message" || state.phase === "terminal"))
+  );
   const { chromeHidden, reveal } = useChromeAutoHide({
     stageRef,
     videoRef,
     menuOpen: menuOpen || partyOpen,
+    mounted: stageMounted,
   });
 
   // Advance to another Media's watch route, carrying its title and the queue
@@ -1332,9 +1338,7 @@ function FeaturePlayer({
           )}
         </div>
 
-        {!queueAllowed ||
-        (queueReadFailed && !queueReady) ||
-        (queueReady && (state.phase === "message" || state.phase === "terminal")) ? (
+        {!stageMounted ? (
           <div
             id={docked ? undefined : MAIN_CONTENT_ID}
             tabIndex={-1}

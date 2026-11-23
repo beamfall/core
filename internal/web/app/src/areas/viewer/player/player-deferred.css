@@ -870,24 +870,36 @@
    its chrome; useChromeAutoHide's idle marks it is-chrome-dim and the controls,
    the top bar and the artwork recede to translucent. The pointer over a control
    region or keyboard focus on a control keeps everything up (the idle timer
-   still runs; these selectors decide what the eye sees), and so does any open
-   menu or popover the timer's menuOpen does not see, such as the listening
-   controls' speed and sleep menus (their trigger is aria-expanded). Open lyrics stay
-   readable: only the artwork and the words / listening controls dim. --- */
+   still runs; these selectors decide what the eye sees), and so do the open
+   Up Next drawer and any open menu or popover the timer's menuOpen does not
+   see, such as the listening controls' speed and sleep menus (their trigger is
+   aria-expanded). Hover counts only on hover-capable input: a tap leaves a
+   sticky :hover on touch screens. Open lyrics stay readable: only the artwork
+   and the words / listening controls dim. --- */
 main:has(> .bf-player-stage.is-chrome-dim):not(
     :has(
-        .bf-player-bar:hover,
         .bf-player-bar :focus-visible,
-        .bf-transport:hover,
-        .bf-transport :focus-visible,
-        .bf-audio-info:hover,
-        .bf-audio-info :focus-visible,
+        .bf-player-stage :focus-visible,
+        .bf-queue-drawer,
         [aria-expanded="true"]
       )
   ) {
   --bf-idle-chrome: 0.15;
   --bf-idle-card: 0.45;
   --bf-idle-fade: 800ms;
+}
+
+@media (hover: hover) {
+  main:has(> .bf-player-stage.is-chrome-dim):has(
+      .bf-player-bar:hover,
+      .bf-transport:hover,
+      .bf-audio-info:hover,
+      .bf-player-stage :is(button, a):hover
+    ) {
+    --bf-idle-chrome: initial;
+    --bf-idle-card: initial;
+    --bf-idle-fade: initial;
+  }
 }
 
 main:has(> .bf-player-stage.is-chrome-dim) > .bf-player-bar,
@@ -910,10 +922,30 @@ main:has(> .bf-player-stage.is-chrome-dim) > .bf-player-bar,
 }
 
 /* Touch keeps "first tap reveals", as on the hidden video chrome (CORE-2322):
-   a faint control is not tappable until the stage wakes. */
+   a faint control is not tappable until the stage wakes. Hit-testing follows
+   the same awake conditions as the opacity (no hover on touch). */
 @media not all and (pointer: fine) {
-  main:has(> .bf-player-stage.is-chrome-dim) > .bf-player-bar > *,
-  .bf-player-stage.is-chrome-dim .bf-transport * {
+  main:has(> .bf-player-stage.is-chrome-dim):not(
+      :has(
+          .bf-player-bar :focus-visible,
+          .bf-player-stage :focus-visible,
+          .bf-queue-drawer,
+          [aria-expanded="true"]
+        )
+    )
+    > .bf-player-bar
+    > *,
+  main:has(> .bf-player-stage.is-chrome-dim):not(
+      :has(
+          .bf-player-bar :focus-visible,
+          .bf-player-stage :focus-visible,
+          .bf-queue-drawer,
+          [aria-expanded="true"]
+        )
+    )
+    > .bf-player-stage
+    .bf-transport
+    * {
     pointer-events: none;
   }
 }

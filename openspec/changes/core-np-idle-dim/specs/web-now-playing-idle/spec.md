@@ -2,10 +2,10 @@
 
 ### Requirement: Idle music Now Playing recedes
 
-While audio plays on the web full-screen Now Playing stage and the listener gives no input for 3
-seconds, the web client SHALL dim the transport, the top bar and the artwork to translucent, and
-SHALL restore them on any input. It SHALL NOT dim while paused, while a menu or popover is open,
-or while the pointer or keyboard focus is on a control.
+While music plays on the web full-screen Now Playing stage and the listener gives no input for 3
+seconds, the web client SHALL dim the transport, top bar and artwork, and SHALL restore them on
+any input. It SHALL NOT dim while paused, while a menu, popover or the Up Next drawer is open, or
+while keyboard focus or a hover-capable pointer is on a control.
 
 #### Scenario: Idle while playing
 
@@ -26,3 +26,14 @@ or while the pointer or keyboard focus is on a control.
 
 - **WHEN** prefers-reduced-motion is set and the stage goes idle
 - **THEN** the opacity changes without an animated transition
+
+### Requirement: Dimmed controls ignore the first tap on touch
+
+On touch input a dimmed control on the music Now Playing stage SHALL ignore taps until the stage
+wakes, and a control shown at full opacity SHALL accept them.
+
+#### Scenario: Touch
+
+- **WHEN** the listener taps a control on a touch screen and then leaves the page alone
+- **THEN** the stage dims after 3 seconds, and the first tap on the dimmed stage wakes it without
+  activating a control
