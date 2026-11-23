@@ -90,12 +90,37 @@
 }
 
 .bf-mini-artist {
+  /* Room inside the clipped line for the links' focus ring. */
+  margin: -4px;
+  padding: 4px;
   font-size: 13px;
   color: color-mix(
     in oklab,
     color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 70%,
     transparent
   );
+}
+
+/* Artist and album links (CORE-3349), styled as the full player's credit links. */
+.bf-mini-link {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 4px;
+}
+
+.bf-mini-link:hover {
+  color: var(--on-scrim);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.bf-mini-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+a.bf-mini-artwork:hover img {
+  opacity: 0.85;
 }
 
 .bf-mini-time {

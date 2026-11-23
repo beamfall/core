@@ -1,7 +1,9 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { createRef } from "react";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MediaCredit } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { MiniPlayer } from "./MiniPlayer";
 import { loadWaveform, resetWaveformCache, type WaveformInput } from "./useWaveform";
@@ -31,7 +33,7 @@ function Mini({
       <MiniPlayer
         videoRef={videoRef}
         title="Long Weekend"
-        artist=""
+        credits={[]}
         artworkURL=""
         mediaID={mediaID}
         songScale={1}
@@ -80,5 +82,68 @@ describe("MiniPlayer waveform strip (CORE-2404)", () => {
   it("keeps the plain strip without a waveform", () => {
     render(<Mini mediaID="v" />);
     expect(screen.queryByTestId("scrubber-waveform")).not.toBeInTheDocument();
+  });
+});
+
+describe("MiniPlayer artist and album links (CORE-3349)", () => {
+  const credits: MediaCredit[] = [
+    {
+      entityID: "p1",
+      title: "Bon Iver",
+      kind: "artist",
+      archetype: "person",
+      relation: "performer",
+    },
+    { entityID: "p2", title: "Guest", kind: "artist", archetype: "person", relation: "performer" },
+    {
+      entityID: "c1",
+      title: "22, A Million",
+      kind: "album",
+      archetype: "container",
+      relation: "in",
+    },
+  ];
+
+  function Linked({ credits }: { credits: MediaCredit[] }) {
+    const videoRef = createRef<HTMLVideoElement>();
+    return (
+      <MemoryRouter>
+        <I18nProvider initialLocale="en">
+          <video ref={videoRef} />
+          <MiniPlayer
+            videoRef={videoRef}
+            title="10 dEAThbREasT"
+            credits={credits}
+            artworkURL="/art.jpg"
+            mediaID="m"
+            songScale={1}
+            onOpen={() => {}}
+            onStop={() => {}}
+          />
+        </I18nProvider>
+      </MemoryRouter>
+    );
+  }
+
+  it("links every credited person and the album, and the artwork to the album", () => {
+    const { container } = render(<Linked credits={credits} />);
+    expect(screen.getByRole("link", { name: "Bon Iver" })).toHaveAttribute("href", "/entity/p1");
+    expect(screen.getByRole("link", { name: "Guest" })).toHaveAttribute("href", "/entity/p2");
+    expect(screen.getByRole("link", { name: "22, A Million" })).toHaveAttribute(
+      "href",
+      "/entity/c1",
+    );
+    const artwork = container.querySelector("a.bf-mini-artwork");
+    expect(artwork).toHaveAttribute("href", "/entity/c1");
+    expect(artwork).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("keeps names plain when a credit names no Entity", () => {
+    const { container } = render(
+      <Linked credits={credits.map((credit) => ({ ...credit, entityID: "" }))} />,
+    );
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByText("Bon Iver")).toBeInTheDocument();
+    expect(container.querySelector("a.bf-mini-artwork")).toBeNull();
   });
 });

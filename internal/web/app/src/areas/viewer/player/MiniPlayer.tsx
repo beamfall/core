@@ -1,5 +1,7 @@
 import { Maximize2, Pause, Play, SkipForward, X } from "lucide-react";
 import { type RefObject, useEffect, useState } from "react";
+import { Link, useInRouterContext } from "react-router";
+import type { MediaCredit } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { formatAriaTime, formatClockTime } from "../lib/transport";
 import { useRemotePlayerTarget } from "../remote/remoteControl";
@@ -12,10 +14,13 @@ import { WaveformBars } from "./WaveformBars";
 // engine-owned media element the full player does, so progress beacons, the
 // Media Session and relock handling are unchanged. It is a labelled region of
 // native buttons, so it is reachable by keyboard and announced by name.
+// Every credited person links to their page and the artwork and album name to
+// the album's (CORE-3349); the player host sits above the routes, so following
+// a link keeps the audio playing.
 export function MiniPlayer({
   videoRef,
   title,
-  artist,
+  credits,
   artworkURL,
   mediaID,
   songScale,
@@ -28,7 +33,8 @@ export function MiniPlayer({
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   title: string;
-  artist: string;
+  /** The stage's credits: person credits form the artist line, the first container is the album. */
+  credits: readonly MediaCredit[];
   artworkURL: string;
   mediaID: string;
   /** Song seconds per stream second (CORE-1659): times read in song time. */
@@ -91,6 +97,13 @@ export function MiniPlayer({
   const showWaveform = !!peaks.points || peaks.pending;
   const percent = time.duration > 0 ? Math.min(100, (time.current / time.duration) * 100) : 0;
   const showArtwork = !!artworkURL && failedArtwork !== artworkURL;
+  const linked = useInRouterContext();
+  const people = credits.filter((credit) => credit.archetype === "person" && credit.title);
+  const album = credits.find((credit) => credit.archetype === "container" && credit.title);
+  const albumPath = linked && album?.entityID ? creditPath(album) : "";
+  const artwork = showArtwork && (
+    <img src={artworkURL} alt="" onError={() => setFailedArtwork(artworkURL)} />
+  );
 
   return (
     <section className="bf-mini-player" aria-label={t("miniPlayerRegion")}>
@@ -109,14 +122,35 @@ export function MiniPlayer({
           <div className="bf-mini-progress-fill" style={{ width: `${percent}%` }} />
         )}
       </div>
-      <div className="bf-mini-artwork" aria-hidden="true">
-        {showArtwork && (
-          <img src={artworkURL} alt="" onError={() => setFailedArtwork(artworkURL)} />
-        )}
-      </div>
+      {albumPath ? (
+        // The album name below is the keyboard route to the same page; the
+        // artwork is a pointer shortcut, so it stays out of the tab order.
+        <Link to={albumPath} className="bf-mini-artwork" tabIndex={-1} aria-hidden="true">
+          {artwork}
+        </Link>
+      ) : (
+        <div className="bf-mini-artwork" aria-hidden="true">
+          {artwork}
+        </div>
+      )}
       <div className="bf-mini-meta">
         <p className="bf-mini-title">{title}</p>
-        {artist && <p className="bf-mini-artist">{artist}</p>}
+        {(people.length > 0 || album) && (
+          <p className="bf-mini-artist">
+            {people.map((credit, index) => (
+              <span key={`${credit.entityID}-${index}`}>
+                {index > 0 && ", "}
+                <CreditLink credit={credit} linked={linked} />
+              </span>
+            ))}
+            {album && (
+              <>
+                {people.length > 0 && " · "}
+                <CreditLink credit={album} linked={linked} />
+              </>
+            )}
+          </p>
+        )}
       </div>
       <span className="bf-mini-time" aria-hidden="true">
         {formatClockTime(time.current)} / {formatClockTime(time.duration)}
@@ -157,5 +191,19 @@ export function MiniPlayer({
         </button>
       </div>
     </section>
+  );
+}
+
+function creditPath(credit: MediaCredit): string {
+  return `/entity/${encodeURIComponent(credit.entityID)}`;
+}
+
+// A credit's name, linked to its Entity page when it names one.
+function CreditLink({ credit, linked }: { credit: MediaCredit; linked: boolean }) {
+  if (!linked || !credit.entityID) return credit.title;
+  return (
+    <Link to={creditPath(credit)} className="bf-mini-link">
+      {credit.title}
+    </Link>
   );
 }
