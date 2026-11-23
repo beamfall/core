@@ -425,3 +425,26 @@ func TestGraphIntBounds(t *testing.T) {
 		t.Fatalf("large depth = %d, want max 3", got)
 	}
 }
+
+// TestSourceValueVarKeepsBlankValues pins CORE-3342: a whitespace-only value
+// must not trim to empty, which next-up reads as "every Media class".
+func TestSourceValueVarKeepsBlankValues(t *testing.T) {
+	for _, tc := range []struct {
+		value any
+		want  string
+	}{
+		{nil, ""},
+		{"", ""},
+		{" video ", "video"},
+		{" ", " "},
+		{"\t\n", "\t\n"},
+	} {
+		req := request{Variables: map[string]any{}}
+		if tc.value != nil {
+			req.Variables["value"] = tc.value
+		}
+		if got := sourceValueVar(req); got != tc.want {
+			t.Errorf("sourceValueVar(%q) = %q, want %q", tc.value, got, tc.want)
+		}
+	}
+}
