@@ -854,7 +854,8 @@ function FeaturePlayer({
 
   const runQueueAction = useCallback(
     async (action: QueueAction, pick?: string) => {
-      cancelFadeAdvance();
+      // The track ending on its own mid-fade is not a newer choice: Play now still wins.
+      if (action !== "ended") cancelFadeAdvance();
       if (
         !profileID ||
         (action !== "start" && !queueMatchesProfile) ||
@@ -1015,13 +1016,14 @@ function FeaturePlayer({
         const chosenUnder = getIdentityEpochSignal();
         const advance = playNowTarget
           ? () => {
-              // A relock mid-fade voids a choice made under the revealed session.
-              if (chosenUnder?.aborted) return;
               endedWithoutNext.current = null;
               playItemRef.current(playNowTarget, "", true, profileID);
             }
           : playNext;
-        fadeAdvance(videoRef.current, advance);
+        // A relock mid-fade voids a choice made under the revealed session.
+        fadeAdvance(videoRef.current, () => {
+          if (!chosenUnder?.aborted) advance();
+        });
       }
     : undefined;
   // Anything else that changes what plays (another item, Back docking the

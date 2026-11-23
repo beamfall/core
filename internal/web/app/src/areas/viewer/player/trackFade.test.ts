@@ -90,6 +90,9 @@ describe("fadeAdvance", () => {
     fadeAdvance(video, () => cancelFadeAdvance());
     vi.advanceTimersByTime(TRACK_FADE_MS * 2);
     video.dispatchEvent(new Event("playing"));
+    vi.advanceTimersByTime(TRACK_FADE_MS / 2);
+    expect(video.volume).toBeGreaterThan(0);
+    expect(video.volume).toBeLessThan(0.8);
     vi.advanceTimersByTime(TRACK_FADE_MS * 2);
     expect(video.volume).toBeCloseTo(0.8);
   });
