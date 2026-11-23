@@ -83,10 +83,12 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     cancel: () => {
       if (!advanced) done(true);
     },
+    // The track ended: the listener's level comes back at once, with no fade
+    // in to wait on frames, and the skip happens.
     finish: () => {
       if (advanced) return;
-      cancelAnimationFrame(frame);
-      faded();
+      done(true);
+      go();
     },
   };
   const stop = () => done(true);
@@ -120,11 +122,10 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   }
   runs.set(video, run);
   fadingOut.add(run);
-  function faded() {
-    video?.addEventListener("loadstart", loading);
-    video?.addEventListener("playing", fadeIn);
+  ramp(Math.cos, () => {
+    video.addEventListener("loadstart", loading);
+    video.addEventListener("playing", fadeIn);
     wait = setTimeout(fadeIn, LOAD_WAIT_MS);
     go();
-  }
-  ramp(Math.cos, faded);
+  });
 }

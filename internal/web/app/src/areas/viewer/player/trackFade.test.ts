@@ -58,9 +58,13 @@ describe("fadeAdvance", () => {
     const advance = vi.fn();
     expect(finishFadeAdvance()).toBe(false);
     fadeAdvance(video, advance);
-    // A hidden tab runs no animation frames; the end alone moves the skip on, once.
+    vi.advanceTimersByTime(TRACK_FADE_MS - 10);
+    expect(video.volume).toBeLessThan(0.1);
+    // A hidden tab runs no animation frames; the end alone moves the skip on,
+    // once, with the listener's level back at once.
     expect(finishFadeAdvance()).toBe(true);
     expect(advance).toHaveBeenCalledOnce();
+    expect(video.volume).toBeCloseTo(0.8);
     expect(finishFadeAdvance()).toBe(false);
     cancelFadeAdvance();
     vi.advanceTimersByTime(TRACK_FADE_MS * 2);
@@ -68,7 +72,6 @@ describe("fadeAdvance", () => {
 
     video.dispatchEvent(new Event("loadstart"));
     video.dispatchEvent(new Event("playing"));
-    vi.advanceTimersByTime(TRACK_FADE_MS * 2);
     expect(video.volume).toBeCloseTo(0.8);
   });
 
