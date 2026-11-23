@@ -109,11 +109,7 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     const started = performance.now();
     const step = () => {
       // The listener's own volume ends the fade early; the skip they asked for still happens.
-      if (theirs()) {
-        done(false);
-        if (!advanced) go();
-        return;
-      }
+      if (theirs()) return settle();
       const t = Math.min(1, (performance.now() - started) / TRACK_FADE_MS);
       write(shape((t * Math.PI) / 2));
       if (t < 1) frame = requestAnimationFrame(step);
@@ -132,17 +128,22 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
     clearTimeout(wait);
     wait = setTimeout(fadeIn, PLAY_WAIT_MS);
   }
-  // Hidden mid-fade, the frames stop: the skip happens now, at the listener's level.
-  function hide() {
-    if (!document.hidden) return;
+  // Ends the fade where it stands and skips now if it has not, still owning what
+  // plays next until the item changes or the wait runs out.
+  function settle() {
     cancelAnimationFrame(frame);
     clearTimeout(wait);
     video?.removeEventListener("loadstart", loading);
     video?.removeEventListener("playing", fadeIn);
     document.removeEventListener("visibilitychange", hide);
-    if (!theirs() && video) written = video.volume = base;
     if (!advanced) go();
     wait = setTimeout(stop, LOAD_WAIT_MS);
+  }
+  // Hidden mid-fade, the frames stop: the skip happens now, at the listener's level.
+  function hide() {
+    if (!document.hidden) return;
+    if (!theirs() && video) written = video.volume = base;
+    settle();
   }
   document.addEventListener("visibilitychange", hide);
   runs.set(video, run);

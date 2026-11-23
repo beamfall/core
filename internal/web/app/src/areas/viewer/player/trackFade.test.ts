@@ -32,6 +32,7 @@ describe("fadeAdvance", () => {
     });
   });
   afterEach(() => {
+    cancelFadeAdvance();
     vi.useRealTimers();
   });
 
@@ -140,6 +141,10 @@ describe("fadeAdvance", () => {
     vi.advanceTimersByTime(TRACK_FADE_MS / 2);
     expect(fadeBaseVolume(video)).toBe(0.8);
     video.volume = 0.3;
+    vi.advanceTimersByTime(50);
+    expect(advance).toHaveBeenCalledOnce();
+    // Skipped early, it still owns what plays next: the outgoing track's end must not skip again.
+    expect(skipFadingOut()).toBe(true);
     vi.advanceTimersByTime(LOAD_WAIT_MS * 4);
     expect(advance).toHaveBeenCalledOnce();
     expect(video.volume).toBe(0.3);
