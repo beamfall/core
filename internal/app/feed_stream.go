@@ -21,7 +21,7 @@ type feedStreamRegistrar struct {
 
 func (r feedStreamRegistrar) RegisterFeedStream(ctx context.Context, stream playback.FeedStream) (store.MediaID, error) {
 	authHeader := ""
-	if stream.AuthRef != "" {
+	if stream.AuthRef != "" && scrape.SameSite(stream.FeedURL, stream.OriginURL) {
 		if r.secrets == nil {
 			return "", errors.New("subscription credentials unavailable")
 		}
@@ -29,9 +29,7 @@ func (r feedStreamRegistrar) RegisterFeedStream(ctx context.Context, stream play
 		if err != nil {
 			return "", err
 		}
-		if scrape.SameSite(stream.FeedURL, stream.OriginURL) {
-			authHeader = secret
-		}
+		authHeader = secret
 	}
 	return r.tee.EnsureRegistered(ctx, proxytee.Registration{
 		LibraryID:  stream.LibraryID,

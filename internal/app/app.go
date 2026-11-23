@@ -1332,6 +1332,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		SonicAnalysisAvailable:       assetService.SonicAnalysisActive,
 		SonicAnalysisSweep:           func(ctx context.Context) { enqueueSonicSweep(ctx, st, logger, jobWake) },
 		SubscriptionSecrets:          secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")},
+		SubscriptionStreamRevoker:    proxyTee,
 		ScraperCredentialStore:       scraperCredentials,
 		ScraperCredentialInvalidator: scrapeEngine,
 		PushRegistrar:                graphPushRegistrar,

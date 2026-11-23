@@ -75,6 +75,7 @@ type stream struct {
 
 type streamSlot struct {
 	current     *stream
+	guid        string
 	owner       bool
 	registering bool
 	changed     chan struct{}
@@ -233,6 +234,14 @@ func scopedOriginAuth(feedURL, originURL, authHeader string) string {
 	return authHeader
 }
 
+func subscriptionStreamID(guid string) store.SubscriptionID {
+	id, _, ok := strings.Cut(guid, "\x00")
+	if !ok {
+		return ""
+	}
+	return store.SubscriptionID(id)
+}
+
 // Register materializes the provisional Media (store.CreateProvisionalMedia)
 // and records the origin URL + paths in the in-memory registry so a subsequent
 // proxy fetch for this Media can range the origin and tee to disk. It returns
@@ -259,6 +268,7 @@ func (s *Service) Register(ctx context.Context, reg Registration) (store.MediaID
 	teeRelative := archiveRelative + ".partial"
 	teePath := archivePath + ".partial"
 	stableID := store.ProvisionalMediaID(reg.LibraryID, reg.GUID)
+	subID := subscriptionStreamID(reg.GUID)
 
 	// A promotion owner pins its generation until the store CAS completes. Wait
 	// briefly for the common completion case, but never for the whole stream.
@@ -269,6 +279,12 @@ func (s *Service) Register(ctx context.Context, reg Registration) (store.MediaID
 	var observed *stream
 	for {
 		s.mu.Lock()
+		if subID != "" {
+			if _, err := s.store.Subscription(ctx, subID); err != nil {
+				s.mu.Unlock()
+				return "", err
+			}
+		}
 		slot = s.slots[stableID]
 		if slot == nil {
 			slot = &streamSlot{changed: make(chan struct{})}
@@ -276,6 +292,7 @@ func (s *Service) Register(ctx context.Context, reg Registration) (store.MediaID
 		}
 		if !slot.owner && !slot.registering {
 			slot.registering = true
+			slot.guid = reg.GUID
 			observed = slot.current
 			s.mu.Unlock()
 			break
@@ -320,6 +337,17 @@ func (s *Service) Register(ctx context.Context, reg Registration) (store.MediaID
 		compensateErr := s.compensateRegistration(ctx, mediaID, teePath, previousPath)
 		s.releaseRegistration(stableID, slot)
 		return "", errors.Join(&RegistrationBusyError{MediaID: stableID}, compensateErr)
+	}
+	if subID != "" {
+		if _, subErr := s.store.Subscription(ctx, subID); subErr != nil {
+			if errors.Is(subErr, store.ErrSubscriptionNotFound) {
+				slot.current = nil
+			}
+			s.mu.Unlock()
+			compensateErr := s.compensateRegistration(ctx, mediaID, teePath, previousPath)
+			s.releaseRegistration(stableID, slot)
+			return "", errors.Join(subErr, compensateErr)
+		}
 	}
 	generation := uint64(1)
 	if slot.current != nil {
@@ -369,6 +397,24 @@ func (s *Service) EnsureRegistered(ctx context.Context, reg Registration) (store
 		}
 	}
 	return mediaID, err
+}
+
+// RevokeSubscription drops every in-memory proxy registration (and cached
+// upstream credential) belonging to id so an unexpired Stream Token cannot
+// continue fetching with cached credentials after the Subscription is removed.
+func (s *Service) RevokeSubscription(id store.SubscriptionID) {
+	if id == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for mediaID, slot := range s.slots {
+		if slot == nil || subscriptionStreamID(slot.guid) != id {
+			continue
+		}
+		delete(s.slots, mediaID)
+		close(slot.changed)
+	}
 }
 
 // archivePathFor names a stream's archive copy: one file per Media ID directly

@@ -437,6 +437,7 @@ type Options struct {
 	SonicAnalysisAvailable       func() bool
 	SonicAnalysisSweep           func(context.Context)
 	SubscriptionSecrets          SubscriptionSecretStore
+	SubscriptionStreamRevoker    SubscriptionStreamRevoker
 	ScraperCredentialStore       ScraperCredentialStore
 	ScraperCredentialInvalidator ScraperCredentialInvalidator
 	PushRegistrar                PushRegistrar
@@ -629,6 +630,9 @@ type Handler struct {
 	// secure store wired cannot accept a private-feed credential — the mutation
 	// rejects an inbound header rather than persisting it plaintext.
 	subscriptionSecrets SubscriptionSecretStore
+	// subscriptionStreamRevoker drops any in-memory proxy-tee stream
+	// registrations and cached credentials when a Subscription is removed.
+	subscriptionStreamRevoker SubscriptionStreamRevoker
 	// scraperCredentials is the read/write seam for plugin-declared scraper
 	// AuthRefs (ADR-0003/0061, invariant #5). It is separate from
 	// subscriptionSecrets so callers that only need private-feed writes do not
@@ -788,6 +792,12 @@ type ScraperCredentialInvalidator interface {
 	InvalidateCredential(ref string)
 }
 
+// SubscriptionStreamRevoker drops any in-memory proxy-tee stream registrations
+// and cached credentials belonging to a removed Subscription.
+type SubscriptionStreamRevoker interface {
+	RevokeSubscription(id store.SubscriptionID)
+}
+
 // UpdateChecker performs the opt-in version check: given the
 // opt-in flag, channel, and running version, it returns the comparison result.
 // Defined at the consumer (ADR-0016 §seams); *updatecheck.Service satisfies it.
@@ -894,6 +904,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.sonicAnalysisAvailable = o.SonicAnalysisAvailable
 	h.sonicAnalysisSweep = o.SonicAnalysisSweep
 	h.subscriptionSecrets = o.SubscriptionSecrets
+	h.subscriptionStreamRevoker = o.SubscriptionStreamRevoker
 	h.scraperCredentials = o.ScraperCredentialStore
 	h.scraperCredentialInvalidator = o.ScraperCredentialInvalidator
 	h.pushRegistrar = o.PushRegistrar
@@ -1071,6 +1082,12 @@ func (h *Handler) SetAssetSweep(fn func(context.Context)) {
 // Authorization header is rejected rather than persisted plaintext.
 func (h *Handler) SetSubscriptionSecrets(store SubscriptionSecretStore) {
 	h.subscriptionSecrets = store
+}
+
+// SetSubscriptionStreamRevoker wires proxy-tee stream revocation on
+// Subscription removal so cached credentials stop being sent for unexpired tokens.
+func (h *Handler) SetSubscriptionStreamRevoker(revoker SubscriptionStreamRevoker) {
+	h.subscriptionStreamRevoker = revoker
 }
 
 // SetScraperCredentialStore wires the secure-store seam for plugin-declared
@@ -3695,6 +3712,9 @@ func (h *Handler) removeSubscription(ctx context.Context, scope auth.Scope, req 
 	// already gone, and SetSecret("") on a missing file is a no-op.
 	if removed.AuthRef != "" && h.subscriptionSecrets != nil {
 		_ = h.subscriptionSecrets.SetSecret(removed.AuthRef, "")
+	}
+	if h.subscriptionStreamRevoker != nil {
+		h.subscriptionStreamRevoker.RevokeSubscription(removed.ID)
 	}
 	return h.subscriptionBaseInfo(ctx, scope, removed)
 }

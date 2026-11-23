@@ -406,6 +406,24 @@ func TestFeedStreamRegistrarSameSiteScopingAndMissingSecret(t *testing.T) {
 	registrar := feedStreamRegistrar{tee: tee, secrets: secrets}
 
 	const secretHeader = "Bearer same-site-secret"
+	sub1, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local",
+		FeedURL:   "https://feeds.example.test/private.xml",
+		AuthRef:   "subscription-auth-sub-1",
+		Root:      t.TempDir(),
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subMissing, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local",
+		FeedURL:   "https://feeds.example.test/missing-secret.xml",
+		AuthRef:   "subscription-auth-missing",
+		Root:      t.TempDir(),
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := secrets.SetSecret("subscription-auth-sub-1", secretHeader); err != nil {
 		t.Fatal(err)
 	}
@@ -424,21 +442,21 @@ func TestFeedStreamRegistrarSameSiteScopingAndMissingSecret(t *testing.T) {
 	}{
 		{
 			name:      "same-site different host sends header",
-			key:       store.SubscriptionEntryStreamKey("sub-1", "guid-same-site"),
+			key:       store.SubscriptionEntryStreamKey(sub1.ID, "guid-same-site"),
 			feedURL:   "https://feeds.example.test/private.xml",
 			originURL: "https://cdn.example.test/audio.mp3",
 			wantAuth:  secretHeader,
 		},
 		{
 			name:      "cross-site host gets no header",
-			key:       store.SubscriptionEntryStreamKey("sub-1", "guid-cross-site"),
+			key:       store.SubscriptionEntryStreamKey(sub1.ID, "guid-cross-site"),
 			feedURL:   "https://feeds.example.test/private.xml",
 			originURL: "https://cdn.other.test/audio.mp3",
 			wantAuth:  "",
 		},
 		{
 			name:      "public suffix sibling gets no header",
-			key:       store.SubscriptionEntryStreamKey("sub-1", "guid-psl"),
+			key:       store.SubscriptionEntryStreamKey(sub1.ID, "guid-psl"),
 			feedURL:   "https://a.github.io/private.xml",
 			originURL: "https://b.github.io/audio.mp3",
 			wantAuth:  "",
@@ -488,11 +506,218 @@ func TestFeedStreamRegistrarSameSiteScopingAndMissingSecret(t *testing.T) {
 
 	if _, err := registrar.RegisterFeedStream(ctx, playback.FeedStream{
 		LibraryID: "library-local",
-		Key:       store.SubscriptionEntryStreamKey("sub-missing", "guid-1"),
+		Key:       store.SubscriptionEntryStreamKey(subMissing.ID, "guid-1"),
 		OriginURL: "https://feeds.example.test/audio.mp3",
 		FeedURL:   "https://feeds.example.test/private.xml",
 		AuthRef:   "subscription-auth-missing",
 	}); err == nil {
-		t.Fatal("RegisterFeedStream succeeded with missing secret ref, want error")
+		t.Fatal("RegisterFeedStream succeeded with missing secret ref on same-site origin, want error")
+	}
+
+	// A missing or unreadable secret must not block an anonymous cross-site fetch.
+	crossMissingKey := store.SubscriptionEntryStreamKey(subMissing.ID, "guid-cross")
+	crossMissingID := storetest.SeedFilelessGUIDMedia(t, dataDir, "library-local", crossMissingKey, "Cross Missing Secret")
+	origin.lastAuth = "stale"
+	gotCrossID, err := registrar.RegisterFeedStream(ctx, playback.FeedStream{
+		LibraryID: "library-local",
+		Key:       crossMissingKey,
+		Title:     "Cross Missing Secret",
+		Container: "mp3",
+		Codec:     "mp3",
+		Class:     store.MediaClassAudio,
+		OriginURL: "https://cdn.other.test/audio.mp3",
+		FeedURL:   "https://feeds.example.test/private.xml",
+		AuthRef:   "subscription-auth-missing",
+	})
+	if err != nil || gotCrossID != crossMissingID {
+		t.Fatalf("RegisterFeedStream(cross-site, missing secret) = %q, %v; want %q, nil", gotCrossID, err, crossMissingID)
+	}
+	token, err := tokens.Issue(ctx, streamtoken.Grant{
+		Target:    streamtoken.TargetMediaProxy,
+		MediaID:   gotCrossID,
+		DeviceID:  scope.DeviceID,
+		SessionID: scope.SessionID,
+		ProfileID: scope.ProfileID,
+		ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/media/proxy/"+token, nil)
+	req.Header.Set("Range", "bytes=0-9")
+	rec := httptest.NewRecorder()
+	tee.ServeProxy(rec, req)
+	if rec.Code != http.StatusPartialContent || origin.lastAuth != "" {
+		t.Fatalf("cross-site proxy with missing secret: status=%d auth=%q, want 206 with empty auth", rec.Code, origin.lastAuth)
+	}
+}
+
+func TestRemovedSubscriptionRevokesUnexpiredProxyTokenAuth(t *testing.T) {
+	const (
+		authHeader  = "Bearer core3001-removal-secret"
+		privateBody = "PRIVATE-ENCLOSURE-BYTES-0123456789ABCDEF"
+	)
+
+	prevScrape := newScrapeEngine
+	newScrapeEngine = func(opts ...scrape.Option) *scrape.Engine {
+		return scrape.New(append([]scrape.Option{scrape.WithInsecureLoopback()}, opts...)...)
+	}
+	t.Cleanup(func() { newScrapeEngine = prevScrape })
+
+	var (
+		mu             sync.Mutex
+		enclosureAuths []string
+	)
+	var feedOrigin *httptest.Server
+	feedOrigin = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth := r.Header.Get("Authorization")
+		switch r.URL.Path {
+		case "/feed.xml":
+			if gotAuth != authHeader {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/rss+xml")
+			_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Private</title>`+
+				`<item><title>Entry 1</title><guid>guid-1</guid><enclosure url="%s/files/1.mp3" type="audio/mpeg" length="%d"/></item>`+
+				`</channel></rss>`, feedOrigin.URL, len(privateBody))
+		case "/files/1.mp3":
+			mu.Lock()
+			enclosureAuths = append(enclosureAuths, gotAuth)
+			mu.Unlock()
+			if gotAuth != authHeader {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "audio/mpeg")
+			http.ServeContent(w, r, "1.mp3", time.Unix(0, 0), strings.NewReader(privateBody))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(feedOrigin.Close)
+
+	ctx := t.Context()
+	cfg := testConfig(t)
+	cfg.SeedDevelopmentData = true
+	beamfall, err := New(ctx, cfg, slog.New(slog.DiscardHandler), nil)
+	if err != nil {
+		t.Fatalf("app.New: %v", err)
+	}
+	t.Cleanup(func() { _ = beamfall.Close() })
+
+	authorizeManager := func(req *http.Request) {
+		req.Header.Set("X-Beamfall-Session", "session-manager")
+		req.Header.Set("X-Beamfall-Device", "device-mac")
+		req.Header.Set("X-Beamfall-Device-Secret", "dev-manager-secret")
+	}
+
+	addBody, _ := json.Marshal(map[string]any{
+		"query": `mutation($libraryID: String!, $feedURL: String!, $root: String!, $authHeader: String!) {
+			addSubscription(libraryID: $libraryID, feedURL: $feedURL, root: $root, authHeader: $authHeader) { id }
+		}`,
+		"variables": map[string]any{
+			"libraryID":  "library-local",
+			"feedURL":    feedOrigin.URL + "/feed.xml",
+			"root":       t.TempDir(),
+			"authHeader": authHeader,
+		},
+	})
+	addReq := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(addBody))
+	addReq.Header.Set("Content-Type", "application/json")
+	authorizeManager(addReq)
+	addRec := httptest.NewRecorder()
+	beamfall.Handler().ServeHTTP(addRec, addReq)
+	if addRec.Code != http.StatusOK {
+		t.Fatalf("addSubscription HTTP %d: %s", addRec.Code, addRec.Body.String())
+	}
+	var added struct {
+		Data struct {
+			AddSubscription struct {
+				ID string `json:"id"`
+			} `json:"addSubscription"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(addRec.Body.Bytes(), &added); err != nil || added.Data.AddSubscription.ID == "" {
+		t.Fatalf("addSubscription = %s, %v", addRec.Body.String(), err)
+	}
+	subID := store.SubscriptionID(added.Data.AddSubscription.ID)
+
+	if err := beamfall.store.SetSubscriptionDownloadPolicy(ctx, subID, store.SubscriptionPolicy{
+		Policy: store.DownloadPolicyStreamOnly,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pollJob, err := ingest.NewPollJob(time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := beamfall.store.EnqueueJob(ctx, pollJob); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := beamfall.RunPendingJobs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := beamfall.store.SubscriptionEntries(ctx, subID)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("SubscriptionEntries = %+v, %v", entries, err)
+	}
+
+	infoPayload, _ := json.Marshal(map[string]any{
+		"mediaID": string(entries[0].MediaID),
+		"capabilityProfile": map[string]any{
+			"client":       "core-3001-test",
+			"containers":   []string{"mp3"},
+			"directCodecs": []string{"mp3"},
+		},
+	})
+	infoReq := httptest.NewRequest(http.MethodPost, "/api/playback-info", bytes.NewReader(infoPayload))
+	infoReq.Header.Set("Content-Type", "application/json")
+	authorizeManager(infoReq)
+	infoRec := httptest.NewRecorder()
+	beamfall.Handler().ServeHTTP(infoRec, infoReq)
+	var info playback.InfoResponse
+	if err := json.Unmarshal(infoRec.Body.Bytes(), &info); err != nil || len(info.Streams) != 1 {
+		t.Fatalf("playback-info = %s, %v", infoRec.Body.String(), err)
+	}
+	proxyURL := info.Streams[0].URL
+
+	// Initial range request succeeds with the private feed's Authorization header.
+	rangeReq := httptest.NewRequest(http.MethodGet, proxyURL, nil)
+	rangeReq.Header.Set("Range", "bytes=0-9")
+	rangeRec := httptest.NewRecorder()
+	beamfall.Handler().ServeHTTP(rangeRec, rangeReq)
+	if rangeRec.Code != http.StatusPartialContent {
+		t.Fatalf("initial range GET = %d: %s", rangeRec.Code, rangeRec.Body.String())
+	}
+
+	// Remove the subscription.
+	rmBody, _ := json.Marshal(map[string]any{
+		"query":     `mutation($id: String!) { removeSubscription(id: $id) { id } }`,
+		"variables": map[string]any{"id": string(subID)},
+	})
+	rmReq := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(rmBody))
+	rmReq.Header.Set("Content-Type", "application/json")
+	authorizeManager(rmReq)
+	rmRec := httptest.NewRecorder()
+	beamfall.Handler().ServeHTTP(rmRec, rmReq)
+	if rmRec.Code != http.StatusOK {
+		t.Fatalf("removeSubscription HTTP %d: %s", rmRec.Code, rmRec.Body.String())
+	}
+
+	// Reusing the unexpired proxy token must not send the cached Authorization header.
+	afterReq := httptest.NewRequest(http.MethodGet, proxyURL, nil)
+	afterReq.Header.Set("Range", "bytes=10-19")
+	afterRec := httptest.NewRecorder()
+	beamfall.Handler().ServeHTTP(afterRec, afterReq)
+	if afterRec.Code != http.StatusNotFound {
+		t.Fatalf("range GET after removeSubscription = %d, want 404", afterRec.Code)
+	}
+
+	mu.Lock()
+	gotAuths := append([]string(nil), enclosureAuths...)
+	mu.Unlock()
+	if len(gotAuths) != 1 {
+		t.Fatalf("enclosure requests = %d (%q), want 1 (only before removal)", len(gotAuths), gotAuths)
 	}
 }
