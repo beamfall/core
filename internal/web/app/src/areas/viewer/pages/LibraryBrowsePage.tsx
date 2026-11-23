@@ -35,6 +35,7 @@ import {
   type LibraryBrowseState,
   type LibraryItemsFacets,
   type LibraryItemsLetter,
+  type LibraryViewMode,
   libraryViewClass,
   parseBrowseState,
 } from "../lib/libraryBrowse";
@@ -251,6 +252,8 @@ function LibraryBrowse({
     columns: rowColumns,
     layout: viewMode,
     maxItems: BROWSE_MAX_RENDERED,
+    aspectRatio:
+      viewMode === "thumbnail" ? 16 / 9 : viewMode === "poster" && audioOnly ? 1 : undefined,
   });
   const start = gridWindow?.startIndex ?? 0;
   const end = gridWindow?.endIndex ?? Math.min(itemCount, LIBRARY_BROWSE_PAGE);
@@ -351,7 +354,7 @@ function LibraryBrowse({
           display={viewMode}
         />
       ) : (
-        <PendingCard key={`pending-${index}`} />
+        <PendingCard key={`pending-${index}`} display={viewMode} square={audioOnly === true} />
       ),
     );
   }
@@ -450,11 +453,17 @@ function Spacer({ height }: { height: number }) {
 
 // Holds the place (and the measured height) of an item whose page has not
 // arrived yet; never focusable and hidden from assistive tech.
-function PendingCard() {
+function PendingCard({ display, square }: { display: LibraryViewMode; square: boolean }) {
+  const posterClass =
+    display === "thumbnail"
+      ? "bf-poster bf-poster-wide"
+      : square
+        ? "bf-poster bf-poster-square"
+        : "bf-poster";
   return (
-    <li className="list-none" aria-hidden="true">
+    <li className="list-none" aria-hidden="true" data-pending="true">
       <div className="bf-card" style={{ pointerEvents: "none" }}>
-        <div className="bf-poster" />
+        {display !== "table" && <div className={posterClass} />}
         <div className="bf-card-copy">
           <span className="bf-card-title">&nbsp;</span>
         </div>

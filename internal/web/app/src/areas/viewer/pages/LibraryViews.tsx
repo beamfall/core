@@ -457,6 +457,7 @@ function LibraryEntityGrid({
     itemCount,
     enabled: itemCount > VIRTUAL_GRID_MIN_ITEMS,
     maxItems: ENTITY_MAX_RENDERED,
+    aspectRatio: facets.audioOnly ? 1 : undefined,
   });
   const start = gridWindow?.startIndex ?? 0;
   const end = gridWindow?.endIndex ?? Math.min(itemCount, LIBRARY_ENTITY_PAGE);
@@ -501,7 +502,7 @@ function LibraryEntityGrid({
           setSize={itemCount}
         />
       ) : (
-        <PendingCard key={`pending-${index}`} />
+        <PendingCard key={`pending-${index}`} square={facets.audioOnly === true} />
       ),
     );
   }
@@ -565,11 +566,11 @@ function Spacer({ height }: { height: number }) {
 
 // Holds the place of a card whose page has not arrived yet; never focusable
 // and hidden from assistive tech.
-function PendingCard() {
+function PendingCard({ square }: { square: boolean }) {
   return (
-    <li className="list-none" aria-hidden="true">
+    <li className="list-none" aria-hidden="true" data-pending="true">
       <div className="bf-card" style={{ pointerEvents: "none" }}>
-        <div className="bf-poster" />
+        <div className={square ? "bf-poster bf-poster-square" : "bf-poster"} />
         <div className="bf-card-copy">
           <span className="bf-card-title">&nbsp;</span>
         </div>

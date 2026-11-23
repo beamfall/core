@@ -152,7 +152,7 @@ function SeeAllResults({
     gridRef,
     itemCount: items.length,
     enabled: items.length > VIRTUAL_GRID_MIN_ITEMS,
-    variableRows: ctx?.home ? items : undefined,
+    variableRows: items,
   });
   const start = gridWindow?.startIndex ?? 0;
   const end = gridWindow?.endIndex ?? items.length;
