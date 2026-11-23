@@ -62,10 +62,13 @@ func IsLibraryIcon(name string) bool {
 }
 
 // DefaultLibraryIcon picks the icon for a Library whose owner has not chosen
-// one, from the media classes its Plugin declares. Media class is all core
-// knows about a Plugin's content: two Plugins of the same class get the same
-// default until the owner picks another.
-func DefaultLibraryIcon(mediaClasses []string) string {
+// one: the icon its Plugin declares when that is in the vocabulary
+// (CORE-3336), else one from the media classes the Plugin declares. Core
+// never derives an icon from a Plugin's identity.
+func DefaultLibraryIcon(declared string, mediaClasses []string) string {
+	if IsLibraryIcon(declared) {
+		return declared
+	}
 	var video, audio, image bool
 	for _, class := range mediaClasses {
 		switch MediaClass(class) {
@@ -92,12 +95,13 @@ func DefaultLibraryIcon(mediaClasses []string) string {
 }
 
 // EffectiveIcon returns the owner's choice when it is still in the
-// vocabulary, otherwise the default for the given media classes.
-func (l Library) EffectiveIcon(mediaClasses []string) string {
+// vocabulary, otherwise the default for the Plugin's declared icon and media
+// classes.
+func (l Library) EffectiveIcon(declared string, mediaClasses []string) string {
 	if IsLibraryIcon(l.Icon) {
 		return l.Icon
 	}
-	return DefaultLibraryIcon(mediaClasses)
+	return DefaultLibraryIcon(declared, mediaClasses)
 }
 
 // libraryIconConfigPrefix keys the owner's icon choice per Library in

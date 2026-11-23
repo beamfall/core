@@ -56,5 +56,9 @@ released on party end, host removal, controller `stop`, controller removal, or b
 
 ## Non-goals
 
-- Web UI (`HostLive` `PartyScreens`, `PartyStagePage`) and native Apple/Android client changes.
+- Web UI (`HostLive` `PartyScreens`) and native Apple/Android client changes. `PartyStagePage`
+  only stops reading the stage before its screen registration completes.
+- Marking `screenID` required in the wire schema: it stays optional in 2.x so the contract remains
+  additive, and `partyStageRead` refuses a missing value. The schema change waits for the next
+  major version (ADR-0122).
 - Publishing a new versioned wire contract artifact or modifying `contracts/registry.json`.

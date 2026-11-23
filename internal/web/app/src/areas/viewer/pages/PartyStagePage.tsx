@@ -112,7 +112,8 @@ export function PartyStagePage() {
     async (signal) => {
       const sentAt = localClockMS();
       try {
-        const next = await fetchPartyStage(sessionID, screenID ?? undefined, signal);
+        if (!screenID) return;
+        const next = await fetchPartyStage(sessionID, screenID, signal);
         const receivedAt = localClockMS();
         fallbackRef.current = next.serverNowMS - (sentAt + receivedAt) / 2;
         if (calibratedRef.current === null) rttRef.current = receivedAt - sentAt;
@@ -128,7 +129,8 @@ export function PartyStagePage() {
       }
     },
     POLL_MS,
-    sessionID !== "",
+    // ADR-0240 D10: no stage read before this screen's registration completes.
+    sessionID !== "" && screenID !== null,
   );
 
   useEffect(() => {

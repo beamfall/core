@@ -123,6 +123,34 @@ describe("PartyStagePage", () => {
     await expectNoAxeViolations(container);
   });
 
+  it("reads the stage only for its own registered screen (ADR-0240 D10)", async () => {
+    let finish: (value: Awaited<ReturnType<typeof partyScreenRegister>>) => void = () => {};
+    vi.mocked(partyScreenRegister).mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    vi.mocked(fetchPartyStage).mockResolvedValue(stage());
+    renderStage();
+
+    await waitFor(() => expect(partyScreenRegister).toHaveBeenCalled());
+    expect(fetchPartyStage).not.toHaveBeenCalled();
+    finish({
+      id: "scr-9",
+      name: "Pop-out screen",
+      kind: "popout",
+      carrier: "local",
+      lead: false,
+      ticker: true,
+      offsetMS: 0,
+      rttMS: 0,
+      reportedAt: "",
+    });
+    await waitFor(() =>
+      expect(fetchPartyStage).toHaveBeenCalledWith("s1", "scr-9", expect.anything()),
+    );
+  });
+
   it("advances the rotation once when the song ends", async () => {
     vi.mocked(fetchPartyStage).mockResolvedValue(stage({ current: song }));
     vi.mocked(partyAdvance).mockResolvedValue({} as never);

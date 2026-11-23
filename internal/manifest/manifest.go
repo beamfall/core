@@ -207,17 +207,19 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 			PluginID:     library.PluginID,
 			PreviewClips: library.PreviewClips,
 		}
+		var declaredIcon string
 		var mediaClasses []string
 		if library.PluginID != nil && s.plugins != nil {
 			if bundle, ok := s.plugins.Bundle(plugin.ID(*library.PluginID)); ok {
 				summary.Accent = bundle.Accent
+				declaredIcon = bundle.LibraryDefaults.Icon
 				mediaClasses = bundle.MediaClasses
 				for _, layout := range bundleLayouts(bundle) {
 					pluginLayouts[layout.ID] = layout
 				}
 			}
 		}
-		summary.Icon = library.EffectiveIcon(mediaClasses)
+		summary.Icon = library.EffectiveIcon(declaredIcon, mediaClasses)
 		librarySummaries[i] = summary
 		layoutID := "layout-home"
 		if library.PluginID != nil && s.plugins != nil {

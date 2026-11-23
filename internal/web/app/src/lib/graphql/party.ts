@@ -164,12 +164,12 @@ export async function fetchPartySession(signal?: AbortSignal): Promise<PartySess
 /** What a stage screen shows; `screenID` reads that screen's ticker flag. */
 export async function fetchPartyStage(
   sessionID: string,
-  screenID?: string,
+  screenID: string,
   signal?: AbortSignal,
 ): Promise<PartyStage> {
   const data = await graphql<{ partyStage: PartyStage }>(
     PARTY_STAGE_QUERY,
-    defined({ sessionID, screenID: screenID || undefined }),
+    { sessionID, screenID },
     signal,
   );
   return data.partyStage;

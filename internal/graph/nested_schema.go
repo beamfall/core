@@ -520,7 +520,9 @@ var fieldArguments = map[string][]NestedArgument{
 	"preplayqueue":      {{Name: "mediaID", Kind: "string"}},
 	"searchresult":      {{Name: "limit", Kind: "int", Optional: true}, searchModeArgument(), {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}},
 	"partystage": {
-		{Name: "screenID", Kind: "string"},
+		// Optional on the wire so 2.x stays additive; partyStageRead refuses a
+		// missing screenID (ADR-0240 D10). The schema requires it at the next major.
+		{Name: "screenID", Kind: "string", Optional: true},
 		{Name: "sessionID", Kind: "string"},
 	},
 	"partystart": {
