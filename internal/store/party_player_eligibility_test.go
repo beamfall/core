@@ -166,6 +166,21 @@ func TestPartyStageAndPlaybackGrantRequireRecentScreenHeartbeat(t *testing.T) {
 			AND json_extract(payload_json, '$.action') = ?`, PartyStageEventKind, rejoined.Screen.ID, PartyStageActionJoined).Scan(&joinedEvents); err != nil || joinedEvents != 1 {
 		t.Fatalf("replacement joined events = %d, %v, want 1", joinedEvents, err)
 	}
+	var releasedEvents int
+	if err := st.eventsR.QueryRowContext(ctx, `SELECT COUNT(*) FROM event_outbox
+		WHERE kind = ? AND json_extract(payload_json, '$.screenID') = ?
+			AND json_extract(payload_json, '$.action') = ?`, PartyStageEventKind, screenID, PartyStageActionReleased).Scan(&releasedEvents); err != nil || releasedEvents != 1 {
+		t.Fatalf("replaced registration released events = %d, %v, want 1", releasedEvents, err)
+	}
+
+	// A live registration still bound to a Session the display has since
+	// renewed away from is replaced, not handed back to the renewed Session.
+	renewed := display
+	renewed.SessionID = "session-renewed"
+	again, err := st.AddPartyPlayerDisplay(ctx, "profile-default", host, renewed, "local")
+	if err != nil || again.Screen.ID == rejoined.Screen.ID || again.Screen.AuthSessionID != renewed.SessionID {
+		t.Fatalf("re-add after session renewal = %+v, %v, want a new registration for %s", again, err, renewed.SessionID)
+	}
 }
 
 func TestPartyStageETAsRequireVisibleTimingSources(t *testing.T) {

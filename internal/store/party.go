@@ -2143,7 +2143,10 @@ func (s *Store) AddPartyPlayerDisplay(ctx context.Context, host ProfileID, filte
 			&existing.registeredAtMS, &existing.reportedAtMS,
 		)
 		if err == nil {
-			if max(existing.registeredAtMS, existing.reportedAtMS) > nowMS-partyScreenSilence.Milliseconds() {
+			// Reuse only a live registration owned by the display's current
+			// Session: a renewed Session cannot read a screen bound to the old one.
+			if max(existing.registeredAtMS, existing.reportedAtMS) > nowMS-partyScreenSilence.Milliseconds() &&
+				authSess == string(display.SessionID) {
 				existing.authSessionID = SessionID(authSess)
 				existing.deviceID = DeviceID(devID)
 				existing.chosenLead = chosenLead == 1
@@ -2152,6 +2155,18 @@ func (s *Store) AddPartyPlayerDisplay(ctx context.Context, host ProfileID, filte
 				return nil
 			}
 			if _, err := tx.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ? WHERE screen_id = ?`, nowMS, existing.id); err != nil {
+				return err
+			}
+			// Tell the replaced registration it ended before the replacement joins.
+			if err := appendPartyStageEventSQL(ctx, tx, PartyStageEventPayload{
+				PartySessionID: session.ID,
+				ScreenID:       existing.id,
+				AuthSessionID:  SessionID(authSess),
+				ProfileID:      existing.profileID,
+				HostProfileID:  session.HostProfileID,
+				DeviceID:       DeviceID(devID),
+				Action:         PartyStageActionReleased,
+			}, nowMS); err != nil {
 				return err
 			}
 		} else if !errors.Is(err, sql.ErrNoRows) {
