@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -1633,7 +1634,7 @@ func requirePartyScreenUpdate(result sql.Result, err error) error {
 // RegisterPartyScreen registers a stage screen for a live session. The first
 // popout is the lead, and an ordinary joined screen leads only while no popout
 // is active; the lead's ticker starts off and every other screen's on.
-func (s *Store) RegisterPartyScreen(ctx context.Context, sessionID string, profile ProfileID, authSessionID SessionID, name, kind, carrier string) (PartyScreenView, error) {
+func (s *Store) RegisterPartyScreen(ctx context.Context, sessionID string, profile ProfileID, authSessionID SessionID, name, kind, carrier string, playbackFilter LibraryFilter, screenPlaybackFilters map[string]LibraryFilter) (PartyScreenView, error) {
 	if kind != "popout" && kind != "joined" {
 		return PartyScreenView{}, partyInvalid("kind must be popout or joined")
 	}
@@ -1666,7 +1667,10 @@ func (s *Store) RegisterPartyScreen(ctx context.Context, sessionID string, profi
 		screens := append(slices.Clone(state.screens), candidate)
 		tmpState := state
 		tmpState.screens = screens
-		s.markPartyLeadLocked(ctx, &tmpState, nil)
+		filters := make(map[string]LibraryFilter, len(screenPlaybackFilters)+1)
+		maps.Copy(filters, screenPlaybackFilters)
+		filters[id] = playbackFilter
+		s.markPartyLeadLocked(ctx, &tmpState, filters)
 		lead := tmpState.screens[len(tmpState.screens)-1].lead
 		if _, err := tx.ExecContext(ctx, `INSERT INTO party_screen
 			(screen_id, session_id, profile_id, auth_session_id, name, kind, carrier, ticker, registered_at_ms)
@@ -1716,17 +1720,10 @@ func (s *Store) PartyStage(ctx context.Context, sessionID, screenID string, call
 	var lazyDrop bool
 	var lazyDropHost ProfileID
 	var lazyDropParty string
-	view, err := s.readPartyView(ctx, func() map[string]LibraryFilter {
-		if screenPlaybackFilters == nil {
-			return map[string]LibraryFilter{screenID: playbackFilter}
-		}
-		cloned := make(map[string]LibraryFilter, len(screenPlaybackFilters)+1)
-		for k, v := range screenPlaybackFilters {
-			cloned[k] = v
-		}
-		cloned[screenID] = playbackFilter
-		return cloned
-	}(), func(q partyQuerier, now int64) (PartySession, error) {
+	filters := make(map[string]LibraryFilter, len(screenPlaybackFilters)+1)
+	maps.Copy(filters, screenPlaybackFilters)
+	filters[screenID] = playbackFilter
+	view, err := s.readPartyView(ctx, filters, func(q partyQuerier, now int64) (PartySession, error) {
 		nowMS = now
 		session, err := livePartySessionByID(ctx, q, sessionID, now)
 		if err != nil {
@@ -2213,21 +2210,14 @@ func (s *Store) SetPartyScreenLead(ctx context.Context, host ProfileID, filter L
 		if err != nil {
 			return err
 		}
-		var target *partyScreenRow
-		for i := range state.screens {
-			if state.screens[i].id == screenID {
-				target = &state.screens[i]
-				break
-			}
-		}
-		if target == nil {
+		if !slices.ContainsFunc(state.screens, func(screen partyScreenRow) bool { return screen.id == screenID }) {
 			return partyInvalid("screen not found")
 		}
+		pbFilter, has := screenPlaybackFilters[screenID]
+		if !has {
+			return ErrPartyScreenIneligibleLead
+		}
 		if current, ok := state.currentEntry(); ok {
-			pbFilter, has := screenPlaybackFilters[screenID]
-			if !has {
-				pbFilter = s.screenFallbackPlaybackFilterLocked(ctx, *target)
-			}
 			visible, err := s.visibleMediaIDsSQL(ctx, []MediaID{current.mediaID}, pbFilter)
 			if err != nil {
 				return err
@@ -2355,10 +2345,6 @@ func (s *Store) filterValidPartyScreensLocked(ctx context.Context, hostProfileID
 
 func (s *Store) markPartyLeadLocked(ctx context.Context, state *partyState, screenPlaybackFilters map[string]LibraryFilter) {
 	current, hasCurrent := state.currentEntry()
-	if !hasCurrent {
-		markPartyLead(state.screens, nil)
-		return
-	}
 	playable := map[string]bool{}
 	for _, screen := range state.screens {
 		if !screen.active {
@@ -2366,7 +2352,11 @@ func (s *Store) markPartyLeadLocked(ctx context.Context, state *partyState, scre
 		}
 		pbFilter, ok := screenPlaybackFilters[screen.id]
 		if !ok {
-			pbFilter = s.screenFallbackPlaybackFilterLocked(ctx, screen)
+			continue
+		}
+		if !hasCurrent {
+			playable[screen.id] = true
+			continue
 		}
 		visible, err := s.visibleMediaIDsSQL(ctx, []MediaID{current.mediaID}, pbFilter)
 		if err == nil {
@@ -2376,32 +2366,6 @@ func (s *Store) markPartyLeadLocked(ctx context.Context, state *partyState, scre
 	markPartyLead(state.screens, func(screen partyScreenRow) bool {
 		return playable[screen.id]
 	})
-}
-
-func (s *Store) screenFallbackPlaybackFilterLocked(ctx context.Context, screen partyScreenRow) LibraryFilter {
-	if screen.deviceID == "" && screen.authSessionID != "" {
-		var profileID ProfileID
-		var revealed int
-		if err := s.catalogR.QueryRowContext(ctx, `SELECT profile_id, revealed FROM auth_session WHERE id = ?`, screen.authSessionID).Scan(&profileID, &revealed); err == nil {
-			if prof, err := s.profileSQL(ctx, profileID); err == nil && !prof.Disabled {
-				return LibraryFilter{
-					AllowedIDs:   prof.Library,
-					Revealed:     revealed != 0 && prof.Kind == ProfileAdult,
-					PlaybackGate: true,
-				}
-			}
-			return LibraryFilter{PlaybackGate: true}
-		}
-	}
-	prof, err := s.profileSQL(ctx, screen.profileID)
-	if err != nil || prof.Disabled {
-		return LibraryFilter{PlaybackGate: true}
-	}
-	return LibraryFilter{
-		AllowedIDs:   prof.Library,
-		Revealed:     false,
-		PlaybackGate: true,
-	}
 }
 
 // isPartyPlayerScreenValidLocked reports whether a joined player display screen

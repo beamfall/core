@@ -654,11 +654,17 @@ func (h *Handler) partyScreenRegisterWrite(ctx context.Context, scope auth.Scope
 	if scope.IsPlayerBound() {
 		return PartyScreenInfo{}, clientError("player display cannot register a stage screen")
 	}
+	sessionID := trimmedVariable(req, "sessionID")
+	playbackFilter, err := h.sealedFilter(ctx, scope.PlaybackFilter())
+	if err != nil {
+		return PartyScreenInfo{}, err
+	}
+	screenFilters := h.partyScreenPlaybackFilters(ctx, sessionID)
 	var screen store.PartyScreenView
-	err := h.withExpectedProfile(ctx, scope, req, func() error {
+	err = h.withExpectedProfile(ctx, scope, req, func() error {
 		var err error
-		screen, err = h.store.RegisterPartyScreen(ctx, trimmedVariable(req, "sessionID"), scope.ProfileID, scope.SessionID,
-			trimmedVariable(req, "name"), trimmedVariable(req, "kind"), trimmedVariable(req, "carrier"))
+		screen, err = h.store.RegisterPartyScreen(ctx, sessionID, scope.ProfileID, scope.SessionID,
+			trimmedVariable(req, "name"), trimmedVariable(req, "kind"), trimmedVariable(req, "carrier"), playbackFilter, screenFilters)
 		return partyError(err)
 	})
 	if err != nil {

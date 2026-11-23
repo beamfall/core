@@ -10,9 +10,12 @@ import {
   type PartyStage,
   partyAdvance,
   partyScreenRegister,
+  partyScreenReport,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import type { Locale } from "@/strings";
 import { expectNoAxeViolations } from "@/test/axe";
+import { usePlayer } from "../player/usePlayer";
 import { PartyStagePage } from "./PartyStagePage";
 
 vi.mock("@/lib/graphql", async (importOriginal) => {
@@ -27,13 +30,13 @@ vi.mock("@/lib/graphql", async (importOriginal) => {
   };
 });
 vi.mock("../player/usePlayer", () => ({
-  usePlayer: () => ({
+  usePlayer: vi.fn(() => ({
     videoRef: createRef<HTMLVideoElement>(),
     state: { phase: "loading", message: "", info: null, mediaID: "" },
     retry: vi.fn(),
     adjustment: { pitchShiftSemitones: 0, tempo: 1 },
     adjust: vi.fn(),
-  }),
+  })),
 }));
 
 const song: PartyEntry = {
@@ -68,9 +71,9 @@ function stage(over: Partial<PartyStage> = {}): PartyStage {
   };
 }
 
-function renderStage(path = "/party/stage/s1") {
+function renderStage(path = "/party/stage/s1", locale: Locale = "en") {
   return render(
-    <I18nProvider>
+    <I18nProvider initialLocale={locale}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/party/stage/:sessionID" element={<PartyStagePage />} />
@@ -82,6 +85,7 @@ function renderStage(path = "/party/stage/s1") {
 
 beforeEach(() => {
   window.sessionStorage.clear();
+  vi.mocked(partyScreenReport).mockResolvedValue(true);
   vi.mocked(partyScreenRegister).mockResolvedValue({
     id: "scr-1",
     name: "Joined screen",
@@ -194,4 +198,85 @@ describe("PartyStagePage", () => {
     ).toBeInTheDocument();
     expect(container.querySelector("video")).toBeNull();
   });
+
+  it("clears playback and replaces a refused registration even when the heartbeat rejects", async () => {
+    const key = "beamfall.partyScreen.popout.s1";
+    window.sessionStorage.setItem(key, "scr-stale");
+    const refusal = new ApiError("screen not found", 200);
+    vi.mocked(partyScreenReport).mockRejectedValue(refusal);
+    vi.mocked(fetchPartyStage)
+      .mockResolvedValueOnce(stage({ current: song }))
+      .mockRejectedValueOnce(refusal)
+      .mockResolvedValue(stage());
+    let finish: (value: Awaited<ReturnType<typeof partyScreenRegister>>) => void = () => {};
+    vi.mocked(partyScreenRegister).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const { container } = renderStage();
+
+    expect(await screen.findByText("Sung by Juniper")).toBeInTheDocument();
+    expect(partyScreenRegister).not.toHaveBeenCalled();
+    await waitFor(() => expect(partyScreenRegister).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    expect(container.querySelector("video")).toBeNull();
+    expect(window.sessionStorage.getItem(key)).toBeNull();
+    finish({
+      id: "scr-fresh",
+      name: "Pop-out stage",
+      kind: "popout",
+      carrier: "local",
+      lead: true,
+      ticker: false,
+      offsetMS: 0,
+      rttMS: 0,
+      reportedAt: "",
+    });
+
+    expect(await screen.findByText("QZXW")).toBeInTheDocument();
+    expect(fetchPartyStage).toHaveBeenLastCalledWith("s1", "scr-fresh", expect.anything());
+    expect(window.sessionStorage.getItem(key)).toBe("scr-fresh");
+  });
+
+  it.each([
+    ["en", "Up next: Juniper"],
+    ["fr", "À suivre : Juniper"],
+    ["de", "Als Nächstes: Juniper"],
+    ["es", "A continuación: Juniper"],
+    ["pt", "A seguir: Juniper"],
+  ] as const)(
+    "shows participant-only copy in %s without starting playback",
+    async (locale, copy) => {
+      vi.mocked(fetchPartyStage).mockResolvedValue(
+        stage({
+          current: {
+            ...song,
+            mediaID: "",
+            title: "",
+            ineligible: true,
+            label: "Up next: Juniper",
+          },
+          upNext: [
+            {
+              ...song,
+              id: "e2",
+              mediaID: "",
+              title: "",
+              participantName: "Avery",
+              state: "waiting",
+              ineligible: true,
+              label: "Avery",
+            },
+          ],
+        }),
+      );
+      const { container } = renderStage(undefined, locale);
+
+      expect(await screen.findByText(copy)).toBeInTheDocument();
+      expect(screen.getByText("Avery")).toBeInTheDocument();
+      expect(container.querySelector("video")).toBeNull();
+      expect(usePlayer).not.toHaveBeenCalled();
+      expect(partyAdvance).not.toHaveBeenCalled();
+    },
+  );
 });

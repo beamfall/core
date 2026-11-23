@@ -70,6 +70,56 @@ func TestPartyStageBindingTwoRegistrationsAndNonLeakingRefusal(t *testing.T) {
 	}
 }
 
+func TestPartyScreenLeadRefusesWhenAccessScheduleCloses(t *testing.T) {
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	today := time.Now().Local()
+	now := time.Date(today.Year(), today.Month(), today.Day(), 12, 0, 0, 0, time.Local)
+	h.auth = auth.NewServiceWithClock(st, func() time.Time { return now })
+	if err := st.SetProfileAccessWindows(t.Context(), "profile-managed", []store.ProfileAccessWindow{
+		{Weekday: int(now.Weekday()), StartMinute: 720, EndMinute: 721},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var session PartySessionInfo
+	execGraph(t, h, authorizeRevealed, `mutation { partyStart(libraryIDs: ["library-local"]) { id } }`, nil, "partyStart", &session)
+	execGraph(t, h, authorizeRevealed, `mutation { partyAdd(mediaID: "media-alpha", participantName: "Avery") { id } }`, nil, "partyAdd", &session)
+	execGraph(t, h, authorizeRevealed, `mutation { partyAdvance { id } }`, nil, "partyAdvance", &session)
+	var popout, joined PartyScreenInfo
+	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Host", kind: "popout", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &popout)
+	execGraph(t, h, authorizeManaged, fmt.Sprintf(`mutation { partyScreenRegister(sessionID: %q, name: "Joined", kind: "joined", carrier: "local") { id } }`, session.ID), nil, "partyScreenRegister", &joined)
+	const selectLead = `mutation { partyScreenLead(screenID: %q) { id screens { id lead } } }`
+	execGraph(t, h, authorizeRevealed, fmt.Sprintf(selectLead, joined.ID), nil, "partyScreenLead", &session)
+	if len(session.Screens) != 2 {
+		t.Fatalf("screens while schedule is open = %+v, want both registrations", session.Screens)
+	}
+	for _, screen := range session.Screens {
+		if screen.Lead != (screen.ID == joined.ID) {
+			t.Fatalf("lead while schedule is open = %+v", session.Screens)
+		}
+	}
+
+	now = now.Add(time.Minute)
+	requestBody, err := json.Marshal(map[string]string{"query": fmt.Sprintf(selectLead, joined.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, errs := post(t, h, string(requestBody), authorizeRevealed)
+	if len(errs) != 1 || errs[0].Extensions.Code != ErrorCodeForbidden || errs[0].Message != "screen cannot play the current entry" {
+		t.Fatalf("selecting lead after the schedule closes = %#v, want ineligible refusal", errs)
+	}
+	execGraph(t, h, authorizeRevealed, `{ partySession { id screens { id lead } } }`, nil, "partySession", &session)
+	if len(session.Screens) != 2 {
+		t.Fatalf("screens after schedule closes = %+v, want both registrations", session.Screens)
+	}
+	for _, screen := range session.Screens {
+		if screen.Lead != (screen.ID == popout.ID) {
+			t.Fatalf("lead after schedule closes = %+v, want pop-out", session.Screens)
+		}
+	}
+}
+
 func TestPartyStageEligibilityPerScreenAndRelockSwitchProfile(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.Open(t)

@@ -28,6 +28,8 @@ export interface PartyEntry {
   artworkURL: string;
   participantID: string;
   participantName: string;
+  ineligible?: boolean;
+  label?: string;
   state: PartyEntryState;
   pinned: boolean;
   /** 1-based among waiting entries, 0 otherwise. */
@@ -113,7 +115,8 @@ const ENTRY =
 const PLAYBACK = "entryID state positionMS anchorAtMS tempo pitchSemitones";
 const SCREEN = "id name kind carrier lead ticker offsetMS rttMS reportedAt";
 const SESSION = `id joinCode joinPath fairness autoAdd joinOpen libraryIDs startedAt expiresAt changeoverSeconds current { ${ENTRY} } playback { ${PLAYBACK} } entries { ${ENTRY} } requests { ${ENTRY} } recent { ${ENTRY} } removed { ${ENTRY} } participants { id name guest waiting lastTurnAt } screens { ${SCREEN} } skipped { ${ENTRY} }`;
-const STAGE = `sessionID serverNowMS current { ${ENTRY} } playback { ${PLAYBACK} } upNext { ${ENTRY} } ticker joinCode joinPath`;
+const STAGE_ENTRY = `${ENTRY} ineligible label`;
+const STAGE = `sessionID serverNowMS current { ${STAGE_ENTRY} } playback { ${PLAYBACK} } upNext { ${STAGE_ENTRY} } ticker joinCode joinPath`;
 
 const PARTY_SESSION_QUERY = `query PartySession { partySession { ${SESSION} } }`;
 const PARTY_STAGE_QUERY = `query PartyStage($sessionID: String!, $screenID: String) { partyStage(sessionID: $sessionID, screenID: $screenID) { ${STAGE} } }`;

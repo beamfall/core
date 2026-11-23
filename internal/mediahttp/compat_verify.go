@@ -16,7 +16,7 @@ func (h *Handler) SetCompatDecisionResolver(resolver streamtoken.DecisionResolve
 }
 
 func (h *Handler) verifyCompatDecision(ctx context.Context, authenticated streamtoken.AuthenticatedGrant, scope auth.Scope) (streamtoken.Grant, error) {
-	grant, err := h.tokens.VerifyAuthenticated(authenticated, scope)
+	grant, err := h.tokens.VerifyAuthenticated(ctx, authenticated, scope)
 	if err != nil {
 		return streamtoken.Grant{}, err
 	}

@@ -106,7 +106,7 @@ func TestPartySessionRotationAdvanceAndPlayback(t *testing.T) {
 		t.Fatalf("changeover %d, first ETA %d; want 10 and 60", view.ChangeoverSeconds, view.Waiting[0].ETASeconds)
 	}
 
-	screen0, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-default", "session-default", "Host popout", "popout", "local")
+	screen0, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-default", "session-default", "Host popout", "popout", "local", host, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestPartyGuestsJoinRequestAndEnd(t *testing.T) {
 		t.Fatalf("join with a rotated code = %v", err)
 	}
 
-	screen, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-default", "session-default", "Living room", "popout", "local")
+	screen, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-default", "session-default", "Living room", "popout", "local", host, nil)
 	if err != nil || !screen.Lead || screen.Ticker {
 		t.Fatalf("RegisterPartyScreen = %+v, %v", screen, err)
 	}
@@ -326,7 +326,7 @@ func TestPartyScreenAdvanceAndDrop(t *testing.T) {
 	if err := st.AdvanceParty(ctx, "profile-managed", other, first); !errors.Is(err, ErrPartyNotFound) {
 		t.Fatalf("advance without a screen = %v", err)
 	}
-	screen, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-managed", "session-managed", "Den", "joined", "local")
+	screen, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-managed", "session-managed", "Den", "joined", "local", other, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

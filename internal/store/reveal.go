@@ -178,8 +178,12 @@ func (s *Store) SetSessionRevealed(ctx context.Context, id SessionID, revealed b
 		}
 	}
 	result, err := s.catalogW.ExecContext(ctx,
-		`UPDATE auth_session SET revealed = ? WHERE id = ?`,
-		boolToInt(revealed), id)
+		`UPDATE auth_session
+		SET reveal_generation = CASE WHEN ? = 0 OR revealed = 0
+			THEN randomblob(16) ELSE reveal_generation END,
+			revealed = ?
+		WHERE id = ?`,
+		boolToInt(revealed), boolToInt(revealed), id)
 	if err != nil {
 		return err
 	}
@@ -194,6 +198,22 @@ func (s *Store) SetSessionRevealed(ctx context.Context, id SessionID, revealed b
 		_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE session_id = ? AND restricted = 1`, id)
 	}
 	return nil
+}
+
+// RestrictedStreamRevealGeneration is the durable generation of an active
+// Reveal. Re-lock commits the new generation with the Reveal change, before
+// best-effort transparency cleanup. A Profile switch clears Reveal, so the
+// next Reveal also gets a new generation.
+func (s *Store) RestrictedStreamRevealGeneration(ctx context.Context, id SessionID, profileID ProfileID, deviceID DeviceID) ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	var generation []byte
+	err := s.catalogR.QueryRowContext(ctx, `SELECT reveal_generation FROM auth_session
+		WHERE id = ? AND profile_id = ? AND device_id = ? AND revealed = 1`, id, profileID, deviceID).Scan(&generation)
+	return generation, err
 }
 
 // SessionRestrictedStreamMediaIDs returns the Media IDs of active restricted
