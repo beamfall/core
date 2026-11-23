@@ -110,7 +110,7 @@ import { UpNextDrawer } from "../player/UpNextDrawer";
 import { useAmbientChoice, useAmbientIdle } from "../player/useAmbient";
 import { type PartySeekAutoSkip, useAutoSkip } from "../player/useAutoSkip";
 import { useCaptionLoad } from "../player/useCaptionLoad";
-import { useChromeAutoHide } from "../player/useChromeAutoHide";
+import { idleChromeClass, useChromeAutoHide } from "../player/useChromeAutoHide";
 import { decodableStream, handBack, useGaplessAudio } from "../player/useGaplessAudio";
 import { useLongPauseSkip, usePlaybackSpeed, useSleepTimer } from "../player/useListening";
 import { useMediaLoading } from "../player/useMediaLoading";
@@ -672,12 +672,20 @@ function FeaturePlayer({
   const heldStage = held?.owner === stageOwner ? held.item : null;
   const stage = stageReady || !heldStage ? liveStage : heldStage;
 
-  // The audio transport never auto-hides (CORE-1637): a listener is not
-  // watching a picture the controls would cover.
+  // Video hides its chrome when idle. The audio stage dims instead (CORE-3351,
+  // reversing CORE-1637's exemption): the controls, top bar and artwork recede
+  // to translucent so an unattended Now Playing screen is not glaring, but stay
+  // findable. Ambient mode keeps its own, longer idle.
+  const stageMounted = !(
+    !queueAllowed ||
+    (queueReadFailed && !queueReady) ||
+    (queueReady && (state.phase === "message" || state.phase === "terminal"))
+  );
   const { chromeHidden, reveal } = useChromeAutoHide({
     stageRef,
     videoRef,
     menuOpen: menuOpen || partyOpen,
+    mounted: stageMounted,
   });
 
   // Advance to another Media's watch route, carrying its title and the queue
@@ -1405,9 +1413,7 @@ function FeaturePlayer({
           )}
         </div>
 
-        {!queueAllowed ||
-        (queueReadFailed && !queueReady) ||
-        (queueReady && (state.phase === "message" || state.phase === "terminal")) ? (
+        {!stageMounted ? (
           <div
             id={docked ? undefined : MAIN_CONTENT_ID}
             tabIndex={-1}
@@ -1451,7 +1457,12 @@ function FeaturePlayer({
             tabIndex={-1}
             className={
               "bf-player-stage" +
-              (playing && chromeHidden && !showAudioStage ? " is-chrome-hidden" : "") +
+              idleChromeClass({
+                playing,
+                chromeHidden,
+                audioStage: showAudioStage,
+                ambient,
+              }) +
               (ambient ? " is-ambient" : "") +
               (ambientIdle ? " is-ambient-idle" : "")
             }
