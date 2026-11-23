@@ -175,11 +175,23 @@ func TestPartyStageAndPlaybackGrantRequireRecentScreenHeartbeat(t *testing.T) {
 
 	// A live registration still bound to a Session the display has since
 	// renewed away from is replaced, not handed back to the renewed Session.
+	if _, err := st.RenewDeviceSession(ctx, dev.ID, "session-renewed", now.Add(24*time.Hour)); err != nil {
+		t.Fatalf("RenewDeviceSession: %v", err)
+	}
 	renewed := display
 	renewed.SessionID = "session-renewed"
 	again, err := st.AddPartyPlayerDisplay(ctx, "profile-default", host, renewed, "local")
 	if err != nil || again.Screen.ID == rejoined.Screen.ID || again.Screen.AuthSessionID != renewed.SessionID {
 		t.Fatalf("re-add after session renewal = %+v, %v, want a new registration for %s", again, err, renewed.SessionID)
+	}
+
+	// A delayed request that read the display before the renewal holds the
+	// retired Session; it must not displace the renewed registration.
+	if stale, err := st.AddPartyPlayerDisplay(ctx, "profile-default", host, display, "local"); err == nil {
+		t.Fatalf("stale re-add with retired Session = %+v, want an error", stale)
+	}
+	if _, err := st.PartyStage(ctx, party.Session.ID, again.Screen.ID, renewed.SessionID, host, host, nil); err != nil {
+		t.Fatalf("renewed registration after stale re-add: %v", err)
 	}
 }
 

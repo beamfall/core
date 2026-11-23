@@ -2121,6 +2121,18 @@ func (s *Store) AddPartyPlayerDisplay(ctx context.Context, host ProfileID, filte
 			return err
 		}
 
+		// Renewal deletes the Session it replaces, so a request still holding
+		// the old Session cannot displace the renewed display's registration.
+		var liveSession int
+		if err := s.catalogR.QueryRowContext(ctx, `SELECT COUNT(*) FROM auth_session
+			WHERE id = ? AND device_id = ? AND expires_at_ms > ?`,
+			display.SessionID, display.DeviceID, nowMS).Scan(&liveSession); err != nil {
+			return err
+		}
+		if liveSession == 0 {
+			return partyInvalid("display not found")
+		}
+
 		covers, missing, err := s.playerDisplayLibraryCoverageLocked(ctx, display.PlayerProfileID, session.LibraryIDs)
 		if err != nil {
 			return err
