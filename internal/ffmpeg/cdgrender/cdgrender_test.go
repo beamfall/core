@@ -150,3 +150,76 @@ func TestRenderStopsWhenItsOutputIsClosed(t *testing.T) {
 		t.Fatal("Render kept drawing into a closed output")
 	}
 }
+
+// lyricTrack is shaped like a karaoke song at its busiest: a backdrop, lyric
+// lines in a sung and an unsung colour with an outline, rewritten as XOR tiles
+// on every pack so the window changes every frame, across twelve inked rows.
+func lyricTrack(seconds int) []byte {
+	pack := func(instruction byte, data ...byte) []byte {
+		p := make([]byte, 24)
+		p[0], p[1] = 0x09, instruction
+		copy(p[4:20], data)
+		return p
+	}
+	var out []byte
+	out = append(out, pack(30, 0x00, 0x04, 0x3F, 0x3F, 0x3C, 0x0F, 0x00, 0x00)...) // navy, white, amber, black
+	out = append(out, pack(1, 0, 0)...)
+	colours := [][2]byte{{1, 3}, {2, 3}, {3, 1}}
+	for i := 0; len(out) < seconds*300*24; i++ {
+		c := colours[i%len(colours)]
+		tile := []byte{c[0], c[1], byte(4 + i/44%12), byte(3 + i%44)}
+		for r := range 12 {
+			tile = append(tile, []byte{0x1E, 0x21, 0x3F, 0x21, 0x21, 0x00}[(i+r)%6])
+		}
+		out = append(out, pack(38, tile...)...)
+	}
+	return out
+}
+
+// frameCounter discards frames and fails once it has taken n bytes, as a
+// closed encoder pipe would.
+type frameCounter struct{ n int }
+
+func (c *frameCounter) Write(p []byte) (int, error) {
+	if c.n <= 0 {
+		return 0, errGone
+	}
+	c.n -= len(p)
+	return len(p), nil
+}
+
+// TestRenderRunsWellAboveRealTime holds the live composed path's budget
+// (CORE-3260): a live HLS segment is served only once its frames are drawn,
+// so the presenter must draw 960x540 frames at least twice as fast as they
+// play, through the same runtime and streams production uses. It counts the
+// process's CPU time, not wall time, so a loaded machine does not fail it. A runtime
+// option that slowed every guest loop (WithCloseOnContextDone) once cut this
+// to under real time and every other live segment timed out.
+func TestRenderRunsWellAboveRealTime(t *testing.T) {
+	if testing.Short() || raceEnabled {
+		t.Skip("timing floor: skipped under -short and -race")
+	}
+	const w, h, fps, frames = 960, 540, 30, 120
+	stream := lyricTrack(30)
+	if _, _, err := compile(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := processCPU(); !ok {
+		t.Skip("timing floor: no process CPU clock on this platform")
+	}
+	best := time.Duration(1<<63 - 1)
+	for range 3 {
+		start, _ := processCPU()
+		err := Render(context.Background(), bytes.NewReader(stream), &frameCounter{n: frames * w * h * 4}, Options{Width: w, Height: h, FPS: fps, Start: 10, Tempo: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		end, _ := processCPU()
+		best = min(best, end-start)
+	}
+	got := float64(frames) / best.Seconds()
+	t.Logf("best of 3: %d frames at %dx%d in %v of CPU (%.0f fps)", frames, w, h, best, got)
+	if got < 2*fps {
+		t.Fatalf("presenter draws %.0f fps at %dx%d, want at least %d (twice real time)", got, w, h, 2*fps)
+	}
+}
