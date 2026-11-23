@@ -117,6 +117,9 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   if (video.paused || listenerMuted(video) || fadeBaseVolume(video) === 0) return advance();
 
   const hold = holdVolume(video);
+  // A fade already under way (the sleep timer's) has the element below the
+  // listener's level: the skip fades out from where it is, not from their level.
+  const from = hold.base > 0 ? Math.min(1, video.volume / hold.base) : 1;
   let frame = 0;
   let wait: ReturnType<typeof setTimeout> | undefined;
   let advanced = false;
@@ -179,10 +182,13 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   }
   runs.set(video, run);
   fadingOut.add(run);
-  ramp(fadeOutGain, () => {
-    video.addEventListener("loadstart", loading);
-    video.addEventListener("playing", fadeIn);
-    wait = setTimeout(fadeIn, LOAD_WAIT_MS);
-    go();
-  });
+  ramp(
+    (t) => from * fadeOutGain(t),
+    () => {
+      video.addEventListener("loadstart", loading);
+      video.addEventListener("playing", fadeIn);
+      wait = setTimeout(fadeIn, LOAD_WAIT_MS);
+      go();
+    },
+  );
 }

@@ -620,7 +620,7 @@ export function PlayerTransport({
         x: event.clientX,
         y: event.clientY,
         right: event.clientX >= rect.left + rect.width / 2,
-        volume: videoRef.current?.volume ?? 1,
+        volume: videoRef.current ? fadeBaseVolume(videoRef.current) : 1,
         moved: false,
       };
     };

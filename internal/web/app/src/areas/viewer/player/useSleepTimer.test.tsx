@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { holdVolume } from "./trackFade";
+import { holdMute, setListenerMuted } from "./listenerMute";
+import { fadeAdvance, holdVolume } from "./trackFade";
 import { useSleepTimer } from "./useListening";
 
 // The sleep timer's fade: equal power over the last stretch, then a pause and
@@ -22,6 +23,13 @@ function element(volume = 0.8) {
     return Promise.resolve();
   };
   video.volume = volume;
+  return video;
+}
+
+// The element stays silent while the listener counts as unmuted, so a skip fades.
+function audible(video: HTMLVideoElement) {
+  holdMute(video);
+  setListenerMuted(video, false);
   return video;
 }
 
@@ -49,7 +57,16 @@ function advance(ms: number) {
 describe("useSleepTimer fade", () => {
   beforeEach(() => {
     vi.useFakeTimers({
-      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
+      toFake: [
+        "setTimeout",
+        "clearTimeout",
+        "setInterval",
+        "clearInterval",
+        "Date",
+        "requestAnimationFrame",
+        "cancelAnimationFrame",
+        "performance",
+      ],
     });
   });
   afterEach(() => {
@@ -173,6 +190,36 @@ describe("useSleepTimer fade", () => {
     expect(video.volume).toBeCloseTo(0.8, 2);
     advance(19_500);
     expect(video.paused).toBe(true);
+    expect(video.volume).toBe(0.8);
+  });
+  it("fades a skip out from the sleep fade's level, with no jump back up", () => {
+    const video = audible(element());
+    const hook = render(video);
+    startMinutes(hook, 15);
+    advance(15 * 60_000 - 2_000);
+    const faded = video.volume;
+    expect(faded).toBeLessThan(0.1);
+    const next = vi.fn();
+    act(() => fadeAdvance(video, next));
+    expect(next).not.toHaveBeenCalled();
+    for (let i = 0; i < 10; i++) {
+      advance(16);
+      expect(video.volume).toBeLessThanOrEqual(faded + 1e-9);
+    }
+    advance(400);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("drops a skip still fading out when the timer stops, so nothing plays on", () => {
+    const video = audible(element());
+    const hook = render(video);
+    startMinutes(hook, 15);
+    advance(15 * 60_000 - 100);
+    const next = vi.fn();
+    act(() => fadeAdvance(video, next));
+    advance(1_000);
+    expect(video.paused).toBe(true);
+    expect(next).not.toHaveBeenCalled();
     expect(video.volume).toBe(0.8);
   });
 });
