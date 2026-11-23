@@ -83,6 +83,114 @@ func TestPartyStageSessionBindingAndTwoRegistrations(t *testing.T) {
 	}
 }
 
+func TestPartyStageAndPlaybackGrantRequireRecentScreenHeartbeat(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	st.now = func() time.Time { return now }
+	player, dev, sess := setupPartyPlayerFixture(t, st, now)
+	if _, err := st.SetPlayerControllers(ctx, player.ID, true, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	party := startTestParty(t, st, false)
+	host := partyHostFilter()
+	if err := st.AddPartyEntry(ctx, "profile-default", host, "media-alpha", "", "Avery"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AdvanceParty(ctx, "profile-default", host, ""); err != nil {
+		t.Fatal(err)
+	}
+	join, err := st.AddPartyPlayerDisplay(ctx, "profile-default", host, PlayerDisplay{
+		DeviceID: dev.ID, PlayerProfileID: player.ID, BindingGeneration: 1, SessionID: sess.ID,
+	}, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	screenID := join.Screen.ID
+	check := func(active bool) {
+		t.Helper()
+		_, err := st.PartyStage(ctx, party.Session.ID, screenID, sess.ID, host, host, nil)
+		if active && err != nil || !active && (err == nil || err.Error() != "screen not found") {
+			t.Fatalf("PartyStage error = %v, active = %t", err, active)
+		}
+		if owned, err := st.PartyScreenOwnedBySession(ctx, screenID, sess.ID); err != nil || owned != active {
+			t.Fatalf("PartyScreenOwnedBySession = %t, %v, want %t", owned, err, active)
+		}
+		if current, err := st.IsPlayerPartyCurrentMedia(ctx, sess.ID, "media-alpha"); err != nil || current != active {
+			t.Fatalf("IsPlayerPartyCurrentMedia = %t, %v, want %t", current, err, active)
+		}
+		grantID, err := NewPlaybackGrantID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		grant := PlaybackGrant{
+			GrantID: grantID, SessionID: sess.ID, DeviceID: dev.ID, ProfileID: player.ID,
+			MediaID: "media-alpha", PlayerBindingGeneration: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		}
+		if published, err := st.CreatePlaybackGrant(ctx, grant, 0, PlayerOriginatorPolicy{}); err != nil || published != active {
+			t.Fatalf("CreatePlaybackGrant = %t, %v, want %t", published, err, active)
+		}
+	}
+	check(true)
+	now = now.Add(time.Minute)
+	if err := st.ReportPartyScreen(ctx, screenID, player.ID, sess.ID, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(partyScreenSilence - time.Millisecond)
+	check(true)
+	now = now.Add(time.Millisecond)
+	check(false)
+}
+
+func TestPartyStageETAsRequireVisibleTimingSources(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+	st.now = func() time.Time { return now }
+	host := LibraryFilter{AllLibraries: true, Revealed: true}
+	partyID, err := st.StartPartySession(ctx, PartyStartInput{
+		Host: "profile-default", HostName: "Rowan", LibraryIDs: []LibraryID{"library-local", "library-archive"}, Filter: host,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []MediaID{"media-archive", "media-alpha", "media-alpha", "media-archive", "media-alpha"} {
+		now = now.Add(time.Second)
+		if err := st.AddPartyEntry(ctx, "profile-default", host, id, "", "Avery"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	viewer := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+	screen, err := st.RegisterPartyScreen(ctx, partyID, "profile-default", "session-default", "Viewer", "joined", "local", viewer, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readStage := func() PartyStageView {
+		t.Helper()
+		if err := st.AdvanceParty(ctx, "profile-default", host, ""); err != nil {
+			t.Fatal(err)
+		}
+		stage, err := st.PartyStage(ctx, partyID, screen.ID, "session-default", viewer, viewer, nil)
+		if err != nil || stage.Current == nil || len(stage.UpNext) != 3 {
+			t.Fatalf("PartyStage = %+v, %v", stage, err)
+		}
+		return stage
+	}
+	hiddenCurrent := readStage()
+	if !hiddenCurrent.Current.Ineligible || hiddenCurrent.UpNext[0].Ineligible || hiddenCurrent.UpNext[0].ETASeconds != 0 {
+		t.Fatalf("restricted current leaked timing into the next visible entry: %+v", hiddenCurrent.UpNext[0])
+	}
+	hiddenWaiting := readStage()
+	first, hidden, later := hiddenWaiting.UpNext[0], hiddenWaiting.UpNext[1], hiddenWaiting.UpNext[2]
+	if first.ETASeconds <= 0 || !hidden.Ineligible || hidden.ETASeconds != 0 || later.Ineligible || later.ETASeconds != 0 {
+		t.Fatalf("ETAs with a restricted waiting entry = %+v", hiddenWaiting.UpNext)
+	}
+	hostView, found, err := st.PartySessionForHost(ctx, "profile-default", host)
+	if err != nil || !found || len(hostView.Waiting) != 3 || hostView.Waiting[2].ETASeconds <= first.ETASeconds {
+		t.Fatalf("host queue timing = %+v, %v", hostView.Waiting, err)
+	}
+}
+
 func TestPartyStageReleaseTriggersAndD4InParty(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

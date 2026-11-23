@@ -45,6 +45,7 @@ func newTestServerWithStoreAt(t *testing.T, dataDir string) (*Server, *store.Sto
 	manifests := manifest.NewService(st, clock, nil)
 	tokens := streamtoken.NewService([]byte("test-token-key"), clock)
 	tokens.SetRecorder(st)
+	tokens.SetPlaybackGrantResolver(st)
 	graphHandler := graph.NewHandler(manifests, authService, st, nil)
 	srv := New(
 		manifests,

@@ -54,6 +54,7 @@ func setupPlayerAttributionHarness(t *testing.T) (
 
 	tokens = streamtoken.NewService([]byte("12345678901234567890123456789012"), func() time.Time { return *clock })
 	tokens.SetRecorder(st)
+	tokens.SetPlaybackGrantResolver(st)
 	h.tokens = tokens
 	pb = playback.NewService(st, tokens, func() time.Time { return *clock })
 	pb.SetAuth(h.auth)

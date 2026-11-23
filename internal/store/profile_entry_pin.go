@@ -288,9 +288,7 @@ func (s *Store) SetSessionProfileWithEntryPIN(ctx context.Context, sessionID Ses
 		}
 	}
 
-	result, err := tx.ExecContext(ctx,
-		`UPDATE auth_session SET profile_id = ?, revealed = 0, admin_until_ms = NULL WHERE id = ?`,
-		profileID, sessionID)
+	result, err := tx.ExecContext(ctx, setSessionProfileSQL, profileID, sessionID)
 	if err != nil {
 		return err
 	}

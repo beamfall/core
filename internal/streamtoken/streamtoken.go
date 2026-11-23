@@ -23,7 +23,7 @@ import (
 // token can never outlive the durable fact that its subject was invalidated.
 const MaxStreamTokenTTL = 7 * 24 * time.Hour
 
-const revealGenerationSize = 16
+const streamGenerationSize = 16
 
 // Target identifies a byte-serving purpose.
 type Target string
@@ -223,17 +223,20 @@ func (g Grant) HasResolvedProfileCapability() bool {
 
 // Recorder records each issued grant in the transparency ledger (ADR-0036 My
 // Data: read-only view of outstanding Stream Tokens). It is the single,
-// central choke point — every Issue path records once — and it never
-// participates in authorizing bytes (Verify uses the signed grant, not the
-// ledger). Optional: nil leaves issuance unrecorded, so deployments and tests
-// that do not surface the My Data panel pay nothing.
+// central recording point for issuance. This ledger only provides
+// transparency. Display grant authorization uses PlaybackGrantResolver.
 type Recorder interface {
 	RecordStreamToken(ctx context.Context, sessionID store.SessionID, profileID store.ProfileID, deviceID store.DeviceID, target string, mediaID store.MediaID, restricted bool, expiresAt time.Time) error
 }
 
-// RevealGenerationResolver reads the current durable Reveal for a session.
-type RevealGenerationResolver interface {
-	RestrictedStreamRevealGeneration(context.Context, store.SessionID, store.ProfileID, store.DeviceID) ([]byte, error)
+// StreamGenerationResolver reads the durable Profile or Reveal generation.
+type StreamGenerationResolver interface {
+	StreamTokenGeneration(context.Context, store.SessionID, store.ProfileID, store.DeviceID, bool) ([]byte, error)
+}
+
+// PlaybackGrantResolver checks the signed ID against the display grant ledger.
+type PlaybackGrantResolver interface {
+	PlayerPlaybackGrantActive(context.Context, store.PlaybackGrant, time.Time) (bool, error)
 }
 
 // Service signs and validates Stream Tokens.
@@ -241,7 +244,8 @@ type Service struct {
 	key                 []byte
 	now                 func() time.Time
 	recorder            Recorder
-	revealGenerations   RevealGenerationResolver
+	streamGenerations   StreamGenerationResolver
+	playbackGrants      PlaybackGrantResolver
 	role                serverrole.Role
 	compatResolver      DecisionResolver
 	circleLeaseResolver CircleLeaseResolver
@@ -253,9 +257,9 @@ type Service struct {
 // may inspect the signed Grant, but only the issuing Service can consume the
 // proof for the live scope/Reveal check.
 type AuthenticatedGrant struct {
-	service          *Service
-	grant            Grant
-	revealGeneration []byte
+	service    *Service
+	grant      Grant
+	generation []byte
 }
 
 // Grant returns the authenticated signed payload for subject lookup.
@@ -284,10 +288,15 @@ func (s *Service) SetRecorder(recorder Recorder) {
 	s.recorder = recorder
 }
 
-// SetRevealGenerationResolver binds restricted grants to the catalog. Set
+// SetStreamGenerationResolver binds stream grants to the catalog. Set
 // once at boot, before issuing or serving Stream Tokens.
-func (s *Service) SetRevealGenerationResolver(resolver RevealGenerationResolver) {
-	s.revealGenerations = resolver
+func (s *Service) SetStreamGenerationResolver(resolver StreamGenerationResolver) {
+	s.streamGenerations = resolver
+}
+
+// SetPlaybackGrantResolver wires live display grant verification at boot.
+func (s *Service) SetPlaybackGrantResolver(resolver PlaybackGrantResolver) {
+	s.playbackGrants = resolver
 }
 
 // Issue returns a signed token for a grant.
@@ -329,13 +338,16 @@ func (s *Service) PrepareIssue(ctx context.Context, grant Grant) (token string, 
 	if err != nil {
 		return "", nil, err
 	}
-	var signature []byte
-	if grant.Restricted && s.revealGenerations != nil {
-		generation, err := s.revealGenerations.RestrictedStreamRevealGeneration(ctx, grant.SessionID, grant.ProfileID, grant.DeviceID)
-		if err != nil || len(generation) != revealGenerationSize {
-			return "", nil, errors.New("stream token requires active reveal")
+	var generation []byte
+	if s.streamGenerations != nil {
+		generation, err = s.streamGenerations.StreamTokenGeneration(ctx, grant.SessionID, grant.ProfileID, grant.DeviceID, grant.Restricted)
+		if err != nil || (grant.Restricted || len(generation) != 0) && len(generation) != streamGenerationSize {
+			return "", nil, errors.New("stream token has no active session binding")
 		}
-		signature = append(s.signRestricted(payload, generation), generation...)
+	}
+	var signature []byte
+	if len(generation) != 0 {
+		signature = append(s.signBound(payload, generation), generation...)
 	} else {
 		signature = s.sign(payload)
 	}
@@ -360,7 +372,7 @@ func (s *Service) Verify(token string, target Target, scope auth.Scope) (Grant, 
 	return s.VerifyAuthenticated(context.Background(), authenticated, scope)
 }
 
-// VerifyAuthenticated applies the live scope and Reveal checks to a grant
+// VerifyAuthenticated applies the live authorization checks to a grant
 // authenticated by this exact Service instance, without parsing or validating
 // the token's MAC a second time.
 func (s *Service) VerifyAuthenticated(ctx context.Context, authenticated AuthenticatedGrant, scope auth.Scope) (Grant, error) {
@@ -374,13 +386,28 @@ func (s *Service) VerifyAuthenticated(ctx context.Context, authenticated Authent
 	if grant.Restricted && !scope.Revealed {
 		return Grant{}, errors.New("stream token requires reveal")
 	}
-	if grant.Restricted && (s.revealGenerations != nil || len(authenticated.revealGeneration) != 0) {
-		if s.revealGenerations == nil || len(authenticated.revealGeneration) != revealGenerationSize {
-			return Grant{}, errors.New("stream token has no active reveal binding")
+	if s.streamGenerations != nil {
+		generation, err := s.streamGenerations.StreamTokenGeneration(ctx, grant.SessionID, grant.ProfileID, grant.DeviceID, grant.Restricted)
+		if err != nil || (grant.Restricted && len(authenticated.generation) == 0) || !bytes.Equal(generation, authenticated.generation) {
+			return Grant{}, errors.New("stream token session binding has ended")
 		}
-		generation, err := s.revealGenerations.RestrictedStreamRevealGeneration(ctx, grant.SessionID, grant.ProfileID, grant.DeviceID)
-		if err != nil || !bytes.Equal(generation, authenticated.revealGeneration) {
-			return Grant{}, errors.New("stream token reveal has ended")
+	} else if len(authenticated.generation) != 0 {
+		return Grant{}, errors.New("stream token has no active session binding")
+	}
+	if grant.GrantID != "" {
+		if s.playbackGrants == nil {
+			return Grant{}, errors.New("playback grant ledger unavailable")
+		}
+		active, err := s.playbackGrants.PlayerPlaybackGrantActive(ctx, store.PlaybackGrant{
+			GrantID:                 grant.GrantID,
+			SessionID:               grant.SessionID,
+			DeviceID:                grant.DeviceID,
+			ProfileID:               grant.ProfileID,
+			MediaID:                 grant.MediaID,
+			PlayerBindingGeneration: scope.PlayerBindingGeneration,
+		}, s.now())
+		if err != nil || !active {
+			return Grant{}, errors.New("playback grant is no longer active")
 		}
 	}
 	return grant, nil
@@ -405,7 +432,7 @@ func (s *Service) Authenticate(token string, target Target) (AuthenticatedGrant,
 		return AuthenticatedGrant{}, errors.New("invalid stream token signature")
 	}
 	// The signature segment carries the MAC followed by the MAC-covered
-	// generation for restricted tokens. The signed JSON payload is unchanged.
+	// generation for bound tokens. The signed JSON payload is unchanged.
 	var generation []byte
 	validMAC := s.validateMAC
 	if validMAC == nil {
@@ -413,9 +440,9 @@ func (s *Service) Authenticate(token string, target Target) (AuthenticatedGrant,
 			return hmac.Equal(signature, s.sign(payload))
 		}
 	}
-	if len(signature) == sha256.Size+revealGenerationSize {
+	if len(signature) == sha256.Size+streamGenerationSize {
 		generation = signature[sha256.Size:]
-		if !hmac.Equal(signature[:sha256.Size], s.signRestricted(payload, generation)) {
+		if !hmac.Equal(signature[:sha256.Size], s.signBound(payload, generation)) {
 			return AuthenticatedGrant{}, errors.New("invalid stream token signature")
 		}
 	} else if !validMAC(payload, signature) {
@@ -424,9 +451,6 @@ func (s *Service) Authenticate(token string, target Target) (AuthenticatedGrant,
 	var grant Grant
 	if err := json.Unmarshal(payload, &grant); err != nil {
 		return AuthenticatedGrant{}, errors.New("invalid stream token payload")
-	}
-	if len(generation) != 0 && !grant.Restricted {
-		return AuthenticatedGrant{}, errors.New("invalid stream token reveal binding")
 	}
 	if grant.Target != target {
 		return AuthenticatedGrant{}, errors.New("stream token target mismatch")
@@ -437,7 +461,7 @@ func (s *Service) Authenticate(token string, target Target) (AuthenticatedGrant,
 	if !grant.ExpiresAt.After(s.now()) {
 		return AuthenticatedGrant{}, errors.New("stream token expired")
 	}
-	return AuthenticatedGrant{service: s, grant: grant, revealGeneration: generation}, nil
+	return AuthenticatedGrant{service: s, grant: grant, generation: generation}, nil
 }
 
 // UnverifiedGrant validates the signature, expiry, and target, then returns the grant.
@@ -452,8 +476,9 @@ func (s *Service) sign(payload []byte) []byte {
 	return mac.Sum(nil)
 }
 
-func (s *Service) signRestricted(payload, generation []byte) []byte {
+func (s *Service) signBound(payload, generation []byte) []byte {
 	mac := hmac.New(sha256.New, s.key)
+	// Keep the domain prefix of the original Reveal-bound signature.
 	mac.Write([]byte("restricted-stream-token/v1\x00"))
 	mac.Write(generation)
 	mac.Write(payload)

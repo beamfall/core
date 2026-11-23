@@ -180,7 +180,8 @@ func (s *Store) SetSessionRevealed(ctx context.Context, id SessionID, revealed b
 	result, err := s.catalogW.ExecContext(ctx,
 		`UPDATE auth_session
 		SET reveal_generation = CASE WHEN ? = 0 OR revealed = 0
-			THEN randomblob(16) ELSE reveal_generation END,
+			THEN CAST(randomblob(16) || substr(reveal_generation, 17) AS BLOB)
+			ELSE reveal_generation END,
 			revealed = ?
 		WHERE id = ?`,
 		boolToInt(revealed), boolToInt(revealed), id)
@@ -200,19 +201,24 @@ func (s *Store) SetSessionRevealed(ctx context.Context, id SessionID, revealed b
 	return nil
 }
 
-// RestrictedStreamRevealGeneration is the durable generation of an active
-// Reveal. Re-lock commits the new generation with the Reveal change, before
-// best-effort transparency cleanup. A Profile switch clears Reveal, so the
-// next Reveal also gets a new generation.
-func (s *Store) RestrictedStreamRevealGeneration(ctx context.Context, id SessionID, profileID ProfileID, deviceID DeviceID) ([]byte, error) {
+// StreamTokenGeneration reads the durable authorization generation for a
+// session's current Profile. The first 16 bytes of reveal_generation bind
+// restricted tokens to one Reveal. The optional second 16 bytes bind public
+// tokens across relock and change only on Profile switch. Before the first
+// switch there is no Profile generation.
+func (s *Store) StreamTokenGeneration(ctx context.Context, id SessionID, profileID ProfileID, deviceID DeviceID, restricted bool) ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
 	var generation []byte
-	err := s.catalogR.QueryRowContext(ctx, `SELECT reveal_generation FROM auth_session
-		WHERE id = ? AND profile_id = ? AND device_id = ? AND revealed = 1`, id, profileID, deviceID).Scan(&generation)
+	err := s.catalogR.QueryRowContext(ctx, `
+		SELECT CASE WHEN ? THEN substr(reveal_generation, 1, 16)
+			ELSE substr(reveal_generation, 17) END
+		FROM auth_session
+		WHERE id = ? AND profile_id = ? AND device_id = ? AND (NOT ? OR revealed = 1)
+	`, restricted, id, profileID, deviceID, restricted).Scan(&generation)
 	return generation, err
 }
 

@@ -1045,7 +1045,19 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 	if mediaID == "" {
 		return PreviewInfoResponse{}, ErrInvalidRequest
 	}
-	media, err := s.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
+	filter := scope.LibraryFilter()
+	var grantID string
+	if scope.IsPlayerBound() && !scope.WalkUpEnabled {
+		// A standalone preview on a controlled display borrows the current
+		// playback's authorization and cannot outlive it.
+		grant, found, err := s.store.ActivePlaybackGrantForSession(ctx, scope.SessionID, store.MediaID(mediaID), s.now())
+		if err != nil || !found {
+			return PreviewInfoResponse{}, err
+		}
+		grantID = grant.GrantID
+		filter = scope.PlaybackFilter()
+	}
+	media, err := s.store.Media(ctx, store.MediaID(mediaID), filter)
 	if err != nil {
 		var validation store.ValidationError
 		if errors.As(err, &validation) {
@@ -1057,7 +1069,7 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 	if s.sealed != nil && s.sealed(media.LibraryID) {
 		return PreviewInfoResponse{}, nil
 	}
-	file, err := s.store.PrimaryMediaFile(ctx, media.ID, scope.LibraryFilter())
+	file, err := s.store.PrimaryMediaFile(ctx, media.ID, filter)
 	if err != nil {
 		return PreviewInfoResponse{MediaID: string(media.ID)}, nil
 	}
@@ -1071,6 +1083,7 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 		DeviceID:   scope.DeviceID,
 		SessionID:  scope.SessionID,
 		ProfileID:  scope.ProfileID,
+		GrantID:    grantID,
 		Restricted: restricted,
 		ExpiresAt:  expiresAt,
 	}, file.ContentFingerprint, false, expiresAt)

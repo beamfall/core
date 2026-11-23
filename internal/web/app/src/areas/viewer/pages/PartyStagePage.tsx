@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { QrCode } from "@/components/beamfall/QrCode";
 import { Button } from "@/components/ui/button";
-import { ApiError } from "@/lib/api";
+import { ApiError, isAuthRejection } from "@/lib/api";
 import { localClockMS } from "@/lib/clockEstimate";
 import {
   calibrateWatchPartyClock,
@@ -139,9 +139,7 @@ export function PartyStagePage() {
           return;
         }
         setStageFailed(true);
-        // The session ended or never existed: drop the stage so its player
-        // unmounts. Any other failure (a network blip) keeps playing.
-        if (isPartyGone(error)) setStageRead(undefined);
+        if (isPartyGone(error) || isAuthRejection(error)) setStageRead(undefined);
         throw error;
       }
     },

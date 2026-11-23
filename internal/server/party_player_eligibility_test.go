@@ -172,12 +172,19 @@ func TestPlayerDisplayWalkUpOffPlaysPartyCurrentAndGuestsBlocked(t *testing.T) {
 	if err := st.AdvanceParty(ctx, "profile-default", hostFilter, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AddPartyPlayerDisplay(ctx, "profile-default", hostFilter, store.PlayerDisplay{
+	display := store.PlayerDisplay{
 		DeviceID: "device-karaoke-tv", DeviceName: "Karaoke TV", PlayerProfileID: player.ID,
 		DisplayName: "Karaoke TV", BindingGeneration: 1, SessionID: "session-karaoke-tv",
-	}, "local"); err != nil {
-		t.Fatal(err)
 	}
+	join := func() store.PartyScreenJoinView {
+		t.Helper()
+		screen, err := st.AddPartyPlayerDisplay(ctx, "profile-default", hostFilter, display, "local")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return screen
+	}
+	screen := join()
 
 	// The joined display must get a usable stream for the current party item.
 	mediaPath := filepath.Join(t.TempDir(), "alpha.mp4")
@@ -187,6 +194,7 @@ func TestPlayerDisplayWalkUpOffPlaysPartyCurrentAndGuestsBlocked(t *testing.T) {
 	if err := st.SetPrimaryMediaFile(ctx, "media-alpha", mediaPath); err != nil {
 		t.Fatal(err)
 	}
+	srv.playback.SetAssets(testAssetLocator{preview: true})
 	body, err := json.Marshal(playback.InfoRequest{
 		MediaID: "media-alpha",
 		CapabilityProfile: playback.CapabilityProfile{
@@ -196,20 +204,67 @@ func TestPlayerDisplayWalkUpOffPlaysPartyCurrentAndGuestsBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pbReq := newJSONRequest(http.MethodPost, "/api/playback-info", bytes.NewReader(body))
-	authTV(pbReq)
-	pbRec := httptest.NewRecorder()
-	srv.ServeHTTP(pbRec, pbReq)
-	if pbRec.Code != http.StatusOK {
-		t.Fatalf("joined display playback-info = %d: %s", pbRec.Code, pbRec.Body.String())
+	streamURL := func() string {
+		t.Helper()
+		pbReq := newJSONRequest(http.MethodPost, "/api/playback-info", bytes.NewReader(body))
+		authTV(pbReq)
+		pbRec := httptest.NewRecorder()
+		srv.ServeHTTP(pbRec, pbReq)
+		if pbRec.Code != http.StatusOK {
+			t.Fatalf("joined display playback-info = %d: %s", pbRec.Code, pbRec.Body.String())
+		}
+		var info playback.InfoResponse
+		if err := json.Unmarshal(pbRec.Body.Bytes(), &info); err != nil {
+			t.Fatal(err)
+		}
+		if info.Decision == "unavailable" || info.GrantID == "" || len(info.Streams) == 0 || info.Streams[0].URL == "" {
+			t.Fatalf("joined display received no playable stream: %+v", info)
+		}
+		return info.Streams[0].URL
 	}
-	var info playback.InfoResponse
-	if err := json.Unmarshal(pbRec.Body.Bytes(), &info); err != nil {
+
+	checkStream := func(url string, wantStatus int) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
+		if rec.Code != wantStatus || (rec.Body.String() == "beamfall-media-bytes") != (wantStatus == http.StatusOK) {
+			t.Fatalf("party stream response = %d %q, want status %d", rec.Code, rec.Body.String(), wantStatus)
+		}
+	}
+	beforeDrop := streamURL()
+	checkStream(beforeDrop, http.StatusOK)
+	previewReq := newJSONRequest(http.MethodPost, "/api/preview-info", bytes.NewReader(body))
+	authTV(previewReq)
+	previewRec := httptest.NewRecorder()
+	srv.ServeHTTP(previewRec, previewReq)
+	var preview playback.PreviewInfoResponse
+	if err := json.Unmarshal(previewRec.Body.Bytes(), &preview); err != nil || previewRec.Code != http.StatusOK ||
+		preview.Assets == nil || preview.Assets.PreviewClip == "" {
+		t.Fatalf("party preview = %d %+v, %v", previewRec.Code, preview, err)
+	}
+	// The fixture advertises a preview, but keeps no asset file on disk.
+	checkStream(preview.Assets.PreviewClip, http.StatusNotFound)
+	if err := st.DropPartyScreen(ctx, "profile-default", hostFilter, screen.Screen.ID); err != nil {
 		t.Fatal(err)
 	}
-	if info.Decision == "unavailable" || info.GrantID == "" || len(info.Streams) == 0 || info.Streams[0].URL == "" {
-		t.Fatalf("joined display received no playable stream: %+v", info)
+	checkStream(beforeDrop, http.StatusUnauthorized)
+	checkStream(preview.Assets.PreviewClip, http.StatusUnauthorized)
+	join()
+	checkStream(beforeDrop, http.StatusUnauthorized)
+	checkStream(preview.Assets.PreviewClip, http.StatusUnauthorized)
+
+	beforeStop := streamURL()
+	checkStream(beforeStop, http.StatusOK)
+	stop, err := store.NewSessionControlPayload(store.SessionCommandStop, store.SessionControlArgs{}, "device-mac", player.ID, "")
+	if err != nil {
+		t.Fatal(err)
 	}
+	if _, err := st.ControlRendererSessionForPlayer(ctx, display.SessionID, 0, "cmd_stop_party_display", stop, nil, now, store.PlayerControlGuard{
+		PlayerProfileID: player.ID, CallerProfileID: "profile-default", BindingGeneration: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	checkStream(beforeStop, http.StatusUnauthorized)
 
 	// Guest token cannot access /api/events or /api/graphql.
 	view, _, _ := st.PartySessionForHost(ctx, "profile-default", hostFilter)

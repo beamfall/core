@@ -1733,9 +1733,9 @@ func (s *Store) PartyStage(ctx context.Context, sessionID, screenID string, call
 		var authSess, devID string
 		err = q.QueryRowContext(ctx, `SELECT screen_id, profile_id, auth_session_id, device_id, binding_generation, chosen_lead,
 				name, kind, carrier, ticker, offset_ms, rtt_ms, registered_at_ms, COALESCE(reported_at_ms, 0)
-			FROM party_screen
-			WHERE screen_id = ? AND session_id = ? AND auth_session_id = ? AND dropped_at_ms IS NULL`,
-			screenID, session.ID, callerSession).
+			FROM party_screen s
+			WHERE screen_id = ? AND session_id = ? AND auth_session_id = ? AND `+activePartyScreenSQL,
+			screenID, session.ID, callerSession, now-partyScreenSilence.Milliseconds()).
 			Scan(&callerScreen.id, &callerScreen.profileID, &authSess, &devID, &callerScreen.bindingGeneration, &chosenLead,
 				&callerScreen.name, &callerScreen.kind, &callerScreen.carrier, &ticker, &callerScreen.offsetMS, &callerScreen.rttMS,
 				&callerScreen.registeredAtMS, &callerScreen.reportedAtMS)
@@ -2158,6 +2158,12 @@ func (s *Store) AddPartyPlayerDisplay(ctx context.Context, host ProfileID, filte
 		if err != nil {
 			return err
 		}
+		// A fresh registration cannot revive URLs issued for a former join.
+		if _, err := tx.ExecContext(ctx, `UPDATE playback_grant SET cancelled_at_ms = ?
+			WHERE session_id = ? AND originator_profile_id = '' AND walk_up = 0 AND ambient = 0
+				AND ended_at_ms IS NULL AND cancelled_at_ms IS NULL`, nowMS, display.SessionID); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO party_screen
 			(screen_id, session_id, profile_id, auth_session_id, device_id, binding_generation, chosen_lead, name, kind, carrier, ticker, registered_at_ms)
 			VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'joined', ?, 1, ?)`,
@@ -2298,6 +2304,9 @@ func (s *Store) filterPartyStageForScreen(ctx context.Context, stage *PartyStage
 		}
 	}
 	if len(stage.UpNext) > 0 {
+		// An ETA also exposes the current item's remaining time and every
+		// preceding duration. Missing durations use a party-wide median.
+		timingVisible := stage.Current == nil || stage.Current.DurationSeconds > 0
 		ids := make([]MediaID, 0, len(stage.UpNext))
 		for _, entry := range stage.UpNext {
 			if entry.MediaID != "" {
@@ -2309,17 +2318,20 @@ func (s *Store) filterPartyStageForScreen(ctx context.Context, stage *PartyStage
 			return err
 		}
 		for i := range stage.UpNext {
-			if stage.UpNext[i].MediaID == "" {
-				continue
+			entry := &stage.UpNext[i]
+			_, eligible := visible[entry.MediaID]
+			if !timingVisible || !eligible {
+				entry.ETASeconds = 0
 			}
-			if _, ok := visible[stage.UpNext[i].MediaID]; !ok {
-				stage.UpNext[i].MediaID = ""
-				stage.UpNext[i].Title = ""
-				stage.UpNext[i].Subtitle = ""
-				stage.UpNext[i].DurationSeconds = 0
-				stage.UpNext[i].LastPlayedAt = time.Time{}
-				stage.UpNext[i].Ineligible = true
-				stage.UpNext[i].Label = stage.UpNext[i].ParticipantName
+			timingVisible = timingVisible && eligible && entry.DurationSeconds > 0
+			if !eligible && entry.MediaID != "" {
+				entry.MediaID = ""
+				entry.Title = ""
+				entry.Subtitle = ""
+				entry.DurationSeconds = 0
+				entry.LastPlayedAt = time.Time{}
+				entry.Ineligible = true
+				entry.Label = entry.ParticipantName
 			}
 		}
 	}
@@ -2581,6 +2593,9 @@ func (s *Store) releaseIneligiblePartyDisplaysForPlayerLocked(ctx context.Contex
 	})
 }
 
+const activePartyScreenSQL = `s.dropped_at_ms IS NULL
+	AND MAX(s.registered_at_ms, COALESCE(s.reported_at_ms, 0)) > ?`
+
 // PartyScreenOwnedBySession reports whether screenID is an active screen
 // belonging to authSessionID in a live party session.
 func (s *Store) PartyScreenOwnedBySession(ctx context.Context, screenID string, authSessionID SessionID) (bool, error) {
@@ -2602,9 +2617,9 @@ func (s *Store) PartyScreenOwnedBySession(ctx context.Context, screenID string, 
 		SELECT s.screen_id, s.session_id, s.profile_id, s.auth_session_id, s.device_id, s.binding_generation, p.host_profile_id
 		FROM party_screen s
 		JOIN party_session p ON p.session_id = s.session_id
-		WHERE s.screen_id = ? AND s.auth_session_id = ? AND s.dropped_at_ms IS NULL
+		WHERE s.screen_id = ? AND s.auth_session_id = ? AND `+activePartyScreenSQL+`
 			AND p.ended_at_ms IS NULL AND p.expires_at_ms > ?
-	`, screenID, authSessionID, nowMS).Scan(&row.id, &partyID, &row.profileID, &authSess, &devID, &row.bindingGeneration, &hostProfileID)
+	`, screenID, authSessionID, nowMS-partyScreenSilence.Milliseconds(), nowMS).Scan(&row.id, &partyID, &row.profileID, &authSess, &devID, &row.bindingGeneration, &hostProfileID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -2646,11 +2661,11 @@ func (s *Store) isPlayerPartyCurrentMediaLocked(ctx context.Context, q queryRowe
 		FROM party_screen s
 		JOIN party_session p ON p.session_id = s.session_id
 		JOIN party_entry e ON e.entry_id = p.current_entry_id AND e.session_id = p.session_id
-		WHERE s.auth_session_id = ? AND s.dropped_at_ms IS NULL
+		WHERE s.auth_session_id = ? AND s.device_id <> '' AND `+activePartyScreenSQL+`
 			AND p.ended_at_ms IS NULL AND p.expires_at_ms > ?
 			AND e.state = 'current' AND e.media_id = ?
 		LIMIT 1
-	`, authSessionID, nowMS, mediaID).Scan(&row.id, &row.profileID, &authSess, &devID, &row.bindingGeneration, &hostProfileID)
+	`, authSessionID, nowMS-partyScreenSilence.Milliseconds(), nowMS, mediaID).Scan(&row.id, &row.profileID, &authSess, &devID, &row.bindingGeneration, &hostProfileID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -2659,11 +2674,8 @@ func (s *Store) isPlayerPartyCurrentMediaLocked(ctx context.Context, q queryRowe
 	}
 	row.authSessionID = SessionID(authSess)
 	row.deviceID = DeviceID(devID)
-	if row.deviceID != "" {
-		valid, _ := s.isPartyPlayerScreenValidLocked(ctx, hostProfileID, row)
-		return valid, nil
-	}
-	return true, nil
+	valid, _ := s.isPartyPlayerScreenValidLocked(ctx, hostProfileID, row)
+	return valid, nil
 }
 
 // IsPlayerDeviceInLiveParty reports whether deviceID or authSessionID is

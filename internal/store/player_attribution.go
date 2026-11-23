@@ -359,6 +359,41 @@ func (s *Store) PlaybackGrant(ctx context.Context, grantID string) (PlaybackGran
 	return g, true, nil
 }
 
+// PlayerPlaybackGrantActive checks the signed grant's scope and revocation
+// state. Party grants also require a live, eligible screen on the current item.
+func (s *Store) PlayerPlaybackGrantActive(ctx context.Context, grant PlaybackGrant, now time.Time) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	tx, err := s.eventsR.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	var party bool
+	err = tx.QueryRowContext(ctx, `
+		SELECT originator_profile_id = '' AND walk_up = 0 AND ambient = 0
+		FROM playback_grant
+		WHERE grant_id = ? AND session_id = ? AND device_id = ? AND profile_id = ?
+		  AND media_id = ? AND player_binding_generation = ? AND expires_at_ms > ?
+		  AND ended_at_ms IS NULL AND cancelled_at_ms IS NULL
+	`, grant.GrantID, grant.SessionID, grant.DeviceID, grant.ProfileID,
+		grant.MediaID, grant.PlayerBindingGeneration, timeToMillis(now)).Scan(&party)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if party {
+		return s.isPlayerPartyCurrentMediaLocked(ctx, tx, grant.SessionID, grant.MediaID)
+	}
+	return true, nil
+}
+
 // ActivePlaybackGrantForSession returns the latest active (not ended,
 // cancelled, or expired) playback grant for (sessionID, mediaID).
 func (s *Store) ActivePlaybackGrantForSession(ctx context.Context, sessionID SessionID, mediaID MediaID, now time.Time) (PlaybackGrant, bool, error) {

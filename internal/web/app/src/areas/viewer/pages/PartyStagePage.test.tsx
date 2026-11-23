@@ -199,6 +199,24 @@ describe("PartyStagePage", () => {
     expect(container.querySelector("video")).toBeNull();
   });
 
+  it.each([401, 403])("clears the player and ticker on a %i refusal", async (status) => {
+    vi.mocked(fetchPartyStage)
+      .mockResolvedValueOnce(
+        stage({ current: song, upNext: [{ ...song, id: "e2", state: "waiting" }] }),
+      )
+      .mockRejectedValue(new ApiError("access refused", status));
+    const { container } = renderStage();
+
+    expect(await screen.findByText("Sung by Juniper")).toBeInTheDocument();
+    expect(screen.getByText("Paper Lanterns · Juniper")).toBeInTheDocument();
+    expect(container.querySelector("video")).not.toBeNull();
+
+    expect(await screen.findByRole("alert", {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.queryByText("Sung by Juniper")).not.toBeInTheDocument();
+    expect(screen.queryByText("Paper Lanterns · Juniper")).not.toBeInTheDocument();
+    expect(container.querySelector("video")).toBeNull();
+  });
+
   it("clears playback and replaces a refused registration even when the heartbeat rejects", async () => {
     const key = "beamfall.partyScreen.popout.s1";
     window.sessionStorage.setItem(key, "scr-stale");

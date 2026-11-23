@@ -178,7 +178,7 @@ type PlayerControllerEventStore interface {
 }
 
 // PartyScreenEventStore is the optional slice of EventStore used to verify
-// screen registration ownership on screen-bound SSE subscriptions.
+// active screen ownership on SSE subscriptions and party stage events.
 type PartyScreenEventStore interface {
 	PartyScreenOwnedBySession(ctx context.Context, screenID string, authSessionID store.SessionID) (bool, error)
 }
@@ -540,13 +540,13 @@ func (s *Server) filterEventForSession(ctx context.Context, event store.OutboxEv
 		if requestedScreenID != "" && payload.ScreenID != requestedScreenID {
 			return event, false
 		}
-		if payload.Action != store.PartyStageActionReleased && payload.HostProfileID != "" && payload.DeviceID != "" {
-			pc, ok := s.events.(PlayerControllerEventStore)
+		if payload.Action != store.PartyStageActionReleased {
+			ps, ok := s.events.(PartyScreenEventStore)
 			if !ok {
 				return event, false
 			}
-			isCtrl, err := pc.IsPlayerController(ctx, payload.ProfileID, payload.HostProfileID)
-			if err != nil || !isCtrl {
+			owned, err := ps.PartyScreenOwnedBySession(ctx, payload.ScreenID, sessionID)
+			if err != nil || !owned {
 				return event, false
 			}
 		}
