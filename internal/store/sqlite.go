@@ -2859,6 +2859,10 @@ func (s *Store) updateDeviceRevoked(ctx context.Context, id DeviceID, revoked bo
 	if affected == 0 {
 		return errors.New("device not found")
 	}
+	if revoked {
+		nowMS := timeToMillis(s.serverNow())
+		_, _ = s.eventsW.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ? WHERE device_id = ? AND dropped_at_ms IS NULL`, nowMS, id)
+	}
 	return nil
 }
 

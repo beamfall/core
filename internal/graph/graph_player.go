@@ -42,6 +42,7 @@ type PlayerDisplayInfo struct {
 	Presence        string                 `json:"presence"`
 	LastSeenAt      string                 `json:"lastSeenAt,omitempty"`
 	CurrentItem     *PlayerDisplayItemInfo `json:"currentItem,omitempty"`
+	InParty         bool                   `json:"inParty,omitempty"`
 }
 
 // PlayerDisplayItemInfo is the current item playing on a display, filtered
@@ -428,6 +429,11 @@ func (h *Handler) playerDisplays(ctx context.Context, scope auth.Scope) ([]Playe
 		}
 	}
 
+	inPartyByDevice, err := h.store.PlayerDevicesInLiveParty(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	out := make([]PlayerDisplayInfo, 0, len(controlled))
 	for _, d := range controlled {
 		displayName := d.DisplayName
@@ -479,6 +485,7 @@ func (h *Handler) playerDisplays(ctx context.Context, scope auth.Scope) ([]Playe
 			Presence:        presence,
 			LastSeenAt:      lastSeenStr,
 			CurrentItem:     currentItem,
+			InParty:         inPartyByDevice[d.DeviceID],
 		})
 	}
 	slices.SortFunc(out, func(a, b PlayerDisplayInfo) int {
@@ -530,7 +537,14 @@ func (h *Handler) requireWalkUpOrCommandedMedia(ctx context.Context, scope auth.
 	if err != nil {
 		return err
 	}
-	if !ok {
+	if ok {
+		return nil
+	}
+	partyOK, err := h.store.IsPlayerPartyCurrentMedia(ctx, scope.SessionID, mediaID)
+	if err != nil {
+		return err
+	}
+	if !partyOK {
 		return clientError("walk-up browsing is disabled")
 	}
 	return nil

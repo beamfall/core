@@ -4484,10 +4484,20 @@ func (h *Handler) revealOps(ctx context.Context, scope auth.Scope, fields map[st
 		data["reveal"] = RevealState{Revealed: true, RevealPinSet: true}
 	}
 	if fields["relock"] {
+		var restrictedMedia []store.MediaID
+		if h.transcodeTerminator != nil {
+			restrictedMedia, _ = h.store.SessionRestrictedStreamMediaIDs(ctx, scope.SessionID)
+		}
 		if err := h.whileScopeProfile(ctx, scope, func() error {
 			return h.store.SetSessionRevealed(ctx, scope.SessionID, false)
 		}); err != nil {
 			return nil, err
+		}
+		if h.transcodeTerminator != nil {
+			for _, mediaID := range restrictedMedia {
+				_, wait := h.transcodeTerminator.DetachPlayback(scope.SessionID, mediaID)
+				wait()
+			}
 		}
 		if err := h.logActivity(ctx, scope, store.ActivityRelock, "", "", ""); err != nil {
 			return nil, err
@@ -7071,6 +7081,8 @@ var mutationFields = map[string]bool{
 	"partyscreenreport":                  true,
 	"partyscreenticker":                  true,
 	"partyscreendrop":                    true,
+	"partyscreenadddisplay":              true,
+	"partyscreenlead":                    true,
 	"queueaddmany":                       true,
 	"queuemoveentry":                     true,
 	"queueremoveentry":                   true,

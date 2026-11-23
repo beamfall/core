@@ -683,6 +683,8 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"partyscreenreport":      fieldArguments["partyscreenreport"],
 	"partyscreenticker":      fieldArguments["partyscreenticker"],
 	"partyscreendrop":        fieldArguments["partyscreendrop"],
+	"partyscreenadddisplay":  fieldArguments["partyscreenadddisplay"],
+	"partyscreenlead":        fieldArguments["partyscreenlead"],
 	"playqueue":              {},
 	"queueaddmany":           fieldArguments["queueaddmany"],
 	"queuemoveentry":         fieldArguments["queuemoveentry"],

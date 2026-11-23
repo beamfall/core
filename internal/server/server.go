@@ -1305,6 +1305,10 @@ type playerCommandedMediaStore interface {
 	IsPlayerCommandedMedia(context.Context, store.SessionID, store.MediaID, time.Time) (bool, error)
 }
 
+type playerPartyMediaStore interface {
+	IsPlayerPartyCurrentMedia(context.Context, store.SessionID, store.MediaID) (bool, error)
+}
+
 func (s *Server) rejectMissingPlayerDisplayCapability(w http.ResponseWriter, r *http.Request, scope auth.Scope) bool {
 	if !scope.IsPlayerBound() || scope.HasClientCapability(string(capabilities.CapabilityPlayerDisplay)) {
 		return false
@@ -1324,7 +1328,15 @@ func (s *Server) playerCommandedAllowed(ctx context.Context, scope auth.Scope, m
 		return false
 	}
 	ok, err := s.playerCommanded.IsPlayerCommandedMedia(ctx, scope.SessionID, mediaID, time.Now().UTC())
-	return err == nil && ok
+	if err == nil && ok {
+		return true
+	}
+	if partyStore, ok := s.playerCommanded.(playerPartyMediaStore); ok {
+		if allowed, perr := partyStore.IsPlayerPartyCurrentMedia(ctx, scope.SessionID, mediaID); perr == nil && allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) manifestDocument(w http.ResponseWriter, r *http.Request) {

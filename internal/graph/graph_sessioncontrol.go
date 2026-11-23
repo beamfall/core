@@ -171,7 +171,7 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 		return ControlSessionResult{}, sessionControlClientError(err)
 	}
 	now := h.now().UTC()
-	target, playing, anchor, playerGuard, err := h.authorizeSessionControl(ctx, scope, targetID, command, args, now)
+	target, playing, anchor, playerGuard, err := h.authorizeSessionControl(ctx, scope, targetID, command, args, now, false)
 	if err != nil {
 		return ControlSessionResult{}, err
 	}
@@ -246,7 +246,7 @@ func (h *Handler) controlRendererSession(ctx context.Context, scope auth.Scope, 
 	}
 
 	now := h.now().UTC()
-	target, playing, anchor, playerGuard, err := h.authorizeSessionControl(ctx, scope, targetID, command, args, now)
+	target, playing, anchor, playerGuard, err := h.authorizeSessionControl(ctx, scope, targetID, command, args, now, true)
 	if err != nil {
 		return ControlRendererSessionResult{}, err
 	}
@@ -280,6 +280,18 @@ func (h *Handler) controlRendererSession(ctx context.Context, scope auth.Scope, 
 		res, err = h.store.ControlRendererSession(ctx, store.SessionID(targetID), expectedRevision, commandID, payload, activity, now)
 	}
 	if err != nil {
+		if errors.Is(err, store.ErrDisplayInParty) {
+			if playerGuard != nil {
+				if isCtrl, cerr := h.store.IsPlayerController(ctx, target.ProfileID, scope.ProfileID); cerr != nil || !isCtrl {
+					return ControlRendererSessionResult{}, clientError("unknown session")
+				}
+				h.auditPlayerControl(ctx, scope, target, command, "in-party")
+			}
+			return ControlRendererSessionResult{}, reasonedClientError{
+				message: "display in party",
+				reason:  ErrorReasonDisplayInParty,
+			}
+		}
 		if errors.Is(err, store.ErrPlayerControlUnauthorized) || errors.Is(err, store.ErrSessionProfileMismatch) {
 			if playerGuard != nil {
 				h.auditPlayerControl(ctx, scope, target, command, "unauthorized")
@@ -357,6 +369,7 @@ func (h *Handler) authorizeSessionControl(
 	targetID, command string,
 	args store.SessionControlArgs,
 	now time.Time,
+	rendererControl bool,
 ) (store.Session, []store.MediaID, store.MediaID, *store.PlayerControlGuard, error) {
 	if scope.ProfileID == "" {
 		// No Profile to scope to: a non-Profile caller can never share a Profile
@@ -385,6 +398,9 @@ func (h *Handler) authorizeSessionControl(
 	}
 
 	if targetProfile.Kind == store.ProfilePlayer {
+		if !rendererControl {
+			return store.Session{}, nil, "", nil, clientError("unknown session")
+		}
 		return h.authorizePlayerSessionControl(ctx, scope, target, targetProfile, command, args, now)
 	}
 
@@ -476,6 +492,19 @@ func (h *Handler) authorizePlayerSessionControl(
 		return store.Session{}, nil, "", nil, reasonedClientError{
 			message: "display offline",
 			reason:  ErrorReasonDisplayOffline,
+		}
+	}
+	if command != store.SessionCommandStop {
+		inParty, err := h.store.IsPlayerDeviceInLiveParty(ctx, dev.ID, target.ID, now)
+		if err != nil {
+			return store.Session{}, nil, "", nil, err
+		}
+		if inParty {
+			h.auditPlayerControl(ctx, scope, target, command, "in-party")
+			return store.Session{}, nil, "", nil, reasonedClientError{
+				message: "display in party",
+				reason:  ErrorReasonDisplayInParty,
+			}
 		}
 	}
 

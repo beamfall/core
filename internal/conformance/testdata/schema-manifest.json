@@ -920,7 +920,17 @@
     "tier": "session"
   },
   {
+    "field": "partyscreenadddisplay",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "partyscreendrop",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyscreenlead",
     "effect": "write",
     "tier": "session"
   },

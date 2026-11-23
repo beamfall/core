@@ -127,7 +127,11 @@ package store
 // Events 0031 (CORE-3310) adds player_commanded_media for play-media command
 // authorization on player-bound Sessions with walk-up disabled, off the
 // entity-query hot path.
+// Events 0032 (CORE-3313) adds auth_session_id, device_id,
+// binding_generation, and chosen_lead to party_screen for session-bound
+// stage reads, player display joining, and release tracking, off the
+// entity-query hot path.
 const (
-	schemaFreezeEventsMigrations           = 31
+	schemaFreezeEventsMigrations           = 32
 	schemaFreezeEncryptedLibraryMigrations = 13
 )

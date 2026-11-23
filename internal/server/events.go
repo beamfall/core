@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -176,6 +177,12 @@ type PlayerControllerEventStore interface {
 	IsPlayerController(ctx context.Context, playerProfileID, callerProfileID store.ProfileID) (bool, error)
 }
 
+// PartyScreenEventStore is the optional slice of EventStore used to verify
+// screen registration ownership on screen-bound SSE subscriptions.
+type PartyScreenEventStore interface {
+	PartyScreenOwnedBySession(ctx context.Context, screenID string, authSessionID store.SessionID) (bool, error)
+}
+
 // SetEventStreamObserver wires the observer told about session event streams.
 func (s *Server) SetEventStreamObserver(observer EventStreamObserver) {
 	s.streamObserver = observer
@@ -213,6 +220,19 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 	if s.events == nil {
 		writeError(w, r, http.StatusServiceUnavailable, "event stream unavailable")
 		return
+	}
+	requestedScreenID := strings.TrimSpace(r.URL.Query().Get("screenID"))
+	if requestedScreenID != "" {
+		ps, ok := s.events.(PartyScreenEventStore)
+		if !ok || scope.SessionID == "" {
+			writeError(w, r, http.StatusNotFound, "screen not found")
+			return
+		}
+		owned, err := ps.PartyScreenOwnedBySession(r.Context(), requestedScreenID, scope.SessionID)
+		if err != nil || !owned {
+			writeError(w, r, http.StatusNotFound, "screen not found")
+			return
+		}
 	}
 
 	flusher, ok := w.(http.Flusher)
@@ -283,7 +303,9 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 		// below has already closed this channel, so the wait cannot miss it.
 		changed := s.events.EventOutboxChanged()
 
-		next, wrote, err := s.drainEventsWith(ctx, w, flusher, cursor, beforeEmit, currentScope)
+		next, wrote, err := s.drainEventsForSession(ctx, w, flusher, cursor, beforeEmit, currentScope, func() (store.SessionID, store.LibraryFilter, string) {
+			return scope.SessionID, scope.PlaybackFilter(), requestedScreenID
+		})
 		fresh = false
 		if err != nil {
 			var readErr *eventOutboxReadError
@@ -350,16 +372,37 @@ func (s *Server) drainEvents(ctx context.Context, w http.ResponseWriter, flusher
 // something to act on, so an empty poll costs exactly one store read. It also
 // reports whether anything was written.
 func (s *Server) drainEventsWith(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, cursor int64, beforeEmit beforeEventEmit, scope func() (store.ProfileID, store.LibraryFilter, error)) (int64, bool, error) {
+	return s.drainEventsForSession(ctx, w, flusher, cursor, beforeEmit, scope, nil)
+}
+
+func (s *Server) drainEventsForSession(
+	ctx context.Context,
+	w http.ResponseWriter,
+	flusher http.Flusher,
+	cursor int64,
+	beforeEmit beforeEventEmit,
+	scope func() (store.ProfileID, store.LibraryFilter, error),
+	sessionExtras func() (store.SessionID, store.LibraryFilter, string),
+) (int64, bool, error) {
 	wrote := false
 	resolved := false
 	var profileID store.ProfileID
 	var filter store.LibraryFilter
+	var sessionID store.SessionID
+	var playbackFilter store.LibraryFilter
+	var requestedScreenID string
 	resolve := func() error {
 		if resolved {
 			return nil
 		}
 		var err error
 		profileID, filter, err = scope()
+		if err == nil && sessionExtras != nil {
+			sessionID, playbackFilter, requestedScreenID = sessionExtras()
+		} else {
+			playbackFilter = filter
+			playbackFilter.PlaybackGate = true
+		}
 		resolved = err == nil
 		return err
 	}
@@ -396,13 +439,16 @@ func (s *Server) drainEventsWith(ctx context.Context, w http.ResponseWriter, flu
 			cursor = event.Seq
 			currentProfileID := profileID
 			currentFilter := filter
+			currentPlaybackFilter := playbackFilter
 			if beforeEmit != nil {
 				currentProfileID, currentFilter, err = beforeEmit(ctx)
 				if err != nil {
 					return cursor, wrote, err
 				}
+				currentPlaybackFilter = currentFilter
+				currentPlaybackFilter.PlaybackGate = true
 			}
-			delivered, permitted := s.filterEvent(ctx, event, currentProfileID, currentFilter)
+			delivered, permitted := s.filterEventForSession(ctx, event, sessionID, currentProfileID, currentFilter, currentPlaybackFilter, requestedScreenID)
 			if !permitted {
 				continue
 			}
@@ -477,6 +523,45 @@ func (s *Server) eventPermitted(ctx context.Context, event store.OutboxEvent, pr
 }
 
 func (s *Server) filterEvent(ctx context.Context, event store.OutboxEvent, profileID store.ProfileID, filter store.LibraryFilter) (store.OutboxEvent, bool) {
+	pb := filter
+	pb.PlaybackGate = true
+	return s.filterEventForSession(ctx, event, "", profileID, filter, pb, "")
+}
+
+func (s *Server) filterEventForSession(ctx context.Context, event store.OutboxEvent, sessionID store.SessionID, profileID store.ProfileID, filter, playbackFilter store.LibraryFilter, requestedScreenID string) (store.OutboxEvent, bool) {
+	if event.AggregateType == store.OutboxAggregateParty {
+		var payload store.PartyStageEventPayload
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			return event, false
+		}
+		if sessionID == "" || profileID == "" || payload.AuthSessionID != sessionID || payload.ProfileID != profileID {
+			return event, false
+		}
+		if requestedScreenID != "" && payload.ScreenID != requestedScreenID {
+			return event, false
+		}
+		if payload.Action != store.PartyStageActionReleased && payload.HostProfileID != "" && payload.DeviceID != "" {
+			pc, ok := s.events.(PlayerControllerEventStore)
+			if !ok {
+				return event, false
+			}
+			isCtrl, err := pc.IsPlayerController(ctx, payload.ProfileID, payload.HostProfileID)
+			if err != nil || !isCtrl {
+				return event, false
+			}
+		}
+		if payload.MediaID != "" {
+			if _, err := s.events.Media(ctx, payload.MediaID, playbackFilter); err != nil {
+				payload.MediaID = ""
+				raw, err := json.Marshal(payload)
+				if err != nil {
+					return event, false
+				}
+				event.Payload = raw
+			}
+		}
+		return event, true
+	}
 	if event.AggregateType == store.OutboxAggregateSession {
 		var payload store.SessionControlPayload
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
