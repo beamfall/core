@@ -239,8 +239,9 @@ describe("music stage idle dim (CORE-3351)", () => {
     // Touch hit-testing follows the same awake conditions as the opacity.
     const touch = css.indexOf("@media not all and (pointer: fine) {", start);
     const touchBlock = css.slice(touch, css.indexOf("pointer-events: none;", touch));
-    expect(touchBlock.split(".bf-player-stage :focus-visible").length - 1).toBe(2);
-    expect(touchBlock.split('[aria-expanded="true"]').length - 1).toBe(2);
+    expect(touchBlock.split(".bf-player-stage :focus-visible").length - 1).toBe(3);
+    expect(touchBlock).toContain(".bf-audio-info");
+    expect(touchBlock.split('[aria-expanded="true"]').length - 1).toBe(3);
     const chrome = Number(/--bf-idle-chrome:\s*([\d.]+)/.exec(block)?.[1]);
     const card = Number(/--bf-idle-card:\s*([\d.]+)/.exec(block)?.[1]);
     expect(chrome).toBeGreaterThan(0);

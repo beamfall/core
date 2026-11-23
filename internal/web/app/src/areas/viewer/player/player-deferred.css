@@ -922,7 +922,8 @@ main:has(> .bf-player-stage.is-chrome-dim) > .bf-player-bar,
 }
 
 /* Touch keeps "first tap reveals", as on the hidden video chrome (CORE-2322):
-   a faint control is not tappable until the stage wakes. Hit-testing follows
+   a faint control (the bar, the transport, the inline Up Next in the track
+   info) is not tappable until the stage wakes. Hit-testing follows
    the same awake conditions as the opacity (no hover on touch). */
 @media not all and (pointer: fine) {
   main:has(> .bf-player-stage.is-chrome-dim):not(
@@ -945,6 +946,17 @@ main:has(> .bf-player-stage.is-chrome-dim) > .bf-player-bar,
     )
     > .bf-player-stage
     .bf-transport
+    *,
+  main:has(> .bf-player-stage.is-chrome-dim):not(
+      :has(
+          .bf-player-bar :focus-visible,
+          .bf-player-stage :focus-visible,
+          .bf-queue-drawer,
+          [aria-expanded="true"]
+        )
+    )
+    > .bf-player-stage
+    .bf-audio-info
     * {
     pointer-events: none;
   }
