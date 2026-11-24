@@ -152,7 +152,7 @@ export function takeUpcoming(r: Rotation, current: Visual | null, reducedMotion:
 }
 
 // Picks the rotation's next visual and compiles it while the page is idle, so the switch to it
-// does not stall a frame. Only that one compiles ahead: compiling all 62 stalled frames through
+// does not stall a frame. Only that one compiles ahead: compiling all 63 stalled frames through
 // the first seconds of play and drove the governor down to a coarse render (CORE-2368).
 function queueUpcoming(renderer: Renderer, r: Rotation, current: Visual): void {
   if (!r.rotating) return;
