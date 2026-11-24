@@ -42,7 +42,7 @@
 
 | | |
 |---|---|
-| **Playback that adapts** | Direct play when the device can handle the file. Otherwise Core remuxes or transcodes to HLS, using Intel Quick Sync, VA-API, NVIDIA NVENC, or Apple VideoToolbox when present, and tone-maps HDR for SDR screens when the FFmpeg build can. |
+| **Playback that adapts** | Direct play when the device can handle the file. Otherwise Core remuxes or transcodes to HLS, using Intel Quick Sync, VA-API, NVIDIA NVENC, or Apple VideoToolbox when present, and tone-maps HDR for SDR screens when the FFmpeg build supports it and tone mapping is on in the Console (Dolby Vision profile 5 is refused). |
 | **Seven library types** | Film and TV, music, podcasts, audiobooks, photos, family archive, and karaoke (MP3+G with CD+G rendering, and timed LRC lyrics). Activate only the ones you need. |
 | **Bring your history** | Importers for Plex, Emby, Jellyfin, Trakt, and NFO sidecars; Last.fm, ListenBrainz, and Navidrome; OPML, Overcast, and AntennaPod; Audiobookshelf; and Immich. |
 | **Watch comfortably** | Intro, recap, and credits skip detection; trickplay scrubbing previews; styled ASS subtitles rendered with libass; preferred audio and subtitle languages per Profile; Chromecast from Chromium browsers over HTTPS. |
@@ -84,7 +84,7 @@
 
 You need Git, Go at the version in [`go.mod`](go.mod), Node.js 22.22 or newer with npm, and
 `ffmpeg` and `ffprobe` on `PATH`. For the Docker route you need only Git and Docker Engine 25 or
-newer.
+newer with BuildKit (the default builder).
 
 ### Docker (image built from source)
 
@@ -145,12 +145,13 @@ password (see the [`Makefile`](Makefile)).
 
 `library list`, `scan`, `backup`, `token list`, and `token revoke` talk to the running server with
 `--token`. Mint one while the server is stopped; `--access` picks its tier (`cli` by default,
-`diagnostics` adds admin reads, `agent` adds most admin changes), so give each token the lowest
+`diagnostics` adds admin reads plus cancelling and retrying jobs, `agent` adds most admin changes), so give each token the lowest
 tier that does the job.
 
 ```sh
-./beamfall token create --name operator --data-dir "$HOME/beamfall-data"   # server stopped
-./beamfall library list --token "$TOKEN"
+# With the server stopped, capture the token it prints, then start the server again.
+TOKEN=$(./beamfall token create --name operator --data-dir "$HOME/beamfall-data")
+./beamfall library list --token "$TOKEN"   # set LIBRARY_ID and ROOT from its output
 ./beamfall scan --token "$TOKEN" --library-id "$LIBRARY_ID" --root "$ROOT"
 ```
 
@@ -183,7 +184,7 @@ flowchart LR
   built on the public [plugin SDK](https://github.com/beamfall/plugin-sdk) and compiled in by
   [`cmd/beamfall/bundles.go`](cmd/beamfall/bundles.go).
 - **Third-party code runs out of process.** Integration Workers are separate processes, each pinned to
-  a SHA-256 hash or an Ed25519 signature, behind a narrow local API with a closed permission vocabulary.
+  a SHA-256 hash or an Ed25519 signing key that verifies its detached signature, behind a narrow local API with a closed permission vocabulary.
 - **Two APIs.** Clients use a hand-written GraphQL contract in `internal/graph`, held in place by
   conformance tests. Integrations use the stable `/v1` Developer API. Each cross-repository wire
   boundary is registered in [`contracts/registry.json`](contracts/registry.json).
@@ -211,7 +212,7 @@ Domain language is defined in [`CONTEXT.md`](CONTEXT.md).
 | Releases | None yet. [`release.yml`](.github/workflows/release.yml) runs on a `v*` tag and is built to produce signed archives with an SBOM and SLSA provenance, plus a cosign-signed amd64/arm64 image at `ghcr.io/beamfall/core`. No tag exists, so none of these have been published. |
 | Server | Builds and runs from source with the Go version in [`go.mod`](go.mod), natively or as a Docker image built from this repository. |
 | CI | Changes merge on a green local `make gate` run on the exact commit. The hosted workflows in [`.github/workflows`](.github/workflows) are not yet green and are not the merge signal. |
-| Cross-repo checks | Some checks need sibling Beamfall repositories. Without a sibling checkout they clone the pinned version, skip loudly, or fail; they never pass. |
+| Cross-repo checks | Some checks need sibling Beamfall repositories. Without a sibling checkout they clone and verify the pinned version where a source is configured, or else skip loudly or fail; a missing checkout never counts as a pass. |
 | Deployment templates | The [Compose](packaging/compose/README.md), [Unraid](packaging/unraid/beamfall-core.xml), and [TrueNAS](packaging/truenas/README.md) templates are included. Their release path expects a digest-pinned image, so it becomes usable with the first release; until then, point them at an image you built. |
 | Supported versions | Before the first stable release, security reports should name a `main` revision ([`SECURITY.md`](SECURITY.md)). |
 
