@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Mic } from "lucide-react";
 import { createRef, type RefObject } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,7 +26,11 @@ function Mini({
   waveform,
   durationSeconds,
   videoRef = createRef<HTMLVideoElement>(),
+  artworkURL = "",
+  fallbackIcon,
 }: {
+  artworkURL?: string;
+  fallbackIcon?: typeof Mic;
   mediaID: string;
   waveform?: Omit<WaveformInput, "mediaID">;
   durationSeconds?: number;
@@ -38,7 +43,8 @@ function Mini({
         videoRef={videoRef}
         title="Long Weekend"
         credits={[]}
-        artworkURL=""
+        artworkURL={artworkURL}
+        fallbackIcon={fallbackIcon}
         mediaID={mediaID}
         songScale={1}
         durationSeconds={durationSeconds}
@@ -167,5 +173,23 @@ describe("MiniPlayer artist and album links (CORE-3349)", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(screen.getByText("Bon Iver")).toBeInTheDocument();
     expect(container.querySelector("a.bf-mini-artwork")).toBeNull();
+  });
+});
+
+describe("MiniPlayer artwork fallback", () => {
+  it("draws the fallback icon when there is no artwork", () => {
+    const { container } = render(<Mini mediaID="a" fallbackIcon={Mic} />);
+    expect(container.querySelector(".bf-mini-artwork .bf-mini-artwork-icon")).not.toBeNull();
+  });
+
+  it("prefers the artwork over the fallback icon", () => {
+    const { container } = render(<Mini mediaID="a" artworkURL="/a.jpg" fallbackIcon={Mic} />);
+    expect(container.querySelector(".bf-mini-artwork img")).not.toBeNull();
+    expect(container.querySelector(".bf-mini-artwork-icon")).toBeNull();
+  });
+
+  it("leaves the square empty without a fallback icon", () => {
+    const { container } = render(<Mini mediaID="a" />);
+    expect(container.querySelector(".bf-mini-artwork")?.childElementCount).toBe(0);
   });
 });
