@@ -23,6 +23,9 @@ func TestMain(m *testing.M) {
 	toneMapSupported = func(context.Context) bool { return true }
 	composedRecipeSupported = func(context.Context, bool, ffmpeg.Rendition) bool { return true }
 	audioAdjustSupported = func(context.Context, ffmpeg.Rendition) bool { return true }
+	// The host FFmpeg decides this in production; tests opt in per case so
+	// they do not depend on whether the host build has libass.
+	textSubtitleBurnInSupported = func(context.Context) bool { return false }
 	os.Exit(m.Run())
 }
 

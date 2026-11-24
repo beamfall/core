@@ -260,3 +260,12 @@ func AudioAdjustSupportedContext(ctx context.Context, rendition Rendition) bool 
 	caps, err := capabilitiesForCurrentBuild(ctx)
 	return err == nil && len(caps.missingFor(rendition.audioArgs())) == 0
 }
+
+// TextSubtitleBurnInSupportedContext reports whether the resolved FFmpeg build
+// can burn a styled text subtitle (ASS/SSA) into the video: it needs the
+// libass `ass` filter. A build whose components cannot be listed cannot, and a
+// styled track then stays a flattened sidecar.
+func TextSubtitleBurnInSupportedContext(ctx context.Context) bool {
+	caps, err := capabilitiesForCurrentBuild(ctx)
+	return err == nil && caps.Filters["ass"]
+}

@@ -242,3 +242,80 @@ func TestExtractSubtitlesToWebVTTRejectsUnsafeArguments(t *testing.T) {
 		t.Fatalf("empty batch: %v", err)
 	}
 }
+
+func TestResolveStyledSubtitleDelivery(t *testing.T) {
+	tests := []struct {
+		name   string
+		codec  string
+		engine []string
+		want   SubtitleDelivery
+	}{
+		{"ass against webvtt engine -> burn-in", "ass", []string{"srt", "webvtt"}, SubtitleBurnIn},
+		{"ssa against empty engine -> burn-in", "ssa", nil, SubtitleBurnIn},
+		{"ass against libass engine -> sidecar", "ass", []string{"webvtt", "ASS"}, SubtitleSidecar},
+		{"srt stays sidecar", "subrip", []string{"webvtt"}, SubtitleSidecar},
+		{"pgs still burns", "hdmv_pgs_subtitle", []string{"webvtt", "ass"}, SubtitleBurnIn},
+		{"pgs against libmpv -> sidecar", "hdmv_pgs_subtitle", []string{"ass", "pgs"}, SubtitleSidecar},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ResolveStyledSubtitleDelivery(tc.codec, tc.engine); got != tc.want {
+				t.Fatalf("ResolveStyledSubtitleDelivery(%q, %v) = %v, want %v", tc.codec, tc.engine, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRenditionTextBurnInArgs proves a styled text burn renders the extracted
+// script through libass on the picture (no subtitle stream input), keeps the
+// scale cap after it, and, after an input seek, shifts the frames onto the
+// source timeline around the filter so the script's times line up.
+func TestRenditionTextBurnInArgs(t *testing.T) {
+	r := Rendition{Height: 720, CopyVideo: true}.WithBurnTextSubtitle(3, "/s/sub's.ass", "/s/fonts")
+	if r.CopyVideo {
+		t.Fatal("text burn-in must re-encode")
+	}
+	if idx, ok := r.burnsSubtitle(); !ok || idx != 3 {
+		t.Fatalf("burnsSubtitle = %d,%v, want 3,true", idx, ok)
+	}
+	want := []string{
+		"-filter_complex", `[0:v:0]ass=filename=/s/sub\\\'s.ass:fontsdir=/s/fonts,scale=-2:min(ih\,720)[vsub]`,
+		"-map", "[vsub]", "-map", "0:a:0?",
+	}
+	if got := r.args(); !equalArgs(got, want) {
+		t.Fatalf("text burn-in args = %q, want %q", got, want)
+	}
+
+	seeked := Rendition{}.WithBurnTextSubtitle(3, "/s/sub.ass", "").withBurnSeek("12.5")
+	wantSeeked := []string{
+		"-filter_complex", "[0:v:0]setpts=PTS+12.5/TB,ass=filename=/s/sub.ass,setpts=PTS-STARTPTS[vsub]",
+		"-map", "[vsub]", "-map", "0:a:0?",
+	}
+	if got := seeked.args(); !equalArgs(got, wantSeeked) {
+		t.Fatalf("seeked text burn-in args = %q, want %q", got, wantSeeked)
+	}
+
+	segment := strings.Join(hlsSegmentArgs("/m/in.mkv", "/out", 3, 4, Rendition{}.WithBurnTextSubtitle(3, "/s/sub.ass", "")), " ")
+	if !strings.Contains(segment, "-ss 12 ") || !strings.Contains(segment, "setpts=PTS+12/TB,ass=filename=/s/sub.ass") {
+		t.Fatalf("segment encode does not carry its seek into the libass chain: %s", segment)
+	}
+
+	if _, ok := (Rendition{}).WithBurnTextSubtitle(-1, "/s/sub.ass", "").burnsSubtitle(); ok {
+		t.Fatal("negative index must not enable text burn-in")
+	}
+	if (Rendition{}).withBurnSeek("5").burnText != nil {
+		t.Fatal("withBurnSeek must not create a text burn")
+	}
+}
+
+func TestTextBurnConfinementGrantsScriptAndFonts(t *testing.T) {
+	r := Rendition{}.WithBurnTextSubtitle(3, "/scratch/s1/burn-subtitle/subtitle.ass", "/scratch/s1/burn-subtitle/fonts")
+	conf := dirConfinement("/media/show/ep.mkv", "/scratch/s1/720p").withBurnText(r)
+	want := []string{"/media/show", "/scratch/s1/burn-subtitle", "/scratch/s1/burn-subtitle/fonts"}
+	if !equalArgs(conf.ReadOnly, want) {
+		t.Fatalf("ReadOnly = %v, want %v", conf.ReadOnly, want)
+	}
+	if plain := dirConfinement("/media/show/ep.mkv", "/out").withBurnText(Rendition{}); !equalArgs(plain.ReadOnly, []string{"/media/show"}) {
+		t.Fatalf("plain rendition ReadOnly = %v", plain.ReadOnly)
+	}
+}

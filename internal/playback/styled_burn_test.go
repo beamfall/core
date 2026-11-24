@@ -1,0 +1,137 @@
+package playback
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/streamtoken"
+)
+
+func withTextSubtitleBurnIn(t *testing.T, supported bool) {
+	t.Helper()
+	previous := textSubtitleBurnInSupported
+	textSubtitleBurnInSupported = func(context.Context) bool { return supported }
+	t.Cleanup(func() { textSubtitleBurnInSupported = previous })
+}
+
+// TestStyledSubtitleBurnInOnOverlayProfile: with a libass-capable FFmpeg, a
+// selected ASS track on a client that cannot render ASS is burned into the
+// picture, so positioned signs and karaoke survive. A client that declares
+// "ass" keeps rendering it itself.
+func TestStyledSubtitleBurnInOnOverlayProfile(t *testing.T) {
+	withTextSubtitleBurnIn(t, true)
+	assIndex := 2
+	service, st, scope := capabilityTestService(t)
+	mediaID := importProbedMedia(t, st, "fp-mkv-ass-burn", "matroska", "h264", 1920, 1080, []store.MediaFileStream{
+		videoStream("h264", "High", 0, ""),
+		audioStream(1, "aac", 2),
+		{Index: assIndex, Type: "subtitle", Codec: "ass", Language: "jpn"},
+	})
+	resp, err := service.Info(context.Background(), scope, InfoRequest{
+		MediaID: string(mediaID), CapabilityProfile: appleOverlayProfile, SelectedSubtitleIndex: &assIndex,
+	})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if resp.Decision != "transcode" {
+		t.Fatalf("Decision = %q (%q), want transcode to burn in the ASS track", resp.Decision, resp.Reason)
+	}
+	grant, err := service.tokens.UnverifiedGrant(resp.Streams[0].Token, streamtoken.TargetMediaHLS)
+	if err != nil {
+		t.Fatalf("HLS token: %v", err)
+	}
+	if got := grant.BurnSubtitleIndex - 1; got != assIndex {
+		t.Fatalf("BurnSubtitleIndex = %d, want %d", got, assIndex)
+	}
+
+	assProfile := appleOverlayProfile
+	assProfile.SubtitleFormats = []string{"webvtt", "ass"}
+	resp, err = service.Info(context.Background(), scope, InfoRequest{
+		MediaID: string(mediaID), CapabilityProfile: assProfile, SelectedSubtitleIndex: &assIndex,
+	})
+	if err != nil {
+		t.Fatalf("Info (ass profile): %v", err)
+	}
+	if resp.Decision != "direct-stream" {
+		t.Fatalf("Decision = %q (%q), want direct-stream for a client that renders ASS", resp.Decision, resp.Reason)
+	}
+}
+
+func TestBurnSubtitleIsText(t *testing.T) {
+	streams := []store.MediaFileStream{
+		{Index: 0, Type: "video", Codec: "h264"},
+		{Index: 2, Type: "subtitle", Codec: "ASS"},
+		{Index: 3, Type: "subtitle", Codec: "ssa"},
+		{Index: 4, Type: "subtitle", Codec: "hdmv_pgs_subtitle"},
+	}
+	for index, want := range map[int]bool{-1: false, 0: false, 2: true, 3: true, 4: false, 9: false} {
+		if got := BurnSubtitleIsText(streams, index); got != want {
+			t.Errorf("BurnSubtitleIsText(%d) = %v, want %v", index, got, want)
+		}
+	}
+}
+
+type fakeStyledExtractor struct {
+	Transcoder
+	scriptErr error
+	fonts     map[int][]byte
+}
+
+func (f fakeStyledExtractor) ExtractStyledSubtitle(_ context.Context, _ string, index int) ([]byte, error) {
+	if f.scriptErr != nil {
+		return nil, f.scriptErr
+	}
+	return []byte("[Script Info]\n; stream " + string(rune('0'+index)) + "\n"), nil
+}
+
+func (f fakeStyledExtractor) SubtitleFontIndexes(context.Context, string) ([]int, error) {
+	return []int{5, 6}, nil
+}
+
+func (f fakeStyledExtractor) ExtractSubtitleFont(_ context.Context, _ string, index int) ([]byte, error) {
+	if data, ok := f.fonts[index]; ok {
+		return data, nil
+	}
+	return nil, ffmpeg.ErrFontAttachmentNotFound
+}
+
+// TestExtractBurnSubtitleWritesScriptAndFonts pins the session's libass inputs:
+// the script and every readable font land under the session directory, an
+// unreadable font is skipped, and the rendition burns them with libass.
+func TestExtractBurnSubtitleWritesScriptAndFonts(t *testing.T) {
+	dir := t.TempDir()
+	s := &Sessions{transcoder: fakeStyledExtractor{fonts: map[int][]byte{5: []byte("OTTOfontbytes")}}}
+	file, fontsDir, err := s.extractBurnSubtitle(context.Background(), "/src.mkv", dir, 2)
+	if err != nil {
+		t.Fatalf("extractBurnSubtitle: %v", err)
+	}
+	if file != filepath.Join(dir, "burn-subtitle", "subtitle.ass") || fontsDir != filepath.Join(dir, "burn-subtitle", "fonts") {
+		t.Fatalf("paths = %q, %q", file, fontsDir)
+	}
+	if data, err := os.ReadFile(file); err != nil || !strings.Contains(string(data), "stream 2") {
+		t.Fatalf("script = %q, %v", data, err)
+	}
+	entries, err := os.ReadDir(fontsDir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "font-5.ttf" {
+		t.Fatalf("fonts = %v, %v; want only font-5.ttf", entries, err)
+	}
+
+	rung := Rung{Height: 720, Codec: "h264", VideoKbps: 3000}
+	h := &hlsSession{burnSubtitleIndex: 2, burnSubtitleFile: file, burnFontsDir: fontsDir}
+	want := (&hlsSession{burnSubtitleIndex: -1}).rendition(rung).WithBurnTextSubtitle(2, file, fontsDir)
+	if got := h.rendition(rung); !reflect.DeepEqual(got, want) {
+		t.Fatalf("rendition = %+v, want the libass burn of the extracted script %+v", got, want)
+	}
+
+	s.transcoder = fakeStyledExtractor{scriptErr: errors.New("boom")}
+	if _, _, err := s.extractBurnSubtitle(context.Background(), "/src.mkv", t.TempDir(), 2); err == nil {
+		t.Fatal("extractBurnSubtitle succeeded without a script")
+	}
+}

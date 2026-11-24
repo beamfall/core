@@ -1195,6 +1195,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	// Ready at mint) is likewise decided at mint and carried by the grant.
 	shape := playback.StreamShapeFromGrant(grant, media)
 	shape.AudioSource = playback.AudioSourceStream(streams, audioStreamIndex)
+	shape.BurnSubtitleText = playback.BurnSubtitleIsText(streams, burnSubtitleIndex)
 	shape.LibraryID = media.LibraryID
 	shape.Encrypted = secure
 	// The catalog runtime describes the primary file. Other files need their

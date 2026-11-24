@@ -41,12 +41,28 @@ type StreamShape struct {
 	// what the mint advertised (CORE-1849). The zero value takes the worst
 	// case for a copied stream.
 	AudioSource store.MediaFileStream
+	// BurnSubtitleText reports that the burned subtitle stream is styled
+	// text (ASS/SSA): the session extracts the script and the file's fonts
+	// and renders them with libass instead of overlaying a bitmap stream. It
+	// is set by the byte layer from the source's streams.
+	BurnSubtitleText bool
 
 	// Encrypted, when set, is the plaintext source of a session on an
 	// Encrypted Library: the session keeps only encrypted files and FFmpeg
 	// reaches the source through a loopback endpoint (ADR-0236). It is set by
 	// the byte layer, never carried in a grant.
 	Encrypted *EncryptedSource
+}
+
+// BurnSubtitleIsText reports whether the burned subtitle stream index of
+// streams is styled text (ASS/SSA), which StreamShape.BurnSubtitleText marks.
+func BurnSubtitleIsText(streams []store.MediaFileStream, index int) bool {
+	for _, stream := range streams {
+		if stream.Index == index && stream.Type == "subtitle" {
+			return ffmpeg.IsStyledTextSubtitleCodec(stream.Codec)
+		}
+	}
+	return false
 }
 
 // StreamShapeFromGrant reads the StreamShape a stream grant carries for

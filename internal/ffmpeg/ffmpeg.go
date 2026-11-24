@@ -1512,14 +1512,38 @@ type SubtitleDelivery int
 
 const (
 	// SubtitleSidecar serves a WebVTT sidecar track under a Stream Token: the
-	// resolution for any text subtitle (SRT/ASS), and for any subtitle whose
+	// resolution for a plain text subtitle (SRT), and for any subtitle whose
 	// native format the engine already renders.
 	SubtitleSidecar SubtitleDelivery = iota
 	// SubtitleBurnIn composites the subtitle into the video during transcode:
 	// the resolution for a PGS/bitmap subtitle against an engine that cannot
-	// render bitmap subs (the only path off libmpv, ADR-0010 §5).
+	// render bitmap subs (the only path off libmpv, ADR-0010 §5), and, when the
+	// caller allows styled burn-in, for an ASS/SSA subtitle against an engine
+	// that cannot render ASS (positioned signs and karaoke survive only there).
 	SubtitleBurnIn
 )
+
+// IsStyledTextSubtitleCodec reports whether an ffprobe subtitle codec_name is
+// ASS/SSA: text whose positioning, styling and karaoke a WebVTT sidecar loses.
+func IsStyledTextSubtitleCodec(codec string) bool {
+	switch strings.ToLower(codec) {
+	case "ass", "ssa":
+		return true
+	}
+	return false
+}
+
+// ResolveStyledSubtitleDelivery is ResolveSubtitleDelivery for a caller that
+// can burn a styled text subtitle in (the FFmpeg build has libass and the
+// session can run a burn-in encode). An ASS/SSA stream against an engine that
+// does not list "ass" then resolves to burn-in instead of a flattened WebVTT
+// sidecar; every other stream resolves as ResolveSubtitleDelivery does.
+func ResolveStyledSubtitleDelivery(subtitleCodec string, engineSubtitleFormats []string) SubtitleDelivery {
+	if IsStyledTextSubtitleCodec(subtitleCodec) && !slices.ContainsFunc(engineSubtitleFormats, func(f string) bool { return strings.EqualFold(f, "ass") }) {
+		return SubtitleBurnIn
+	}
+	return ResolveSubtitleDelivery(subtitleCodec, engineSubtitleFormats)
+}
 
 // isBitmapSubtitleCodec reports whether an ffprobe subtitle codec_name is a
 // bitmap/image format (PGS, VobSub, DVB) that cannot be converted to WebVTT.
@@ -1539,8 +1563,10 @@ func isBitmapSubtitleCodec(codec string) bool {
 // stream; engineSubtitleFormats is the engine's declared SubtitleFormats
 // vocabulary ("srt", "webvtt", "ass", "pgs" — the CapabilityProfile field).
 //
-//   - A text subtitle (SRT/ASS/…) always resolves to a WebVTT sidecar: it
-//     converts cleanly and the sidecar is the cheap, universal path.
+//   - A text subtitle (SRT/ASS/…) resolves to a WebVTT sidecar: it converts
+//     and the sidecar is the cheap, universal path. ASS/SSA loses its
+//     positioning and styling there; ResolveStyledSubtitleDelivery burns it in
+//     instead where the caller can.
 //   - A bitmap subtitle (PGS/VobSub/DVB) resolves to a sidecar only if the
 //     engine natively renders that bitmap format (e.g. libmpv lists "pgs");
 //     otherwise it resolves to burn-in — the only path off libmpv.
@@ -1649,7 +1675,10 @@ type Rendition struct {
 	// absolute stream index v-1. This keeps the zero Rendition burn-in-free
 	// while still allowing stream index 0 to be selected.
 	burnSubtitleIndex int
-	hwAccel           HWAccel
+	// burnText, when set, burns the subtitle as styled text through libass
+	// (WithBurnTextSubtitle) instead of overlaying a bitmap stream.
+	burnText *textBurn
+	hwAccel  HWAccel
 	// hwLowPower runs hwAccel's encoder in low-power mode (CORE-2094).
 	hwLowPower bool
 	// quality is the Console quality (CORE-2452); empty is balanced.
@@ -1731,6 +1760,55 @@ func (r Rendition) WithBurnSubtitle(streamIndex int) Rendition {
 	r.burnSubtitleIndex = streamIndex + 1
 	r.CopyVideo = false
 	return r
+}
+
+// textBurn is a styled text subtitle burned in through libass: the ASS file
+// extracted from the source, the directory of its attached fonts ("" for
+// none), and the encode's input seek in seconds ("" for none), which the
+// filter adds back so the subtitle timeline matches the source.
+type textBurn struct {
+	file     string
+	fontsDir string
+	seek     string
+}
+
+// WithBurnTextSubtitle returns a copy of the rendition that burns the ASS/SSA
+// subtitle stream at streamIndex into the video through libass, reading the
+// script from file (extracted once per session) and its attached fonts from
+// fontsDir. Like WithBurnSubtitle it re-encodes the video.
+func (r Rendition) WithBurnTextSubtitle(streamIndex int, file, fontsDir string) Rendition {
+	if streamIndex < 0 || file == "" {
+		return r
+	}
+	r = r.WithBurnSubtitle(streamIndex)
+	r.burnText = &textBurn{file: file, fontsDir: fontsDir}
+	return r
+}
+
+// withBurnSeek records the encode's input seek on a text burn so the libass
+// filter sees source timestamps. Other renditions are returned unchanged.
+func (r Rendition) withBurnSeek(seek string) Rendition {
+	if r.burnText == nil {
+		return r
+	}
+	text := *r.burnText
+	text.seek = seek
+	r.burnText = &text
+	return r
+}
+
+// textBurnFilters is the libass chain for a text burn: shift the frames back
+// onto the source timeline after an input seek, render the script, and shift
+// them back again.
+func (t textBurn) filters() []string {
+	ass := "ass=filename=" + escapeFilterValue(t.file)
+	if t.fontsDir != "" {
+		ass += ":fontsdir=" + escapeFilterValue(t.fontsDir)
+	}
+	if t.seek == "" || t.seek == "0" {
+		return []string{ass}
+	}
+	return []string{"setpts=PTS+" + t.seek + "/TB", ass, "setpts=PTS-STARTPTS"}
 }
 
 // burnsSubtitle reports whether this rendition burns a subtitle in, and the
@@ -2530,6 +2608,11 @@ func (r Rendition) burnInArgs(burnIndex int) []string {
 	if len(postOverlay) > 0 {
 		graph = fmt.Sprintf("%s[0:%d]overlay[vo];[vo]%s[vsub]", videoInput, burnIndex, strings.Join(postOverlay, ","))
 	}
+	if r.burnText != nil {
+		// A styled text subtitle renders through libass on the picture itself,
+		// so the subtitle stream is not a graph input.
+		graph = videoInput + strings.Join(append(r.burnText.filters(), postOverlay...), ",") + "[vsub]"
+	}
 	graphParts = append(graphParts, graph)
 	audioMap := "0:a:0?"
 	if r.AudioStreamIndex != nil {
@@ -2874,7 +2957,7 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	args := hlsArgs(src, dir, rendition)
 	// Confine to the source file's directory (read-only) and the segment output
 	// directory (read-write), plus the GPU when the rendition runs on one.
-	conf := dirConfinement(src, dir).withGPU(rendition.hwAccel, rendition.toneMapAccel)
+	conf := dirConfinement(src, dir).withGPU(rendition.hwAccel, rendition.toneMapAccel).withBurnText(rendition)
 	var cmd *exec.Cmd
 	if background {
 		cmd = r.generationCommand(ctx, conf, ffmpegPath, args...)
@@ -3041,7 +3124,7 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
 	args := buildArgs(rendition)
-	conf := dirConfinement(src, dir).withGPU(rendition.hwAccel, rendition.toneMapAccel)
+	conf := dirConfinement(src, dir).withGPU(rendition.hwAccel, rendition.toneMapAccel).withBurnText(rendition)
 	cmd := r.confinedCommand(ctx, ffmpegPath, conf, args)
 	process, err := startHLSProcessContext(ctx, cmd, false)
 	if err != nil {
@@ -3131,6 +3214,7 @@ func segmentArgs(io segmentIO, startSegment int, seek, outputOffset, hlsTime str
 	if seek != "" {
 		args = append(args, "-ss", seek)
 	}
+	rendition = rendition.withBurnSeek(seek)
 	args = append(args, rendition.inputArgs()...)
 	args = append(args, io.inputOptions...)
 	args = append(args,

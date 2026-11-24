@@ -120,7 +120,8 @@ type Grant struct {
 	// optional request header may lower this rank but cannot raise it.
 	// Meaningful only for TargetMediaHLS; ignored for every other Target.
 	Foreground bool `json:"foreground,omitempty"`
-	// BurnSubtitleIndex carries the selected bitmap-subtitle burn-in verdict from
+	// BurnSubtitleIndex carries the selected subtitle burn-in verdict (a bitmap
+	// stream, or styled ASS/SSA text on a libass-capable server) from
 	// playbackInfo to the byte layer. It is encoded as absolute stream index + 1;
 	// zero means no burn-in, preserving old tokens and still allowing stream 0.
 	// Meaningful only for TargetMediaHLS; ignored for every other Target.

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -547,7 +548,27 @@ type quirkOverlay struct {
 	// binds: it is set and tighter than the viewer's effective ceiling. It
 	// names the decision reason a ceiling-forced verdict carries.
 	policyCeiling bool
+	// styledSubtitleBurnIn reports that a styled (ASS/SSA) subtitle the
+	// client cannot render itself is burned into the picture by libass rather
+	// than flattened to a plain sidecar. It is not a quirk: decideMedia sets it
+	// when the FFmpeg build has the ass filter and the Library is not
+	// encrypted, and it never touches attribution.
+	styledSubtitleBurnIn bool
 }
+
+// subtitleDelivery is the one subtitle verdict every predicate reads, so the
+// Version chosen, the direct-play verdict and the issued grant agree.
+func (o quirkOverlay) subtitleDelivery(codec string, profile CapabilityProfile) ffmpeg.SubtitleDelivery {
+	formats := o.subtitleFormats(profile.SubtitleFormats)
+	if o.styledSubtitleBurnIn {
+		return ffmpeg.ResolveStyledSubtitleDelivery(codec, formats)
+	}
+	return ffmpeg.ResolveSubtitleDelivery(codec, formats)
+}
+
+// textSubtitleBurnInSupported reports whether the running FFmpeg can burn a
+// styled text subtitle. Tests stub it.
+var textSubtitleBurnInSupported = ffmpeg.TextSubtitleBurnInSupportedContext
 
 // withClientCeiling folds the viewer's streaming ceiling into the overlay. A
 // non-positive ceiling is no ceiling. One below the ladder floor is raised to

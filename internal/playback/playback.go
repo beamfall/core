@@ -1280,6 +1280,16 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 	if s.sealed != nil && s.sealed(media.LibraryID) {
 		return unavailableDecision(), nil
 	}
+	if textSubtitleBurnInSupported(ctx) {
+		// Styled (ASS/SSA) burn-in needs a libass-capable FFmpeg, and an
+		// encrypted Library refuses every burn-in, so it keeps the flattened
+		// sidecar (openspec change styled-subtitle-burn-in).
+		encrypted, err := s.store.LibraryEncrypted(ctx, media.LibraryID)
+		if err != nil {
+			return decision{}, err
+		}
+		ov.styledSubtitleBurnIn = !encrypted
+	}
 	timeline := Timeline{DurationSeconds: media.DurationSeconds}
 	if resumeProfileID != "" {
 		if progress, ok, err := s.store.PlaybackProgressFor(ctx, resumeProfileID, media.ID); err == nil && ok && !progress.Watched {
@@ -3234,7 +3244,7 @@ func subtitleFormatsCompatible(streams []store.MediaFileStream, profile Capabili
 	if !ok {
 		return true
 	}
-	return ffmpeg.ResolveSubtitleDelivery(stream.Codec, ov.subtitleFormats(profile.SubtitleFormats)) != ffmpeg.SubtitleBurnIn
+	return ov.subtitleDelivery(stream.Codec, profile) != ffmpeg.SubtitleBurnIn
 }
 
 func selectedBurnSubtitleIndex(streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) int {
@@ -3242,7 +3252,7 @@ func selectedBurnSubtitleIndex(streams []store.MediaFileStream, profile Capabili
 	if !ok {
 		return -1
 	}
-	if ffmpeg.ResolveSubtitleDelivery(stream.Codec, ov.subtitleFormats(profile.SubtitleFormats)) != ffmpeg.SubtitleBurnIn {
+	if ov.subtitleDelivery(stream.Codec, profile) != ffmpeg.SubtitleBurnIn {
 		return -1
 	}
 	return stream.Index

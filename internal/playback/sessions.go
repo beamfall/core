@@ -39,6 +39,15 @@ type Transcoder interface {
 	StartHLSSegments(ctx context.Context, src, dir string, startSegment, segmentSeconds int, rendition ffmpeg.Rendition) (*ffmpeg.HLSProcess, error)
 }
 
+// styledSubtitleExtractor is a transcoder that can pull a styled (ASS/SSA)
+// subtitle stream and its file's font attachments, so a text burn-in renders
+// with libass in the script's own fonts. *ffmpeg.Runner satisfies it.
+type styledSubtitleExtractor interface {
+	ExtractStyledSubtitle(ctx context.Context, path string, index int) ([]byte, error)
+	SubtitleFontIndexes(ctx context.Context, path string) ([]int, error)
+	ExtractSubtitleFont(ctx context.Context, path string, index int) ([]byte, error)
+}
+
 type transcodeCodecSupporter interface {
 	SupportsTranscodeCodec(codec string) bool
 }
@@ -259,6 +268,11 @@ type hlsSession struct {
 	audioStreamIndex      *int
 	sourceVideo           VideoSignal
 	burnSubtitleIndex     int
+	// burnSubtitleFile and burnFontsDir are the extracted styled subtitle
+	// script and its embedded fonts when the burned stream is ASS/SSA text;
+	// empty for a bitmap burn-in, which overlays the stream directly.
+	burnSubtitleFile string
+	burnFontsDir     string
 	// encodePolicy is the Console encode policy this session started under
 	// (CORE-2452); nil when the transcoder applies none.
 	encodePolicy *ffmpeg.EncodePolicy
@@ -455,7 +469,9 @@ func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 		SourceVideoCodec:    h.sourceVideo.Codec,
 		SourceVideoBitDepth: h.sourceVideo.BitDepth,
 	}
-	if h.burnSubtitleIndex >= 0 {
+	if h.burnSubtitleFile != "" {
+		rendition = rendition.WithBurnTextSubtitle(h.burnSubtitleIndex, h.burnSubtitleFile, h.burnFontsDir)
+	} else if h.burnSubtitleIndex >= 0 {
 		rendition = rendition.WithBurnSubtitle(h.burnSubtitleIndex)
 	}
 	if h.picture != nil {
@@ -1097,7 +1113,7 @@ func (b *LiveBinding) prepare(ctx context.Context, src string, durationSeconds, 
 			return nil, errSetupUnavailable
 		}
 		audioOnlyPeak := audioOnlyBandwidth(audioProfile, shape.AudioSource, !shape.Adjust.IsZero())
-		prepared, err := s.session(ctx, b, source, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, claim.picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, shape.Encrypted, b.library, priority)
+		prepared, err := s.session(ctx, b, source, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, shape.BurnSubtitleText, audioProfile, audioStreamIndex, claim.picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, shape.Encrypted, b.library, priority)
 		if !errors.Is(err, errDurationChanged) {
 			return prepared, err
 		}
@@ -1473,7 +1489,7 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // non-zero adjust stretches durationSeconds (a source duration) onto the
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung. audioOnly (an audio-class Media) offers that rung too.
-func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sourceCapture, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, library store.LibraryID, priority Priority) (*hlsSession, error) {
+func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sourceCapture, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, burnText bool, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, library store.LibraryID, priority Priority) (*hlsSession, error) {
 	key, src := binding.session.key, source.path
 	sourceInfo, sourceGeneration := source.info, source.generation
 	var watchSession *hlsSession
@@ -1607,6 +1623,9 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 			write = func(rel string, data []byte) error { return s.writeSetupPlaylist(session, rel, data) }
 		}
 		err = writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline, primed, write)
+	}
+	if err == nil && burnText && burnSubtitleIndex >= 0 {
+		session.burnSubtitleFile, session.burnFontsDir, err = s.extractBurnSubtitle(ctx, src, dir, burnSubtitleIndex)
 	}
 	var preparedPicture *ffmpeg.ComposedPicture
 	if err == nil && picture != nil {
@@ -2462,4 +2481,43 @@ func inspectMediaBoxes(r io.ReaderAt, size int64) (empty, readable bool) {
 		off += boxSize
 	}
 	return true, true
+}
+
+// extractBurnSubtitle writes the styled subtitle stream index of src and the
+// font attachments of src into dir, for a libass burn-in. A font that cannot
+// be read is skipped: libass falls back to a system font for it, as mpv does.
+func (s *Sessions) extractBurnSubtitle(ctx context.Context, src, dir string, index int) (file, fontsDir string, err error) {
+	extractor, ok := s.transcoder.(styledSubtitleExtractor)
+	if !ok {
+		return "", "", errors.New("playback: styled subtitle burn-in needs a subtitle extractor")
+	}
+	script, err := extractor.ExtractStyledSubtitle(ctx, src, index)
+	if err != nil {
+		return "", "", fmt.Errorf("playback: extract styled subtitle %d: %w", index, err)
+	}
+	base := filepath.Join(dir, "burn-subtitle")
+	fontsDir = filepath.Join(base, "fonts")
+	if err := os.MkdirAll(fontsDir, 0o700); err != nil {
+		return "", "", err
+	}
+	file = filepath.Join(base, "subtitle.ass")
+	if err := os.WriteFile(file, script, 0o600); err != nil {
+		return "", "", err
+	}
+	fonts, err := extractor.SubtitleFontIndexes(ctx, src)
+	if err != nil {
+		slog.Warn("playback: list subtitle fonts", "err", err)
+		return file, fontsDir, nil
+	}
+	for _, font := range fonts {
+		data, err := extractor.ExtractSubtitleFont(ctx, src, font)
+		if err != nil {
+			slog.Warn("playback: extract subtitle font", "stream", font, "err", err)
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(fontsDir, "font-"+strconv.Itoa(font)+".ttf"), data, 0o600); err != nil {
+			return "", "", err
+		}
+	}
+	return file, fontsDir, nil
 }

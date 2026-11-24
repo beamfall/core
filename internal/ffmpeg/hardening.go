@@ -249,6 +249,17 @@ func dirConfinement(inputPath, outputDir string) confinement {
 	return confinement{ReadOnly: ro, ReadWrite: rw}
 }
 
+// withBurnText grants read-only access to a text burn's extracted script and
+// fonts (Rendition.WithBurnTextSubtitle), which sit outside the source and
+// output directories. Other renditions are returned unchanged.
+func (c confinement) withBurnText(r Rendition) confinement {
+	if r.burnText == nil {
+		return c
+	}
+	c.ReadOnly = subtract(dedupeDirs(append(append([]string{}, c.ReadOnly...), dirOf(r.burnText.file), r.burnText.fontsDir)...), c.ReadWrite)
+	return c
+}
+
 // dirOf returns the cleaned directory containing path. A path that is already a
 // directory pattern (e.g. an HLS segment template's directory was passed) is
 // handled by the caller passing the directory directly; here path is always a
