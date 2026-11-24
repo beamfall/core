@@ -1,7 +1,7 @@
 # web-player-displays Specification
 
 ## Purpose
-TBD - created by archiving change core-3314-web-player-displays. Update Purpose after archive.
+Let the embedded Web UI manage Player Profiles and their walk-up and controller rules, bind devices to them, list player displays in the Play on picker, serve the QR remote route for a display handle, and show player displays on a party's screens (ADR-0240).
 
 ## Requirements
 
