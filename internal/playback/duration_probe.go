@@ -150,9 +150,15 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	seconds := 0
 	valid := true
 	if leader {
-		// Detach from caller 1's cancellation so one client disconnecting
-		// cannot abort the shared singleflight probe for concurrent waiters.
-		probeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), durationProbeTimeout)
+		// Tie the shared singleflight probe to the library operation context
+		// (so DrainLibrary/Close cancel it immediately) while detaching from
+		// caller 1's individual request cancellation so other waiters still
+		// receive the result.
+		baseCtx := context.WithoutCancel(ctx)
+		if op != nil && op.ctx != nil {
+			baseCtx = op.ctx
+		}
+		probeCtx, cancel := context.WithTimeout(baseCtx, durationProbeTimeout)
 		if probe, err := prober.Probe(probeCtx, path); err == nil && probe.DurationSeconds > 0 {
 			seconds = probe.DurationSeconds
 		}

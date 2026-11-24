@@ -85,7 +85,7 @@ func TestRenditionAMFArgs(t *testing.T) {
 		t.Fatalf("AMF videoArgs = %v, want %v", got, want)
 	}
 	want := []string{"-vf", "scale=-2:min(ih\\,720),format=nv12",
-		"-quality", "speed", "-forced_idr", "1", "-rc", "vbr_peak", "-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}
+		"-quality", "speed", "-forced_idr", "1", "-vbaq", "1", "-rc", "vbr_peak", "-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}
 	if got := r.args(); !equalArgs(got, want) {
 		t.Fatalf("AMF args = %v, want %v", got, want)
 	}

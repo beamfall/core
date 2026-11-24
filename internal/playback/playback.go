@@ -2419,13 +2419,13 @@ func chosenAudioStream(streams []store.MediaFileStream, chosen int) *store.Media
 
 // hlsCopyableAudioStream reports whether the chosen audio stream can be
 // stream-copied into CMAF fMP4 HLS without re-encoding (preserving Atmos/E-AC-3,
-// AC-3, AAC, FLAC, ALAC, and Opus when the client declares native support).
+// AC-3, and AAC when the client declares native support).
 func hlsCopyableAudioStream(source *store.MediaFileStream, profile CapabilityProfile, ov quirkOverlay) bool {
 	if source == nil || len(profile.AudioCodecs) == 0 || source.DecodedSamples > 0 {
 		return false
 	}
 	switch audioCodecFamily(source.Codec) {
-	case "aac", "ac3", "eac3", "flac", "alac", "opus":
+	case "aac", "ac3", "eac3":
 	default:
 		return false
 	}

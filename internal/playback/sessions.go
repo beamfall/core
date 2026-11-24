@@ -1614,22 +1614,6 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 		existing.scratch.users++
 		return existing, nil
 	}
-	// 1-to-N live fan-out (CORE-3446): for unencrypted live composed karaoke
-	// streams and Watch Party foreground streams, multiple screens watching the
-	// exact same Media with identical immutable encode parameters share the
-	// already-running encoder and scratch segments instead of spawning N
-	// independent FFmpeg (+ wazero) processes.
-	if existing == nil && secure == nil && (picture != nil || priority == PriorityForeground) {
-		if donor := s.findSharedDonorLocked(key, library, sourceGeneration, sourceInfo, src, durationSeconds, primed, timeline, degraded, requestedRungs, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, adjust, policy, priority); donor != nil {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			s.transitionLocked(donor, reuseSession{priority: priority, at: now})
-			source.publishLocked()
-			donor.scratch.users++
-			return donor, nil
-		}
-	}
 	allocation := &scratchAllocation{key: key, library: library}
 	if s.allocations == nil {
 		s.allocations = make(map[*scratchAllocation]struct{})
@@ -2134,69 +2118,6 @@ func (s *hlsSession) withinSeekLookaheadLocked(rung Rung, base, segment int) boo
 	frontierPos := s.segmentStart(rung, max(s.frontier, base))
 	targetPos := s.segmentStart(rung, segment)
 	return targetPos >= frontierPos && targetPos-frontierPos <= maxAhead
-}
-
-// findSharedDonorLocked returns an already-running unencrypted session whose
-// immutable encode parameters match the caller's request so multiple screens
-// watching the same stream share one FFmpeg process and scratch directory.
-// Callers hold s.mu.
-func (s *Sessions) findSharedDonorLocked(
-	key SessionKey,
-	library store.LibraryID,
-	sourceGeneration string,
-	sourceInfo os.FileInfo,
-	src string,
-	durationSeconds int,
-	primed primedGrid,
-	timeline *keyframeTimeline,
-	degraded bool,
-	requestedRungs []Rung,
-	sourceVideo VideoSignal,
-	burnSubtitleIndex int,
-	audioProfile ffmpeg.AudioProfile,
-	audioStreamIndex *int,
-	picture *ComposedPicture,
-	adjust ffmpeg.AudioAdjust,
-	policy *ffmpeg.EncodePolicy,
-	priority Priority,
-) *hlsSession {
-	for _, donor := range s.sessions {
-		if donor == nil || donor.state != sessionRunning || donor.scratch == nil || donor.secure != nil || donor.proc == nil || donor.start != nil {
-			continue
-		}
-		if picture == nil && donor.priority != priority {
-			continue
-		}
-		if donor.key.MediaID != key.MediaID || donor.scratch.library != library {
-			continue
-		}
-		if donor.sourceGeneration != sourceGeneration || (donor.sourceInfo != nil && !sameSourceFile(donor.sourceInfo, sourceInfo)) {
-			continue
-		}
-		if donor.src != src || donor.durationSeconds != durationSeconds || donor.primed != primed ||
-			donor.timeline != timeline || donor.degraded != degraded || !rungsEqual(donor.rungs, requestedRungs) {
-			continue
-		}
-		if donor.sourceVideo != sourceVideo || donor.burnSubtitleIndex != burnSubtitleIndex ||
-			!audioProfilesEqual(donor.audioProfile, audioProfile) || !equalOptionalInt(donor.audioStreamIndex, audioStreamIndex) {
-			continue
-		}
-		if (donor.composed == nil) != (picture == nil) || (picture != nil && *donor.composed != *picture) {
-			continue
-		}
-		if donor.adjust != adjust || !equalEncodePolicy(donor.encodePolicy, policy) {
-			continue
-		}
-		return donor
-	}
-	return nil
-}
-
-func equalEncodePolicy(a, b *ffmpeg.EncodePolicy) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
 }
 
 // reapProcess waits for run's process to exit, classifies the exit, releases

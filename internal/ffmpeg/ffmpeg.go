@@ -385,9 +385,6 @@ func (r *Runner) launchRendition(ctx context.Context, rendition Rendition) Rendi
 	if r.renditionPolicy(rendition).SoftwareOnly {
 		return rendition
 	}
-	if rendition.sdrDeviceDecodeEligible() {
-		return rendition.withSDRDeviceDecode(true)
-	}
 	rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(ctx, rendition))
 	return rendition.withDeviceDecode(selectRenditionDeviceDecode(ctx, rendition))
 }
@@ -2082,7 +2079,10 @@ func (r Rendition) rateControlArgs() []string {
 		case HWAccelQSV:
 			out = append(out, "-preset", pick(high, "medium", "veryfast"), "-forced_idr", "1")
 		case HWAccelAMF:
-			out = append(out, "-quality", pick(high, "balanced", "speed"), "-forced_idr", "1", "-vbaq", "1")
+			out = append(out, "-quality", pick(high, "balanced", "speed"), "-forced_idr", "1")
+			if r.VideoCodec != "av1" {
+				out = append(out, "-vbaq", "1")
+			}
 			if high {
 				out = append(out, "-preanalysis", "1")
 			}
