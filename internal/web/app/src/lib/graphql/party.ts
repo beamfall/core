@@ -137,7 +137,7 @@ const STAGE_ENTRY = `${ENTRY} ineligible label`;
 const STAGE = `sessionID serverNowMS current { ${STAGE_ENTRY} } playback { ${PLAYBACK} } upNext { ${STAGE_ENTRY} } ticker qrCorner muted joinCode joinPath`;
 
 const PARTY_SESSION_QUERY = `query PartySession { partySession { ${SESSION} } }`;
-const PARTY_STAGE_QUERY = `query PartyStage($sessionID: String!, $screenID: String) { partyStage(sessionID: $sessionID, screenID: $screenID) { ${STAGE} } }`;
+const PARTY_STAGE_QUERY = `query PartyStage($sessionID: String!, $screenID: String!) { partyStage(sessionID: $sessionID, screenID: $screenID) { ${STAGE} } }`;
 const PARTY_START_MUTATION = `mutation PartyStart($libraryIDs: [String!]!, $fairness: String, $autoAdd: Boolean) { partyStart(libraryIDs: $libraryIDs, fairness: $fairness, autoAdd: $autoAdd) { ${SESSION} } }`;
 const PARTY_END_MUTATION = "mutation PartyEnd { partyEnd }";
 const PARTY_UPDATE_MUTATION = `mutation PartyUpdate($fairness: String, $autoAdd: Boolean, $joinOpen: Boolean) { partyUpdate(fairness: $fairness, autoAdd: $autoAdd, joinOpen: $joinOpen) { ${SESSION} } }`;

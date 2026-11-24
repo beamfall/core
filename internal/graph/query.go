@@ -90,8 +90,10 @@ func prepareOperation(req request) (operationPlan, error) {
 // resolver must see one set: an argument bound to a variable of any name
 // (`profileID: $id`) counts under the argument's name, and an operation
 // variable no argument of this field references counts for nothing, even
-// when it shares an argument's name.
+// when it shares an argument's name. partyStage's screenID is required since
+// wire 3.0.0 (CORE-3399), so a stage read must bind it, not inherit it.
 var argumentBoundFields = map[string]bool{
+	"partystage":    true,
 	"updateprofile": true,
 }
 

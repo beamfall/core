@@ -75,6 +75,16 @@ func TestPartyStageBindingTwoRegistrationsAndNonLeakingRefusal(t *testing.T) {
 	if len(errNoScreen) != 1 || !strings.Contains(errNoScreen[0].Message, "screenID") {
 		t.Fatalf("partyStage without screenID errors = %#v, want one error naming screenID", errNoScreen)
 	}
+	// An operation variable named screenID that the field never binds counts for
+	// nothing, even when it names the caller's own registration.
+	unbound, _ := json.Marshal(map[string]any{
+		"query":     fmt.Sprintf(`query($screenID: String!) { partyStage(sessionID: %q) { sessionID } }`, session.ID),
+		"variables": map[string]any{"screenID": scr1.ID},
+	})
+	_, errUnbound := post(t, h, string(unbound), withPlayerControl(authorizeRevealed))
+	if len(errUnbound) != 1 || !strings.Contains(errUnbound[0].Message, "screenID") {
+		t.Fatalf("partyStage with an unbound screenID variable errors = %#v, want one error naming screenID", errUnbound)
+	}
 }
 
 func TestPartyScreenLeadRefusesWhenAccessScheduleCloses(t *testing.T) {
