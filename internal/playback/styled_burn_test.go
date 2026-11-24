@@ -226,14 +226,33 @@ func TestStyledBurnStaysOnAdvertisingVersion(t *testing.T) {
 	withTextSubtitleBurnIn(t, true)
 	assIndex := 2
 	service, st, scope := capabilityTestService(t)
-	mediaID := importProbedMedia(t, st, "fp-ass-v0", "matroska", "h264", 1920, 1080, []store.MediaFileStream{
-		videoStream("h264", "High", 0, ""),
-		audioStream(1, "aac", 2),
-		{Index: assIndex, Type: "subtitle", Codec: "ass", Language: "jpn"},
+	// Both Versions direct-play on the profile, so only the subtitle
+	// selection could steer negotiation to the sibling without the track.
+	// A multi-Version Media judges each Version's container by its file
+	// name, so the default file is named as an mp4 too.
+	path := filepath.Join(t.TempDir(), "fp-ass-v0.mp4")
+	if err := os.WriteFile(path, []byte("beamfall bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
+		LibraryID: "library-local", Path: path, Title: "Styled versions", Container: "mp4", Codec: "h264",
+		Class: store.MediaClassVideo, ContentFingerprint: "fp-ass-v0", DurationSecondsHint: 120,
+		VideoWidthHint: 1920, VideoHeightHint: 1080,
+		Streams: []store.MediaFileStream{
+			videoStream("h264", "High", 0, ""),
+			audioStream(1, "aac", 2),
+			{Index: assIndex, Type: "subtitle", Codec: "ass", Language: "jpn"},
+		},
 	})
-	alt := []store.MediaFileStream{videoStream("h264", "High", 0, ""), audioStream(1, "aac", 2)}
-	addVersion(t, st, mediaID, "fp-ass-alt-0", "alt", 0, alt)
-	addVersion(t, st, mediaID, "fp-ass-alt-1", "alt", 1, alt)
+	if err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+	mediaID := media.ID
+	addVersionFile(t, st, mediaID, "fp-ass-alt.mp4", "fp-ass-alt", "alt", 0,
+		[]store.MediaFileStream{videoStream("h264", "High", 0, ""), audioStream(1, "aac", 2)})
+	if resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: appleOverlayProfile}); err != nil || resp.Decision != "direct-play" || !resp.Versions[0].Selected {
+		t.Fatalf("precondition: unselected Info = %q, Versions %+v, %v; want direct play of the default Version", resp.Decision, resp.Versions, err)
+	}
 
 	resp, err := service.Info(context.Background(), scope, InfoRequest{
 		MediaID: string(mediaID), CapabilityProfile: appleOverlayProfile, SelectedSubtitleIndex: &assIndex,
@@ -241,8 +260,8 @@ func TestStyledBurnStaysOnAdvertisingVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if resp.Decision != "transcode" || len(resp.Parts) != 0 {
-		t.Fatalf("Decision = %q (%q), Parts = %d; want a transcode of the default Version that burns the track", resp.Decision, resp.Reason, len(resp.Parts))
+	if resp.Decision != "transcode" || !resp.Versions[0].Selected {
+		t.Fatalf("Decision = %q (%q), Versions %+v; want a transcode of the default Version that burns the track", resp.Decision, resp.Reason, resp.Versions)
 	}
 	grant, err := service.tokens.UnverifiedGrant(resp.Streams[0].Token, streamtoken.TargetMediaHLS)
 	if err != nil {
@@ -251,4 +270,30 @@ func TestStyledBurnStaysOnAdvertisingVersion(t *testing.T) {
 	if got := grant.BurnSubtitleIndex - 1; got != assIndex {
 		t.Fatalf("BurnSubtitleIndex = %d, want %d", got, assIndex)
 	}
+}
+
+// TestStyledBurnSkipsSourceThatCannotTranscode: a Dolby Vision profile 5
+// source has no base layer to re-encode, so a burn could never start. The ASS
+// track keeps its WebVTT URL and the source keeps its direct-play rung.
+func TestStyledBurnSkipsSourceThatCannotTranscode(t *testing.T) {
+	withTextSubtitleBurnIn(t, true)
+	assIndex := 2
+	service, st, scope := capabilityTestService(t)
+	mediaID := importProbedMedia(t, st, "fp-ass-dv5", "mp4", "hevc", 3840, 2160, []store.MediaFileStream{
+		videoStream("hevc", "Main 10", 5, "smpte2084"),
+		audioStream(1, "aac", 2),
+		{Index: assIndex, Type: "subtitle", Codec: "ass", Language: "jpn"},
+	})
+	profile := appleOverlayProfile
+	profile.HDRFormats = []string{"dolby-vision-p5"}
+	resp, err := service.Info(context.Background(), scope, InfoRequest{
+		MediaID: string(mediaID), CapabilityProfile: profile, SelectedSubtitleIndex: &assIndex,
+	})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if resp.Decision == "unavailable" || resp.Decision == "transcode" {
+		t.Fatalf("Decision = %q (%q); want the source to play without a burn", resp.Decision, resp.Reason)
+	}
+	assertCaptionURLs(t, resp.CaptionTracks, map[int]bool{assIndex: true})
 }

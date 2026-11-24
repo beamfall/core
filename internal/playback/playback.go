@@ -1357,6 +1357,12 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 		// Every rung below judges the negotiated Version by its own file facts.
 		media = versionFacts(media, file, streams, !alternate)
 	}
+	// A source no full transcode can re-encode (Dolby Vision profile 5, an
+	// unproven tone-map) could never receive a burn, so its styled track keeps
+	// the sidecar and the source keeps any direct-play or remux rung.
+	if ov.styledSubtitleBurnIn && VideoSignalFromStreams(streams).fullTranscodeRefusal(ctx) != "" {
+		ov.styledSubtitleBurnIn = false
+	}
 	// The catalog runtime belongs to the primary Version. Probe single-Part
 	// alternatives and files whose runtime is missing on demand (CORE-2314).
 	if alternate {

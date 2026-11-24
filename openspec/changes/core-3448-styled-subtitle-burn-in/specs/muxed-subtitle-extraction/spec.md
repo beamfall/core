@@ -32,7 +32,8 @@ delivering the stream as a WebVTT sidecar.
 
 #### Scenario: Other cases that cannot burn
 
-- **WHEN** the Library is encrypted, the media is audio, or the profile may not transcode
+- **WHEN** the Library is encrypted, the media is audio, the profile may not transcode, or no full
+  transcode can re-encode the source (such as Dolby Vision profile 5)
 - **THEN** the ASS track is delivered as a WebVTT sidecar
 
 ### Requirement: A caption track the server burns in has no WebVTT URL
