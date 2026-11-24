@@ -24,6 +24,8 @@ export const profileDeviceStrings = {
     libraryAccessRevealRequired: "Reveal required",
     libraryAccessSave: "Save library access",
     libraryAccessSaveFailed: "Library access was not saved. Try again.",
+    libraryAccessRestrictedDropped:
+      "Restricted Libraries are removed from this Player Profile when you save.",
     devicesUnavailable: "Could not load devices.",
     devicesEmpty: "No devices are enrolled yet.",
     deviceColName: "Device",
@@ -60,6 +62,8 @@ export const profileDeviceStrings = {
     libraryAccessRevealRequired: "Révélation requise",
     libraryAccessSave: "Enregistrer l’accès aux bibliothèques",
     libraryAccessSaveFailed: "L’accès aux bibliothèques n’a pas été enregistré. Réessayez.",
+    libraryAccessRestrictedDropped:
+      "Les bibliothèques restreintes seront retirées de ce profil de lecture à l’enregistrement.",
     devicesUnavailable: "Impossible de charger les appareils.",
     devicesEmpty: "Aucun appareil n’est encore enregistré.",
     deviceColName: "Appareil",
@@ -96,6 +100,8 @@ export const profileDeviceStrings = {
     libraryAccessRevealRequired: "Anzeigen erforderlich",
     libraryAccessSave: "Bibliothekszugriff speichern",
     libraryAccessSaveFailed: "Der Bibliothekszugriff wurde nicht gespeichert. Versuche es erneut.",
+    libraryAccessRestrictedDropped:
+      "Eingeschränkte Bibliotheken werden beim Speichern von diesem Wiedergabeprofil entfernt.",
     devicesUnavailable: "Die Geräte konnten nicht geladen werden.",
     devicesEmpty: "Noch keine Geräte registriert.",
     deviceColName: "Gerät",
@@ -132,6 +138,8 @@ export const profileDeviceStrings = {
     libraryAccessRevealRequired: "Requiere revelar",
     libraryAccessSave: "Guardar acceso a bibliotecas",
     libraryAccessSaveFailed: "No se guardó el acceso a las bibliotecas. Inténtalo de nuevo.",
+    libraryAccessRestrictedDropped:
+      "Las bibliotecas restringidas se quitarán de este perfil de reproducción al guardar.",
     devicesUnavailable: "No se pudieron cargar los dispositivos.",
     devicesEmpty: "Aún no hay dispositivos registrados.",
     deviceColName: "Dispositivo",
@@ -168,6 +176,8 @@ export const profileDeviceStrings = {
     libraryAccessRevealRequired: "Exige revelar",
     libraryAccessSave: "Salvar acesso às bibliotecas",
     libraryAccessSaveFailed: "O acesso às bibliotecas não foi salvo. Tente novamente.",
+    libraryAccessRestrictedDropped:
+      "As bibliotecas restritas serão removidas deste perfil de reprodução ao salvar.",
     devicesUnavailable: "Não foi possível carregar os dispositivos.",
     devicesEmpty: "Nenhum dispositivo cadastrado ainda.",
     deviceColName: "Dispositivo",

@@ -100,10 +100,11 @@ describe("PlayerProfiles", () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
-  it("lets the owner remove a Library that became restricted after it was granted", async () => {
+  it("drops restricted and hidden grants on the next save and says so", async () => {
     const user = userEvent.setup();
     vi.mocked(fetchLibraries).mockResolvedValue([
       { id: "lib-films", title: "Films", pluginID: null, previewClips: false, restricted: false },
+      { id: "lib-music", title: "Music", pluginID: null, previewClips: false, restricted: false },
       {
         id: "lib-private",
         title: "Private",
@@ -115,15 +116,16 @@ describe("PlayerProfiles", () => {
     vi.mocked(setProfileLibraries)
       .mockReset()
       .mockResolvedValue(undefined as never);
-    renderSection(state([{ ...lounge, libraryIDs: ["lib-films", "lib-private"] }]));
-    const priv = await screen.findByRole("checkbox", { name: /Private/ });
-    expect(priv).toBeChecked();
-    expect(priv).toBeEnabled();
-    expect(screen.queryByText("Reveal required")).not.toBeInTheDocument();
-    await user.click(priv);
-    expect(priv).toBeDisabled();
+    // lib-hidden is a restricted Library this owner cannot see until Reveal.
+    renderSection(state([{ ...lounge, libraryIDs: ["lib-films", "lib-private", "lib-hidden"] }]));
+    expect(await screen.findByRole("checkbox", { name: /Films/ })).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: /Private/ })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Restricted Libraries are removed from this Player Profile when you save."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: /Music/ }));
     await user.click(screen.getByRole("button", { name: "Save library access" }));
-    expect(setProfileLibraries).toHaveBeenCalledWith("pl1", ["lib-films"]);
+    expect(setProfileLibraries).toHaveBeenCalledWith("pl1", ["lib-films", "lib-music"]);
   });
 
   it("says so when a grant save fails", async () => {

@@ -108,17 +108,21 @@ function PlayerProfileRow({
           {t("consoleProfilesDisableEffect")}
         </ConfirmButton>
       </div>
-      <LibraryGrantEditor
-        // Remounts only the grant editor when the saved grants change, so
-        // unsaved controller edits survive a grant save.
-        key={profile.libraryIDs.join(",")}
-        profileID={profile.id}
-        granted={profile.libraryIDs}
-        libraries={libraries.data ?? []}
-        failed={libraries.failed && libraries.data === null}
-        onChanged={onChanged}
-        noRestricted
-      />
+      {/* Waits for the Library list: the editor drops grants it cannot match
+          to a grantable Library, so an empty list must not reach it. */}
+      {(libraries.data !== null || libraries.failed) && (
+        <LibraryGrantEditor
+          // Remounts only the grant editor when the saved grants change, so
+          // unsaved controller edits survive a grant save.
+          key={profile.libraryIDs.join(",")}
+          profileID={profile.id}
+          granted={profile.libraryIDs}
+          libraries={libraries.data ?? []}
+          failed={libraries.failed && libraries.data === null}
+          onChanged={onChanged}
+          noRestricted
+        />
+      )}
       <WalkUp profile={profile} onChanged={onChanged} />
       <Controllers profile={profile} household={household} onChanged={onChanged} />
     </li>
