@@ -414,7 +414,15 @@ function StagePlayer({
       const drift = actualMS - targetMS;
       driftRef.current = drift;
       if (!video.ended && !video.seeking && Math.abs(drift) > SEEK_DRIFT_MS) {
+        video.playbackRate = 1;
         video.currentTime = targetMS / 1000 / rate;
+      } else if (!video.ended && !video.seeking && current.state === "playing" && Math.abs(drift) > 25) {
+        // Smooth proportional rate nudging (±5% cap) closes sub-250ms drift
+        // without audible/visual seek glitches between rooms/screens.
+        const nudge = Math.max(-0.05, Math.min(0.05, -drift / 2000));
+        video.playbackRate = 1 + nudge;
+      } else if (video.playbackRate !== 1) {
+        video.playbackRate = 1;
       }
       if (current.state === "playing" && video.paused && !video.ended) {
         video.play().then(

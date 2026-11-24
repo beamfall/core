@@ -70,12 +70,26 @@ func (a AudioAdjust) OutputPosition(sourceSeconds int) int {
 // together, then atempo restores the wanted speed. Within the accepted ranges
 // the atempo factor stays inside the 0.5 to 2 one filter instance takes.
 func (a AudioAdjust) Filters() []string {
+	return a.FiltersWithRubberband(false)
+}
+
+// FiltersWithRubberband builds the audio filter chain for the adjustment.
+// When useRubberband is true and a pitch shift is requested, it emits
+// rubberband with formant preservation for higher-quality vocal/music pitch
+// shifting; otherwise it falls back to the portable asetrate + atempo chain.
+func (a AudioAdjust) FiltersWithRubberband(useRubberband bool) []string {
 	if a.IsZero() {
 		return nil
 	}
 	tempo := a.tempo()
 	if a.PitchSemitones == 0 {
 		return []string{"atempo=" + formatFactor(tempo)}
+	}
+	if useRubberband {
+		pitch := math.Pow(2, float64(a.PitchSemitones)/12)
+		return []string{
+			fmt.Sprintf("rubberband=pitch=%s:tempo=%s:formant=preserved", formatFactor(pitch), formatFactor(tempo)),
+		}
 	}
 	rate := int(math.Round(adjustSampleRate * math.Pow(2, float64(a.PitchSemitones)/12)))
 	shift := float64(rate) / adjustSampleRate
