@@ -19,7 +19,10 @@ import { NativeSelect } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { displayString } from "@/lib/display";
 import {
+  PARTY_QR_CORNERS,
   type PartyEntry,
+  type PartyQRCorner,
+  type PartyScreen,
   type PartySession,
   type PlaybackAdjustmentRanges,
   partyAdd,
@@ -30,6 +33,7 @@ import {
   partyRemoveParticipant,
   partyRestore,
   partyReview,
+  partyScreenDisplay,
   partyScreenDrop,
   partyScreenTicker,
   type SearchResultItem,
@@ -277,9 +281,35 @@ function Stepper({
   );
 }
 
+const QR_CORNER_LABEL = {
+  off: "partyHostQROff",
+  "top-left": "partyHostQRTopLeft",
+  "top-right": "partyHostQRTopRight",
+  "bottom-left": "partyHostQRBottomLeft",
+  "bottom-right": "partyHostQRBottomRight",
+} as const satisfies Record<PartyQRCorner, string>;
+
 export function PartyScreens({ session, run }: PanelProps) {
   const t = useT();
   const joinHref = useHref(stagePath(session.id, true));
+  // The last display each screen was asked for, until its write settles, so a
+  // second control sent before the first returns does not undo it.
+  const pending = useRef(new Map<string, { qrCorner: PartyQRCorner; muted: boolean }>());
+  const [, rerender] = useState(0);
+  const displayOf = (screen: PartyScreen) => pending.current.get(screen.id) ?? screen;
+  const setDisplay = (
+    screen: PartyScreen,
+    next: Partial<Pick<PartyScreen, "qrCorner" | "muted">>,
+  ) => {
+    const current = displayOf(screen);
+    const want = { qrCorner: current.qrCorner, muted: current.muted, ...next };
+    pending.current.set(screen.id, want);
+    rerender((n) => n + 1);
+    void run(() => partyScreenDisplay(screen.id, want.qrCorner, want.muted)).finally(() => {
+      if (pending.current.get(screen.id) === want) pending.current.delete(screen.id);
+      rerender((n) => n + 1);
+    });
+  };
   return (
     <Panel title={t("partyHostScreens")} className="bf-party-screens">
       {session.screens.length === 0 ? (
@@ -288,6 +318,7 @@ export function PartyScreens({ session, run }: PanelProps) {
         <ul className="flex flex-col gap-2">
           {session.screens.map((screen) => {
             const inSync = screenInSync(screen);
+            const display = displayOf(screen);
             const status =
               screen.reportedAt === ""
                 ? t("partyHostScreenWaiting")
@@ -308,15 +339,41 @@ export function PartyScreens({ session, run }: PanelProps) {
                     </span>
                   </span>
                 </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <Switch
-                    checked={screen.ticker}
-                    onCheckedChange={(ticker) =>
-                      void run(() => partyScreenTicker(screen.id, ticker))
-                    }
-                  />
-                  {t("partyHostTicker")}
-                </label>
+                <div className="bf-party-screen-controls">
+                  <label className="flex items-center gap-2 text-sm">
+                    <span>{t("partyHostQRCorner")}</span>
+                    <NativeSelect
+                      value={display.qrCorner}
+                      aria-label={t("partyHostQRCornerOn", { name: screen.name })}
+                      onValueChange={(corner) =>
+                        setDisplay(screen, { qrCorner: corner as PartyQRCorner })
+                      }
+                    >
+                      {PARTY_QR_CORNERS.map((corner) => (
+                        <option key={corner} value={corner}>
+                          {t(QR_CORNER_LABEL[corner])}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Switch
+                      checked={display.muted}
+                      aria-label={t("partyHostMuteScreen", { name: screen.name })}
+                      onCheckedChange={(muted) => setDisplay(screen, { muted })}
+                    />
+                    {t("partyHostMute")}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Switch
+                      checked={screen.ticker}
+                      onCheckedChange={(ticker) =>
+                        void run(() => partyScreenTicker(screen.id, ticker))
+                      }
+                    />
+                    {t("partyHostTicker")}
+                  </label>
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"

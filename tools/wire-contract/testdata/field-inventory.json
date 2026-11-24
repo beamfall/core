@@ -2585,6 +2585,32 @@
       ]
     },
     {
+      "field": "partyscreendisplay",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
       "field": "partyscreendrop",
       "effect": "write",
       "tier": "session",
@@ -2619,8 +2645,10 @@
         "id",
         "kind",
         "lead",
+        "muted",
         "name",
         "offsetMS",
+        "qrCorner",
         "reportedAt",
         "rttMS",
         "ticker"
@@ -2691,7 +2719,9 @@
         "current",
         "joinCode",
         "joinPath",
+        "muted",
         "playback",
+        "qrCorner",
         "serverNowMS",
         "sessionID",
         "ticker",

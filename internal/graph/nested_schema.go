@@ -236,6 +236,7 @@ var resultTypes = map[string]any{
 	"partyscreenregister":                PartyScreenInfo{},
 	"partyscreenreport":                  partyBooleanResult{},
 	"partyscreenticker":                  PartySessionInfo{},
+	"partyscreendisplay":                 PartySessionInfo{},
 	"partyscreendrop":                    PartySessionInfo{},
 	"queueaddmany":                       PlayQueueInfo{},
 	"queuemoveentry":                     PlayQueueInfo{},
@@ -596,6 +597,12 @@ var fieldArguments = map[string][]NestedArgument{
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "screenID", Kind: "string"},
 		{Name: "ticker", Kind: "boolean"},
+	},
+	"partyscreendisplay": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "muted", Kind: "boolean"},
+		{Name: "qrCorner", Kind: "string"},
+		{Name: "screenID", Kind: "string"},
 	},
 	"partyscreendrop": {
 		{Name: "expectedProfileID", Kind: "string", Optional: true},

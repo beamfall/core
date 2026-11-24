@@ -14,7 +14,7 @@ const partySelection = `{ id joinCode joinPath fairness autoAdd joinOpen library
 	entries { id mediaID participantID participantName state pinned position etaSeconds addedAt }
 	requests { id } recent { id } removed { id } skipped { id }
 	participants { id name guest waiting lastTurnAt }
-	screens { id name kind carrier lead ticker offsetMS rttMS reportedAt } }`
+	screens { id name kind carrier lead ticker qrCorner muted offsetMS rttMS reportedAt } }`
 
 func TestPartySessionGraphOperations(t *testing.T) {
 	h := newTestHandlerWithStore(storetest.Open(t))
@@ -89,10 +89,15 @@ func TestPartySessionGraphOperations(t *testing.T) {
 		t.Fatalf("partyScreenTicker = %+v", session.Screens)
 	}
 
+	session = write("partyScreenDisplay", fmt.Sprintf(`mutation { partyScreenDisplay(screenID: %q, qrCorner: "top-right", muted: true)`, screen.ID))
+	if len(session.Screens) != 1 || session.Screens[0].QRCorner != "top-right" || !session.Screens[0].Muted {
+		t.Fatalf("partyScreenDisplay = %+v", session.Screens)
+	}
+
 	var stage PartyStageInfo
-	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`{ partyStage(sessionID: %q, screenID: %q) { sessionID serverNowMS current { id } playback { state } upNext { id } ticker joinCode joinPath } }`, session.ID, screen.ID),
+	execGraph(t, h, authorizeRevealed, fmt.Sprintf(`{ partyStage(sessionID: %q, screenID: %q) { sessionID serverNowMS current { id } playback { state } upNext { id } ticker qrCorner muted joinCode joinPath } }`, session.ID, screen.ID),
 		nil, "partyStage", &stage)
-	if stage.SessionID != session.ID || stage.Current == nil || stage.Current.ID != second || !stage.Ticker || stage.JoinPath == "" || stage.ServerNowMS == 0 {
+	if stage.SessionID != session.ID || stage.Current == nil || stage.Current.ID != second || !stage.Ticker || stage.QRCorner != "top-right" || !stage.Muted || stage.JoinPath == "" || stage.ServerNowMS == 0 {
 		t.Fatalf("partyStage = %+v", stage)
 	}
 

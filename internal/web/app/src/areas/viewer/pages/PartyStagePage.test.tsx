@@ -62,6 +62,8 @@ function stage(over: Partial<PartyStage> = {}): PartyStage {
     playback: null,
     upNext: [],
     ticker: true,
+    qrCorner: "off",
+    muted: false,
     joinCode: "QZXW",
     joinPath: "/web/join/QZXW",
     ...over,
@@ -89,6 +91,8 @@ beforeEach(() => {
     carrier: "local",
     lead: false,
     ticker: true,
+    qrCorner: "off",
+    muted: false,
     offsetMS: 0,
     rttMS: 0,
     reportedAt: "",
@@ -175,6 +179,30 @@ describe("PartyStagePage", () => {
 
     expect(partyAdvance).toHaveBeenCalledTimes(1);
     expect(partyAdvance).toHaveBeenCalledWith("e1");
+  });
+
+  it("draws the join QR in the chosen corner during a song and plays muted", async () => {
+    vi.mocked(fetchPartyStage).mockResolvedValue(
+      stage({ current: song, qrCorner: "bottom-right", muted: true }),
+    );
+    const { container } = renderStage();
+
+    expect(await screen.findByText("Sung by Juniper")).toBeInTheDocument();
+    const corner = container.querySelector(".bf-party-stage-corner");
+    expect(corner).toHaveAttribute("data-corner", "bottom-right");
+    expect(within(corner as HTMLElement).getByText("QZXW")).toBeInTheDocument();
+    expect(within(corner as HTMLElement).getByRole("img")).toBeInTheDocument();
+    expect((container.querySelector("video") as HTMLVideoElement).muted).toBe(true);
+    await expectNoAxeViolations(container);
+  });
+
+  it("leaves the corner empty and the sound on by default", async () => {
+    vi.mocked(fetchPartyStage).mockResolvedValue(stage({ current: song }));
+    const { container } = renderStage();
+
+    expect(await screen.findByText("Sung by Juniper")).toBeInTheDocument();
+    expect(container.querySelector(".bf-party-stage-corner")).toBeNull();
+    expect((container.querySelector("video") as HTMLVideoElement).muted).toBe(false);
   });
 
   it("keeps playing through a network blip", async () => {

@@ -129,6 +129,8 @@ export function PartyStagePage() {
     },
     POLL_MS,
     sessionID !== "",
+    // A stage in a background tab keeps playing, so it keeps hearing mute and pause.
+    true,
   );
 
   useEffect(() => {
@@ -175,6 +177,7 @@ export function PartyStagePage() {
           playback={stage.playback}
           serverNow={serverNow}
           driftRef={driftRef}
+          stage={stage}
         />
       ) : (
         <StageIdle stage={stage} driftRef={driftRef} />
@@ -265,16 +268,37 @@ function StageIdle({
   );
 }
 
+/**
+ * The join QR and code in the corner the host chose for this screen, drawn
+ * over the song (CORE-3379) so latecomers can join without the idle screen.
+ */
+function CornerJoin({ stage }: { stage: PartyStage }) {
+  const t = useT();
+  return (
+    <div className="bf-party-stage-corner" data-corner={stage.qrCorner}>
+      <QrCode
+        value={`${window.location.origin}${stage.joinPath}`}
+        label={t("partyHostQRLabel", { code: stage.joinCode })}
+        className="bf-party-stage-corner-qr"
+      />
+      <p className="bf-party-stage-corner-code">{stage.joinCode}</p>
+    </div>
+  );
+}
+
 function StagePlayer({
   entry,
   playback,
   serverNow,
   driftRef,
+  stage,
 }: {
   entry: PartyEntry;
   playback: PartyPlayback | null;
   serverNow: () => number;
   driftRef: React.MutableRefObject<number>;
+  /** The screen's display settings: the join QR corner and mute (CORE-3379). */
+  stage: PartyStage;
 }) {
   const t = useT();
   const anchor = playback && playback.entryID === entry.id ? playback : null;
@@ -310,6 +334,15 @@ function StagePlayer({
   anchorRef.current = anchor;
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // A muted screen plays silently, which most browsers allow without a
+  // gesture; the sync loop retries play, and a browser that blocks all
+  // autoplay still gets the start button.
+  const muted = stage.muted;
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) video.muted = muted;
+  }, [muted, videoRef]);
 
   const tempo = anchor?.tempo ?? 1;
   const pitch = anchor?.pitchSemitones ?? 0;
@@ -358,9 +391,16 @@ function StagePlayer({
   };
 
   const failed = state.phase === "message" || state.phase === "terminal";
+  const corner = stage.qrCorner;
   return (
-    <div className="bf-party-stage-player">
-      <video ref={videoRef} className="bf-party-stage-video" playsInline onEnded={onEnded} />
+    <div className="bf-party-stage-player" data-qr-corner={corner}>
+      <video
+        ref={videoRef}
+        className="bf-party-stage-video"
+        playsInline
+        muted={muted}
+        onEnded={onEnded}
+      />
       <div className="bf-party-stage-caption">
         <p className="bf-party-stage-title">{entry.title}</p>
         {entry.subtitle !== "" && <p className="bf-party-stage-singer">{entry.subtitle}</p>}
@@ -368,6 +408,7 @@ function StagePlayer({
           {t("partyHostSungBy", { name: entry.participantName })}
         </p>
       </div>
+      {corner !== "off" && <CornerJoin stage={stage} />}
       {needsGesture && !failed && (
         <div className="bf-party-stage-overlay">
           <Button

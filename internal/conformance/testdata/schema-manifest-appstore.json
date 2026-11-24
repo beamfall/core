@@ -895,6 +895,11 @@
     "tier": "session"
   },
   {
+    "field": "partyscreendisplay",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "partyscreendrop",
     "effect": "write",
     "tier": "session"

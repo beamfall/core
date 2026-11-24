@@ -7147,6 +7147,7 @@ var mutationFields = map[string]bool{
 	"partyscreenregister":                true,
 	"partyscreenreport":                  true,
 	"partyscreenticker":                  true,
+	"partyscreendisplay":                 true,
 	"partyscreendrop":                    true,
 	"queueaddmany":                       true,
 	"queuemoveentry":                     true,

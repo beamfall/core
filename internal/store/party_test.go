@@ -348,6 +348,47 @@ func TestPartyScreenAdvanceAndDrop(t *testing.T) {
 	}
 }
 
+func TestPartyScreenDisplay(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	view := startTestParty(t, st, false)
+	host := partyHostFilter()
+	screen, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-default", "Den", "popout", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if screen.QRCorner != PartyQROff || screen.Muted {
+		t.Fatalf("new screen display = %q muted %v", screen.QRCorner, screen.Muted)
+	}
+	stage, err := st.PartyStage(ctx, view.Session.ID, screen.ID)
+	if err != nil || stage.QRCorner != PartyQROff || stage.Muted {
+		t.Fatalf("default stage = %+v, %v", stage, err)
+	}
+	if err := st.SetPartyScreenDisplay(ctx, "profile-default", host, screen.ID, "middle", false); !errors.Is(err, ErrPartyInvalid) {
+		t.Fatalf("bad corner = %v", err)
+	}
+	if err := st.SetPartyScreenDisplay(ctx, "profile-managed", LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}, screen.ID, "top-right", true); err == nil {
+		t.Fatal("another Profile set the display")
+	}
+	if err := st.SetPartyScreenDisplay(ctx, "profile-default", host, screen.ID, "bottom-left", true); err != nil {
+		t.Fatal(err)
+	}
+	stage, err = st.PartyStage(ctx, view.Session.ID, screen.ID)
+	if err != nil || stage.QRCorner != "bottom-left" || !stage.Muted {
+		t.Fatalf("stage after set = %+v, %v", stage, err)
+	}
+	view, _, _ = st.PartySessionForHost(ctx, "profile-default", host)
+	if len(view.Screens) != 1 || view.Screens[0].QRCorner != "bottom-left" || !view.Screens[0].Muted {
+		t.Fatalf("host screens = %+v", view.Screens)
+	}
+	// A screen silent long enough to leave the active list keeps its settings.
+	st.now = func() time.Time { return time.Now().Add(2 * partyScreenSilence) }
+	stage, err = st.PartyStage(ctx, view.Session.ID, screen.ID)
+	if err != nil || stage.QRCorner != "bottom-left" || !stage.Muted {
+		t.Fatalf("silent screen stage = %+v, %v", stage, err)
+	}
+}
+
 func TestPartyRequestedKeyStartsTheTurn(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

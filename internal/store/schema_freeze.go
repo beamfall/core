@@ -127,7 +127,11 @@ package store
 // Events 0031 (CORE-3310) adds player_commanded_media for play-media command
 // authorization on player-bound Sessions with walk-up disabled, off the
 // entity-query hot path.
+// Events 0034 (CORE-3379) adds party_screen.qr_corner and muted, the host's
+// per-screen join-QR corner and sound setting, read only by party reads, off
+// the entity-query hot path. It is numbered after the ADR-0240 0032/0033 in
+// flight; the count below rises to 34 once those land.
 const (
-	schemaFreezeEventsMigrations           = 31
+	schemaFreezeEventsMigrations           = 32
 	schemaFreezeEncryptedLibraryMigrations = 13
 )

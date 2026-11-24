@@ -119,6 +119,20 @@
   background: var(--bg-raised);
 }
 
+.bf-party-screens .bf-party-row {
+  flex-wrap: wrap;
+}
+
+/* Per-screen display settings: join QR corner, mute and ticker (CORE-3379). */
+.bf-party-screen-controls {
+  order: 1;
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
 .bf-party-row[draggable="true"] {
   cursor: grab;
 }
@@ -187,6 +201,68 @@
   left: 20px;
   max-width: calc(100% - 40px);
   pointer-events: none;
+}
+
+/* The join QR in a corner during songs (CORE-3379): small enough to leave the
+   lyrics clear, large enough to scan from across a room. */
+.bf-party-stage-player {
+  --bf-corner-qr: clamp(88px, 17vh, 176px);
+}
+
+.bf-party-stage-corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--radius-card);
+  background: color-mix(in oklab, var(--scrim) 72%, transparent);
+  pointer-events: none;
+}
+
+.bf-party-stage-corner[data-corner^="top"] {
+  top: 16px;
+}
+
+.bf-party-stage-corner[data-corner^="bottom"] {
+  bottom: 16px;
+}
+
+.bf-party-stage-corner[data-corner$="left"] {
+  left: 16px;
+}
+
+.bf-party-stage-corner[data-corner$="right"] {
+  right: 16px;
+}
+
+.bf-party-stage-corner-qr {
+  width: var(--bf-corner-qr);
+  height: var(--bf-corner-qr);
+  padding: 6px;
+  border-radius: var(--radius-control);
+  background: var(--on-scrim);
+  color: var(--scrim);
+}
+
+.bf-party-stage-corner-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: clamp(0.9rem, 2.2vh, 1.4rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+/* The caption keeps clear of a top corner QR: beside it, or on the other side. */
+.bf-party-stage-player[data-qr-corner="top-right"] .bf-party-stage-caption {
+  max-width: calc(100% - 40px - var(--bf-corner-qr) - 32px);
+}
+
+.bf-party-stage-player[data-qr-corner="top-left"] .bf-party-stage-caption {
+  left: auto;
+  right: 20px;
+  max-width: calc(100% - 40px - var(--bf-corner-qr) - 32px);
+  text-align: right;
 }
 
 .bf-party-stage-title {

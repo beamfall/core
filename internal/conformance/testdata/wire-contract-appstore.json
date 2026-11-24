@@ -898,6 +898,11 @@
       "tier": "session"
     },
     {
+      "field": "partyscreendisplay",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "partyscreendrop",
       "effect": "write",
       "tier": "session"
@@ -21726,11 +21731,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -21765,11 +21778,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -22682,11 +22703,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -22721,11 +22750,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -23652,11 +23689,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -23691,11 +23736,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -24629,11 +24682,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -24668,11 +24729,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -25584,11 +25653,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -25623,11 +25700,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -26539,11 +26624,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -26578,11 +26671,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -27494,11 +27595,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -27533,11 +27642,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -28453,11 +28570,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -28492,11 +28617,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -29404,11 +29537,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -29443,11 +29584,998 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
+              "kind": "scalar"
+            },
+            {
+              "name": "reportedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "rttMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "ticker",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "skipped",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "addedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "artworkURL",
+                "kind": "scalar"
+              },
+              {
+                "name": "durationSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "etaSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "lastPlayedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "participantID",
+                "kind": "scalar"
+              },
+              {
+                "name": "participantName",
+                "kind": "scalar"
+              },
+              {
+                "name": "pinned",
+                "kind": "scalar"
+              },
+              {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
+                "name": "position",
+                "kind": "scalar"
+              },
+              {
+                "name": "state",
+                "kind": "scalar"
+              },
+              {
+                "name": "subtitle",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "addedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "artworkURL",
+              "kind": "scalar"
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "etaSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "lastPlayedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantName",
+              "kind": "scalar"
+            },
+            {
+              "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
+              "name": "position",
+              "kind": "scalar"
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            },
+            {
+              "name": "subtitle",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "startedAt",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "partyscreendisplay",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "expectedProfileID",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "muted",
+          "kind": "boolean"
+        },
+        {
+          "name": "qrCorner",
+          "kind": "string"
+        },
+        {
+          "name": "screenID",
+          "kind": "string"
+        }
+      ],
+      "children": [
+        {
+          "name": "autoAdd",
+          "kind": "scalar"
+        },
+        {
+          "name": "changeoverSeconds",
+          "kind": "scalar"
+        },
+        {
+          "name": "current",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "addedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "artworkURL",
+              "kind": "scalar"
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "etaSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "lastPlayedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantName",
+              "kind": "scalar"
+            },
+            {
+              "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
+              "name": "position",
+              "kind": "scalar"
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            },
+            {
+              "name": "subtitle",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "entries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "addedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "artworkURL",
+                "kind": "scalar"
+              },
+              {
+                "name": "durationSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "etaSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "lastPlayedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "participantID",
+                "kind": "scalar"
+              },
+              {
+                "name": "participantName",
+                "kind": "scalar"
+              },
+              {
+                "name": "pinned",
+                "kind": "scalar"
+              },
+              {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
+                "name": "position",
+                "kind": "scalar"
+              },
+              {
+                "name": "state",
+                "kind": "scalar"
+              },
+              {
+                "name": "subtitle",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "addedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "artworkURL",
+              "kind": "scalar"
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "etaSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "lastPlayedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantName",
+              "kind": "scalar"
+            },
+            {
+              "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
+              "name": "position",
+              "kind": "scalar"
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            },
+            {
+              "name": "subtitle",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "expiresAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "fairness",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "joinCode",
+          "kind": "scalar"
+        },
+        {
+          "name": "joinOpen",
+          "kind": "scalar"
+        },
+        {
+          "name": "joinPath",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryIDs",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "participants",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "guest",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "lastTurnAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "name",
+                "kind": "scalar"
+              },
+              {
+                "name": "waiting",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "guest",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "lastTurnAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "name",
+              "kind": "scalar"
+            },
+            {
+              "name": "waiting",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "playback",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "anchorAtMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "entryID",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
+              "name": "positionMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            },
+            {
+              "name": "tempo",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "recent",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "addedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "artworkURL",
+                "kind": "scalar"
+              },
+              {
+                "name": "durationSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "etaSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "lastPlayedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "participantID",
+                "kind": "scalar"
+              },
+              {
+                "name": "participantName",
+                "kind": "scalar"
+              },
+              {
+                "name": "pinned",
+                "kind": "scalar"
+              },
+              {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
+                "name": "position",
+                "kind": "scalar"
+              },
+              {
+                "name": "state",
+                "kind": "scalar"
+              },
+              {
+                "name": "subtitle",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "addedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "artworkURL",
+              "kind": "scalar"
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "etaSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "lastPlayedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantName",
+              "kind": "scalar"
+            },
+            {
+              "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
+              "name": "position",
+              "kind": "scalar"
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            },
+            {
+              "name": "subtitle",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "removed",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "addedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "artworkURL",
+                "kind": "scalar"
+              },
+              {
+                "name": "durationSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "etaSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "lastPlayedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "participantID",
+                "kind": "scalar"
+              },
+              {
+                "name": "participantName",
+                "kind": "scalar"
+              },
+              {
+                "name": "pinned",
+                "kind": "scalar"
+              },
+              {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
+                "name": "position",
+                "kind": "scalar"
+              },
+              {
+                "name": "state",
+                "kind": "scalar"
+              },
+              {
+                "name": "subtitle",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "addedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "artworkURL",
+              "kind": "scalar"
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "etaSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "lastPlayedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantName",
+              "kind": "scalar"
+            },
+            {
+              "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
+              "name": "position",
+              "kind": "scalar"
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            },
+            {
+              "name": "subtitle",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "requests",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "addedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "artworkURL",
+                "kind": "scalar"
+              },
+              {
+                "name": "durationSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "etaSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "lastPlayedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "participantID",
+                "kind": "scalar"
+              },
+              {
+                "name": "participantName",
+                "kind": "scalar"
+              },
+              {
+                "name": "pinned",
+                "kind": "scalar"
+              },
+              {
+                "name": "pitchSemitones",
+                "kind": "scalar"
+              },
+              {
+                "name": "position",
+                "kind": "scalar"
+              },
+              {
+                "name": "state",
+                "kind": "scalar"
+              },
+              {
+                "name": "subtitle",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "addedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "artworkURL",
+              "kind": "scalar"
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "etaSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "lastPlayedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantID",
+              "kind": "scalar"
+            },
+            {
+              "name": "participantName",
+              "kind": "scalar"
+            },
+            {
+              "name": "pinned",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchSemitones",
+              "kind": "scalar"
+            },
+            {
+              "name": "position",
+              "kind": "scalar"
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            },
+            {
+              "name": "subtitle",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "screens",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "carrier",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "lead",
+                "kind": "scalar"
+              },
+              {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
+                "name": "name",
+                "kind": "scalar"
+              },
+              {
+                "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
+                "kind": "scalar"
+              },
+              {
+                "name": "reportedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "rttMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "ticker",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "carrier",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "lead",
+              "kind": "scalar"
+            },
+            {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
+              "name": "name",
+              "kind": "scalar"
+            },
+            {
+              "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -30359,11 +31487,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -30398,11 +31534,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -30609,11 +31753,19 @@
           "kind": "scalar"
         },
         {
+          "name": "muted",
+          "kind": "scalar"
+        },
+        {
           "name": "name",
           "kind": "scalar"
         },
         {
           "name": "offsetMS",
+          "kind": "scalar"
+        },
+        {
+          "name": "qrCorner",
           "kind": "scalar"
         },
         {
@@ -31414,11 +32566,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -31453,11 +32613,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -32358,11 +33526,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -32397,11 +33573,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -32647,6 +33831,10 @@
           "kind": "scalar"
         },
         {
+          "name": "muted",
+          "kind": "scalar"
+        },
+        {
           "name": "playback",
           "kind": "object",
           "nullable": true,
@@ -32676,6 +33864,10 @@
               "kind": "scalar"
             }
           ]
+        },
+        {
+          "name": "qrCorner",
+          "kind": "scalar"
         },
         {
           "name": "serverNowMS",
@@ -33597,11 +34789,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -33636,11 +34836,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {
@@ -34567,11 +35775,19 @@
                 "kind": "scalar"
               },
               {
+                "name": "muted",
+                "kind": "scalar"
+              },
+              {
                 "name": "name",
                 "kind": "scalar"
               },
               {
                 "name": "offsetMS",
+                "kind": "scalar"
+              },
+              {
+                "name": "qrCorner",
                 "kind": "scalar"
               },
               {
@@ -34606,11 +35822,19 @@
               "kind": "scalar"
             },
             {
+              "name": "muted",
+              "kind": "scalar"
+            },
+            {
               "name": "name",
               "kind": "scalar"
             },
             {
               "name": "offsetMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "qrCorner",
               "kind": "scalar"
             },
             {

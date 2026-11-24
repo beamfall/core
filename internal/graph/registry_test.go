@@ -279,6 +279,7 @@ var originalScopedFields = []string{
 	"partyscreenregister",
 	"partyscreenreport",
 	"partyscreenticker",
+	"partyscreendisplay",
 	"partyscreendrop",
 	"playqueue",
 	"queueadd",

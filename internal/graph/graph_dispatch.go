@@ -705,6 +705,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"partyscreenregister":                newFieldHandler("partyScreenRegister", "party", fieldMutation, roleSession, 159),
 	"partyscreenreport":                  newFieldHandler("partyScreenReport", "party", fieldMutation, roleSession, 159),
 	"partyscreenticker":                  newFieldHandler("partyScreenTicker", "party", fieldMutation, roleSession, 159),
+	"partyscreendisplay":                 newFieldHandler("partyScreenDisplay", "party", fieldMutation, roleSession, 159),
 	"partyscreendrop":                    newFieldHandler("partyScreenDrop", "party", fieldMutation, roleSession, 159),
 	"playqueue":                          newFieldHandler("playQueue", "queue", fieldRead, roleSession, 30),
 	"queueaddmany":                       newFieldHandler("queueAddMany", "queue", fieldMutation, roleSession, 30),
@@ -4930,6 +4931,10 @@ func dispatchFieldBlock159(dispatch *fieldDispatchContext) response {
 	if fields["partyscreenticker"] {
 		result, err := h.partyScreenTickerWrite(ctx, scope, req)
 		return resolveField(dispatch, "partyscreenticker", result, err)
+	}
+	if fields["partyscreendisplay"] {
+		result, err := h.partyScreenDisplayWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreendisplay", result, err)
 	}
 	if fields["partyscreendrop"] {
 		result, err := h.partyScreenDropWrite(ctx, scope, req)

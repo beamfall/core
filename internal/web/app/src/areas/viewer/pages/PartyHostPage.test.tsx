@@ -10,6 +10,7 @@ import {
   type PartySession,
   partyRemove,
   partyRestore,
+  partyScreenDisplay,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { expectNoAxeViolations } from "@/test/axe";
@@ -25,6 +26,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => {
     calibrateWatchPartyClock: vi.fn(async () => ({ offsetMS: 0, roundTripMS: 10 })),
     partyRemove: vi.fn(),
     partyRestore: vi.fn(),
+    partyScreenDisplay: vi.fn(),
   };
 });
 vi.mock("@/components/chrome/AppShell", () => ({
@@ -60,6 +62,8 @@ function screenOf(id: string, name: string, offsetMS: number, reportedAt: string
     carrier: "local",
     lead: false,
     ticker: true,
+    qrCorner: "off",
+    muted: false,
     offsetMS,
     rttMS: 12,
     reportedAt,
@@ -128,6 +132,27 @@ describe("PartyHostPage", () => {
     expect(within(screens).getByText("180 ms off")).toBeInTheDocument();
     expect(within(screens).getByText(/waiting for its first report/)).toBeInTheDocument();
     await expectNoAxeViolations(container);
+  });
+
+  it("sets a screen's join QR corner and mutes it", async () => {
+    const living = screenOf("a", "Living room", 0, "");
+    vi.mocked(fetchPartySession).mockResolvedValue(session({ screens: [living] }));
+    // The corner write is still in flight when Mute is pressed.
+    vi.mocked(partyScreenDisplay).mockReturnValueOnce(new Promise(() => {}));
+    vi.mocked(partyScreenDisplay).mockResolvedValue(
+      session({ screens: [{ ...living, qrCorner: "top-right", muted: true }] }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    const corner = await screen.findByRole("combobox", { name: "Join QR corner on Living room" });
+    expect(corner).toHaveValue("off");
+    await user.selectOptions(corner, "top-right");
+    expect(partyScreenDisplay).toHaveBeenLastCalledWith("a", "top-right", false);
+    expect(corner).toHaveValue("top-right");
+
+    await user.click(screen.getByRole("switch", { name: "Mute Living room" }));
+    expect(partyScreenDisplay).toHaveBeenLastCalledWith("a", "top-right", true);
   });
 
   it("offers a new-tab link when the browser blocks the stage window", async () => {
