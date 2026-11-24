@@ -1328,7 +1328,7 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 	if err != nil {
 		return decision{}, err
 	}
-	file, streams, parts, versions, err := s.negotiateVersion(ctx, media, files, profile, selectedSubtitleIndex, selectedVersion, factsFingerprint, ov)
+	file, streams, parts, versions, err := s.negotiateVersion(ctx, media, files, profile, selectedVersion, factsFingerprint, ov)
 	if err != nil {
 		return decision{}, err
 	}
@@ -1856,7 +1856,7 @@ func (s *Service) imageDecision(ctx context.Context, scope auth.Scope, media sto
 //
 // A single-file Media has one Version with one Part, so this returns that file
 // unchanged and no Version list: existing behaviour is preserved.
-func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files []store.MediaFile, profile CapabilityProfile, selectedSubtitleIndex *int, selectedVersion, factsFingerprint string, ov quirkOverlay) (store.MediaFile, []store.MediaFileStream, []PartInfo, []VersionInfo, error) {
+func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files []store.MediaFile, profile CapabilityProfile, selectedVersion, factsFingerprint string, ov quirkOverlay) (store.MediaFile, []store.MediaFileStream, []PartInfo, []VersionInfo, error) {
 	versions := groupVersions(files)
 	streams := make([][]store.MediaFileStream, len(versions))
 	for i, version := range versions {
@@ -1878,14 +1878,17 @@ func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files
 			}
 		}
 	}
+	// A selected subtitle index names a stream of the Version that advertised
+	// it, so the choice ignores the selection: a burn the selection needs must
+	// not move playback to a sibling Version where that index is absent.
 	eligible := func(i int) bool {
 		trusted := versions[i][0].ContentFingerprint == factsFingerprint
 		if len(versions) < 2 && trusted {
-			return directPlayEligible(media, versions[i][0], streams[i], profile, selectedSubtitleIndex, ov)
+			return directPlayEligible(media, versions[i][0], streams[i], profile, nil, ov)
 		}
 		facts := versionFacts(media, versions[i][0], streams[i], trusted)
 		return !unknownHeightBarred(facts, profile, true) &&
-			directPlayEligible(facts, versions[i][0], streams[i], profile, selectedSubtitleIndex, ov)
+			directPlayEligible(facts, versions[i][0], streams[i], profile, nil, ov)
 	}
 	if !selected && !eligible(0) {
 		// Look for a Version whose primary Part the client can play as-is (or whose

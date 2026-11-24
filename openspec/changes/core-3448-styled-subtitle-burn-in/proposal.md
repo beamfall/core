@@ -23,6 +23,9 @@ anime subtitles everywhere.
   shape a bitmap track already has, so the Apple and Android kits route it to burn-in rather than
   to the flattened overlay. A profile that declares `webvtt` (a Cast receiver, whose sender cannot
   request burn-in) keeps the flattened sidecar.
+- Version negotiation ignores the subtitle selection: a selected index names a stream of the
+  Version that advertised it, so a burn must not move playback to a sibling Version without it.
+  This also fixes the same loss for bitmap tracks.
 - Clients that declare `ass` keep rendering it themselves. No wire change: the existing
   `BurnSubtitleIndex` grant field carries the verdict.
 
@@ -30,6 +33,11 @@ anime subtitles everywhere.
 
 A selected ASS track on such a client now costs a video transcode instead of the CORE-1670
 video-copy remux. Turning subtitles off returns to the remux.
+
+Apple builds from before the matching BeamfallKit change see a URL-less ASS track as unavailable
+until they update, because the profile carries no signal that separates them from new builds.
+Apple builds need the kit change before or with this server change; a follow-up ticket tracks a
+capability signal that would keep the sidecar for older builds.
 
 ## Non-goals
 

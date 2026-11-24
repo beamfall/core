@@ -217,3 +217,38 @@ func TestPromoteReservationKeepsBurnInputs(t *testing.T) {
 		t.Fatalf("promoted burn inputs = %d %q %q", got.burnSubtitleIndex, got.burnSubtitleFile, got.burnFontsDir)
 	}
 }
+
+// TestStyledBurnStaysOnAdvertisingVersion: a selected subtitle index names a
+// stream of the Version that advertised it. Selecting an ASS track that needs
+// a burn must not move playback to a sibling Version that direct-plays but
+// lacks that stream.
+func TestStyledBurnStaysOnAdvertisingVersion(t *testing.T) {
+	withTextSubtitleBurnIn(t, true)
+	assIndex := 2
+	service, st, scope := capabilityTestService(t)
+	mediaID := importProbedMedia(t, st, "fp-ass-v0", "matroska", "h264", 1920, 1080, []store.MediaFileStream{
+		videoStream("h264", "High", 0, ""),
+		audioStream(1, "aac", 2),
+		{Index: assIndex, Type: "subtitle", Codec: "ass", Language: "jpn"},
+	})
+	alt := []store.MediaFileStream{videoStream("h264", "High", 0, ""), audioStream(1, "aac", 2)}
+	addVersion(t, st, mediaID, "fp-ass-alt-0", "alt", 0, alt)
+	addVersion(t, st, mediaID, "fp-ass-alt-1", "alt", 1, alt)
+
+	resp, err := service.Info(context.Background(), scope, InfoRequest{
+		MediaID: string(mediaID), CapabilityProfile: appleOverlayProfile, SelectedSubtitleIndex: &assIndex,
+	})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if resp.Decision != "transcode" || len(resp.Parts) != 0 {
+		t.Fatalf("Decision = %q (%q), Parts = %d; want a transcode of the default Version that burns the track", resp.Decision, resp.Reason, len(resp.Parts))
+	}
+	grant, err := service.tokens.UnverifiedGrant(resp.Streams[0].Token, streamtoken.TargetMediaHLS)
+	if err != nil {
+		t.Fatalf("HLS token: %v", err)
+	}
+	if got := grant.BurnSubtitleIndex - 1; got != assIndex {
+		t.Fatalf("BurnSubtitleIndex = %d, want %d", got, assIndex)
+	}
+}
