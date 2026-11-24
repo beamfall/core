@@ -818,8 +818,8 @@ func spriteSheetDecodeArgs(pass spriteSheetPass) []string {
 }
 
 // SampleClip encodes a silent H.264 MP4 stitched from segments of src: each
-// offset starts a segmentSeconds slice, selected in one pass (select + setpts
-// filters), scaled to width and capped at maxFPS. The clip is
+// offset starts a segmentSeconds slice via fast input seeking (-ss before -i),
+// concatenated in one pass, scaled to width and capped at maxFPS. The clip is
 // written atomically via a temp file in dst's directory.
 func (r *Runner) SampleClip(ctx context.Context, src string, offsets []float64, segmentSeconds float64, width, maxFPS int, dst string) (err error) {
 	if len(offsets) == 0 {
@@ -835,29 +835,34 @@ func (r *Runner) SampleClip(ctx context.Context, src string, offsets []float64, 
 	if err != nil {
 		return fmt.Errorf("ffmpeg is not available: %w", err)
 	}
-	selects := make([]string, len(offsets))
-	for i, offset := range offsets {
-		selects[i] = fmt.Sprintf("between(t,%.3f,%.3f)", offset, offset+segmentSeconds)
-	}
-	filter := fmt.Sprintf("select='%s',setpts=N/FRAME_RATE/TB,scale=%d:-2,fps=%d",
-		strings.Join(selects, "+"), width, maxFPS)
-	if err := checkPath(src); err != nil {
-		return err
-	}
-	if err := checkPath(dst); err != nil {
-		return err
-	}
 	out, err := reserveOutput(dst)
 	if err != nil {
 		return err
 	}
 	defer out.joinDiscardError(&err)
-	cmd := r.generationCommand(ctx, transformConfinement(src, out.Path), ffmpegPath,
+	args := []string{
 		"-v", "error",
-		"-protocol_whitelist", productionProtocolAllowlist,
-		"-i", src,
+	}
+	dur := fmt.Sprintf("%.3f", segmentSeconds)
+	var concatInputs strings.Builder
+	for i, offset := range offsets {
+		if offset < 0 {
+			offset = 0
+		}
+		args = append(args,
+			"-protocol_whitelist", productionProtocolAllowlist,
+			"-ss", fmt.Sprintf("%.3f", offset),
+			"-t", dur,
+			"-i", src,
+		)
+		fmt.Fprintf(&concatInputs, "[%d:v:0]", i)
+	}
+	filter := fmt.Sprintf("%sconcat=n=%d:v=1:a=0,scale=%d:-2,fps=%d[v]",
+		concatInputs.String(), len(offsets), width, maxFPS)
+	args = append(args,
 		"-an",
-		"-vf", filter,
+		"-filter_complex", filter,
+		"-map", "[v]",
 		"-c:v", "libx264",
 		"-preset", "veryfast",
 		"-crf", "28",
@@ -866,6 +871,7 @@ func (r *Runner) SampleClip(ctx context.Context, src string, offsets []float64, 
 		"-f", "mp4",
 		"-y", "--", out.Path,
 	)
+	cmd := r.generationCommand(ctx, transformConfinement(src, out.Path), ffmpegPath, args...)
 	if detail, err := r.runDetail(ctx, cmd); err != nil {
 		return errors.Join(fmt.Errorf("ffmpeg sample clip: %s", detail), survivedError(err))
 	}
@@ -1929,15 +1935,30 @@ func (r Rendition) videoArgs() []string {
 	if r.CopyVideo {
 		return []string{"-c:v", "copy"}
 	}
+	var args []string
 	if encoder := hwAccelVideoEncoder(r.hwAccel, r.VideoCodec); encoder != "" {
-		return append([]string{"-c:v", encoder}, r.lowPowerArgs()...)
+		args = append([]string{"-c:v", encoder}, r.lowPowerArgs()...)
+	} else {
+		args = []string{
+			"-c:v", "libx264",
+			"-preset", "veryfast",
+			"-crf", r.softwareCRF(),
+			"-sc_threshold", "0",
+			"-pix_fmt", "yuv420p",
+		}
 	}
-	return []string{
-		"-c:v", "libx264",
-		"-preset", "veryfast",
-		"-crf", r.softwareCRF(),
-		"-pix_fmt", "yuv420p",
+	if r.VideoCodec == "hevc" {
+		args = append(args, "-tag:v", "hvc1")
 	}
+	if r.needsToneMap() {
+		args = append(args,
+			"-color_primaries", "bt709",
+			"-color_trc", "bt709",
+			"-colorspace", "bt709",
+			"-color_range", "tv",
+		)
+	}
+	return args
 }
 
 // softwareCRF is libx264's constant-rate factor for the Console quality.
@@ -2109,10 +2130,10 @@ func (r Rendition) audioArgs() []string {
 		channels = 2
 	}
 	args := []string{"-c:a", codec, "-ac", strconv.Itoa(channels)}
-	filters := r.adjust.Filters()
-	if channels <= 2 {
-		filters = append(filters, "aresample=matrix_encoding=dplii")
+	if kbps := audioBitrateKbps(codec, channels); kbps > 0 {
+		args = append(args, "-b:a", strconv.Itoa(kbps)+"k")
 	}
+	filters := r.adjust.Filters()
 	if r.AudioGainDB != nil {
 		filters = append(filters, fmt.Sprintf("volume=%gdB", *r.AudioGainDB))
 	}
@@ -2120,6 +2141,44 @@ func (r Rendition) audioArgs() []string {
 		args = append(args, "-af", strings.Join(filters, ","))
 	}
 	return args
+}
+
+// audioBitrateKbps selects a channel-scaled audio bitrate so surround encodes
+// never fall back to FFmpeg's 128 kbps native AAC default.
+func audioBitrateKbps(codec string, channels int) int {
+	switch strings.ToLower(codec) {
+	case "eac3":
+		switch {
+		case channels >= 7:
+			return 640
+		case channels >= 5:
+			return 448
+		default:
+			return 256
+		}
+	case "libopus", "opus":
+		switch {
+		case channels >= 7:
+			return 384
+		case channels >= 5:
+			return 256
+		default:
+			return 128
+		}
+	case "aac":
+		switch {
+		case channels >= 7:
+			return 512
+		case channels >= 5:
+			return 384
+		case channels == 1:
+			return 128
+		default:
+			return 192
+		}
+	default:
+		return 0
+	}
 }
 
 // videoFilters is the composed -vf graph. The tone-map chain leads it, because
@@ -3032,7 +3091,7 @@ func hlsMuxArgs(dir string) []string {
 		"-f", "hls",
 		"-hls_time", "4",
 		"-hls_playlist_type", "event",
-		"-hls_flags", "temp_file",
+		"-hls_flags", "temp_file+independent_segments",
 		"-hls_segment_type", "fmp4",
 		"-hls_fmp4_init_filename", "init.mp4",
 		"-hls_segment_filename", filepath.Join(dir, "seg%05d.m4s"),
@@ -3251,7 +3310,7 @@ func fileSegmentIO(src, dir string) segmentIO {
 		input:        src,
 		inputOptions: inputProtocolArgs(),
 		outputArgs: []string{
-			"-hls_flags", "temp_file",
+			"-hls_flags", "temp_file+independent_segments",
 			"-hls_segment_filename", filepath.Join(dir, "seg%05d.m4s"),
 			"--", filepath.Join(dir, "live.m3u8"),
 		},

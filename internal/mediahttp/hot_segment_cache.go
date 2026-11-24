@@ -1,6 +1,7 @@
 package mediahttp
 
 import (
+	"bytes"
 	"sync"
 	"time"
 )
@@ -53,6 +54,28 @@ func (c *hotSegmentCache) begin(key string) ([]byte, time.Time, bool, bool, hotS
 	return cloneSegmentBytes(entry.data), entry.modTime, hit, fanout, hotSegmentLease{cache: c, key: key}
 }
 
+// beginReader returns a read-only *bytes.Reader backed directly by the
+// immutable cached slice, avoiding a multi-MiB copy on every fan-out cache hit.
+func (c *hotSegmentCache) beginReader(key string) (*bytes.Reader, time.Time, bool, bool, hotSegmentLease) {
+	if c == nil || key == "" {
+		return nil, time.Time{}, false, false, hotSegmentLease{}
+	}
+	c.mu.Lock()
+	c.seq++
+	fanout := c.active[key] > 0
+	c.active[key]++
+	entry, hit := c.entries[key]
+	if hit {
+		entry.last = c.seq
+		c.entries[key] = entry
+	}
+	c.mu.Unlock()
+	if !hit {
+		return nil, time.Time{}, false, fanout, hotSegmentLease{cache: c, key: key}
+	}
+	return bytes.NewReader(entry.data), entry.modTime, true, fanout, hotSegmentLease{cache: c, key: key}
+}
+
 func (l hotSegmentLease) done() {
 	if l.cache == nil || l.key == "" {
 		return
@@ -78,6 +101,15 @@ func (c *hotSegmentCache) store(key string, data []byte, modTime time.Time) bool
 		return false
 	}
 	data = cloneSegmentBytes(data)
+	return c.storeOwned(key, data, modTime)
+}
+
+// storeOwned inserts an already-owned, never-mutated segment slice into the
+// cache without cloning it a second time.
+func (c *hotSegmentCache) storeOwned(key string, data []byte, modTime time.Time) bool {
+	if c == nil || key == "" || len(data) == 0 || int64(len(data)) > c.max {
+		return false
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.active[key] < 2 {

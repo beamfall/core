@@ -1290,22 +1290,29 @@ func (h *Handler) servePrecomputedHLS(w http.ResponseWriter, r *http.Request, gr
 
 func (h *Handler) servePrecomputedHotSegment(w http.ResponseWriter, r *http.Request, member rootedPath, renditionID store.PlaybackRenditionID, name string, modTime time.Time) {
 	key := string(renditionID) + "/" + name
-	data, cachedModTime, hit, fanout, lease := h.hotSegments.begin(key)
+	reader, cachedModTime, hit, fanout, lease := h.hotSegments.beginReader(key)
 	defer lease.done()
 	served := filepath.Base(member.rel)
 	if hit {
-		http.ServeContent(w, r, served, cachedModTime, bytes.NewReader(data))
+		http.ServeContent(w, r, served, cachedModTime, reader)
 		return
 	}
 	if fanout {
 		// The cache is filled from the bound descriptor, never from a second walk
 		// of the name: a segment swapped after the stat above cannot be the thing
 		// that gets memoised and then handed to every other waiter in the fan-out.
-		if file, _, err := openRooted(member); err == nil {
-			data, readErr := io.ReadAll(file)
-			_ = file.Close()
-			if readErr == nil && h.hotSegments.store(key, data, modTime) {
-				http.ServeContent(w, r, served, modTime, bytes.NewReader(data))
+		if file, info, err := openRooted(member); err == nil {
+			if info.Size() <= h.hotSegments.max {
+				data, readErr := io.ReadAll(file)
+				_ = file.Close()
+				if readErr == nil {
+					h.hotSegments.storeOwned(key, data, modTime)
+					http.ServeContent(w, r, served, modTime, bytes.NewReader(data))
+					return
+				}
+			} else {
+				defer file.Close()
+				http.ServeContent(w, r, served, modTime, file)
 				return
 			}
 		}
@@ -1699,6 +1706,9 @@ func (h *Handler) Direct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
 	}
+	if ct := directMediaContentType(media.Container, file.Path); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
 	if library.Encrypted {
 		if h.encryptedBytes == nil {
 			http.Error(w, "media unavailable", http.StatusNotFound)
@@ -1761,6 +1771,69 @@ func (h *Handler) Direct(w http.ResponseWriter, r *http.Request) {
 		body = requestContextReadSeeker{ctx: r.Context(), ReadSeeker: f}
 	}
 	http.ServeContent(w, r, info.Name(), info.ModTime(), body)
+}
+
+// directMediaContentType resolves a known media MIME type from the cataloged
+// container or filename extension so http.ServeContent does not fall back to
+// reading offset 0 for content sniffing on every Range request (which on
+// encrypted libraries would decrypt chunk 0 on every byte-range fetch).
+func directMediaContentType(container, path string) string {
+	switch strings.ToLower(strings.TrimSpace(container)) {
+	case "mp4", "m4v", "mov,mp4,m4a,3gp,3g2,mj2":
+		if strings.EqualFold(filepath.Ext(path), ".m4a") {
+			return "audio/mp4"
+		}
+		return "video/mp4"
+	case "matroska", "matroska,webm", "mkv":
+		return "video/x-matroska"
+	case "webm":
+		return "video/webm"
+	case "mov":
+		return "video/quicktime"
+	case "mpegts", "ts", "m2ts":
+		return "video/mp2t"
+	case "avi":
+		return "video/x-msvideo"
+	case "mp3":
+		return "audio/mpeg"
+	case "flac":
+		return "audio/flac"
+	case "ogg", "opus":
+		return "audio/ogg"
+	case "wav":
+		return "audio/wav"
+	case "aac", "adts":
+		return "audio/aac"
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".mp4", ".m4v":
+		return "video/mp4"
+	case ".mkv", ".mka":
+		return "video/x-matroska"
+	case ".webm":
+		return "video/webm"
+	case ".mov":
+		return "video/quicktime"
+	case ".ts", ".m2ts":
+		return "video/mp2t"
+	case ".avi":
+		return "video/x-msvideo"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".m4a", ".m4b":
+		return "audio/mp4"
+	case ".flac":
+		return "audio/flac"
+	case ".ogg", ".oga":
+		return "audio/ogg"
+	case ".opus":
+		return "audio/opus"
+	case ".wav":
+		return "audio/wav"
+	case ".aac":
+		return "audio/aac"
+	}
+	return ""
 }
 
 // encryptedLiveSource is the plaintext source of a live session on an

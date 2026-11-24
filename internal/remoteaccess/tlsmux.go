@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/tls"
 	"errors"
+	"io"
 	"net"
 	"sync"
 	"syscall"
@@ -350,4 +351,14 @@ func (c *peekConn) peekFirstByte() (byte, error) {
 // the wire, so the replay is transparent to the caller.
 func (c *peekConn) Read(p []byte) (int, error) {
 	return c.reader.Read(p)
+}
+
+// ReadFrom delegates writes directly to the underlying connection's
+// io.ReaderFrom so net/http preserves zero-copy sendfile(2) on cleartext LAN
+// connections. peekConn only buffers reads, never writes.
+func (c *peekConn) ReadFrom(r io.Reader) (int64, error) {
+	if rf, ok := c.Conn.(io.ReaderFrom); ok {
+		return rf.ReadFrom(r)
+	}
+	return io.Copy(struct{ io.Writer }{c.Conn}, r)
 }

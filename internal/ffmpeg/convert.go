@@ -113,8 +113,8 @@ var ErrToneMapRefused = errors.New("ffmpeg convert: HDR source cannot be tone-ma
 // presets cover the launch surface: H.264/MP4 (broad-compat re-encode),
 // HEVC/MP4 (efficient re-encode), and AAC/M4A (audio extraction).
 var convertProfiles = map[string]ConvertProfile{
-	"h264-mp4": {Name: "h264-mp4", Container: "mp4", VideoCodec: "libx264", AudioCodec: "aac", CRF: 23},
-	"hevc-mp4": {Name: "hevc-mp4", Container: "mp4", VideoCodec: "libx265", AudioCodec: "aac", CRF: 28},
+	"h264-mp4": {Name: "h264-mp4", Container: "mp4", VideoCodec: "libx264", AudioCodec: "aac", CRF: 23, FastStart: true},
+	"hevc-mp4": {Name: "hevc-mp4", Container: "mp4", VideoCodec: "libx265", AudioCodec: "aac", CRF: 28, FastStart: true},
 	"aac-m4a":  {Name: "aac-m4a", Container: "m4a", AudioCodec: "aac", AudioOnly: true},
 }
 
@@ -168,6 +168,9 @@ func (p ConvertProfile) encodeArgs() []string {
 		}
 		if codec != "copy" {
 			args = append(args, "-pix_fmt", "yuv420p")
+			if codec == "libx265" || codec == "hevc" {
+				args = append(args, "-tag:v", "hvc1")
+			}
 			args = append(args, p.boundArgs()...)
 		}
 	}

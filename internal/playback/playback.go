@@ -1619,9 +1619,10 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 			adjustment:     adjust,
 		}, nil
 	}
-	directPlay := !barred && !audio.overridesDefault() && canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov)
+	chosenStreams := audio.chosenStreams(streams)
+	directPlay := !barred && !audio.overridesDefault() && canDirectPlay(media, file, chosenStreams, profile, selectedSubtitleIndex, ov)
 	p7BaseLayer := !barred && !directPlay && !audio.overridesDefault() &&
-		dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, ov)
+		dolbyVisionP7BaseLayer(media, file, chosenStreams, profile, selectedSubtitleIndex, ov)
 	if directPlay || p7BaseLayer {
 		grant.Target = streamtoken.TargetMediaDirect
 		token, err := s.issueDecisionGrant(ctx, grant)
@@ -2370,8 +2371,19 @@ func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream,
 	if passthroughAudioDeclared(streams, chosen, profile) && !ov.vetoesAudioPassthrough(streams) && ov.MaxAudioChannels <= 0 {
 		return ffmpeg.AudioProfile{Codec: "copy"}
 	}
+	source := chosenAudioStream(streams, chosen)
+	if !loudnessOK && hlsCopyableAudioStream(source, profile, ov) {
+		return ffmpeg.AudioProfile{Codec: "copy"}
+	}
+	sourceChannels := 0
+	if source != nil {
+		sourceChannels = source.Channels
+	}
 	audio := ffmpeg.AudioProfile{Codec: "aac", Channels: 2}
-	if hlsAudioSupportsEAC3(profile) && !ov.deniesAudioCodec("eac3") {
+	if sourceChannels == 1 {
+		audio.Channels = 1
+	}
+	if hlsAudioSupportsEAC3(profile) && !ov.deniesAudioCodec("eac3") && (sourceChannels == 0 || sourceChannels > 2) {
 		audio.Codec = "eac3"
 		audio.Channels = 6
 	}
@@ -2383,6 +2395,42 @@ func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream,
 		audio.GainDB = &gain
 	}
 	return audio
+}
+
+func chosenAudioStream(streams []store.MediaFileStream, chosen int) *store.MediaFileStream {
+	var first *store.MediaFileStream
+	for i := range streams {
+		s := &streams[i]
+		if s.Type != "audio" {
+			continue
+		}
+		if chosen >= 0 && s.Index == chosen {
+			return s
+		}
+		if first == nil {
+			first = s
+		}
+	}
+	return first
+}
+
+// hlsCopyableAudioStream reports whether the chosen audio stream can be
+// stream-copied into CMAF fMP4 HLS without re-encoding (preserving Atmos/E-AC-3,
+// AC-3, AAC, FLAC, ALAC, and Opus when the client declares native support).
+func hlsCopyableAudioStream(source *store.MediaFileStream, profile CapabilityProfile, ov quirkOverlay) bool {
+	if source == nil || len(profile.AudioCodecs) == 0 || source.DecodedSamples > 0 {
+		return false
+	}
+	switch audioCodecFamily(source.Codec) {
+	case "aac", "ac3", "eac3", "flac", "alac", "opus":
+	default:
+		return false
+	}
+	if ov.MaxAudioChannels > 0 && source.Channels > ov.MaxAudioChannels {
+		return false
+	}
+	single := []store.MediaFileStream{*source}
+	return audioDirectPlayable(single, profile) && !ov.vetoesAudioPassthrough(single)
 }
 
 // ceilingBindsAudio reports whether a video transcode runs on a ceiling-bound
@@ -3348,6 +3396,14 @@ func audioCodecFamily(codec string) string {
 	name := normalizedAudioCodec(codec)
 	if strings.HasPrefix(name, "pcm-") && name != "pcm-alaw" && name != "pcm-mulaw" {
 		return "pcm"
+	}
+	switch name {
+	case "ac-3":
+		return "ac3"
+	case "eac-3", "e-ac-3", "ec3":
+		return "eac3"
+	case "dca":
+		return "dts"
 	}
 	return name
 }

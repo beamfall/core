@@ -115,7 +115,7 @@ func TestRenditionBurnInArgs(t *testing.T) {
 	if r.CopyVideo {
 		t.Fatal("WithBurnSubtitle must drop CopyVideo (cannot overlay onto a copied stream)")
 	}
-	if got, want := r.videoArgs(), []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"}; !equalArgs(got, want) {
+	if got, want := r.videoArgs(), []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-sc_threshold", "0", "-pix_fmt", "yuv420p"}; !equalArgs(got, want) {
 		t.Fatalf("burn-in videoArgs = %v, want libx264 re-encode %v", got, want)
 	}
 

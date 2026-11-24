@@ -69,7 +69,7 @@ func TestPackProfilesBoundHeightAndBitrate(t *testing.T) {
 		t.Fatal("conversion preset must not be a pack preset")
 	}
 	plain, _ := ConvertProfileByName("h264-mp4")
-	for _, flag := range []string{"-vf", "-maxrate", "-b:a", "-ac", "-sn", "-movflags"} {
+	for _, flag := range []string{"-vf", "-maxrate", "-b:a", "-ac", "-sn"} {
 		if contains(plain.encodeArgs(), flag) {
 			t.Fatalf("h264-mp4 args gained %s: %v", flag, plain.encodeArgs())
 		}

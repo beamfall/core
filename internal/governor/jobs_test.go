@@ -98,3 +98,29 @@ func TestNilCancelJobOccupiesClassWithoutEffect(t *testing.T) {
 		t.Fatal("class not empty after cancel + release")
 	}
 }
+
+func TestBeginTranscodePreemptsInFlightJobsAndBlocksNewOnes(t *testing.T) {
+	g := New()
+	var preempted bool
+	release := g.StartJob(ClassInference, func() { preempted = true })
+	defer release()
+
+	tx := g.BeginTranscode()
+	defer tx.Release()
+	if !preempted {
+		t.Fatal("BeginTranscode did not cancel in-flight ClassInference job")
+	}
+	if g.ActiveJobs(ClassInference) != 0 {
+		t.Fatalf("ActiveJobs = %d, want 0 after BeginTranscode", g.ActiveJobs(ClassInference))
+	}
+
+	var lateCancelled bool
+	lateRelease := g.StartJob(ClassInference, func() { lateCancelled = true })
+	defer lateRelease()
+	if !lateCancelled {
+		t.Fatal("StartJob during active transcode did not cancel immediately")
+	}
+	if g.ActiveJobs(ClassInference) != 0 {
+		t.Fatalf("ActiveJobs = %d, want 0 while transcode active", g.ActiveJobs(ClassInference))
+	}
+}

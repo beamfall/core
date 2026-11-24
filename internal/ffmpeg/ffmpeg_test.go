@@ -548,7 +548,7 @@ func TestRenditionAudioTargetArgs(t *testing.T) {
 		{
 			name: "eac3 5.1",
 			r:    Rendition{AudioCodec: "eac3", AudioChannels: 6},
-			want: []string{"-c:a", "eac3", "-ac", "6"},
+			want: []string{"-c:a", "eac3", "-ac", "6", "-b:a", "448k"},
 		},
 		{
 			name: "passthrough copy",
@@ -558,12 +558,12 @@ func TestRenditionAudioTargetArgs(t *testing.T) {
 		{
 			name: "aac stereo downmix with loudness gain",
 			r:    Rendition{AudioCodec: "aac", AudioChannels: 2, AudioGainDB: &gain},
-			want: []string{"-c:a", "aac", "-ac", "2", "-af", "aresample=matrix_encoding=dplii,volume=-5.5dB"},
+			want: []string{"-c:a", "aac", "-ac", "2", "-b:a", "192k", "-af", "volume=-5.5dB"},
 		},
 		{
 			name: "legacy default is aac stereo downmix",
 			r:    Rendition{},
-			want: []string{"-c:a", "aac", "-ac", "2", "-af", "aresample=matrix_encoding=dplii"},
+			want: []string{"-c:a", "aac", "-ac", "2", "-b:a", "192k"},
 		},
 	}
 	for _, tc := range tests {
@@ -579,7 +579,7 @@ func TestRenditionAudioTargetArgs(t *testing.T) {
 // libx264 block moved out of StartHLS into videoArgs(), so it must still emit
 // the same encoder parameters.
 func TestRenditionEncodeVideoArgs(t *testing.T) {
-	want := []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"}
+	want := []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-sc_threshold", "0", "-pix_fmt", "yuv420p"}
 	if got := (Rendition{Height: 720, VideoKbps: 4000}).videoArgs(); !equalArgs(got, want) {
 		t.Fatalf("videoArgs = %v, want %v", got, want)
 	}
@@ -685,10 +685,10 @@ func TestRenditionHEVCHardwareVideoArgs(t *testing.T) {
 		accel HWAccel
 		want  []string
 	}{
-		{"qsv", HWAccelQSV, []string{"-c:v", "hevc_qsv"}},
-		{"vaapi", HWAccelVAAPI, []string{"-c:v", "hevc_vaapi"}},
-		{"nvenc", HWAccelNVENC, []string{"-c:v", "hevc_nvenc"}},
-		{"videotoolbox", HWAccelVideoToolbox, []string{"-c:v", "hevc_videotoolbox"}},
+		{"qsv", HWAccelQSV, []string{"-c:v", "hevc_qsv", "-tag:v", "hvc1"}},
+		{"vaapi", HWAccelVAAPI, []string{"-c:v", "hevc_vaapi", "-tag:v", "hvc1"}},
+		{"nvenc", HWAccelNVENC, []string{"-c:v", "hevc_nvenc", "-tag:v", "hvc1"}},
+		{"videotoolbox", HWAccelVideoToolbox, []string{"-c:v", "hevc_videotoolbox", "-tag:v", "hvc1"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

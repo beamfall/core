@@ -6,6 +6,7 @@ package hostmetrics
 
 import (
 	"context"
+	"io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -178,6 +179,20 @@ func (c *countingConn) Write(p []byte) (int, error) {
 		c.sampler.sent.Add(uint64(n))
 	}
 	return n, err
+}
+
+// ReadFrom delegates to the underlying connection's io.ReaderFrom (e.g.
+// *net.TCPConn.ReadFrom -> sendfile(2)) while keeping the sent-byte counter
+// accurate.
+func (c *countingConn) ReadFrom(r io.Reader) (int64, error) {
+	if rf, ok := c.Conn.(io.ReaderFrom); ok {
+		n, err := rf.ReadFrom(r)
+		if n > 0 {
+			c.sampler.sent.Add(uint64(n))
+		}
+		return n, err
+	}
+	return io.Copy(struct{ io.Writer }{c}, r)
 }
 
 func clampPercent(v float64) float64 {

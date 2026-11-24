@@ -84,3 +84,20 @@ func (r *jobRegistry) activeClass(class string) int {
 	defer r.mu.Unlock()
 	return len(r.jobs[class])
 }
+
+// drainAll removes every in-flight job across all classes and returns their
+// cancel funcs so the caller can invoke them outside any lock.
+func (r *jobRegistry) drainAll() []func() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var cancels []func()
+	for class, byID := range r.jobs {
+		for _, cancel := range byID {
+			if cancel != nil {
+				cancels = append(cancels, cancel)
+			}
+		}
+		delete(r.jobs, class)
+	}
+	return cancels
+}

@@ -29,8 +29,21 @@ func TestPipeGenerateArgsScopeInputAndWriteNoFile(t *testing.T) {
 		},
 	} {
 		i := slices.Index(tc.args, "-i")
-		if i < 0 || tc.args[i+1] != testPipeURL || slices.Index(tc.args[i+1:], "-i") >= 0 {
-			t.Fatalf("%s: args lack their one input -i %s: %v", name, testPipeURL, tc.args)
+		if i < 0 || tc.args[i+1] != testPipeURL {
+			t.Fatalf("%s: args lack their confined input -i %s: %v", name, testPipeURL, tc.args)
+		}
+		if name != "sample clip" && slices.Index(tc.args[i+1:], "-i") >= 0 {
+			t.Fatalf("%s: args have unexpected extra -i: %v", name, tc.args)
+		}
+		for pos := i; pos >= 0; {
+			if pos+1 >= len(tc.args) || tc.args[pos+1] != testPipeURL {
+				t.Fatalf("%s: every -i must target %s: %v", name, testPipeURL, tc.args)
+			}
+			next := slices.Index(tc.args[pos+2:], "-i")
+			if next < 0 {
+				break
+			}
+			pos = pos + 2 + next
 		}
 		input := tc.args[:i]
 		for _, pair := range [][2]string{

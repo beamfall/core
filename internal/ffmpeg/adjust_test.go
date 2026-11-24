@@ -59,7 +59,7 @@ func TestAudioAdjustTimeline(t *testing.T) {
 func TestAudioArgsAdjustLeadsFilterChain(t *testing.T) {
 	gain := -3.5
 	args := Rendition{AudioCodec: "aac", AudioChannels: 2, AudioGainDB: &gain}.WithAudioAdjust(AudioAdjust{Tempo: 1.1}).audioArgs()
-	if got, want := argAfter(args, "-af"), "atempo=1.1,aresample=matrix_encoding=dplii,volume=-3.5dB"; got != want {
+	if got, want := argAfter(args, "-af"), "atempo=1.1,volume=-3.5dB"; got != want {
 		t.Fatalf("-af = %q, want %q", got, want)
 	}
 	// An adjusted stream cannot be stream-copied.
@@ -124,7 +124,7 @@ func TestComposedSegmentArgsTempoGraphics(t *testing.T) {
 	if got, want := argAfter(args, "-vf"), "format=yuv420p"; got != want {
 		t.Fatalf("-vf = %q\nwant %q", got, want)
 	}
-	if !containsPair(args, "-ss", "32") || !containsPair(args, "-output_ts_offset", "40") || argAfter(args, "-af") != "atempo=0.8,aresample=matrix_encoding=dplii" {
+	if !containsPair(args, "-ss", "32") || !containsPair(args, "-output_ts_offset", "40") || argAfter(args, "-af") != "atempo=0.8" {
 		t.Fatalf("audio must seek source 32s, play at tempo 0.8 and land at output 40s: %q", args)
 	}
 	args = composedSegmentArgs("/lib/song.mp3", "/d", picture, 0, 4, rendition)

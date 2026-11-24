@@ -114,3 +114,37 @@ func TestTickPercent(t *testing.T) {
 		t.Error("tickPercent reported a reading with no elapsed ticks")
 	}
 }
+
+type readerFromSpyConn struct {
+	net.Conn
+	usedReaderFrom bool
+	buf            []byte
+}
+
+func (c *readerFromSpyConn) ReadFrom(r io.Reader) (int64, error) {
+	c.usedReaderFrom = true
+	data, err := io.ReadAll(r)
+	c.buf = append(c.buf, data...)
+	return int64(len(data)), err
+}
+
+func TestCountingConnPreservesReaderFromAndCountsSentBytes(t *testing.T) {
+	s := New(time.Hour, time.Hour)
+	spy := &readerFromSpyConn{}
+	cc := &countingConn{Conn: spy, sampler: s}
+	var rf io.ReaderFrom = cc
+	n, err := rf.ReadFrom(io.NopCloser(io.LimitReader(zeroReader{}, 4096)))
+	if err != nil {
+		t.Fatalf("ReadFrom: %v", err)
+	}
+	if !spy.usedReaderFrom {
+		t.Fatal("countingConn.ReadFrom did not delegate to inner io.ReaderFrom")
+	}
+	if n != 4096 || s.sent.Load() != 4096 {
+		t.Fatalf("n=%d sent=%d, want 4096/4096", n, s.sent.Load())
+	}
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) { return len(p), nil }

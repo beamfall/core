@@ -90,7 +90,7 @@ func TestMissingForNamesWhatTheArgvNeeds(t *testing.T) {
 		{"no AAC encoder", noAAC, false, stereo, []string{"encoder aac"}},
 		{"no atempo, unadjusted", noATempo, false, stereo, nil},
 		{"no atempo, slowed", noATempo, true, slowed, []string{"filter atempo"}},
-		{"nothing listed", capabilities{}, true, stereo, []string{"filter color", "filter ass", "filter format", "filter aresample", "encoder libx264", "encoder aac"}},
+		{"nothing listed", capabilities{}, true, stereo, []string{"filter color", "filter ass", "filter format", "encoder libx264", "encoder aac"}},
 	}
 	for _, tc := range cases {
 		if got := tc.caps.missingFor(composedRecipeArgv(tc.timedText, tc.rendition)[0]); !slices.Equal(got, tc.want) {

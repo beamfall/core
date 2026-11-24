@@ -41,6 +41,7 @@ func TestEncryptedSegmentArgsRunSoftwareAndUploadOverLoopback(t *testing.T) {
 			tail := []string{
 				"-method", "PUT",
 				"-protocol_whitelist", pipeProtocolAllowlist,
+				"-hls_flags", "independent_segments",
 				"-hls_segment_filename", ep.Output + "/seg%05d.m4s",
 				"--", ep.Output + "/live.m3u8",
 			}

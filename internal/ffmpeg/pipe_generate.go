@@ -48,16 +48,23 @@ func pipeFrameGrabArgs(inputURL string, timeout time.Duration, atSeconds float64
 }
 
 func pipeSampleClipArgs(inputURL string, timeout time.Duration, offsets []float64, segmentSeconds float64, width, maxFPS int) []string {
-	selects := make([]string, len(offsets))
+	args := []string{"-nostdin", "-v", "error"}
+	dur := fmt.Sprintf("%.3f", segmentSeconds)
+	var concatInputs strings.Builder
 	for i, offset := range offsets {
-		selects[i] = fmt.Sprintf("between(t,%.3f,%.3f)", offset, offset+segmentSeconds)
+		if offset < 0 {
+			offset = 0
+		}
+		args = append(args, pipeInputOptions(timeout)...)
+		args = append(args, "-ss", fmt.Sprintf("%.3f", offset), "-t", dur, "-i", inputURL)
+		fmt.Fprintf(&concatInputs, "[%d:v:0]", i)
 	}
-	filter := fmt.Sprintf("select='%s',setpts=N/FRAME_RATE/TB,scale=%d:-2,fps=%d",
-		strings.Join(selects, "+"), width, maxFPS)
-	args := pipeHead(inputURL, timeout)
+	filter := fmt.Sprintf("%sconcat=n=%d:v=1:a=0,scale=%d:-2,fps=%d[v]",
+		concatInputs.String(), len(offsets), width, maxFPS)
 	return append(args,
 		"-an",
-		"-vf", filter,
+		"-filter_complex", filter,
+		"-map", "[v]",
 		"-c:v", "libx264",
 		"-preset", "veryfast",
 		"-crf", "28",

@@ -141,13 +141,18 @@ func (g *Governor) BeginTranscode() *TranscodeLease {
 	for _, lease := range g.generations {
 		preempted = append(preempted, lease)
 	}
+	preemptedJobs := g.jobs.drainAll()
 	g.mu.Unlock()
 	// Cancel outside the lock: cancellation may run context AfterFuncs, and a
 	// preempted generation racing to release itself must never deadlock on g.mu.
 	// Admission is already sealed — activeTranscodes was raised under the lock —
-	// so no generation can slip in after this point regardless of ordering here.
+	// so no generation or heavy job can slip in after this point regardless of
+	// ordering here.
 	for _, lease := range preempted {
 		lease.cancel(ErrPreempted)
+	}
+	for _, cancel := range preemptedJobs {
+		cancel()
 	}
 	return &TranscodeLease{g: g}
 }
@@ -432,7 +437,17 @@ func (g *Governor) ClassAllowed(class string) bool {
 // itself gate on transcode preemption — callers check ClassAllowed first; this
 // keeps the registry a pure lifecycle ledger the disable path can cancel.
 func (g *Governor) StartJob(class string, cancel func()) (release func()) {
-	return g.jobs.register(class, cancel)
+	g.mu.Lock()
+	if g.activeTranscodes > 0 {
+		g.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		return func() {}
+	}
+	release = g.jobs.register(class, cancel)
+	g.mu.Unlock()
+	return release
 }
 
 // CancelClass cancels every in-flight job of the given class, returning how many
