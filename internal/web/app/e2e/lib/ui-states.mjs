@@ -51,6 +51,7 @@ export const VIEWER_ROUTES = Object.freeze([
   "/playlists/:playlistId",
   "/notifications",
   "/remote",
+  "/play-on",
   "/profiles",
   "/settings",
   "/view/*",
