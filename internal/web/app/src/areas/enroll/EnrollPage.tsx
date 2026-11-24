@@ -17,6 +17,7 @@ import { AskToJoinPanel, useAskToJoin } from "./AskToJoin";
 import { FormFeedback, normalizePairingCode, PAIRING_CODE_INPUT } from "./AuthShell";
 import { defaultDeviceName } from "./deviceName";
 import { PairingCodeHelp } from "./PairingCodeHelp";
+import { afterEnrollURL } from "./returnTo";
 
 // First contact (ADR-0007 §2): a browser enrolls as a VIEWER device with a
 // pairing code minted on a manager device. Faithful to the vanilla enroll-view
@@ -109,7 +110,7 @@ export function EnrollPage() {
       // re-runs the whole spine from a fresh load). A failed rebind is its own
       // notice — the browser IS enrolled — and never blocks the redirect.
       setStatus(rebind === "bound" ? t("enrollConnected") : t("enrollHandshakeIncomplete"));
-      window.location.assign(import.meta.env.BASE_URL);
+      window.location.assign(afterEnrollURL());
     } catch (err) {
       setRejected(err instanceof ApiError && err.status === 401);
       setBusy(false);
@@ -234,7 +235,7 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
     try {
       const rebind = await adminSignIn(password, deviceName);
       setStatus(rebind === "bound" ? t("enrollConnected") : t("enrollHandshakeIncomplete"));
-      window.location.assign(import.meta.env.BASE_URL);
+      window.location.assign(afterEnrollURL());
     } catch (err) {
       const lan = lanHostnameRefusal(err);
       setLanUrl(lan);

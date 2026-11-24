@@ -512,6 +512,29 @@ func (h *Handler) playerDisplays(ctx context.Context, scope auth.Scope) ([]Playe
 	return out, nil
 }
 
+// playerProfiles lists the household's Player Profiles with their walk-up
+// setting and controllers list for the Console (ADR-0240 D1, D4, D7). The
+// picker's profiles query leaves them out, so this owner read is the only
+// listing. Disabled Player Profiles are hidden, as on profiles.
+func (h *Handler) playerProfiles(ctx context.Context, scope auth.Scope) ([]ProfileInfo, error) {
+	all, err := h.store.Profiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := []ProfileInfo{}
+	for _, profile := range all {
+		if profile.Kind != store.ProfilePlayer || profile.Disabled {
+			continue
+		}
+		info, err := h.profileInfoForScope(ctx, scope, profile)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, info)
+	}
+	return out, nil
+}
+
 func (h *Handler) profileInfoForScope(ctx context.Context, scope auth.Scope, profile store.Profile) (ProfileInfo, error) {
 	info := profileInfo(profile)
 	if scope.Admin && profile.Kind == store.ProfilePlayer && h.store != nil {

@@ -302,6 +302,13 @@ var agentTokenDenied = map[string]bool{
 	"createjellyfincompatkey":     true,
 }
 
+// sessionOnlyReads are admin reads no token tier may run: the Console's
+// listing of Player Profiles shows who may control each display and whether
+// walk-up is on (ADR-0240 D4, D7), which only the owner's Admin Session sees.
+var sessionOnlyReads = map[string]bool{
+	"playerprofiles": true,
+}
+
 // adminTokenMayRun reports whether the request authenticated with an admin API
 // token whose tier allows every admin field it selects. Scoped keys and
 // sessions never qualify.
@@ -323,6 +330,9 @@ func adminTokenMayRun(dispatch *fieldDispatchContext) bool {
 func tokenTierAllows(access store.APITokenAccess, field string) bool {
 	if adminTokenOps[field] {
 		return true
+	}
+	if sessionOnlyReads[field] {
+		return false
 	}
 	switch access {
 	case store.APITokenAccessDiagnostics:
@@ -669,6 +679,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"playbackrenditioncache":             newFieldHandler("playbackRenditionCache", "playbackRenditionCache", fieldRead, roleSession|roleAdmin, 75),
 	"playerbinding":                      newFieldHandler("playerBinding", "playerBinding", fieldRead, roleSession, 1),
 	"playercontrollers":                  newFieldHandler("playerControllers", "playerControllers", fieldRead, roleSession|roleAdmin, 38),
+	"playerprofiles":                     newFieldHandler("playerProfiles", "playerProfiles", fieldRead, roleSession|roleAdmin, 38),
 	"playerdisplays":                     newFieldHandler("playerDisplays", "playerDisplays", fieldRead, roleSession, 129),
 	"plugins":                            newFieldHandler("plugins", "", fieldRead, roleSession, 5),
 	"pluginworker":                       newFieldHandler("pluginWorker", "pluginWorker", fieldRead, roleSession|roleAdmin, 66),
@@ -1740,6 +1751,12 @@ func dispatchFieldBlock038(dispatch *fieldDispatchContext) response {
 	if fields["playercontrollers"] {
 		ctrl, err := h.playerControllers(ctx, req)
 		if resp := resolveField(dispatch, "playercontrollers", ctrl, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["playerprofiles"] {
+		profiles, err := h.playerProfiles(ctx, scope)
+		if resp := resolveField(dispatch, "playerprofiles", profiles, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

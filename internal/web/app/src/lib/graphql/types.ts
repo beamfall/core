@@ -1596,6 +1596,10 @@ export interface DeviceInfo {
   current: boolean;
   /** False once the device has no session left (it signed out) and must enroll again (CORE-1607). */
   signedIn?: boolean;
+  /** The Player Profile this device is bound to as a player display (ADR-0240 D2). */
+  playerProfileID?: string;
+  /** The display name shown to controllers for a bound player display. */
+  playerDisplayName?: string;
 }
 
 /** Result of revoking one device (graph.RevokeDeviceResult). */
@@ -2016,6 +2020,50 @@ export interface ProfileAdminInfo {
   avatar?: string;
   /** The uploaded picture's URL (see ProfileSummary.pictureURL). */
   pictureURL?: string;
+  /** Player Profiles only: whether walk-up browsing is on (ADR-0240 D7). */
+  walkUpEnabled?: boolean;
+}
+
+/** A Player Profile's controllers list (graph.PlayerControllersInfo, ADR-0240 D4). */
+export interface PlayerControllersInfo {
+  profileID: string;
+  allAdults: boolean;
+  include: string[];
+  exclude: string[];
+}
+
+/** The item playing on a player display, filtered for the caller (ADR-0240 D6). */
+export interface PlayerDisplayItemInfo {
+  mediaID?: string;
+  title?: string;
+  libraryID?: string;
+  artworkURL?: string;
+  /** True when the caller may not see the item; only the position is shown. */
+  privateItem?: boolean;
+  label?: string;
+  positionSeconds: number;
+  durationSeconds: number;
+}
+
+/** One player display the caller controls (graph.PlayerDisplayInfo, ADR-0240 D9). */
+export interface PlayerDisplayInfo {
+  handle: string;
+  /** Absent while the display has no live Session. */
+  sessionID?: string;
+  playerProfileID: string;
+  displayName: string;
+  presence: "ready" | "playing" | "offline";
+  lastSeenAt?: string;
+  currentItem?: PlayerDisplayItemInfo | null;
+  inParty?: boolean;
+}
+
+/** controlRendererSession's result (graph.ControlRendererSessionResult). */
+export interface ControlRendererSessionResult {
+  status: string;
+  sessionID: string;
+  command: string;
+  revision: number;
 }
 
 /** The setCertificationCeiling mutation result (a narrowed Profile). */

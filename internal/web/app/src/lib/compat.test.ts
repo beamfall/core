@@ -52,7 +52,7 @@ describe("compatibility boot handshake", () => {
         renderingContractRevRange: [1, 1],
         renderingStamps: ["core-web-ui-v1"],
         fixedVocabularies: [],
-        requestedCapabilities: [],
+        requestedCapabilities: ["player-control"],
         developerAPIMajor: 0,
       }),
     });

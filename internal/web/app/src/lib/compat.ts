@@ -51,7 +51,7 @@ export const CLIENT_CONTRACT: ClientContract = {
   renderingContractRevRange: [RENDERING_REV_MIN, RENDERING_REV_MAX],
   renderingStamps: RENDERER_STAMPS,
   fixedVocabularies: [],
-  requestedCapabilities: [],
+  requestedCapabilities: ["player-control"],
   developerAPIMajor: 0,
 };
 

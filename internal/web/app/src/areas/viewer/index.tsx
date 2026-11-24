@@ -9,6 +9,7 @@ import { fetchSetupRequired } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import { enrollReturnPath } from "../enroll/returnTo";
 import { SlideshowPage } from "../slideshow/SlideshowPage";
 import { useScreensaver } from "../slideshow/useScreensaver";
 import { HiddenUndoNotice, useEngagementEvents } from "./actions";
@@ -32,6 +33,7 @@ import { PartyHostPage } from "./pages/PartyHostPage";
 import { PartyStagePage } from "./pages/PartyStagePage";
 import { PlaylistPage } from "./pages/PlaylistPage";
 import { PlaylistsPage } from "./pages/PlaylistsPage";
+import { PlayOnDisplayPage } from "./pages/PlayOnDisplayPage";
 import { ProfilePickerPage } from "./pages/ProfilePickerPage";
 import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 import { RemotePage } from "./pages/RemotePage";
@@ -120,7 +122,9 @@ export function ViewerArea() {
         </div>
       );
     }
-    return <Navigate to={setupRequired ? "/setup" : "/enroll"} replace />;
+    if (setupRequired) return <Navigate to="/setup" replace />;
+    const next = enrollReturnPath(location.pathname, location.search);
+    return <Navigate to={next ? `/enroll?next=${encodeURIComponent(next)}` : "/enroll"} replace />;
   }
 
   // Identity transitions clear SessionProvider before the departing-cookie
@@ -186,6 +190,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/remote" element={<RemotePage />} />
+        <Route path="/play-on" element={<PlayOnDisplayPage />} />
         <Route path="/profiles" element={<ProfilePickerPage />} />
         <Route path="/settings" element={<ProfileSettingsPage />} />
         <Route path="/view/*" element={<ImageViewerPage />} />

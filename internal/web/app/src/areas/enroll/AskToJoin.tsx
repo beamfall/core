@@ -11,6 +11,7 @@ import {
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { FormFeedback } from "./AuthShell";
+import { afterEnrollURL } from "./returnTo";
 
 // Ask to join (CORE-2070): the browser asks the server for a short code,
 // displays it, and polls until an administrator approves it in the Console
@@ -127,7 +128,7 @@ export function useAskToJoin(): AskToJoin {
           if (answer.status === "approved") {
             stop();
             setState({ phase: "approved", rebind: answer.rebind });
-            window.location.assign(import.meta.env.BASE_URL);
+            window.location.assign(afterEnrollURL());
           } else if (answer.status === "denied") {
             fail("denied");
           } else {

@@ -26,6 +26,7 @@ import {
 import {
   createProfile,
   disableProfile,
+  fetchPlayerProfiles,
   fetchProfilesAdmin,
   reorderProfiles,
   setProfileAvatar,
@@ -38,6 +39,7 @@ import { getAdminEpochSignal } from "../adminEpoch";
 import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
+import { PlayerProfiles } from "./PlayerProfiles";
 
 // The Console Profiles lane (ADR-0086 §46 — a distinct axis from Devices and
 // Library policy): the household's Profile identity lifecycle. Lists Profiles,
@@ -59,6 +61,7 @@ import { useAsync } from "../useAsync";
 export function Profiles() {
   const t = useT();
   const profiles = useAsync(fetchProfilesAdmin);
+  const players = useAsync(fetchPlayerProfiles);
   const rows = profiles.data ?? [];
   const [dragging, setDragging] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -147,7 +150,14 @@ export function Profiles() {
             </Button>
           </div>
         )}
-        {!unavailable && <CreateProfileForm onCreated={refreshAfterChange} />}
+        {!unavailable && (
+          <CreateProfileForm
+            onCreated={(kind) => {
+              if (kind === "player") void players.refresh();
+              else refreshAfterChange();
+            }}
+          />
+        )}
 
         {rows.length === 0 ? (
           !unavailable && <EmptyState message="consoleProfilesEmpty" />
@@ -183,6 +193,11 @@ export function Profiles() {
             </ul>
           </div>
         )}
+        <PlayerProfiles
+          players={players}
+          household={profiles.data}
+          onChanged={() => void players.refresh()}
+        />
         <p aria-live="polite" className="sr-only">
           {announcement}
         </p>
@@ -191,7 +206,7 @@ export function Profiles() {
   );
 }
 
-function CreateProfileForm({ onCreated }: { onCreated: () => void }) {
+function CreateProfileForm({ onCreated }: { onCreated: (kind: string) => void }) {
   const t = useT();
   const [name, setName] = useState("");
   const [kind, setKind] = useState("adult");
@@ -208,7 +223,7 @@ function CreateProfileForm({ onCreated }: { onCreated: () => void }) {
       await createProfile(trimmed, kind);
       setName("");
       setKind("adult");
-      onCreated();
+      onCreated(kind);
     } catch {
       setError(true);
     } finally {
@@ -242,6 +257,7 @@ function CreateProfileForm({ onCreated }: { onCreated: () => void }) {
           <SelectContent>
             <SelectItem value="adult">{t("consoleProfilesKindAdult")}</SelectItem>
             <SelectItem value="managed">{t("accessHelpProfileTypeChild")}</SelectItem>
+            <SelectItem value="player">{t("consoleProfilesKindPlayer")}</SelectItem>
           </SelectContent>
         </Select>
       </div>

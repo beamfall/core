@@ -11,6 +11,7 @@ import { rebindCompatibility } from "@/lib/compat";
 import { normalizePlayStats, PLAY_FIELDS, PLAY_STATS_FIELDS, utcOffsetMinutes } from "./plays";
 import type {
   ClientPref,
+  ControlRendererSessionResult,
   ControlSessionResult,
   ControlSessionVars,
   EntityFilter,
@@ -34,6 +35,7 @@ import type {
   NotificationReadResult,
   PlaybackAdjustmentRanges,
   PlaybackMarker,
+  PlayerDisplayInfo,
   PlayInfo,
   PlayStatsInfo,
   PrePlayItem,
@@ -495,6 +497,76 @@ export async function controlSession(vars: ControlSessionVars): Promise<ControlS
     ...vars,
   });
   return data.controlSession;
+}
+
+const PLAYER_DISPLAYS_QUERY =
+  "query PlayerDisplays { playerDisplays { handle sessionID playerProfileID displayName presence lastSeenAt inParty currentItem { mediaID title libraryID artworkURL privateItem label positionSeconds durationSeconds } } }";
+
+/** PlayerDisplays — the player displays the caller controls (ADR-0240 D6, D9). */
+export async function fetchPlayerDisplays(signal?: AbortSignal): Promise<PlayerDisplayInfo[]> {
+  const data = await graphql<{ playerDisplays: PlayerDisplayInfo[] | null }>(
+    PLAYER_DISPLAYS_QUERY,
+    {},
+    signal,
+  );
+  return data.playerDisplays ?? [];
+}
+
+const CONTROL_RENDERER_SESSION_MUTATION =
+  "mutation ControlRendererSession($sessionID: String!, $command: String!, $commandID: String!, $expectedRevision: Int!, $mediaID: String, $positionMs: Int) { controlRendererSession(sessionID: $sessionID, command: $command, commandID: $commandID, expectedRevision: $expectedRevision, mediaID: $mediaID, positionMs: $positionMs) { status sessionID command revision } }";
+
+export interface ControlRendererSessionVars {
+  sessionID: string;
+  command: string;
+  /** 16–128 characters of [A-Za-z0-9_-]; one per user action, reused on retry. */
+  commandID: string;
+  expectedRevision: number;
+  mediaID?: string;
+  positionMs?: number;
+}
+
+/** ControlRendererSession — one revisioned command to a player display (ADR-0240 D6). */
+export async function controlRendererSession(
+  vars: ControlRendererSessionVars,
+): Promise<ControlRendererSessionResult> {
+  const sent: Record<string, unknown> = { ...vars };
+  for (const key of Object.keys(sent)) if (sent[key] === undefined) delete sent[key];
+  const data = await graphql<{ controlRendererSession: ControlRendererSessionResult }>(
+    CONTROL_RENDERER_SESSION_MUTATION,
+    sent,
+  );
+  return data.controlRendererSession;
+}
+
+/**
+ * commandPlayerDisplay — send a command to a display, retrying once with the
+ * server's revision when the first send loses a revision race (`CONFLICT`).
+ * Both sends use one commandID, so the server applies the command at most
+ * once. Anything but `APPLIED` throws, so callers never report a rejected
+ * command as sent.
+ */
+export async function commandPlayerDisplay(
+  vars: Omit<ControlRendererSessionVars, "commandID" | "expectedRevision">,
+): Promise<ControlRendererSessionResult> {
+  const commandID = newCommandID();
+  let result = await controlRendererSession({ ...vars, commandID, expectedRevision: 0 });
+  if (result.status === "CONFLICT") {
+    result = await controlRendererSession({
+      ...vars,
+      commandID,
+      expectedRevision: result.revision,
+    });
+  }
+  if (result.status !== "APPLIED") {
+    throw new Error(`display command ${result.status || "rejected"}`);
+  }
+  return result;
+}
+
+function newCommandID(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return "web-" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 const NOTIFICATIONS_QUERY =

@@ -18,3 +18,13 @@ Client kits vendor `fixtures.json` one way, byte for byte, and decode it with
 their own SDK types under the same strictness. To change a shape, edit the Go
 type and this file together, bump `contractVersion` and the registry version,
 then refresh each consumer copy before core pins the new version.
+
+## QR handle URL
+
+A player display's QR code encodes `<server origin>/web/play-on?display=<handle>`,
+where `<handle>` is the display's `PlayerDisplayInfo.handle` (ADR-0240 D9). The
+web app resolves the handle only against the signed-in caller's own
+`playerDisplays`. An unknown, revoked, unbound or uncontrolled handle, and any
+lookup failure, show the same "display not available" message, so the URL
+reveals nothing about displays the caller cannot control. Displays show the
+QR code; they never resolve it themselves.

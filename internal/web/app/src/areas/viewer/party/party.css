@@ -474,3 +474,12 @@
     transition: background-color var(--duration-fast) var(--ease-standard);
   }
 }
+
+/* The lead screen's marker in the Screens list (ADR-0240 D10). */
+.bf-party-badge {
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}

@@ -43,6 +43,8 @@ import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
 import { partyStrings } from "./party";
 import { pickerStrings } from "./pickers";
+import { playerDeviceConsoleStrings } from "./player-devices-console";
+import { playerDisplayStrings } from "./player-displays";
 import { playerRecoveryStrings } from "./player-recovery";
 import { playerSurfaceStrings } from "./player-surfaces";
 import { pluginStrings } from "./plugins";
@@ -158,6 +160,8 @@ export const en = {
   ...mediaPageStrings.en,
   ...restrictionsSetupStrings.en,
   ...remoteControlStrings.en,
+  ...playerDisplayStrings.en,
+  ...playerDeviceConsoleStrings.en,
   ...webhookStrings.en,
   ...viewerCollectionStrings.en,
   ...viewerHomeStrings.en,
@@ -250,6 +254,8 @@ export const fr = {
   ...mediaPageStrings.fr,
   ...restrictionsSetupStrings.fr,
   ...remoteControlStrings.fr,
+  ...playerDisplayStrings.fr,
+  ...playerDeviceConsoleStrings.fr,
   ...webhookStrings.fr,
   ...viewerCollectionStrings.fr,
   ...viewerHomeStrings.fr,
@@ -342,6 +348,8 @@ export const de = {
   ...mediaPageStrings.de,
   ...restrictionsSetupStrings.de,
   ...remoteControlStrings.de,
+  ...playerDisplayStrings.de,
+  ...playerDeviceConsoleStrings.de,
   ...webhookStrings.de,
   ...viewerCollectionStrings.de,
   ...viewerHomeStrings.de,
@@ -434,6 +442,8 @@ export const es = {
   ...mediaPageStrings.es,
   ...restrictionsSetupStrings.es,
   ...remoteControlStrings.es,
+  ...playerDisplayStrings.es,
+  ...playerDeviceConsoleStrings.es,
   ...webhookStrings.es,
   ...viewerCollectionStrings.es,
   ...viewerHomeStrings.es,
@@ -526,6 +536,8 @@ export const pt = {
   ...mediaPageStrings.pt,
   ...restrictionsSetupStrings.pt,
   ...remoteControlStrings.pt,
+  ...playerDisplayStrings.pt,
+  ...playerDeviceConsoleStrings.pt,
   ...webhookStrings.pt,
   ...viewerCollectionStrings.pt,
   ...viewerHomeStrings.pt,

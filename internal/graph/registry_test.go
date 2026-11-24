@@ -110,6 +110,7 @@ var originalScopedFields = []string{
 	"playerbinding",
 	"playercontrollers",
 	"playerdisplays",
+	"playerprofiles",
 	"setdeviceplayerbinding",
 	"cleardeviceplayerbinding",
 	"setplayerwalkup",
@@ -999,6 +1000,9 @@ func TestAPITokenTiersBoundConsoleFields(t *testing.T) {
 			case store.APITokenAccessAgent:
 				want = !agentTokenDenied[field]
 			}
+			if sessionOnlyReads[field] && !adminTokenOps[field] {
+				want = false
+			}
 			body := `{"query":"` + kind + ` { ` + fieldHandlerRegistry[field].wireName + ` }"}`
 			_, errs := post(t, handler, body, authorize)
 			refused := len(errs) > 0 && errs[0].Message == "admin session required"
@@ -1010,6 +1014,11 @@ func TestAPITokenTiersBoundConsoleFields(t *testing.T) {
 	for field := range agentTokenDenied {
 		if !adminFields[field] && !suppressedDispatchFields[field] {
 			t.Errorf("agentTokenDenied %q is not a Console field", field)
+		}
+	}
+	for field := range sessionOnlyReads {
+		if !adminFields[field] || mutationFields[field] {
+			t.Errorf("sessionOnlyReads %q is not a Console read", field)
 		}
 	}
 	for field := range diagnosticsTokenMutations {

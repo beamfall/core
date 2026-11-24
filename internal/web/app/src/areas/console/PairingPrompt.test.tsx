@@ -30,6 +30,9 @@ vi.mock("@/lib/graphql", () => ({
   revokeDevice: vi.fn(),
   revokeAllDevices: vi.fn(),
   setDeviceRole: vi.fn(),
+  fetchPlayerProfiles: vi.fn(async () => []),
+  setDevicePlayerBinding: vi.fn(),
+  clearDevicePlayerBinding: vi.fn(),
 }));
 
 const tv: PairingRequest = {

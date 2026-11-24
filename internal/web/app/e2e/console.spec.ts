@@ -310,7 +310,11 @@ test.describe("console", () => {
     await expect(tvCells.nth(0)).toContainText("TV");
     await expect(tvCells.nth(1)).toHaveText("Viewer");
     await expect(tvCells.nth(2)).toHaveText("Active");
-    await expect(tvCells.nth(3).locator("button")).toHaveText(["Promote", "Revoke"]);
+    await expect(tvCells.nth(3).locator("button")).toHaveText([
+      "Use as a player display",
+      "Promote",
+      "Revoke",
+    ]);
     await expect(revokedCells.nth(0)).toContainText("Revoked");
     await expect(revokedCells.nth(1)).toHaveText("Viewer");
     await expect(revokedCells.nth(2)).toHaveText("Revoked");
@@ -324,7 +328,7 @@ test.describe("console", () => {
       await expect(currentDeviceChip).toHaveText("This device");
       await expect(managerActions).toHaveCount(0);
     } else {
-      await expect(managerActions).toHaveText(["Demote", "Revoke"]);
+      await expect(managerActions).toHaveText(["Use as a player display", "Demote", "Revoke"]);
     }
     await expect(alertDialog).toContainText("This can’t be undone from the web Console yet.");
     await expect(page.locator("h2", { hasText: "Profiles" })).toBeVisible();

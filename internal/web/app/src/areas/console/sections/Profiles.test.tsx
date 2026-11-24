@@ -26,6 +26,9 @@ vi.mock("@/lib/graphql", () => ({
   setProfileEntryPin: vi.fn(),
   uploadProfilePicture: vi.fn(),
   removeProfilePicture: vi.fn(),
+  fetchPlayerProfiles: vi.fn(async () => []),
+  setPlayerWalkUp: vi.fn(),
+  setPlayerControllers: vi.fn(),
 }));
 
 const rows: ProfileAdminInfo[] = [

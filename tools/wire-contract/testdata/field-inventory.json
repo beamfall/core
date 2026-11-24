@@ -2974,6 +2974,28 @@
       ]
     },
     {
+      "field": "playerprofiles",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "audioLanguages",
+        "certificationCeilings",
+        "disabled",
+        "id",
+        "kind",
+        "libraryIDs",
+        "maxConcurrentStreams",
+        "name",
+        "playerControllers",
+        "preferSDH",
+        "remoteMaxBitrate",
+        "subtitleLanguages",
+        "subtitleMode",
+        "transcodeAllowed",
+        "walkUpEnabled"
+      ]
+    },
+    {
       "field": "playhistory",
       "effect": "read",
       "tier": "admin",

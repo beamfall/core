@@ -86,6 +86,26 @@ export interface PartyScreen {
   rttMS: number;
   /** "" before the first report. */
   reportedAt: string;
+  /** True for a player display joined from the Screens list (ADR-0240 D10). */
+  playerDisplay?: boolean;
+  playerDisplayHandle?: string;
+}
+
+/** A controlled player display the host can add to Screens (ADR-0240 D10). */
+export interface PartyAvailableDisplay {
+  handle: string;
+  displayName: string;
+  presence: "ready" | "playing" | "offline";
+  joined: boolean;
+  coversLibraries: boolean;
+  missingLibraryIDs: string[];
+}
+
+export interface PartyScreenJoinResult {
+  screen: PartyScreen;
+  session: PartySession;
+  coversLibraries: boolean;
+  missingLibraryIDs: string[];
 }
 
 export interface PartySession {
@@ -109,6 +129,8 @@ export interface PartySession {
   participants: PartyParticipant[];
   screens: PartyScreen[];
   skipped: PartyEntry[];
+  /** Empty for callers that did not request player-control. */
+  availableDisplays?: PartyAvailableDisplay[];
 }
 
 export interface PartyStage {
@@ -131,8 +153,9 @@ export interface PartyStage {
 const ENTRY =
   "id mediaID title subtitle durationSeconds artworkURL participantID participantName state pinned position etaSeconds pitchSemitones addedAt lastPlayedAt";
 const PLAYBACK = "entryID state positionMS anchorAtMS tempo pitchSemitones";
-const SCREEN = "id name kind carrier lead ticker qrCorner muted offsetMS rttMS reportedAt";
-const SESSION = `id joinCode joinPath fairness autoAdd joinOpen libraryIDs startedAt expiresAt changeoverSeconds current { ${ENTRY} } playback { ${PLAYBACK} } entries { ${ENTRY} } requests { ${ENTRY} } recent { ${ENTRY} } removed { ${ENTRY} } participants { id name guest waiting lastTurnAt } screens { ${SCREEN} } skipped { ${ENTRY} }`;
+const SCREEN =
+  "id name kind carrier lead ticker qrCorner muted offsetMS rttMS reportedAt playerDisplay playerDisplayHandle";
+const SESSION = `id joinCode joinPath fairness autoAdd joinOpen libraryIDs startedAt expiresAt changeoverSeconds current { ${ENTRY} } playback { ${PLAYBACK} } entries { ${ENTRY} } requests { ${ENTRY} } recent { ${ENTRY} } removed { ${ENTRY} } participants { id name guest waiting lastTurnAt } screens { ${SCREEN} } skipped { ${ENTRY} } availableDisplays { handle displayName presence joined coversLibraries missingLibraryIDs }`;
 const STAGE_ENTRY = `${ENTRY} ineligible label`;
 const STAGE = `sessionID serverNowMS current { ${STAGE_ENTRY} } playback { ${PLAYBACK} } upNext { ${STAGE_ENTRY} } ticker qrCorner muted joinCode joinPath`;
 
@@ -156,6 +179,8 @@ const PARTY_SCREEN_REPORT_MUTATION =
   "mutation PartyScreenReport($screenID: String!, $offsetMS: Int!, $rttMS: Int!) { partyScreenReport(screenID: $screenID, offsetMS: $offsetMS, rttMS: $rttMS) }";
 const PARTY_SCREEN_DISPLAY_MUTATION = `mutation PartyScreenDisplay($screenID: String!, $qrCorner: String!, $muted: Boolean!) { partyScreenDisplay(screenID: $screenID, qrCorner: $qrCorner, muted: $muted) { ${SESSION} } }`;
 const PARTY_SCREEN_TICKER_MUTATION = `mutation PartyScreenTicker($screenID: String!, $ticker: Boolean!) { partyScreenTicker(screenID: $screenID, ticker: $ticker) { ${SESSION} } }`;
+const PARTY_SCREEN_ADD_DISPLAY_MUTATION = `mutation PartyScreenAddDisplay($handle: String!) { partyScreenAddDisplay(handle: $handle) { screen { ${SCREEN} } session { ${SESSION} } coversLibraries missingLibraryIDs } }`;
+const PARTY_SCREEN_LEAD_MUTATION = `mutation PartyScreenLead($screenID: String!) { partyScreenLead(screenID: $screenID) { ${SESSION} } }`;
 const PARTY_SCREEN_DROP_MUTATION = `mutation PartyScreenDrop($screenID: String!) { partyScreenDrop(screenID: $screenID) { ${SESSION} } }`;
 
 // Optional arguments are sent only when given, so an omitted one keeps the
@@ -330,4 +355,18 @@ export function partyScreenDisplay(
 
 export function partyScreenDrop(screenID: string): Promise<PartySession> {
   return sessionOp("partyScreenDrop", PARTY_SCREEN_DROP_MUTATION, { screenID });
+}
+
+/** Joins a controlled player display to the session's Screens (ADR-0240 D10). */
+export async function partyScreenAddDisplay(handle: string): Promise<PartyScreenJoinResult> {
+  const data = await graphql<{ partyScreenAddDisplay: PartyScreenJoinResult }>(
+    PARTY_SCREEN_ADD_DISPLAY_MUTATION,
+    { handle },
+  );
+  return data.partyScreenAddDisplay;
+}
+
+/** Makes one screen the session's lead screen (ADR-0240 D10). */
+export function partyScreenLead(screenID: string): Promise<PartySession> {
+  return sessionOp("partyScreenLead", PARTY_SCREEN_LEAD_MUTATION, { screenID });
 }

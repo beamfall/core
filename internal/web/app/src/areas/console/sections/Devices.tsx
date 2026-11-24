@@ -18,6 +18,7 @@ import { Advanced } from "@/lib/advancedSettings";
 import {
   fetchConsoleConfig,
   fetchDevices,
+  fetchPlayerProfiles,
   fetchRemoteAccess,
   mintPairingCode,
   type PairingCode,
@@ -32,6 +33,11 @@ import { ConfirmButton } from "../ConfirmButton";
 import { usePairingRequests, useRoleLabel } from "../lib/pairingRequests";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
+import {
+  DevicePlayerBinding,
+  devicePlayerBoundText,
+  type PlayerProfileChoice,
+} from "./DevicePlayerBinding";
 import { enrollQrTarget, isLoopbackHost } from "./enrollQr";
 
 // Device administration (ADR-0081), Console half — the operator-facing surface
@@ -289,10 +295,14 @@ function DeviceTable({
   devices,
   onRevoke,
   onSetRole,
+  players = [],
+  onBindingChanged,
 }: {
   devices: DeviceInfo[];
   onRevoke: (deviceID: string) => Promise<void>;
   onSetRole: (deviceID: string, role: "viewer" | "manager") => Promise<void>;
+  players?: PlayerProfileChoice[];
+  onBindingChanged?: () => Promise<void>;
 }) {
   const t = useT();
   return (
@@ -312,6 +322,11 @@ function DeviceTable({
             <span className="block font-mono text-[12px] font-normal text-muted-foreground">
               {t("deviceIDDetail", { id: d.deviceID.slice(-6) })}
             </span>
+            {d.playerProfileID && (
+              <span className="block text-[12px] font-normal text-muted-foreground">
+                {devicePlayerBoundText(d, players, t)}
+              </span>
+            )}
           </TableCell>
           <TableCell>
             {t(d.role === "manager" ? "deviceRoleManager" : "deviceRoleViewer")}
@@ -327,7 +342,10 @@ function DeviceTable({
           </TableCell>
           <TableCell className="text-right">
             {!d.current && !d.revoked && (
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
+                {onBindingChanged && (
+                  <DevicePlayerBinding device={d} players={players} onChanged={onBindingChanged} />
+                )}
                 <ConfirmButton
                   label={t(d.role === "manager" ? "deviceDemote" : "devicePromote")}
                   confirm={d.role === "manager" ? "deviceDemoteConfirm" : "devicePromoteConfirm"}
@@ -356,6 +374,10 @@ export function Devices() {
   const t = useT();
   const devices = useAsync(fetchDevices);
   const config = useAsync(fetchConsoleConfig);
+  // Player Profiles for the binding dialog (ADR-0240 D2). A failed load leaves
+  // the list empty and the dialog says to create one first.
+  const players = useAsync(fetchPlayerProfiles);
+  const playerChoices = (players.data ?? []).map((p) => ({ id: p.id, name: p.name }));
   const [minted, setMinted] = useState<MintedCode | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -419,7 +441,13 @@ export function Devices() {
           <EmptyState message="devicesEmpty" />
         ) : (
           <>
-            <DeviceTable devices={active} onRevoke={onRevoke} onSetRole={onSetRole} />
+            <DeviceTable
+              devices={active}
+              onRevoke={onRevoke}
+              onSetRole={onSetRole}
+              players={playerChoices}
+              onBindingChanged={() => devices.refresh()}
+            />
             {revoked.length > 0 && (
               <details className="mt-3">
                 <summary className="cursor-pointer text-dense text-muted-foreground">
