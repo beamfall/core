@@ -676,6 +676,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"partymove":              fieldArguments["partymove"],
 	"partyremove":            fieldArguments["partyremove"],
 	"partyrestore":           fieldArguments["partyrestore"],
+	"partyskip":              fieldArguments["partyskip"],
 	"partyadvance":           fieldArguments["partyadvance"],
 	"partyplayback":          fieldArguments["partyplayback"],
 	"partyremoveparticipant": fieldArguments["partyremoveparticipant"],

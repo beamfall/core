@@ -698,6 +698,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"partyreview":                        newFieldHandler("partyReview", "party", fieldMutation, roleSession, 159),
 	"partymove":                          newFieldHandler("partyMove", "party", fieldMutation, roleSession, 159),
 	"partyremove":                        newFieldHandler("partyRemove", "party", fieldMutation, roleSession, 159),
+	"partyskip":                          newFieldHandler("partySkip", "party", fieldMutation, roleSession, 159),
 	"partyrestore":                       newFieldHandler("partyRestore", "party", fieldMutation, roleSession, 159),
 	"partyadvance":                       newFieldHandler("partyAdvance", "party", fieldMutation, roleSession, 159),
 	"partyplayback":                      newFieldHandler("partyPlayback", "party", fieldMutation, roleSession, 159),
@@ -4903,6 +4904,10 @@ func dispatchFieldBlock159(dispatch *fieldDispatchContext) response {
 	if fields["partyremove"] {
 		result, err := h.partyRemoveWrite(ctx, scope, req)
 		return resolveField(dispatch, "partyremove", result, err)
+	}
+	if fields["partyskip"] {
+		result, err := h.partySkipWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyskip", result, err)
 	}
 	if fields["partyrestore"] {
 		result, err := h.partyRestoreWrite(ctx, scope, req)

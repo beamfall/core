@@ -101,6 +101,15 @@ func TestPartySessionGraphOperations(t *testing.T) {
 		t.Fatalf("partyStage = %+v", stage)
 	}
 
+	session = write("partySkip", fmt.Sprintf(`mutation { partySkip(entryID: %q)`, second))
+	if session.Current == nil || session.Current.ID != first || len(session.Skipped) != 1 || session.Skipped[0].ID != second {
+		t.Fatalf("partySkip = current %+v skipped %+v", session.Current, session.Skipped)
+	}
+	session = write("partyRestore", fmt.Sprintf(`mutation { partyRestore(entryID: %q)`, second))
+	if session.Current.ID != first || len(session.Skipped) != 0 || len(session.Entries) != 1 || session.Entries[0].ID != second {
+		t.Fatalf("partyRestore of a skipped entry = %+v", session)
+	}
+
 	session = write("partyScreenDrop", fmt.Sprintf(`mutation { partyScreenDrop(screenID: %q)`, screen.ID))
 	if len(session.Screens) != 0 {
 		t.Fatalf("partyScreenDrop = %+v", session.Screens)

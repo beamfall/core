@@ -229,6 +229,7 @@ var resultTypes = map[string]any{
 	"partyreview":                        PartySessionInfo{},
 	"partymove":                          PartySessionInfo{},
 	"partyremove":                        PartySessionInfo{},
+	"partyskip":                          PartySessionInfo{},
 	"partyrestore":                       PartySessionInfo{},
 	"partyadvance":                       PartySessionInfo{},
 	"partyplayback":                      PartySessionInfo{},
@@ -561,6 +562,10 @@ var fieldArguments = map[string][]NestedArgument{
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
 	},
 	"partyrestore": {
+		{Name: "entryID", Kind: "string"},
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+	},
+	"partyskip": {
 		{Name: "entryID", Kind: "string"},
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
 	},

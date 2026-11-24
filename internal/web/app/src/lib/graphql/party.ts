@@ -144,6 +144,7 @@ const PARTY_REVIEW_MUTATION = `mutation PartyReview($entryID: String!, $approve:
 const PARTY_MOVE_MUTATION = `mutation PartyMove($entryID: String!, $position: Int!) { partyMove(entryID: $entryID, position: $position) { ${SESSION} } }`;
 const PARTY_REMOVE_MUTATION = `mutation PartyRemove($entryID: String!) { partyRemove(entryID: $entryID) { ${SESSION} } }`;
 const PARTY_RESTORE_MUTATION = `mutation PartyRestore($entryID: String!) { partyRestore(entryID: $entryID) { ${SESSION} } }`;
+const PARTY_SKIP_MUTATION = `mutation PartySkip($entryID: String!) { partySkip(entryID: $entryID) { ${SESSION} } }`;
 const PARTY_ADVANCE_MUTATION = `mutation PartyAdvance($fromEntryID: String) { partyAdvance(fromEntryID: $fromEntryID) { ${SESSION} } }`;
 const PARTY_PLAYBACK_MUTATION = `mutation PartyPlayback($entryID: String!, $state: String!, $positionMS: Int!, $tempo: Float, $pitchSemitones: Int) { partyPlayback(entryID: $entryID, state: $state, positionMS: $positionMS, tempo: $tempo, pitchSemitones: $pitchSemitones) { ${SESSION} } }`;
 const PARTY_REMOVE_PARTICIPANT_MUTATION = `mutation PartyRemoveParticipant($participantID: String!) { partyRemoveParticipant(participantID: $participantID) { ${SESSION} } }`;
@@ -247,6 +248,11 @@ export function partyRemove(entryID: string): Promise<PartySession> {
 
 export function partyRestore(entryID: string): Promise<PartySession> {
   return sessionOp("partyRestore", PARTY_RESTORE_MUTATION, { entryID });
+}
+
+/** Skips the current entry; partyRestore brings it back as next up. */
+export function partySkip(entryID: string): Promise<PartySession> {
+  return sessionOp("partySkip", PARTY_SKIP_MUTATION, { entryID });
 }
 
 /** Moves to the next entry; idempotent when `fromEntryID` names the entry advanced from. */

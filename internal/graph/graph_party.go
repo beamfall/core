@@ -397,6 +397,13 @@ func (h *Handler) partyRemoveWrite(ctx context.Context, scope auth.Scope, req re
 	})
 }
 
+// partySkipWrite resolves partySkip.
+func (h *Handler) partySkipWrite(ctx context.Context, scope auth.Scope, req request) (*PartySessionInfo, error) {
+	return h.partyHostWrite(ctx, scope, req, func(host store.ProfileID, filter store.LibraryFilter) error {
+		return h.store.SkipPartyEntry(ctx, host, filter, trimmedVariable(req, "entryID"))
+	})
+}
+
 // partyRestoreWrite resolves partyRestore.
 func (h *Handler) partyRestoreWrite(ctx context.Context, scope auth.Scope, req request) (*PartySessionInfo, error) {
 	return h.partyHostWrite(ctx, scope, req, func(host store.ProfileID, filter store.LibraryFilter) error {

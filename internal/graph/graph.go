@@ -7140,6 +7140,7 @@ var mutationFields = map[string]bool{
 	"partyreview":                        true,
 	"partymove":                          true,
 	"partyremove":                        true,
+	"partyskip":                          true,
 	"partyrestore":                       true,
 	"partyadvance":                       true,
 	"partyplayback":                      true,

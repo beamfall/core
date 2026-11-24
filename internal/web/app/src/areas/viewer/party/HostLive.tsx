@@ -36,6 +36,7 @@ import {
   partyScreenDisplay,
   partyScreenDrop,
   partyScreenTicker,
+  partySkip,
   type SearchResultItem,
   searchResult,
 } from "@/lib/graphql";
@@ -79,6 +80,36 @@ function Panel({
   );
 }
 
+/**
+ * Skips the current entry and offers an Undo that brings it back as next up.
+ * The notice goes once the entry is back in the rotation by any route.
+ */
+export function useSkipUndo(session: PartySession, run: RunPartyOp) {
+  const t = useT();
+  const [skippedID, setSkippedID] = useState("");
+  const skip = async (entry: PartyEntry) => {
+    if (await run(() => partySkip(entry.id))) setSkippedID(entry.id);
+  };
+  // Read from the live list: a song that has since gone away comes back
+  // redacted, and its skip can no longer be undone.
+  const undo = session.skipped.find((entry) => entry.id === skippedID && entry.title !== "");
+  const notice = undo && (
+    <p role="status" className="bf-party-notice flex flex-wrap items-center gap-2" data-tone="ok">
+      {t("partyHostSkippedNotice", { name: undo.participantName, title: undo.title })}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={async () => {
+          if (await run(() => partyRestore(undo.id))) setSkippedID("");
+        }}
+      >
+        {t("partyHostUndo")}
+      </Button>
+    </p>
+  );
+  return { skip, notice };
+}
+
 export function PartyMonitor({
   session,
   run,
@@ -90,6 +121,7 @@ export function PartyMonitor({
   const [, setTick] = useState(0);
   const [scrubMS, setScrubMS] = useState<number | null>(null);
   const playing = playback?.state === "playing" && playback.entryID === current?.id;
+  const { skip, notice: skipNotice } = useSkipUndo(session, run);
 
   useEffect(() => {
     if (!playing) return;
@@ -100,6 +132,7 @@ export function PartyMonitor({
   if (!current) {
     return (
       <Panel title={t("partyHostNowSinging")} className="bf-party-monitor">
+        {skipNotice}
         <p className="bf-party-muted">
           {session.entries.length > 0 ? t("partyHostIdleReady") : t("partyHostIdleEmpty")}
         </p>
@@ -205,11 +238,12 @@ export function PartyMonitor({
         >
           <Redo2 className="size-4" aria-hidden />
         </Button>
-        <Button variant="secondary" onClick={() => void run(() => partyAdvance(current.id))}>
+        <Button variant="secondary" onClick={() => void skip(current)}>
           <SkipForward className="size-4" aria-hidden />
           {t("partyHostSkip")}
         </Button>
       </div>
+      {skipNotice}
       {ranges && (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <Stepper
@@ -683,13 +717,6 @@ export function PartyRotation({ session, run }: PanelProps) {
           </Button>
         </p>
       )}
-      {session.skipped.length > 0 && (
-        <p className="bf-party-muted text-sm">
-          {t("partyHostSkipped", {
-            titles: session.skipped.map((entry) => entry.title).join(", "),
-          })}
-        </p>
-      )}
       {waiting.length === 0 ? (
         <p className="bf-party-muted">{t("partyHostRotationEmpty")}</p>
       ) : (
@@ -763,6 +790,37 @@ export function PartyRotation({ session, run }: PanelProps) {
             ))}
           </ol>
         </>
+      )}
+      {session.skipped.length > 0 && (
+        <div className="bf-party-skipped flex flex-col gap-2">
+          <h3 className="bf-party-label">{t("partyHostSkippedHeading")}</h3>
+          <ul className="flex flex-col gap-2">
+            {session.skipped.map((entry) => (
+              <li key={entry.id} className="bf-party-row">
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate font-medium">{entry.participantName}</span>
+                  <span className="bf-party-muted truncate text-sm">
+                    {entry.title || t("partyHostSkippedUnavailable")}
+                  </span>
+                </div>
+                {/* The server redacts the title of Media the session can no longer see; such a skip cannot come back. */}
+                {entry.title !== "" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={t("partyHostBringBackTitle", {
+                      name: entry.participantName,
+                      title: entry.title,
+                    })}
+                    onClick={() => void run(() => partyRestore(entry.id))}
+                  >
+                    {t("partyHostBringBack")}
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </Panel>
   );

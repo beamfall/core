@@ -11,6 +11,7 @@ import {
   partyRemove,
   partyRestore,
   partyScreenDisplay,
+  partySkip,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { expectNoAxeViolations } from "@/test/axe";
@@ -27,6 +28,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => {
     partyRemove: vi.fn(),
     partyRestore: vi.fn(),
     partyScreenDisplay: vi.fn(),
+    partySkip: vi.fn(),
   };
 });
 vi.mock("@/components/chrome/AppShell", () => ({
@@ -197,5 +199,61 @@ describe("PartyHostPage", () => {
     expect(
       await screen.findByRole("button", { name: "Remove Paper Lanterns" }),
     ).toBeInTheDocument();
+  });
+
+  it("skips the singer and brings them back with Undo", async () => {
+    const juniper = { ...entry("e1", "Paper Lanterns", 0), state: "current" as const };
+    const steve = { ...entry("e2", "Caught Up", 1), participantName: "Steve" };
+    vi.mocked(fetchPartySession).mockResolvedValue(session({ current: juniper, entries: [steve] }));
+    vi.mocked(partySkip).mockResolvedValue(
+      session({
+        current: { ...steve, state: "current" },
+        skipped: [{ ...juniper, state: "skipped" }],
+      }),
+    );
+    vi.mocked(partyRestore).mockResolvedValue(
+      session({
+        current: { ...steve, state: "current" },
+        entries: [{ ...juniper, state: "waiting", pinned: true, position: 1 }],
+      }),
+    );
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Skip" }));
+    expect(partySkip).toHaveBeenCalledWith("e1");
+    expect(await screen.findByText(/Skipped Juniper: Paper Lanterns/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Bring back Juniper: Paper Lanterns" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(partyRestore).toHaveBeenCalledWith("e1");
+    expect(
+      await screen.findByRole("button", { name: "Remove Paper Lanterns" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Skipped Juniper/)).toBeNull();
+  });
+
+  it("brings back a singer from the skipped list", async () => {
+    const juniper = { ...entry("e1", "Paper Lanterns", 0), state: "skipped" as const };
+    vi.mocked(fetchPartySession).mockResolvedValue(session({ skipped: [juniper] }));
+    vi.mocked(partyRestore).mockResolvedValue(
+      session({ entries: [{ ...juniper, state: "waiting", position: 1 }] }),
+    );
+    const { container } = renderPage();
+
+    const back = await screen.findByRole("button", { name: "Bring back Juniper: Paper Lanterns" });
+    await expectNoAxeViolations(container);
+    await userEvent.click(back);
+    expect(partyRestore).toHaveBeenCalledWith("e1");
+  });
+
+  it("shows a skip whose song is gone without a way to bring it back", async () => {
+    const gone = { ...entry("e1", "", 0), state: "skipped" as const };
+    vi.mocked(fetchPartySession).mockResolvedValue(session({ skipped: [gone] }));
+    renderPage();
+
+    expect(await screen.findByText("Song no longer available")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Bring back/ })).toBeNull();
   });
 });

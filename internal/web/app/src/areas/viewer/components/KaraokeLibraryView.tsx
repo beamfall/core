@@ -19,7 +19,7 @@ import {
   partyStart,
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
-import { PartyPeople, PartyRotation } from "../party/HostLive";
+import { PartyPeople, PartyRotation, useSkipUndo } from "../party/HostLive";
 import { anchorTargetMS, stagePath, stageWindowName } from "../party/partySync";
 import { type RunPartyOp, usePartyHost } from "../party/usePartyHost";
 import { KaraokeSongbook } from "./KaraokeSongbook";
@@ -169,10 +169,12 @@ function OnStage({
 }) {
   const t = useT();
   const { current, playback } = session;
+  const { skip, notice: skipNotice } = useSkipUndo(session, run);
   if (!current) {
     return (
       <section className="bf-party-panel flex flex-col gap-3">
         <h2 className="bf-party-h2">{t("partyHostNowSinging")}</h2>
+        {skipNotice}
         <p className="bf-party-muted">
           {session.entries.length > 0 ? t("partyHostIdleReady") : t("partyHostIdleEmpty")}
         </p>
@@ -214,11 +216,12 @@ function OnStage({
           {playing ? <Pause aria-hidden /> : <Play aria-hidden />}
           {playing ? t("partyHostPause") : t("partyHostPlay")}
         </Button>
-        <Button size="sm" onClick={() => void run(() => partyAdvance(current.id))}>
+        <Button size="sm" onClick={() => void skip(current)}>
           <SkipForward aria-hidden />
           {t("karaokeNextSinger")}
         </Button>
       </div>
+      {skipNotice}
     </section>
   );
 }

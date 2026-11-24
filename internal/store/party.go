@@ -828,7 +828,16 @@ func (s *Store) buildPartyViewLocked(ctx context.Context, state partyState, nowM
 		case PartyEntryDone:
 			view.Recent = append(view.Recent, entryView(entry))
 		case PartyEntrySkipped:
-			view.Skipped = append(view.Skipped, entryView(entry))
+			// A removed singer's skips go with them. A skip whose Media is no
+			// longer visible stays listed, its title redacted, so the host
+			// sees why the singer was passed over; it cannot be brought back.
+			if state.participants[entry.participantID].removedAtMS == 0 {
+				v := entryView(entry)
+				if !visible(entry.mediaID) {
+					v.MediaID, v.LastPlayedAt = "", time.Time{}
+				}
+				view.Skipped = append(view.Skipped, v)
+			}
 		case PartyEntryDeclined:
 			view.Declined = append(view.Declined, entryView(entry))
 		case PartyEntryRemoved:
@@ -857,7 +866,6 @@ func (s *Store) buildPartyViewLocked(ctx context.Context, state partyState, nowM
 	slices.SortStableFunc(view.Skipped, newestFirst(func(v PartyEntryView) int64 { return finished[v.ID] }))
 	slices.SortStableFunc(view.Removed, newestFirst(func(v PartyEntryView) int64 { return removed[v.ID] }))
 	view.Recent = view.Recent[:min(len(view.Recent), partyRecentLimit)]
-	view.Skipped = view.Skipped[:min(len(view.Skipped), partyRecentLimit)]
 	turns := state.lastTurns()
 	for _, participant := range state.sortedParticipants() {
 		if participant.removedAtMS > 0 {
@@ -1198,21 +1206,61 @@ func (s *Store) RemovePartyEntry(ctx context.Context, host ProfileID, filter Lib
 	})
 }
 
-// RestorePartyEntry returns a recently removed entry to its earlier state.
+// SkipPartyEntry skips the current entry: unlike a song that ends, it is
+// recorded as skipped, so RestorePartyEntry can bring the singer back.
+// Naming an entry that is no longer current leaves the session unchanged.
+func (s *Store) SkipPartyEntry(ctx context.Context, host ProfileID, filter LibraryFilter, entryID string) error {
+	return s.partyHostWrite(ctx, host, filter, func(tx *sql.Tx, session PartySession, nowMS int64) error {
+		entryID = strings.TrimSpace(entryID)
+		if entryID == "" || entryID != session.CurrentEntryID {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE party_entry SET state = 'skipped', pinned_position = NULL,
+			finished_at_ms = ? WHERE entry_id = ? AND state = 'current'`, nowMS, entryID); err != nil {
+			return err
+		}
+		return s.advancePartyLocked(ctx, tx, session, nowMS)
+	})
+}
+
+// RestorePartyEntry returns a recently removed entry to its earlier state,
+// or brings a skipped entry back as next up without interrupting the
+// current one.
 func (s *Store) RestorePartyEntry(ctx context.Context, host ProfileID, filter LibraryFilter, entryID string) error {
 	return s.partyHostWrite(ctx, host, filter, func(tx *sql.Tx, session PartySession, nowMS int64) error {
 		var state, prior string
+		var mediaID MediaID
 		var removedAtMS int64
 		var participantRemoved bool
+		entryID = strings.TrimSpace(entryID)
 		err := tx.QueryRowContext(ctx, `SELECT e.state, COALESCE(e.prior_state, ''), COALESCE(e.removed_at_ms, 0),
-				p.removed_at_ms IS NOT NULL
+				p.removed_at_ms IS NOT NULL, e.media_id
 			FROM party_entry e JOIN party_participant p ON p.participant_id = e.participant_id
-			WHERE e.entry_id = ? AND e.session_id = ?`, strings.TrimSpace(entryID), session.ID).
-			Scan(&state, &prior, &removedAtMS, &participantRemoved)
+			WHERE e.entry_id = ? AND e.session_id = ?`, entryID, session.ID).
+			Scan(&state, &prior, &removedAtMS, &participantRemoved, &mediaID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return partyInvalid("entry not found")
 		}
 		if err != nil {
+			return err
+		}
+		if state == PartyEntrySkipped && !participantRemoved {
+			// A song skipped because it could not play stays skipped.
+			visible, err := s.visibleMediaIDsSQL(ctx, []MediaID{mediaID}, session.hostFilter)
+			if err != nil {
+				return err
+			}
+			if _, ok := visible[mediaID]; !ok {
+				return partyInvalid("entry cannot be restored")
+			}
+			// It takes the head of the rotation from any entry pinned there,
+			// and its new turn records its own start.
+			if _, err := tx.ExecContext(ctx, `UPDATE party_entry SET pinned_position = NULL
+				WHERE session_id = ? AND state = 'waiting' AND pinned_position = 1`, session.ID); err != nil {
+				return err
+			}
+			_, err = tx.ExecContext(ctx, `UPDATE party_entry SET state = 'waiting', pinned_position = 1,
+				current_at_ms = NULL, played_at_ms = NULL, finished_at_ms = NULL WHERE entry_id = ?`, entryID)
 			return err
 		}
 		if state != PartyEntryRemoved || prior == "" || participantRemoved ||

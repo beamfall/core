@@ -273,6 +273,7 @@ var originalScopedFields = []string{
 	"partymove",
 	"partyremove",
 	"partyrestore",
+	"partyskip",
 	"partyadvance",
 	"partyplayback",
 	"partyremoveparticipant",

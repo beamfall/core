@@ -123,6 +123,94 @@ func TestPartySessionRotationAdvanceAndPlayback(t *testing.T) {
 	}
 }
 
+func TestPartySkipAndBringBack(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	clock := time.UnixMilli(1_900_000_000_000)
+	st.now = func() time.Time { return clock }
+	startTestParty(t, st, false)
+	host := partyHostFilter()
+	for _, name := range []string{"Avery", "Blake", "Casey"} {
+		clock = clock.Add(time.Second)
+		if err := st.AddPartyEntry(ctx, "profile-default", host, "media-alpha", "", name); err != nil {
+			t.Fatalf("AddPartyEntry %s: %v", name, err)
+		}
+	}
+	if err := st.AdvanceParty(ctx, "profile-default", host, ""); err != nil {
+		t.Fatal(err)
+	}
+	view, _, _ := st.PartySessionForHost(ctx, "profile-default", host)
+	avery := view.Current.ID
+
+	// A stale skip leaves the session as it is.
+	if err := st.SkipPartyEntry(ctx, "profile-default", host, "pe-stale"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SkipPartyEntry(ctx, "profile-default", host, avery); err != nil {
+		t.Fatal(err)
+	}
+	view, _, _ = st.PartySessionForHost(ctx, "profile-default", host)
+	if view.Current == nil || view.Current.ParticipantName != "Blake" {
+		t.Fatalf("current after skip = %+v", view.Current)
+	}
+	if len(view.Skipped) != 1 || view.Skipped[0].ID != avery || len(view.Recent) != 0 {
+		t.Fatalf("skipped %+v recent %+v; want Avery skipped, nothing done", view.Skipped, view.Recent)
+	}
+
+	// Bringing Avery back makes them next up and leaves Blake singing.
+	blake := view.Current.ID
+	if err := st.RestorePartyEntry(ctx, "profile-default", host, avery); err != nil {
+		t.Fatal(err)
+	}
+	view, _, _ = st.PartySessionForHost(ctx, "profile-default", host)
+	if view.Current.ID != blake || len(view.Skipped) != 0 {
+		t.Fatalf("current %s skipped %d after bring back", view.Current.ID, len(view.Skipped))
+	}
+	if got := waitingNames(view); len(got) != 2 || got[0] != "Avery" || got[1] != "Casey" || !view.Waiting[0].Pinned {
+		t.Fatalf("waiting after bring back = %v", got)
+	}
+
+	// A song that ended normally is done and cannot be brought back.
+	if err := st.AdvanceParty(ctx, "profile-default", host, blake); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RestorePartyEntry(ctx, "profile-default", host, blake); !errors.Is(err, ErrPartyInvalid) {
+		t.Fatalf("restoring a done entry = %v", err)
+	}
+	view, _, _ = st.PartySessionForHost(ctx, "profile-default", host)
+	if view.Current.ID != avery || len(view.Recent) != 1 || view.Recent[0].ID != blake {
+		t.Fatalf("after Blake's song: current %s recent %+v", view.Current.ID, view.Recent)
+	}
+	for _, entry := range view.Waiting {
+		if entry.ID == blake {
+			t.Fatal("a done entry came back into the rotation")
+		}
+	}
+
+	// A skip whose Media the session can no longer see stays listed with its
+	// title redacted, so the host sees why, and cannot be brought back. The
+	// advance past Avery also skips Casey, whose song is gone too.
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media SET trashed_at_ms = 1 WHERE id = 'media-alpha'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SkipPartyEntry(ctx, "profile-default", host, avery); err != nil {
+		t.Fatal(err)
+	}
+	view, _, _ = st.PartySessionForHost(ctx, "profile-default", host)
+	names := map[string]bool{}
+	for _, entry := range view.Skipped {
+		if entry.Title != "" || entry.MediaID != "" || !entry.LastPlayedAt.IsZero() {
+			t.Fatalf("an unavailable skip was not redacted: %+v", entry)
+		}
+		names[entry.ParticipantName] = true
+	}
+	if view.Current != nil || len(view.Skipped) != 2 || !names["Avery"] || !names["Casey"] {
+		t.Fatalf("after the Media went away: current %+v skipped %+v", view.Current, view.Skipped)
+	}
+	if err := st.RestorePartyEntry(ctx, "profile-default", host, avery); !errors.Is(err, ErrPartyInvalid) {
+		t.Fatalf("restoring an unavailable entry = %v", err)
+	}
+}
 func TestPartyGuestsJoinRequestAndEnd(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

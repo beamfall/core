@@ -950,6 +950,11 @@
     "tier": "session"
   },
   {
+    "field": "partyskip",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "partystage",
     "effect": "read",
     "tier": "session"
