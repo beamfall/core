@@ -216,6 +216,15 @@ func (r *encoderRun) pauseIfIdle() {
 	}
 	if r.proc.Pause() {
 		r.paused.Store(true)
+		// Recheck waiting under pauseMu after publishing paused=true: paired
+		// with waitForEncoder's waiting.Add(1) -> resumeIfPaused() paused.Load(),
+		// sequentially consistent atomics guarantee at least one side observes
+		// the other and wakes the encoder immediately.
+		if r.waiting.Load() > 0 {
+			r.resumedAt.Store(time.Now().UnixNano())
+			_ = r.proc.Resume()
+			r.paused.Store(false)
+		}
 	}
 }
 

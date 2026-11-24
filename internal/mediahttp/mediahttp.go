@@ -1302,6 +1302,11 @@ func (h *Handler) recordRenditionUseDebounced(ctx context.Context, id store.Play
 	h.renditionUseAt[id] = now
 	h.renditionUseMu.Unlock()
 	if err := h.store.RecordPlaybackRenditionUse(ctx, id, now); err != nil {
+		h.renditionUseMu.Lock()
+		if last, ok := h.renditionUseAt[id]; ok && last.Equal(now) {
+			delete(h.renditionUseAt, id)
+		}
+		h.renditionUseMu.Unlock()
 		slog.Debug("record playback rendition use failed", "rendition", id, "error", err)
 	}
 }

@@ -2084,6 +2084,13 @@ func precomputedAudioCompatible(wanted ffmpeg.AudioProfile) bool {
 	if wanted.Codec == "" {
 		wanted.Codec = "aac"
 	}
+	// Mono/stereo AAC stream-copy (marked by Channels 1..2 on Codec=="copy")
+	// is compatible with a precomputed stereo AAC rendition; bitstream
+	// passthrough and surround/AC-3/E-AC-3 copy leave Channels==0 and bypass
+	// precomputed renditions so clients keep their native audio track.
+	if wanted.Codec == "copy" {
+		return wanted.Channels > 0 && wanted.Channels <= 2
+	}
 	if wanted.Channels <= 0 {
 		wanted.Channels = 2
 	}
@@ -2374,7 +2381,11 @@ func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream,
 	}
 	source := chosenAudioStream(streams, chosen)
 	if !loudnessOK && hlsCopyableAudioStream(source, profile, ov) {
-		return ffmpeg.AudioProfile{Codec: "copy"}
+		copied := ffmpeg.AudioProfile{Codec: "copy"}
+		if audioCodecFamily(source.Codec) == "aac" && source.Channels > 0 && source.Channels <= 2 {
+			copied.Channels = source.Channels
+		}
+		return copied
 	}
 	sourceChannels := 0
 	if source != nil {
