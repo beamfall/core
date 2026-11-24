@@ -226,7 +226,11 @@ const CLIP_UTILITY =
 // up-next line, the host's screen, queue, request and guest rows (title and
 // detail), and the subtitle result's release name. CSS ellipsis only; the full
 // text stays in the DOM text node for AT.
-const CLIP_BASELINE = 51;
+// 2026-11-23 (stack 17, karaoke stage controls): +1 → 52. The host's new skipped-songs list
+// adds `truncate` on the singer and the song (+2); the stage ticker's joined `truncate` line
+// becomes per-entry parts that wrap (-1). CSS ellipsis inside `min-w-0` rows; the full
+// text stays in the DOM text node for AT.
+const CLIP_BASELINE = 52;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
