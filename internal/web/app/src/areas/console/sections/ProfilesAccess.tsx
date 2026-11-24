@@ -179,6 +179,7 @@ export function LibraryGrantEditor({
   const { revealed } = useSession();
   const [selected, setSelected] = useState<string[]>(granted);
   const [busy, setBusy] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   function toggle(id: string, checked: boolean) {
     setSelected((current) =>
@@ -188,9 +189,12 @@ export function LibraryGrantEditor({
 
   async function save() {
     setBusy(true);
+    setSaveFailed(false);
     try {
       await setProfileLibraries(profileID, selected);
       onChanged();
+    } catch {
+      setSaveFailed(true);
     } finally {
       setBusy(false);
     }
@@ -208,12 +212,20 @@ export function LibraryGrantEditor({
         <p className="text-xs text-muted-foreground">{t("accessHelpLibraryAccessHint")}</p>
       </div>
       {libraries.map((library) => {
-        const disabled = library.restricted && (noRestricted || !revealed);
+        const checked = selected.includes(library.id);
+        // A Player Profile lists a restricted Library only while it still
+        // holds it (granted before the Library became restricted), so the
+        // owner can remove it; it can never be added.
+        if (noRestricted && library.restricted && !checked && !granted.includes(library.id)) {
+          return null;
+        }
+        const disabled = library.restricted && !noRestricted && !revealed;
+        const addOnly = library.restricted && noRestricted && !checked;
         return (
           <label key={library.id} className="flex items-center gap-2 text-sm">
             <Checkbox
-              checked={selected.includes(library.id)}
-              disabled={disabled}
+              checked={checked}
+              disabled={disabled || addOnly}
               onCheckedChange={(value) => toggle(library.id, value === true)}
             />
             <span>{library.title}</span>
@@ -225,6 +237,11 @@ export function LibraryGrantEditor({
           </label>
         );
       })}
+      {saveFailed && (
+        <p role="alert" className="m-0 text-sm text-[var(--state-danger)]">
+          {t("libraryAccessSaveFailed")}
+        </p>
+      )}
       <Button size="sm" disabled={busy} onClick={() => void save()}>
         {t("libraryAccessSave")}
       </Button>

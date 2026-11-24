@@ -56,7 +56,7 @@ export function PlayerProfiles({
         <ul className="console-card divide-y divide-border">
           {rows.map((p) => (
             <PlayerProfileRow
-              key={`${p.id}:${p.walkUpEnabled ? 1 : 0}:${controllersKey(p)}:${p.libraryIDs.join(",")}`}
+              key={`${p.id}:${p.walkUpEnabled ? 1 : 0}:${controllersKey(p)}`}
               profile={p}
               libraries={libraries}
               household={household}
@@ -109,6 +109,9 @@ function PlayerProfileRow({
         </ConfirmButton>
       </div>
       <LibraryGrantEditor
+        // Remounts only the grant editor when the saved grants change, so
+        // unsaved controller edits survive a grant save.
+        key={profile.libraryIDs.join(",")}
         profileID={profile.id}
         granted={profile.libraryIDs}
         libraries={libraries.data ?? []}

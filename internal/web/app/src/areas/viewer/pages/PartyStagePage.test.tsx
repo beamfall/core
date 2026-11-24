@@ -266,6 +266,8 @@ describe("PartyStagePage", () => {
     // The third poll starts only after the second one's failure settled.
     await waitFor(() => expect(fetchPartyStage).toHaveBeenCalledTimes(3), { timeout: 4000 });
     expect(container.querySelector("video")).not.toBeNull();
+    // The host may have handed the lead to another screen meanwhile.
+    expect((container.querySelector("video") as HTMLVideoElement).muted).toBe(true);
   });
 
   it("unmounts the player when the party ends", async () => {

@@ -88,6 +88,20 @@ describe("DevicePlayerBinding", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("saves a cleared display name so the device's own name comes back", async () => {
+    const user = userEvent.setup();
+    renderBinding({ ...tv, playerProfileID: "pl1", playerDisplayName: "Lounge TV" });
+    await user.click(
+      screen.getByRole("button", {
+        name: "Use Living room Apple TV as a player display",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.clear(within(dialog).getByLabelText("Display name"));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(setDevicePlayerBinding).toHaveBeenCalledWith("d1", "pl1", undefined, expect.anything());
+  });
+
   it("asks for a Player Profile first when there is none", async () => {
     const user = userEvent.setup();
     renderBinding(tv, []);

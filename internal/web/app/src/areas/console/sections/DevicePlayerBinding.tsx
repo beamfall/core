@@ -67,8 +67,9 @@ export function DevicePlayerBinding({
     if (!profileID) return;
     // Rebinding ends the device's sessions and playback grants, so a save that
     // changes nothing just closes the dialog.
-    const shown = device.playerDisplayName || device.name;
-    if (profileID === device.playerProfileID && (name.trim() || shown) === shown) {
+    // The server stores a blank display name as the device's own name.
+    const current = device.playerDisplayName || device.name;
+    if (profileID === device.playerProfileID && (name.trim() || device.name) === current) {
       setOpen(false);
       return;
     }

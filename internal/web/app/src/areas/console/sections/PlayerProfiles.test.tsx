@@ -93,11 +93,52 @@ describe("PlayerProfiles", () => {
       .mockResolvedValue(undefined as never);
     const onChanged = renderSection();
     const films = await screen.findByRole("checkbox", { name: /Films/ });
-    expect(screen.getByRole("checkbox", { name: /Private/ })).toBeDisabled();
+    expect(screen.queryByRole("checkbox", { name: /Private/ })).not.toBeInTheDocument();
     await user.click(films);
     await user.click(screen.getByRole("button", { name: "Save library access" }));
     expect(setProfileLibraries).toHaveBeenCalledWith("pl1", ["lib-films"]);
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("lets the owner remove a Library that became restricted after it was granted", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchLibraries).mockResolvedValue([
+      { id: "lib-films", title: "Films", pluginID: null, previewClips: false, restricted: false },
+      {
+        id: "lib-private",
+        title: "Private",
+        pluginID: null,
+        previewClips: false,
+        restricted: true,
+      },
+    ]);
+    vi.mocked(setProfileLibraries)
+      .mockReset()
+      .mockResolvedValue(undefined as never);
+    renderSection(state([{ ...lounge, libraryIDs: ["lib-films", "lib-private"] }]));
+    const priv = await screen.findByRole("checkbox", { name: /Private/ });
+    expect(priv).toBeChecked();
+    expect(priv).toBeEnabled();
+    expect(screen.queryByText("Reveal required")).not.toBeInTheDocument();
+    await user.click(priv);
+    expect(priv).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Save library access" }));
+    expect(setProfileLibraries).toHaveBeenCalledWith("pl1", ["lib-films"]);
+  });
+
+  it("says so when a grant save fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchLibraries).mockResolvedValue([
+      { id: "lib-films", title: "Films", pluginID: null, previewClips: false, restricted: false },
+    ]);
+    vi.mocked(setProfileLibraries).mockReset().mockRejectedValue(new Error("boom"));
+    const onChanged = renderSection();
+    await user.click(await screen.findByRole("checkbox", { name: /Films/ }));
+    await user.click(screen.getByRole("button", { name: "Save library access" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Library access was not saved. Try again.",
+    );
+    expect(onChanged).not.toHaveBeenCalled();
   });
 
   it("shows the kind as fixed and the empty state", () => {

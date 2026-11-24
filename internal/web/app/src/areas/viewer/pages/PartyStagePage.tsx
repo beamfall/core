@@ -196,6 +196,7 @@ export function PartyStagePage() {
           serverNow={serverNow}
           driftRef={driftRef}
           stage={stage}
+          stale={stageFailed}
         />
       ) : (
         <StageIdle stage={stage} driftRef={driftRef} />
@@ -332,6 +333,7 @@ function StagePlayer({
   serverNow,
   driftRef,
   stage,
+  stale,
 }: {
   entry: PartyEntry;
   playback: PartyPlayback | null;
@@ -339,6 +341,8 @@ function StagePlayer({
   driftRef: React.MutableRefObject<number>;
   /** The screen's display settings: the join QR corner and mute (CORE-3379). */
   stage: PartyStage;
+  /** The last stage read failed, so `stage` may be out of date. */
+  stale: boolean;
 }) {
   const t = useT();
   const anchor = playback && playback.entryID === entry.id ? playback : null;
@@ -378,8 +382,10 @@ function StagePlayer({
   // A muted screen plays silently, which most browsers allow without a
   // gesture; the sync loop retries play, and a browser that blocks all
   // autoplay still gets the start button. Only the lead screen owns the room
-  // audio (ADR-0237 §2.4), so every other screen plays silently too.
-  const muted = stage.muted || !stage.lead;
+  // audio (ADR-0237 §2.4), so every other screen plays silently too, and so
+  // does a screen whose stage reads are failing: the host may have handed the
+  // lead to another screen since its last good read.
+  const muted = stage.muted || !stage.lead || stale;
   useEffect(() => {
     const video = videoRef.current;
     if (video) video.muted = muted;
