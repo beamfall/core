@@ -70,7 +70,15 @@
   <sub>The web app at phone width.</sub>
 </p>
 
-<sub>All screenshots are of the web app from this repository, running on a local server. The films, posters, and metadata are synthetic demo content generated for these images.</sub>
+<sub>All screenshots are of the web app from this repository, running on a local server with a library of
+Blender Open Movies. Posters are frames from the films; plots are our own one-line summaries.
+Films © Blender Foundation, used under Creative Commons licences:
+<a href="https://video.blender.org/w/bf1f3fb5-b119-4f9f-9930-8e20e892b898">Big Buck Bunny</a> (CC BY 3.0),
+<a href="https://video.blender.org/w/fb70d459-48d2-4db5-adba-813c84f9200a">Caminandes 2: Gran Dillama</a> (CC BY 3.0),
+<a href="https://video.blender.org/w/04da454b-9893-4184-98f3-248d00625efe">Charge</a> (CC BY 4.0),
+<a href="https://video.blender.org/w/0eb052d0-fd51-43e6-aa33-ecdbf77a5d40">Sintel</a> (CC BY 3.0),
+<a href="https://video.blender.org/w/3d95fb3d-c866-42c8-9db1-fe82f48ccb95">Spring</a> (CC BY 4.0) and
+<a href="https://video.blender.org/w/8533ea43-4271-4a57-9694-e9d0b35e1aa1">Tears of Steel</a> (CC BY 3.0).</sub>
 
 ## Clients and platforms
 
