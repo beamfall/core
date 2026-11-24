@@ -152,6 +152,7 @@ describe("PlayOnDisplayPage", () => {
     await act(async () => resolvePause());
     await act(async () => rejectStop(new Error("display command CONFLICT")));
     expect(screen.queryByText("Sent.")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("status").at(-1)?.textContent).toMatch(/\S/);
   });
 
   it("revalidates while open, so a revoked display drops away", async () => {

@@ -47,13 +47,17 @@ export function PlayOnDisplayPage() {
     const settle = (next: Lookup) => {
       if (request !== latest.current) return;
       setLookup(next);
-      if (next.kind === "missing") setNotice(null);
+      if (next.kind === "missing") {
+        // A pending command's outcome would name a display that's gone.
+        lastCommand.current++;
+        setNotice(null);
+      }
     };
     if (!handle) {
       settle({ kind: "missing" });
-      return;
+      return Promise.resolve();
     }
-    fetchPlayerDisplays()
+    return fetchPlayerDisplays()
       .then((displays) => {
         const display = displays.find((d) => d.handle === handle);
         settle(display ? { kind: "found", display } : { kind: "missing" });
@@ -64,12 +68,21 @@ export function PlayOnDisplayPage() {
   useEffect(() => {
     setLookup({ kind: "loading" });
     setNotice(null);
-    refresh();
     // Revalidate while the page is open, so a display revoked or unbound
     // elsewhere drops to "not available" even when nobody presses a button.
-    const timer = window.setInterval(refresh, REVALIDATE_MS);
+    // The next poll waits for the last to settle, so a slow server never has
+    // each answer voided by the poll after it.
+    let timer = 0;
+    let live = true;
+    const lookUp = () => {
+      void refresh().finally(() => {
+        if (live) timer = window.setTimeout(lookUp, REVALIDATE_MS);
+      });
+    };
+    lookUp();
     return () => {
-      window.clearInterval(timer);
+      live = false;
+      window.clearTimeout(timer);
       latest.current++;
       generation.current++;
     };
