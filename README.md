@@ -145,7 +145,7 @@ password (see the [`Makefile`](Makefile)).
 
 `library list`, `scan`, `backup`, `token list`, and `token revoke` talk to the running server with
 `--token`. Mint one while the server is stopped; `--access` picks its tier (`cli` by default,
-`diagnostics` adds admin reads plus cancelling and retrying jobs, `agent` adds most admin changes), so give each token the lowest
+`diagnostics` adds most admin reads plus cancelling and retrying jobs, `agent` adds most admin changes), so give each token the lowest
 tier that does the job.
 
 ```sh
