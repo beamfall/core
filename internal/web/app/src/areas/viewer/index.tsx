@@ -9,6 +9,7 @@ import { fetchSetupRequired } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import { enrollReturnPath } from "../enroll/returnTo";
 import { SlideshowPage } from "../slideshow/SlideshowPage";
 import { useScreensaver } from "../slideshow/useScreensaver";
 import { HiddenUndoNotice, useEngagementEvents } from "./actions";
@@ -121,7 +122,9 @@ export function ViewerArea() {
         </div>
       );
     }
-    return <Navigate to={setupRequired ? "/setup" : "/enroll"} replace />;
+    if (setupRequired) return <Navigate to="/setup" replace />;
+    const next = enrollReturnPath(location.pathname, location.search);
+    return <Navigate to={next ? `/enroll?next=${encodeURIComponent(next)}` : "/enroll"} replace />;
   }
 
   // Identity transitions clear SessionProvider before the departing-cookie

@@ -1,5 +1,5 @@
 import { Pause, Play, Square, Volume2, VolumeX } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
@@ -31,31 +31,52 @@ export function PlayOnDisplayPage() {
   const handle = params.get("display")?.trim() ?? "";
   const [lookup, setLookup] = useState<Lookup>({ kind: "loading" });
   const [notice, setNotice] = useState<string | null>(null);
+  // Each lookup gets a number; only the latest may set state, so a slow
+  // answer for an earlier handle never lands under the current URL.
+  const latest = useRef(0);
 
   const refresh = useCallback(() => {
+    const request = ++latest.current;
+    const settle = (next: Lookup) => {
+      if (request !== latest.current) return;
+      setLookup(next);
+      if (next.kind === "missing") setNotice(null);
+    };
     if (!handle) {
-      setLookup({ kind: "missing" });
+      settle({ kind: "missing" });
       return;
     }
     fetchPlayerDisplays()
       .then((displays) => {
         const display = displays.find((d) => d.handle === handle);
-        setLookup(display ? { kind: "found", display } : { kind: "missing" });
+        settle(display ? { kind: "found", display } : { kind: "missing" });
       })
-      .catch(() => setLookup({ kind: "missing" }));
+      .catch(() => settle({ kind: "missing" }));
   }, [handle]);
 
-  useEffect(refresh, [refresh]);
+  useEffect(() => {
+    setLookup({ kind: "loading" });
+    setNotice(null);
+    refresh();
+    return () => {
+      latest.current++;
+    };
+  }, [refresh]);
 
   async function send(display: PlayerDisplayInfo, command: Command) {
     if (!display.sessionID) return;
+    const request = latest.current;
     try {
       await commandPlayerDisplay({ sessionID: display.sessionID, command });
-      setNotice(t("remoteSent"));
-      refresh();
+      if (request === latest.current) setNotice(t("remoteSent"));
     } catch (err) {
-      setNotice(displayErrorText(err, display.displayName, t) ?? t("remoteSendError"));
+      if (request === latest.current)
+        setNotice(displayErrorText(err, display.displayName, t) ?? t("remoteSendError"));
     }
+    // Re-resolve after every command: a revoked controller or a display that
+    // went away drops to "not available" instead of keeping its card. Skip it
+    // when the page has moved on to another handle since the command left.
+    if (request === latest.current) refresh();
   }
 
   return (
@@ -112,6 +133,14 @@ function DisplayCard({
             duration: formatClockTime(item.durationSeconds),
           })}
         </p>
+      )}
+      {!offline && display.presence !== "playing" && display.inParty && (
+        <div className="bf-play-on-display-controls">
+          <Button variant="outline" size="sm" onClick={() => send(display, "stop")}>
+            <Square className="size-3.5" aria-hidden />
+            {t("remoteStop")}
+          </Button>
+        </div>
       )}
       {!offline && display.presence === "playing" && (
         <div className="bf-play-on-display-controls">

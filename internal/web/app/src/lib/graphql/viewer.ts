@@ -540,16 +540,27 @@ export async function controlRendererSession(
 
 /**
  * commandPlayerDisplay — send a command to a display, retrying once with the
- * server's revision when the first send loses a revision race. Both sends use
- * one commandID, so the server applies the command at most once.
+ * server's revision when the first send loses a revision race (`CONFLICT`).
+ * Both sends use one commandID, so the server applies the command at most
+ * once. Anything but `APPLIED` throws, so callers never report a rejected
+ * command as sent.
  */
 export async function commandPlayerDisplay(
   vars: Omit<ControlRendererSessionVars, "commandID" | "expectedRevision">,
 ): Promise<ControlRendererSessionResult> {
   const commandID = newCommandID();
-  const first = await controlRendererSession({ ...vars, commandID, expectedRevision: 0 });
-  if (first.status !== "conflict") return first;
-  return controlRendererSession({ ...vars, commandID, expectedRevision: first.revision });
+  let result = await controlRendererSession({ ...vars, commandID, expectedRevision: 0 });
+  if (result.status === "CONFLICT") {
+    result = await controlRendererSession({
+      ...vars,
+      commandID,
+      expectedRevision: result.revision,
+    });
+  }
+  if (result.status !== "APPLIED") {
+    throw new Error(`display command ${result.status || "rejected"}`);
+  }
+  return result;
 }
 
 function newCommandID(): string {

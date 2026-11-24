@@ -28,7 +28,8 @@ export function PlayerProfiles({
   onChanged,
 }: {
   players: AsyncState<PlayerProfileAdminInfo[]>;
-  household: HouseholdProfile[];
+  /** The household's Profiles; null until they have loaded. */
+  household: HouseholdProfile[] | null;
   onChanged: () => void;
 }) {
   const t = useT();
@@ -76,7 +77,7 @@ function PlayerProfileRow({
   onChanged,
 }: {
   profile: PlayerProfileAdminInfo;
-  household: HouseholdProfile[];
+  household: HouseholdProfile[] | null;
   onChanged: () => void;
 }) {
   const t = useT();
@@ -166,7 +167,7 @@ function Controllers({
   onChanged,
 }: {
   profile: PlayerProfileAdminInfo;
-  household: HouseholdProfile[];
+  household: HouseholdProfile[] | null;
   onChanged: () => void;
 }) {
   const t = useT();
@@ -179,8 +180,9 @@ function Controllers({
 
   // With "All adults" on, adults can be excepted and other Profiles added;
   // with it off, any Profile can be added by name.
-  const adults = household.filter((p) => p.kind === "adult");
-  const includable = allAdults ? household.filter((p) => p.kind !== "adult") : household;
+  const loaded = household ?? [];
+  const adults = loaded.filter((p) => p.kind === "adult");
+  const includable = allAdults ? loaded.filter((p) => p.kind !== "adult") : loaded;
 
   function toggle(list: string[], id: string, checked: boolean): string[] {
     return checked ? [...list.filter((x) => x !== id), id] : list.filter((x) => x !== id);
@@ -189,16 +191,14 @@ function Controllers({
   async function save() {
     setBusy(true);
     setStatus("idle");
-    const includableIDs = new Set(includable.map((p) => p.id));
-    const adultIDs = new Set(adults.map((p) => p.id));
+    // Send the lists as edited, not filtered against the household shown:
+    // a stored rule for a Profile this list doesn't offer (its kind changed,
+    // or it isn't listed) stays until the owner removes it. Exceptions only
+    // mean something with "All adults" on, so turning that off clears them.
     try {
       await setPlayerControllers(
         profile.id,
-        {
-          allAdults,
-          include: include.filter((id) => includableIDs.has(id)),
-          exclude: allAdults ? exclude.filter((id) => adultIDs.has(id)) : [],
-        },
+        { allAdults, include, exclude: allAdults ? exclude : [] },
         getAdminEpochSignal(),
       );
       setStatus("saved");
@@ -238,7 +238,9 @@ function Controllers({
         />
       )}
       <div className="flex flex-wrap items-center gap-3">
-        <Button size="sm" disabled={busy} onClick={() => void save()}>
+        {/* Saving waits for the household: without it the checklists are
+            empty and the owner can't see what the save keeps. */}
+        <Button size="sm" disabled={busy || household === null} onClick={() => void save()}>
           {t("consolePlayerControllersSave")}
         </Button>
         {status === "saved" && (

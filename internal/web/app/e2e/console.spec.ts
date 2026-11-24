@@ -310,7 +310,11 @@ test.describe("console", () => {
     await expect(tvCells.nth(0)).toContainText("TV");
     await expect(tvCells.nth(1)).toHaveText("Viewer");
     await expect(tvCells.nth(2)).toHaveText("Active");
-    await expect(tvCells.nth(3).locator("button")).toHaveText(["Use as a player display", "Promote", "Revoke"]);
+    await expect(tvCells.nth(3).locator("button")).toHaveText([
+      "Use as a player display",
+      "Promote",
+      "Revoke",
+    ]);
     await expect(revokedCells.nth(0)).toContainText("Revoked");
     await expect(revokedCells.nth(1)).toHaveText("Viewer");
     await expect(revokedCells.nth(2)).toHaveText("Revoked");

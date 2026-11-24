@@ -39,10 +39,14 @@ function state(data: PlayerProfileAdminInfo[] | null, failed = false) {
   } as unknown as AsyncState<PlayerProfileAdminInfo[]>;
 }
 
-function renderSection(players = state([lounge]), onChanged = vi.fn()) {
+function renderSection(
+  players = state([lounge]),
+  onChanged = vi.fn(),
+  profiles: typeof household | null = household,
+) {
   render(
     <I18nProvider>
-      <PlayerProfiles players={players} household={household} onChanged={onChanged} />
+      <PlayerProfiles players={players} household={profiles} onChanged={onChanged} />
     </I18nProvider>,
   );
   return onChanged;
@@ -121,6 +125,35 @@ describe("PlayerProfiles", () => {
     expect(setPlayerControllers).toHaveBeenCalledWith(
       "pl1",
       { allAdults: false, include: ["a1"], exclude: [] },
+      expect.anything(),
+    );
+  });
+
+  it("waits for the household before saving", () => {
+    renderSection(state([lounge]), vi.fn(), null);
+    expect(screen.getByRole("button", { name: "Save controllers" })).toBeDisabled();
+  });
+
+  it("keeps stored rules for Profiles the checklists don't offer", async () => {
+    const user = userEvent.setup();
+    renderSection(
+      state([
+        {
+          ...lounge,
+          playerControllers: {
+            profileID: "pl1",
+            allAdults: true,
+            include: ["gone"],
+            exclude: ["a2", "hidden"],
+          },
+        },
+      ]),
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Kid" }));
+    await user.click(screen.getByRole("button", { name: "Save controllers" }));
+    expect(setPlayerControllers).toHaveBeenCalledWith(
+      "pl1",
+      { allAdults: true, include: ["gone", "k1"], exclude: ["a2", "hidden"] },
       expect.anything(),
     );
   });

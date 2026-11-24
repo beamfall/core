@@ -302,6 +302,13 @@ var agentTokenDenied = map[string]bool{
 	"createjellyfincompatkey":     true,
 }
 
+// sessionOnlyReads are admin reads no token tier may run: the Console's
+// listing of Player Profiles shows who may control each display and whether
+// walk-up is on (ADR-0240 D4, D7), which only the owner's Admin Session sees.
+var sessionOnlyReads = map[string]bool{
+	"playerprofiles": true,
+}
+
 // adminTokenMayRun reports whether the request authenticated with an admin API
 // token whose tier allows every admin field it selects. Scoped keys and
 // sessions never qualify.
@@ -323,6 +330,9 @@ func adminTokenMayRun(dispatch *fieldDispatchContext) bool {
 func tokenTierAllows(access store.APITokenAccess, field string) bool {
 	if adminTokenOps[field] {
 		return true
+	}
+	if sessionOnlyReads[field] {
+		return false
 	}
 	switch access {
 	case store.APITokenAccessDiagnostics:

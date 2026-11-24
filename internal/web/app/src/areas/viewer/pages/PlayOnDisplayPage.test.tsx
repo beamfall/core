@@ -46,7 +46,7 @@ beforeEach(() => {
   vi.mocked(fetchPlayerDisplays).mockReset().mockResolvedValue([LOUNGE]);
   vi.mocked(commandPlayerDisplay)
     .mockReset()
-    .mockResolvedValue({ status: "applied", sessionID: "s1", command: "pause" } as never);
+    .mockResolvedValue({ status: "APPLIED", sessionID: "s1", command: "pause" } as never);
 });
 
 afterEach(cleanup);
@@ -93,5 +93,44 @@ describe("PlayOnDisplayPage", () => {
     renderAt("?display=h-lounge");
     await userEvent.click(await screen.findByRole("button", { name: /Stop/ }));
     expect(await screen.findByText("Lounge TV is showing a party right now.")).toBeInTheDocument();
+  });
+
+  it("offers Stop for a party display between items", async () => {
+    vi.mocked(fetchPlayerDisplays).mockResolvedValue([
+      { ...LOUNGE, presence: "ready", inParty: true, currentItem: null },
+    ]);
+    renderAt("?display=h-lounge");
+    await userEvent.click(await screen.findByRole("button", { name: /Stop/ }));
+    expect(commandPlayerDisplay).toHaveBeenCalledWith({ sessionID: "s1", command: "stop" });
+    expect(screen.queryByRole("button", { name: /Pause/ })).not.toBeInTheDocument();
+  });
+
+  it("drops to not available when a command finds the controller revoked", async () => {
+    vi.mocked(commandPlayerDisplay).mockRejectedValueOnce(new Error("unknown session"));
+    vi.mocked(fetchPlayerDisplays).mockResolvedValueOnce([LOUNGE]).mockResolvedValue([]);
+    renderAt("?display=h-lounge");
+    await userEvent.click(await screen.findByRole("button", { name: /Pause/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This display isn’t available.");
+    expect(screen.queryByText("Lounge TV")).not.toBeInTheDocument();
+    expect(screen.queryByText(/went offline/)).not.toBeInTheDocument();
+  });
+
+  it("ignores a slower lookup for a handle the page has left", async () => {
+    let resolveFirst: (d: PlayerDisplayInfo[]) => void = () => {};
+    vi.mocked(fetchPlayerDisplays)
+      .mockReturnValueOnce(new Promise((r) => (resolveFirst = r)))
+      .mockResolvedValue([]);
+    const view = renderAt("?display=h-lounge");
+    view.rerender(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/play-on?display=h-other"]} key="b">
+          <PlayOnDisplayPage />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("This display isn’t available.");
+    resolveFirst([LOUNGE]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText("Lounge TV")).not.toBeInTheDocument();
   });
 });

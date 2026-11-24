@@ -195,7 +195,7 @@ export function Profiles() {
         )}
         <PlayerProfiles
           players={players}
-          household={rows}
+          household={profiles.data}
           onChanged={() => void players.refresh()}
         />
         <p aria-live="polite" className="sr-only">

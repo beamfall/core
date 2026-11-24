@@ -604,7 +604,7 @@ export async function clearDevicePlayerBinding(
 
 const CONTROLLERS_FIELDS = "playerControllers { profileID allAdults include exclude }";
 
-const PLAYER_PROFILES_QUERY = `query PlayerProfiles { playerProfiles { id name kind libraryIDs avatar pictureURL walkUpEnabled ${CONTROLLERS_FIELDS} } }`;
+const PLAYER_PROFILES_QUERY = `query PlayerProfiles { playerProfiles { id name kind libraryIDs walkUpEnabled ${CONTROLLERS_FIELDS} } }`;
 
 /** A Player Profile as the Console lists it, with its controllers (D1, D4, D7). */
 export type PlayerProfileAdminInfo = ProfileAdminInfo & {
