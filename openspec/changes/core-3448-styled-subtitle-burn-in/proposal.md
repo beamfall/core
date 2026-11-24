@@ -19,6 +19,9 @@ anime subtitles everywhere.
   renders them with libass, so the picture matches mpv.
 - Seek restarts offset the subtitle clock, so a session that starts mid-file stays in sync.
 - The encoder's confinement grants read access to the extracted script and fonts.
+- A track the server would burn in is advertised with its stream index and no WebVTT URL, the
+  shape a bitmap track already has, so the Apple and Android kits route it to burn-in rather than
+  to the flattened overlay.
 - Clients that declare `ass` keep rendering it themselves. No wire change: the existing
   `BurnSubtitleIndex` grant field carries the verdict.
 

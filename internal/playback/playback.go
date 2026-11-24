@@ -1506,7 +1506,7 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 	// discovered next to the chosen Version's primary file at scan, advertised as
 	// token-bearing WebVTT URLs so the client lists them in the track menu
 	// alongside the muxed subtitle tracks it reads from the stream.
-	captionTracks, err := s.muxedCaptionTracksInfo(ctx, grant, file.ContentFingerprint, streams, suffix)
+	captionTracks, err := s.muxedCaptionTracksInfo(ctx, grant, file.ContentFingerprint, streams, suffix, ov, profile)
 	if err != nil {
 		return decision{}, err
 	}
@@ -2498,7 +2498,13 @@ func isMuxedTextSubtitleCodec(codec string) bool {
 // transcoded rung cannot read the muxed track from the HLS output, so the URL
 // is the only delivery path for it. The token is revoked with the session on
 // every fetch exactly like the other byte targets.
-func (s *Service) muxedCaptionTracksInfo(ctx context.Context, grant streamtoken.Grant, fileFingerprint string, streams []store.MediaFileStream, suffix string) ([]CaptionTrack, error) {
+//
+// A styled ASS/SSA track this decision would burn in (CORE-3448) gets no
+// WebVTT URL: a stream index without a URL is how a native client knows its
+// only route is to re-request with the track selected, as for a bitmap track.
+// Offering the flattened sidecar beside it would present the signs and
+// positioning the viewer chose to see as plain bottom-centre text.
+func (s *Service) muxedCaptionTracksInfo(ctx context.Context, grant streamtoken.Grant, fileFingerprint string, streams []store.MediaFileStream, suffix string, ov quirkOverlay, profile CapabilityProfile) ([]CaptionTrack, error) {
 	var tracks []CaptionTrack
 	for _, stream := range streams {
 		if stream.Type != "subtitle" {
@@ -2518,6 +2524,9 @@ func (s *Service) muxedCaptionTracksInfo(ctx context.Context, grant streamtoken.
 	}
 	for i := range tracks {
 		if !isMuxedTextSubtitleCodec(tracks[i].Format) {
+			continue
+		}
+		if ov.subtitleDelivery(tracks[i].Format, profile) == ffmpeg.SubtitleBurnIn {
 			continue
 		}
 		if fileFingerprint == "" {

@@ -29,3 +29,15 @@ Encrypted Library, the server SHALL keep delivering the stream as a WebVTT sidec
 
 - **WHEN** the server's FFmpeg lacks the `ass` filter
 - **THEN** the ASS track is delivered as a WebVTT sidecar, as before
+
+### Requirement: A caption track the server burns in has no WebVTT URL
+
+A muxed caption track that the server would burn in for the requesting Capability Profile SHALL be
+advertised with its stream index and without a WebVTT URL, so a native client routes it to burn-in
+as it does a bitmap track.
+
+#### Scenario: Native clients see the track as burn-in only
+
+- **WHEN** the server would burn an ASS track in for the requesting profile
+- **THEN** that track's caption entry carries its stream index and no WebVTT URL
+- **AND** a plain text track in the same file keeps its WebVTT URL

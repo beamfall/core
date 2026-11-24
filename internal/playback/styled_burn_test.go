@@ -33,6 +33,7 @@ func TestStyledSubtitleBurnInOnOverlayProfile(t *testing.T) {
 		videoStream("h264", "High", 0, ""),
 		audioStream(1, "aac", 2),
 		{Index: assIndex, Type: "subtitle", Codec: "ass", Language: "jpn"},
+		{Index: 3, Type: "subtitle", Codec: "subrip", Language: "eng"},
 	})
 	resp, err := service.Info(context.Background(), scope, InfoRequest{
 		MediaID: string(mediaID), CapabilityProfile: appleOverlayProfile, SelectedSubtitleIndex: &assIndex,
@@ -50,6 +51,9 @@ func TestStyledSubtitleBurnInOnOverlayProfile(t *testing.T) {
 	if got := grant.BurnSubtitleIndex - 1; got != assIndex {
 		t.Fatalf("BurnSubtitleIndex = %d, want %d", got, assIndex)
 	}
+	// The burned ASS track is advertised without a WebVTT URL, so a native
+	// client routes it to burn-in; the plain SRT track keeps its sidecar.
+	assertCaptionURLs(t, resp.CaptionTracks, map[int]bool{assIndex: false, 3: true})
 
 	assProfile := appleOverlayProfile
 	assProfile.SubtitleFormats = []string{"webvtt", "ass"}
@@ -61,6 +65,38 @@ func TestStyledSubtitleBurnInOnOverlayProfile(t *testing.T) {
 	}
 	if resp.Decision != "direct-stream" {
 		t.Fatalf("Decision = %q (%q), want direct-stream for a client that renders ASS", resp.Decision, resp.Reason)
+	}
+	assertCaptionURLs(t, resp.CaptionTracks, map[int]bool{assIndex: true, 3: true})
+
+	// Without libass the ASS track keeps its flattened WebVTT sidecar.
+	withTextSubtitleBurnIn(t, false)
+	resp, err = service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: appleOverlayProfile})
+	if err != nil {
+		t.Fatalf("Info (no libass): %v", err)
+	}
+	assertCaptionURLs(t, resp.CaptionTracks, map[int]bool{assIndex: true, 3: true})
+}
+
+// assertCaptionURLs checks, per muxed stream index, whether its caption track
+// carries a WebVTT URL.
+func assertCaptionURLs(t *testing.T, tracks []CaptionTrack, wantURL map[int]bool) {
+	t.Helper()
+	seen := map[int]bool{}
+	for _, track := range tracks {
+		if track.StreamIndex == nil {
+			continue
+		}
+		want, ok := wantURL[*track.StreamIndex]
+		if !ok {
+			continue
+		}
+		seen[*track.StreamIndex] = true
+		if got := track.URL != ""; got != want {
+			t.Errorf("stream %d (%s): has URL = %v, want %v (%q)", *track.StreamIndex, track.Format, got, want, track.URL)
+		}
+	}
+	if len(seen) != len(wantURL) {
+		t.Errorf("caption tracks %+v missing some of %v", tracks, wantURL)
 	}
 }
 
