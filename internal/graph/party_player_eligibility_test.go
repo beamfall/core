@@ -68,6 +68,13 @@ func TestPartyStageBindingTwoRegistrationsAndNonLeakingRefusal(t *testing.T) {
 		errOther[0].Extensions.Code != errMissing[0].Extensions.Code {
 		t.Fatalf("other-session = %#v, missing = %#v; want identical NOT_FOUND", errOther, errMissing)
 	}
+
+	// screenID is a required argument since wire 3.0.0 (CORE-3399): a stage read
+	// that names no screen registration is refused, never served.
+	_, errNoScreen := post(t, h, marshalQuery(fmt.Sprintf(`query { partyStage(sessionID: %q) { sessionID } }`, session.ID)), withPlayerControl(authorizeRevealed))
+	if len(errNoScreen) != 1 || !strings.Contains(errNoScreen[0].Message, "screenID") {
+		t.Fatalf("partyStage without screenID errors = %#v, want one error naming screenID", errNoScreen)
+	}
 }
 
 func TestPartyScreenLeadRefusesWhenAccessScheduleCloses(t *testing.T) {

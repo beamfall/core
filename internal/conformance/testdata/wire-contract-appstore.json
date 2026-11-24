@@ -39940,8 +39940,7 @@
       "arguments": [
         {
           "name": "screenID",
-          "kind": "string",
-          "optional": true
+          "kind": "string"
         },
         {
           "name": "sessionID",
