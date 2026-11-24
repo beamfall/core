@@ -65,6 +65,13 @@ export function DevicePlayerBinding({
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!profileID) return;
+    // Rebinding ends the device's sessions and playback grants, so a save that
+    // changes nothing just closes the dialog.
+    const shown = device.playerDisplayName || device.name;
+    if (profileID === device.playerProfileID && (name.trim() || shown) === shown) {
+      setOpen(false);
+      return;
+    }
     setBusy(true);
     setFailed(false);
     try {

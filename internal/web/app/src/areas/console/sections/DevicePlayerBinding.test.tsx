@@ -51,7 +51,9 @@ describe("DevicePlayerBinding", () => {
     const user = userEvent.setup();
     const onChanged = renderBinding();
     await user.click(
-      screen.getByRole("button", { name: "Use Living room Apple TV as a player display" }),
+      screen.getByRole("button", {
+        name: "Use Living room Apple TV as a player display",
+      }),
     );
     const dialog = await screen.findByRole("dialog");
     const name = within(dialog).getByLabelText("Display name");
@@ -65,6 +67,25 @@ describe("DevicePlayerBinding", () => {
       expect.anything(),
     );
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("closes without rebinding when nothing changed", async () => {
+    const user = userEvent.setup();
+    const onChanged = renderBinding({
+      ...tv,
+      playerProfileID: "pl1",
+      playerDisplayName: "Lounge TV",
+    });
+    await user.click(
+      screen.getByRole("button", {
+        name: "Use Living room Apple TV as a player display",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(setDevicePlayerBinding).not.toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("asks for a Player Profile first when there is none", async () => {
@@ -82,7 +103,9 @@ describe("DevicePlayerBinding", () => {
     renderBinding();
     await user.click(screen.getByRole("button", { name: /as a player display/ }));
     await user.click(
-      within(await screen.findByRole("dialog")).getByRole("button", { name: "Save" }),
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Save",
+      }),
     );
     expect(await screen.findByRole("alert")).toHaveTextContent("couldn’t be saved");
   });
@@ -98,7 +121,9 @@ describe("DevicePlayerBinding", () => {
     const dialog = await screen.findByRole("alertdialog");
     expect(clearDevicePlayerBinding).not.toHaveBeenCalled();
     await user.click(
-      within(dialog).getByRole("button", { name: "Stop using as a player display" }),
+      within(dialog).getByRole("button", {
+        name: "Stop using as a player display",
+      }),
     );
     expect(clearDevicePlayerBinding).toHaveBeenCalledWith("d1", expect.anything());
     expect(onChanged).toHaveBeenCalled();

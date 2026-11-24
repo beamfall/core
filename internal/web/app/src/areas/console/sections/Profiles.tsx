@@ -40,6 +40,7 @@ import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 import { PlayerProfiles } from "./PlayerProfiles";
+import { announcePlayerProfilesChanged } from "./playerProfilesEvents";
 
 // The Console Profiles lane (ADR-0086 §46 — a distinct axis from Devices and
 // Library policy): the household's Profile identity lifecycle. Lists Profiles,
@@ -62,6 +63,10 @@ export function Profiles() {
   const t = useT();
   const profiles = useAsync(fetchProfilesAdmin);
   const players = useAsync(fetchPlayerProfiles);
+  function refreshPlayers() {
+    void players.refresh();
+    announcePlayerProfilesChanged();
+  }
   const rows = profiles.data ?? [];
   const [dragging, setDragging] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -153,7 +158,7 @@ export function Profiles() {
         {!unavailable && (
           <CreateProfileForm
             onCreated={(kind) => {
-              if (kind === "player") void players.refresh();
+              if (kind === "player") refreshPlayers();
               else refreshAfterChange();
             }}
           />
@@ -193,11 +198,7 @@ export function Profiles() {
             </ul>
           </div>
         )}
-        <PlayerProfiles
-          players={players}
-          household={profiles.data}
-          onChanged={() => void players.refresh()}
-        />
+        <PlayerProfiles players={players} household={profiles.data} onChanged={refreshPlayers} />
         <p aria-live="polite" className="sr-only">
           {announcement}
         </p>

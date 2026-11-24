@@ -67,6 +67,7 @@ function stage(over: Partial<PartyStage> = {}): PartyStage {
     ticker: true,
     qrCorner: "off",
     muted: false,
+    lead: true,
     joinCode: "QZXW",
     joinPath: "/web/join/QZXW",
     ...over,
@@ -213,6 +214,22 @@ describe("PartyStagePage", () => {
 
     expect(partyAdvance).toHaveBeenCalledTimes(1);
     expect(partyAdvance).toHaveBeenCalledWith("e1");
+  });
+
+  it("plays silently on a screen that is not the lead", async () => {
+    vi.mocked(fetchPartyStage).mockResolvedValue(stage({ current: song, lead: false }));
+    const { container } = renderStage();
+
+    expect(await screen.findByText("Sung by Juniper")).toBeInTheDocument();
+    expect((container.querySelector("video") as HTMLVideoElement).muted).toBe(true);
+  });
+
+  it("plays aloud on the lead screen", async () => {
+    vi.mocked(fetchPartyStage).mockResolvedValue(stage({ current: song }));
+    const { container } = renderStage();
+
+    expect(await screen.findByText("Sung by Juniper")).toBeInTheDocument();
+    expect((container.querySelector("video") as HTMLVideoElement).muted).toBe(false);
   });
 
   it("draws the join QR in the chosen corner during a song and plays muted", async () => {

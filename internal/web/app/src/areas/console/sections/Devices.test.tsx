@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchConsoleConfig,
   fetchDevices,
+  fetchPlayerProfiles,
   fetchRemoteAccess,
   mintPairingCode,
   revokeAllDevices,
@@ -16,6 +17,7 @@ import {
 import type { ConsoleConfigInfo, DeviceInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { Devices } from "./Devices";
+import { announcePlayerProfilesChanged } from "./playerProfilesEvents";
 
 vi.mock("@/lib/graphql", () => ({
   fetchDevices: vi.fn(),
@@ -41,8 +43,20 @@ const config: ConsoleConfigInfo = {
 };
 
 const devices: DeviceInfo[] = [
-  { deviceID: "device-mac", name: "My Browser", role: "manager", revoked: false, current: true },
-  { deviceID: "device-tv", name: "Living Room TV", role: "viewer", revoked: false, current: false },
+  {
+    deviceID: "device-mac",
+    name: "My Browser",
+    role: "manager",
+    revoked: false,
+    current: true,
+  },
+  {
+    deviceID: "device-tv",
+    name: "Living Room TV",
+    role: "viewer",
+    revoked: false,
+    current: false,
+  },
   {
     deviceID: "device-tablet",
     name: "Kitchen Tablet",
@@ -65,10 +79,22 @@ function renderDevices() {
 beforeEach(() => {
   vi.mocked(fetchDevices).mockResolvedValue(devices);
   vi.mocked(fetchConsoleConfig).mockResolvedValue(config);
-  vi.mocked(fetchRemoteAccess).mockResolvedValue({ plainHTTPPublicWarning: false, endpoints: [] });
-  vi.mocked(revokeDevice).mockResolvedValue({ deviceID: "device-tv", transcodesAborted: 0 });
-  vi.mocked(revokeAllDevices).mockResolvedValue({ revokedCount: 1, transcodesAborted: 0 });
-  vi.mocked(setConsoleConfig).mockResolvedValue({ ...config, remoteEnrollmentEnabled: false });
+  vi.mocked(fetchRemoteAccess).mockResolvedValue({
+    plainHTTPPublicWarning: false,
+    endpoints: [],
+  });
+  vi.mocked(revokeDevice).mockResolvedValue({
+    deviceID: "device-tv",
+    transcodesAborted: 0,
+  });
+  vi.mocked(revokeAllDevices).mockResolvedValue({
+    revokedCount: 1,
+    transcodesAborted: 0,
+  });
+  vi.mocked(setConsoleConfig).mockResolvedValue({
+    ...config,
+    remoteEnrollmentEnabled: false,
+  });
   vi.mocked(mintPairingCode).mockResolvedValue({
     code: "PAIR1234",
     expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
@@ -96,13 +122,25 @@ describe("Devices (ADR-0081 administration)", () => {
     expect(within(otherRow).getByRole("button", { name: /^revoke$/i })).toBeInTheDocument();
   });
 
+  it("reloads its Player Profile choices when Profiles announces a change", async () => {
+    renderDevices();
+    await waitFor(() => expect(fetchPlayerProfiles).toHaveBeenCalled());
+    const before = vi.mocked(fetchPlayerProfiles).mock.calls.length;
+    announcePlayerProfilesChanged();
+    await waitFor(() =>
+      expect(vi.mocked(fetchPlayerProfiles).mock.calls.length).toBeGreaterThan(before),
+    );
+  });
+
   it("promotes a non-current device behind a confirm", async () => {
     renderDevices();
     const otherRow = (await screen.findByText("Living Room TV")).closest("tr")!;
     await userEvent.click(within(otherRow).getByRole("button", { name: /^promote$/i }));
     const dialog = await screen.findByRole("alertdialog");
     expect(
-      within(dialog).getByRole("heading", { name: /promote this device to manager/i }),
+      within(dialog).getByRole("heading", {
+        name: /promote this device to manager/i,
+      }),
     ).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: /^promote$/i }));
     await waitFor(() => expect(setDeviceRole).toHaveBeenCalledWith("device-tv", "manager"));
@@ -114,7 +152,9 @@ describe("Devices (ADR-0081 administration)", () => {
     await userEvent.click(within(otherRow).getByRole("button", { name: /^demote$/i }));
     const dialog = await screen.findByRole("alertdialog");
     expect(
-      within(dialog).getByRole("heading", { name: /demote this device to viewer/i }),
+      within(dialog).getByRole("heading", {
+        name: /demote this device to viewer/i,
+      }),
     ).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: /^demote$/i }));
     await waitFor(() => expect(setDeviceRole).toHaveBeenCalledWith("device-tablet", "viewer"));
@@ -140,7 +180,9 @@ describe("Devices (ADR-0081 administration)", () => {
     await userEvent.click(screen.getByRole("button", { name: /^[^:]*manager code/i }));
     const dialog = await screen.findByRole("alertdialog");
     expect(
-      within(dialog).getByRole("heading", { name: /whoever redeems it can manage this server/i }),
+      within(dialog).getByRole("heading", {
+        name: /whoever redeems it can manage this server/i,
+      }),
     ).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: /manager code/i }));
     await waitFor(() => expect(mintPairingCode).toHaveBeenCalledWith("manager"));
@@ -150,7 +192,10 @@ describe("Devices (ADR-0081 administration)", () => {
 
   it("shows the code's role, time left and the enroll address, and copies a link carrying the code in the fragment", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
     renderDevices();
     await screen.findByText("My Browser");
     await userEvent.click(screen.getByRole("button", { name: /viewer code/i }));
@@ -171,7 +216,10 @@ describe("Devices (ADR-0081 administration)", () => {
   ])(
     "reveals the link selected in a read-only field when the clipboard %s (CORE-1607)",
     async (_label, clipboard) => {
-      Object.defineProperty(navigator, "clipboard", { configurable: true, value: clipboard });
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: clipboard,
+      });
       const log = vi.spyOn(console, "log");
       renderDevices();
       await screen.findByText("My Browser");
@@ -179,7 +227,9 @@ describe("Devices (ADR-0081 administration)", () => {
       await userEvent.click(await screen.findByRole("button", { name: "Copy link" }));
 
       const link = `${window.location.origin}/enroll#code=PAIR1234`;
-      const field = await screen.findByRole("textbox", { name: "Link with the pairing code" });
+      const field = await screen.findByRole("textbox", {
+        name: "Link with the pairing code",
+      });
       expect(field).toHaveValue(link);
       expect(field).toHaveAttribute("readonly");
       expect(field).toHaveAccessibleDescription(/press Ctrl\+C or ⌘C/);
@@ -202,7 +252,9 @@ describe("Devices (ADR-0081 administration)", () => {
     await userEvent.click(screen.getByRole("button", { name: /viewer code/i }));
 
     const target = "http://192.168.1.10:8800/enroll";
-    const qr = await screen.findByRole("img", { name: `QR code that opens ${target}` });
+    const qr = await screen.findByRole("img", {
+      name: `QR code that opens ${target}`,
+    });
     expect(qr).toHaveAttribute("data-qr-value", target);
     expect(qr.getAttribute("data-qr-value")).not.toContain("PAIR1234");
     expect(screen.getByText(target)).toBeInTheDocument();
@@ -259,7 +311,13 @@ describe("Devices (ADR-0081 administration)", () => {
         revoked: false,
         current: false,
       },
-      { deviceID: "dev-ccc333", name: "Old Phone", role: "viewer", revoked: true, current: false },
+      {
+        deviceID: "dev-ccc333",
+        name: "Old Phone",
+        role: "viewer",
+        revoked: true,
+        current: false,
+      },
     ]);
     renderDevices();
 
@@ -273,10 +331,14 @@ describe("Devices (ADR-0081 administration)", () => {
 
   it("persists the remote-enrollment toggle", async () => {
     renderDevices();
-    const toggle = await screen.findByRole("switch", { name: /allow remote enrollment/i });
+    const toggle = await screen.findByRole("switch", {
+      name: /allow remote enrollment/i,
+    });
     await userEvent.click(toggle);
     await waitFor(() =>
-      expect(setConsoleConfig).toHaveBeenCalledWith({ remoteEnrollmentEnabled: false }),
+      expect(setConsoleConfig).toHaveBeenCalledWith({
+        remoteEnrollmentEnabled: false,
+      }),
     );
   });
 

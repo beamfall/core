@@ -6,22 +6,24 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
   disableProfile,
+  fetchLibraries,
   type PlayerProfileAdminInfo,
   setPlayerControllers,
   setPlayerWalkUp,
 } from "@/lib/graphql";
-import type { ProfileAdminInfo } from "@/lib/graphql/types";
+import type { LibraryInfo, ProfileAdminInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { getAdminEpochSignal } from "../adminEpoch";
 import { ConfirmButton } from "../ConfirmButton";
-import type { AsyncState } from "../useAsync";
+import { type AsyncState, useAsync } from "../useAsync";
+import { LibraryGrantEditor } from "./ProfilesAccess";
 
 type HouseholdProfile = Pick<ProfileAdminInfo, "id" | "name" | "kind">;
 
 // The household's Player Profiles (ADR-0240 D1): a TV or other shared display's
 // own identity. Their kind is fixed, so no kind selector or entry PIN is
-// offered. Each one edits who may control it (D4) and walk-up (D7), which
-// needs the owner to confirm what it opens up.
+// offered. Each one edits its Library grants, who may control it (D4) and
+// walk-up (D7), which needs the owner to confirm what it opens up.
 export function PlayerProfiles({
   players,
   household,
@@ -34,6 +36,7 @@ export function PlayerProfiles({
 }) {
   const t = useT();
   const rows = players.data ?? [];
+  const libraries = useAsync(fetchLibraries);
   return (
     <section className="space-y-2" aria-labelledby="player-profiles-heading">
       <h3 id="player-profiles-heading" className="m-0 text-base font-semibold">
@@ -53,8 +56,9 @@ export function PlayerProfiles({
         <ul className="console-card divide-y divide-border">
           {rows.map((p) => (
             <PlayerProfileRow
-              key={`${p.id}:${p.walkUpEnabled ? 1 : 0}:${controllersKey(p)}`}
+              key={`${p.id}:${p.walkUpEnabled ? 1 : 0}:${controllersKey(p)}:${p.libraryIDs.join(",")}`}
               profile={p}
+              libraries={libraries}
               household={household}
               onChanged={onChanged}
             />
@@ -73,10 +77,12 @@ function controllersKey(p: PlayerProfileAdminInfo): string {
 
 function PlayerProfileRow({
   profile,
+  libraries,
   household,
   onChanged,
 }: {
   profile: PlayerProfileAdminInfo;
+  libraries: AsyncState<LibraryInfo[]>;
   household: HouseholdProfile[] | null;
   onChanged: () => void;
 }) {
@@ -102,6 +108,14 @@ function PlayerProfileRow({
           {t("consoleProfilesDisableEffect")}
         </ConfirmButton>
       </div>
+      <LibraryGrantEditor
+        profileID={profile.id}
+        granted={profile.libraryIDs}
+        libraries={libraries.data ?? []}
+        failed={libraries.failed && libraries.data === null}
+        onChanged={onChanged}
+        noRestricted
+      />
       <WalkUp profile={profile} onChanged={onChanged} />
       <Controllers profile={profile} household={household} onChanged={onChanged} />
     </li>

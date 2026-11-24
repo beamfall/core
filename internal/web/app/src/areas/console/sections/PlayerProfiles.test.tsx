@@ -2,17 +2,26 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type PlayerProfileAdminInfo, setPlayerControllers, setPlayerWalkUp } from "@/lib/graphql";
+import {
+  fetchLibraries,
+  type PlayerProfileAdminInfo,
+  setPlayerControllers,
+  setPlayerWalkUp,
+  setProfileLibraries,
+} from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { setAdminEpochSignal } from "../adminEpoch";
 import type { AsyncState } from "../useAsync";
 import { PlayerProfiles } from "./PlayerProfiles";
 
 vi.mock("@/lib/graphql", () => ({
+  fetchLibraries: vi.fn(async () => []),
+  setProfileLibraries: vi.fn(),
   disableProfile: vi.fn(),
   setPlayerWalkUp: vi.fn(),
   setPlayerControllers: vi.fn(),
 }));
+vi.mock("@/lib/session", () => ({ useSession: () => ({ revealed: true }) }));
 
 const household = [
   { id: "a1", name: "Alex", kind: "adult" as const },
@@ -67,6 +76,30 @@ afterEach(() => {
 });
 
 describe("PlayerProfiles", () => {
+  it("edits Library grants and never offers a restricted Library", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchLibraries).mockResolvedValue([
+      { id: "lib-films", title: "Films", pluginID: null, previewClips: false, restricted: false },
+      {
+        id: "lib-private",
+        title: "Private",
+        pluginID: null,
+        previewClips: false,
+        restricted: true,
+      },
+    ]);
+    vi.mocked(setProfileLibraries)
+      .mockReset()
+      .mockResolvedValue(undefined as never);
+    const onChanged = renderSection();
+    const films = await screen.findByRole("checkbox", { name: /Films/ });
+    expect(screen.getByRole("checkbox", { name: /Private/ })).toBeDisabled();
+    await user.click(films);
+    await user.click(screen.getByRole("button", { name: "Save library access" }));
+    expect(setProfileLibraries).toHaveBeenCalledWith("pl1", ["lib-films"]);
+    expect(onChanged).toHaveBeenCalled();
+  });
+
   it("shows the kind as fixed and the empty state", () => {
     renderSection(state([]));
     expect(screen.getByText(/No Player Profiles yet/)).toBeInTheDocument();

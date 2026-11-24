@@ -377,8 +377,9 @@ function StagePlayer({
 
   // A muted screen plays silently, which most browsers allow without a
   // gesture; the sync loop retries play, and a browser that blocks all
-  // autoplay still gets the start button.
-  const muted = stage.muted;
+  // autoplay still gets the start button. Only the lead screen owns the room
+  // audio (ADR-0237 §2.4), so every other screen plays silently too.
+  const muted = stage.muted || !stage.lead;
   useEffect(() => {
     const video = videoRef.current;
     if (video) video.muted = muted;

@@ -146,6 +146,8 @@ export interface PartyStage {
   qrCorner: PartyQRCorner;
   /** For the screen asked about; false when none was named. */
   muted: boolean;
+  /** For the screen asked about: whether it owns the room audio (ADR-0237 §2.4). */
+  lead: boolean;
   joinCode: string;
   joinPath: string;
 }
@@ -157,7 +159,7 @@ const SCREEN =
   "id name kind carrier lead ticker qrCorner muted offsetMS rttMS reportedAt playerDisplay playerDisplayHandle";
 const SESSION = `id joinCode joinPath fairness autoAdd joinOpen libraryIDs startedAt expiresAt changeoverSeconds current { ${ENTRY} } playback { ${PLAYBACK} } entries { ${ENTRY} } requests { ${ENTRY} } recent { ${ENTRY} } removed { ${ENTRY} } participants { id name guest waiting lastTurnAt } screens { ${SCREEN} } skipped { ${ENTRY} } availableDisplays { handle displayName presence joined coversLibraries missingLibraryIDs }`;
 const STAGE_ENTRY = `${ENTRY} ineligible label`;
-const STAGE = `sessionID serverNowMS current { ${STAGE_ENTRY} } playback { ${PLAYBACK} } upNext { ${STAGE_ENTRY} } ticker qrCorner muted joinCode joinPath`;
+const STAGE = `sessionID serverNowMS current { ${STAGE_ENTRY} } playback { ${PLAYBACK} } upNext { ${STAGE_ENTRY} } ticker qrCorner muted lead joinCode joinPath`;
 
 const PARTY_SESSION_QUERY = `query PartySession { partySession { ${SESSION} } }`;
 const PARTY_STAGE_QUERY = `query PartyStage($sessionID: String!, $screenID: String!) { partyStage(sessionID: $sessionID, screenID: $screenID) { ${STAGE} } }`;

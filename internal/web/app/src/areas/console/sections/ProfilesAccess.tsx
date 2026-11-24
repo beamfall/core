@@ -159,18 +159,21 @@ export function ProfilesAccess() {
   );
 }
 
-function LibraryGrantEditor({
+export function LibraryGrantEditor({
   profileID,
   granted,
   libraries,
   failed,
   onChanged,
+  noRestricted = false,
 }: {
   profileID: string;
   granted: string[];
   libraries: LibraryInfo[];
   failed: boolean;
   onChanged: () => void;
+  /** A Player Profile can never hold a restricted Library (ADR-0240). */
+  noRestricted?: boolean;
 }) {
   const t = useT();
   const { revealed } = useSession();
@@ -205,7 +208,7 @@ function LibraryGrantEditor({
         <p className="text-xs text-muted-foreground">{t("accessHelpLibraryAccessHint")}</p>
       </div>
       {libraries.map((library) => {
-        const disabled = library.restricted && !revealed;
+        const disabled = library.restricted && (noRestricted || !revealed);
         return (
           <label key={library.id} className="flex items-center gap-2 text-sm">
             <Checkbox

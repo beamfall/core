@@ -27,6 +27,8 @@ vi.mock("@/lib/graphql", () => ({
   uploadProfilePicture: vi.fn(),
   removeProfilePicture: vi.fn(),
   fetchPlayerProfiles: vi.fn(async () => []),
+  fetchLibraries: vi.fn(async () => []),
+  setProfileLibraries: vi.fn(),
   setPlayerWalkUp: vi.fn(),
   setPlayerControllers: vi.fn(),
 }));

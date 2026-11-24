@@ -39,6 +39,7 @@ import {
   type PlayerProfileChoice,
 } from "./DevicePlayerBinding";
 import { enrollQrTarget, isLoopbackHost } from "./enrollQr";
+import { onPlayerProfilesChanged } from "./playerProfilesEvents";
 
 // Device administration (ADR-0081), Console half — the operator-facing surface
 // over already-enrolled browsers/devices. Lists every device with its role and
@@ -377,6 +378,9 @@ export function Devices() {
   // Player Profiles for the binding dialog (ADR-0240 D2). A failed load leaves
   // the list empty and the dialog says to create one first.
   const players = useAsync(fetchPlayerProfiles);
+  // Profiles created or changed in the Profiles section reach the dialog here.
+  const refreshPlayers = players.refresh;
+  useEffect(() => onPlayerProfilesChanged(() => void refreshPlayers()), [refreshPlayers]);
   const playerChoices = (players.data ?? []).map((p) => ({ id: p.id, name: p.name }));
   const [minted, setMinted] = useState<MintedCode | null>(null);
   const [busy, setBusy] = useState(false);
