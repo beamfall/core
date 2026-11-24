@@ -199,19 +199,43 @@ type encoderRun struct {
 	carry       *encoderStart
 	transfer    *encoderStart
 	waiting     atomic.Int32
+	pauseMu     sync.Mutex
 	paused      atomic.Bool
 	resumedAt   atomic.Int64 // UnixNano of last Resume(); floors stall check
 	live        *encderiv.LiveRun
+}
+
+func (r *encoderRun) pauseIfIdle() {
+	if r == nil || r.proc == nil {
+		return
+	}
+	r.pauseMu.Lock()
+	defer r.pauseMu.Unlock()
+	if r.paused.Load() || r.waiting.Load() > 0 {
+		return
+	}
+	if r.proc.Pause() {
+		r.paused.Store(true)
+	}
 }
 
 func (r *encoderRun) resumeIfPaused() {
 	if r == nil || r.proc == nil {
 		return
 	}
-	if r.paused.CompareAndSwap(true, false) {
-		r.resumedAt.Store(time.Now().UnixNano())
-		_ = r.proc.Resume()
+	if !r.paused.Load() {
+		return
 	}
+	r.pauseMu.Lock()
+	defer r.pauseMu.Unlock()
+	if !r.paused.Load() {
+		return
+	}
+	// Record the stall-timer floor BEFORE clearing paused so a concurrent
+	// watchForStall tick can never observe paused==false with a stale timestamp.
+	r.resumedAt.Store(time.Now().UnixNano())
+	_ = r.proc.Resume()
+	r.paused.Store(false)
 }
 
 func (r *encoderRun) lastProgressAt() time.Time {
@@ -1941,7 +1965,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 			old.stopIssued = true
 		}
 		s.mu.Unlock()
-		launched, err := s.startEncoder(ctx, session.key, start, old, stopOld, rung, segment, requested != initRequest)
+		launched, err := s.startEncoder(ctx, key, start, old, stopOld, rung, segment, requested != initRequest)
 		s.finishEncoderStart(start, err)
 		return launched, err
 	}
@@ -2092,14 +2116,7 @@ func (s *Sessions) maybePauseAhead(run *encoderRun) {
 	if !stillActive || run.waiting.Load() > 0 {
 		return
 	}
-	if run.proc.Pause() {
-		run.paused.Store(true)
-		// Close the narrow race where a waiter arrived between waiting.Load()
-		// and paused.Store(true).
-		if run.waiting.Load() > 0 {
-			run.resumeIfPaused()
-		}
-	}
+	run.pauseIfIdle()
 }
 
 func (s *hlsSession) withinSeekLookaheadLocked(rung Rung, base, segment int) bool {

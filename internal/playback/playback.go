@@ -2090,15 +2090,13 @@ func precomputedAudioCompatible(wanted ffmpeg.AudioProfile) bool {
 	return normalizedAudioCodec(wanted.Codec) == "aac" && wanted.Channels <= 2
 }
 
-// clientLadderCeiling is the decode-height ceiling the advertised transcode
-// ladder is clipped to (ADR-0010 §8: honest twice over — honest to the source
-// and to the client). It is the smallest non-zero VideoCodecCap.MaxHeight the
-// profile declares across its video codecs: the transcode may target any codec
-// the client supports, so the ladder must stay within the tightest decode bound
-// any of them imposes, never advertising a rung the client could not play on
-// some path. 0 — no VideoCodecs envelope, or every declared codec leaves
-// MaxHeight unset (no ceiling) — means "no client ceiling", so the ladder falls
-// back to source-only rungs, byte-identical to the prior rungsFor behaviour.
+// clientLadderCeiling is the decode-height ceiling the H.264 transcode ladder
+// is clipped to (ADR-0010 §8: honest twice over — honest to the source and to
+// the client). When the profile declares an explicit h264 VideoCodecCap with
+// MaxHeight > 0, that ceiling governs directly (so a lower decode cap on an
+// unrelated codec such as AV1 does not cap H.264 transcodes). Otherwise it
+// falls back to the smallest non-zero VideoCodecCap.MaxHeight across declared
+// video codecs; 0 means "no client ceiling".
 func clientLadderCeiling(profile CapabilityProfile) int {
 	if cap, ok := videoCodecCap(profile.VideoCodecs, "h264"); ok && cap.MaxHeight > 0 {
 		return cap.MaxHeight

@@ -1705,9 +1705,6 @@ type Rendition struct {
 	// (CORE-2156). It is set only after the device-decode probe certified that
 	// chain for hwAccel and this source's transfer class.
 	deviceDecode bool
-	// sdrDeviceDecode decodes and scales 8-bit SDR sources on the encoder's
-	// device (CUDA/VAAPI/QSV) to avoid CPU decode + CPU scale + PCIe roundtrips.
-	sdrDeviceDecode bool
 	// useRubberband uses librubberband for formant-preserving pitch shifting
 	// when the resolved FFmpeg build lists the rubberband filter.
 	useRubberband bool
@@ -1867,44 +1864,9 @@ func (r Rendition) withDeviceDecode(on bool) Rendition {
 	return r
 }
 
-func (r Rendition) withSDRDeviceDecode(on bool) Rendition {
-	r.sdrDeviceDecode = on
-	return r
-}
-
 func (r Rendition) withRubberband(on bool) Rendition {
 	r.useRubberband = on
 	return r
-}
-
-// sdrDeviceDecodeEligible reports whether an explicitly probed 8-bit SDR
-// H.264/HEVC source can be decoded, scaled, and encoded end-to-end on the GPU
-// (NVENC/CUDA or VAAPI) without CPU filter roundtrips.
-func (r Rendition) sdrDeviceDecodeEligible() bool {
-	switch r.hwAccel {
-	case HWAccelNVENC, HWAccelVAAPI:
-	default:
-		return false
-	}
-	if r.CopyVideo || r.AudioOnly || r.needsToneMap() {
-		return false
-	}
-	switch strings.ToLower(r.SourceVideoCodec) {
-	case "h264", "hevc":
-	default:
-		return false
-	}
-	if r.SourceVideoBitDepth != 8 {
-		return false
-	}
-	if _, composed := r.Picture(); composed {
-		return false
-	}
-	return r.burnSubtitleIndex == 0 && !interlacedFieldOrder(r.FieldOrder) && !nonSquareSampleAspect(r.SampleAspectRatio)
-}
-
-func (r Rendition) usesSDRDeviceDecode() bool {
-	return r.sdrDeviceDecode && r.sdrDeviceDecodeEligible()
 }
 
 // deviceDecodeClass is the transfer class the device-decode chain tone-maps
@@ -1961,16 +1923,6 @@ func (r Rendition) usesDeviceDecode() bool {
 // tone-map chain already created one there: a second QSV device would leave
 // the encoder unable to choose and fall back to libmfx's default adapter.
 func (r Rendition) inputArgs() []string {
-	if r.usesSDRDeviceDecode() {
-		switch r.hwAccel {
-		case HWAccelNVENC:
-			return []string{"-hwaccel", "cuda", "-hwaccel_output_format", "cuda"}
-		case HWAccelVAAPI:
-			return []string{"-hwaccel", "vaapi", "-hwaccel_device", vaapiDevicePath(), "-hwaccel_output_format", "vaapi"}
-		case HWAccelQSV:
-			return append(qsvInitArgs(), "-hwaccel", "qsv", "-hwaccel_output_format", "qsv")
-		}
-	}
 	chain := r.toneMapChain()
 	if chain.DeviceDecode {
 		// The chain's own devices serve the decoder and the encoder; a second
@@ -2267,9 +2219,6 @@ func audioBitrateKbps(codec string, channels int) int {
 // encoder-side upload — is composition around the chain and is explicitly NOT
 // what the probe certifies (D8).
 func (r Rendition) videoFilters() []string {
-	if r.usesSDRDeviceDecode() {
-		return r.sdrDeviceScaleFilters()
-	}
 	chain := r.toneMapChain()
 	if chain.DeviceDecode {
 		// Decode, scale and tone-map all ran on the device, and the frames are
@@ -2288,30 +2237,6 @@ func (r Rendition) videoFilters() []string {
 		filters = append(filters, "setsar=1")
 	}
 	return append(filters, r.encoderIngestFilters(chain)...)
-}
-
-// sdrDeviceScaleFilters returns GPU-resident scaling filters for zero-copy SDR
-// hardware decode+encode pipelines (CUDA, VAAPI, QSV).
-func (r Rendition) sdrDeviceScaleFilters() []string {
-	switch r.hwAccel {
-	case HWAccelNVENC:
-		if r.Height > 0 {
-			return []string{fmt.Sprintf("scale_cuda=-2:min(ih\\,%d):format=nv12", r.Height)}
-		}
-		return nil
-	case HWAccelVAAPI:
-		if r.Height > 0 {
-			return []string{fmt.Sprintf("scale_vaapi=w=-2:h=min(ih\\,%d):format=nv12", r.Height)}
-		}
-		return []string{"scale_vaapi=format=nv12"}
-	case HWAccelQSV:
-		if r.Height > 0 {
-			return []string{fmt.Sprintf("scale_qsv=w=-2:h=min(ih\\,%d):format=nv12", r.Height)}
-		}
-		return []string{"scale_qsv=format=nv12"}
-	default:
-		return nil
-	}
 }
 
 // encoderIngestFilters hands the composed graph to the encoder in the pixel

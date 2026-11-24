@@ -168,7 +168,7 @@ func (p ConvertProfile) encodeArgs() []string {
 		}
 		if codec != "copy" {
 			args = append(args, "-pix_fmt", "yuv420p")
-			if codec == "libx265" || codec == "hevc" {
+			if (codec == "libx265" || codec == "hevc") && (p.Container == "" || p.Container == "mp4" || p.Container == "mov" || p.Container == "m4v") {
 				args = append(args, "-tag:v", "hvc1")
 			}
 			args = append(args, p.boundArgs()...)
