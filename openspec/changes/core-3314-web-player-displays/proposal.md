@@ -15,6 +15,10 @@ on, and hosts need to add them to a Watch Party's Screens.
 - **Capability declaration:** the embedded web UI contract (`EmbeddedUIContract` and the web
   `CLIENT_CONTRACT`) requests `player-control`, so the server fills `playerDisplays` and
   `availableDisplays` and accepts `partyScreenAddDisplay` for web callers.
+- **Player Profile listing (server):** a new owner-only `playerProfiles` query returns the
+  household's enabled Player Profiles with `walkUpEnabled` and `playerControllers`. `profiles` leaves
+  Player Profiles out (it backs the viewer's picker), so without this field the console cannot list
+  them. The change is additive and touches the wire goldens.
 - **Console Profiles (D1, D4, D7):** `player` can be chosen when a Profile is created. A Player
   Profile's kind is shown as fixed and never offered on viewers. Owners edit its controllers (All
   adults, plus include and exclude lists) and its walk-up switch. Turning walk-up on asks for
@@ -37,4 +41,4 @@ on, and hosts need to add them to a Watch Party's Screens.
 
 - Ambient Display settings for player displays (D8): a separate ticket.
 - Native apps: tvOS display shell (CORE-3316), senders and QR scanning (CORE-3317).
-- Any server or wire change other than the capability declaration.
+- Any server or wire change other than the capability declaration and the `playerProfiles` query.

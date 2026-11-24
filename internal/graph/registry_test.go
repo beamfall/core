@@ -110,6 +110,7 @@ var originalScopedFields = []string{
 	"playerbinding",
 	"playercontrollers",
 	"playerdisplays",
+	"playerprofiles",
 	"setdeviceplayerbinding",
 	"cleardeviceplayerbinding",
 	"setplayerwalkup",

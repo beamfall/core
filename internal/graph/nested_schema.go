@@ -410,6 +410,7 @@ var resultTypes = map[string]any{
 	"playerbinding":                      PlayerBindingInfo{},
 	"playercontrollers":                  PlayerControllersInfo{},
 	"playerdisplays":                     PlayerDisplayInfo{},
+	"playerprofiles":                     ProfileInfo{},
 	"createcollection":                   CollectionInfo{},
 	"updatecollection":                   CollectionInfo{},
 	"deletecollection":                   CollectionInfo{},

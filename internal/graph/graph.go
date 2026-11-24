@@ -7173,6 +7173,7 @@ var queryFields = map[string]bool{
 	"playerbinding":       true,
 	"playercontrollers":   true,
 	"playerdisplays":      true,
+	"playerprofiles":      true,
 }
 
 // mutationFields are the scoped top-level fields that write or command state.
@@ -7553,6 +7554,7 @@ var adminFields = map[string]bool{
 	"setprofilelibraries":     true,
 	"setplayerwalkup":         true,
 	"playercontrollers":       true,
+	"playerprofiles":          true,
 	"setplayercontrollers":    true,
 	"setcertificationceiling": true,
 	"accessschedule":          true,

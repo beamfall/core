@@ -266,6 +266,10 @@
       "effect": "read"
     },
     {
+      "field": "playerprofiles",
+      "effect": "read"
+    },
+    {
       "field": "playhistory",
       "effect": "read"
     },

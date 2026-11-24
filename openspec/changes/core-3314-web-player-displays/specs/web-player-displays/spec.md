@@ -18,6 +18,13 @@ name. A Player Profile's kind SHALL be shown as fixed. Turning walk-up on SHALL 
 warning that anyone holding the display's remote can browse and play everything the Player Profile's
 Libraries allow, with no engagement recorded.
 
+#### Scenario: Owner lists Player Profiles
+
+- **WHEN** the owner opens Profiles in the console
+- **THEN** the console reads Player Profiles from the owner-only `playerProfiles` query, which
+  returns only enabled `player` Profiles with their walk-up setting and controllers, and a non-owner
+  caller gets FORBIDDEN
+
 #### Scenario: Walk-up needs confirmation
 
 - **WHEN** the owner turns walk-up on for a Player Profile

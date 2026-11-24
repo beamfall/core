@@ -1,6 +1,7 @@
 ## 1. Contract and data
 
-- [ ] 1.1 Request `player-control` in `EmbeddedUIContract` and the web `CLIENT_CONTRACT`
+- [x] 1.1 Request `player-control` in `EmbeddedUIContract` and the web `CLIENT_CONTRACT`
+- [x] 1.0 Owner-only `playerProfiles` graph query, test and regenerated wire goldens
 - [ ] 1.2 Add player fields and operations to the web GraphQL types and fetchers (console, party, remote)
 
 ## 2. Console

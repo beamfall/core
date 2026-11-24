@@ -985,6 +985,11 @@
     "tier": "session"
   },
   {
+    "field": "playerprofiles",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
     "field": "playhistory",
     "effect": "read",
     "tier": "admin"

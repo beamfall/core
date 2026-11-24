@@ -633,6 +633,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "profileID", Kind: "string"},
 	},
 	"playerdisplays": {},
+	"playerprofiles": {},
 	"plugins":        {},
 	"pluginworker": {
 		{Name: "actionID", Kind: "string", Optional: true},

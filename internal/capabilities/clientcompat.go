@@ -185,7 +185,7 @@ func EmbeddedUIContract() ClientContract {
 		RenderingContractRevRange: [2]Revision{EmbeddedUIContractRevision, EmbeddedUIContractRevision},
 		RenderingStamps:           []string{embeddedUIRenderingStamp},
 		FixedVocabularies:         []string{},
-		RequestedCapabilities:     []string{},
+		RequestedCapabilities:     []string{string(CapabilityPlayerControl)},
 	}
 }
 

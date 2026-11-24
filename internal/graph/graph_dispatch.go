@@ -669,6 +669,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"playbackrenditioncache":             newFieldHandler("playbackRenditionCache", "playbackRenditionCache", fieldRead, roleSession|roleAdmin, 75),
 	"playerbinding":                      newFieldHandler("playerBinding", "playerBinding", fieldRead, roleSession, 1),
 	"playercontrollers":                  newFieldHandler("playerControllers", "playerControllers", fieldRead, roleSession|roleAdmin, 38),
+	"playerprofiles":                     newFieldHandler("playerProfiles", "playerProfiles", fieldRead, roleSession|roleAdmin, 38),
 	"playerdisplays":                     newFieldHandler("playerDisplays", "playerDisplays", fieldRead, roleSession, 129),
 	"plugins":                            newFieldHandler("plugins", "", fieldRead, roleSession, 5),
 	"pluginworker":                       newFieldHandler("pluginWorker", "pluginWorker", fieldRead, roleSession|roleAdmin, 66),
@@ -1738,6 +1739,12 @@ func dispatchFieldBlock038(dispatch *fieldDispatchContext) response {
 	if fields["playercontrollers"] {
 		ctrl, err := h.playerControllers(ctx, req)
 		if resp := resolveField(dispatch, "playercontrollers", ctrl, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["playerprofiles"] {
+		profiles, err := h.playerProfiles(ctx, scope)
+		if resp := resolveField(dispatch, "playerprofiles", profiles, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
