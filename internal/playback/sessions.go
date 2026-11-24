@@ -1284,6 +1284,7 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 	for {
 		if run != nil {
 			run.waiting.Add(1)
+			run.resumeIfPaused()
 		}
 		var artifact artifactObservation
 		err := waitForArtifact(ctx, path, run.exitedChan(), session.scratch.cutoff, func(path string) bool {

@@ -1997,6 +1997,9 @@ func (r Rendition) videoArgs() []string {
 	var args []string
 	if encoder := hwAccelVideoEncoder(r.hwAccel, r.VideoCodec); encoder != "" {
 		args = append([]string{"-c:v", encoder}, r.lowPowerArgs()...)
+		if r.VideoCodec == "hevc" {
+			args = append(args, "-tag:v", "hvc1")
+		}
 	} else {
 		args = []string{
 			"-c:v", "libx264",
@@ -2005,9 +2008,6 @@ func (r Rendition) videoArgs() []string {
 			"-sc_threshold", "0",
 			"-pix_fmt", "yuv420p",
 		}
-	}
-	if r.VideoCodec == "hevc" {
-		args = append(args, "-tag:v", "hvc1")
 	}
 	if r.needsToneMap() {
 		args = append(args,
@@ -2070,7 +2070,7 @@ func (r Rendition) rateControlArgs() []string {
 		switch r.hwAccel {
 		case HWAccelNVENC:
 			out = append(out, "-preset", pick(high, "p6", "p4"), "-forced-idr", "1", "-spatial-aq", "1")
-			if r.VideoCodec != "hevc" {
+			if r.VideoCodec == "" || r.VideoCodec == "h264" {
 				out = append(out, "-temporal-aq", "1")
 			}
 			if high {

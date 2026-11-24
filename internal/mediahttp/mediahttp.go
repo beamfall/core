@@ -1803,6 +1803,9 @@ func directMediaContentType(container, path string) string {
 		}
 		return "video/mp4"
 	case "matroska", "matroska,webm", "mkv":
+		if strings.EqualFold(filepath.Ext(path), ".webm") {
+			return "video/webm"
+		}
 		return "video/x-matroska"
 	case "webm":
 		return "video/webm"

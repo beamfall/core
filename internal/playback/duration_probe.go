@@ -65,6 +65,7 @@ type durationFlight struct {
 	generation string
 	users      int
 	seconds    int // winning positive held until the last overlapping probe finishes
+	valid      bool
 	done       chan struct{}
 }
 
@@ -165,6 +166,7 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 		cancel()
 		valid = source.matches(captureSource(path, nil, s.statSource))
 		s.mu.Lock()
+		flight.valid = valid
 		if valid && seconds > 0 {
 			flight.seconds = seconds
 		}
@@ -175,6 +177,7 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 		case <-ctx.Done():
 		}
 		s.mu.Lock()
+		valid = flight.valid
 		seconds = flight.seconds
 	}
 	defer s.mu.Unlock()

@@ -2429,7 +2429,7 @@ func hlsCopyableAudioStream(source *store.MediaFileStream, profile CapabilityPro
 	default:
 		return false
 	}
-	if ov.MaxAudioChannels > 0 && source.Channels > ov.MaxAudioChannels {
+	if ov.MaxAudioChannels > 0 && (source.Channels <= 0 || source.Channels > ov.MaxAudioChannels) {
 		return false
 	}
 	single := []store.MediaFileStream{*source}
