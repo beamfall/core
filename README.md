@@ -2,271 +2,228 @@
   <img src=".github/brand/beamfall-logo.png" alt="Beamfall" width="96" height="96">
 </p>
 
-# Beamfall Core
+<h1 align="center">Beamfall Core</h1>
 
-Beamfall Core is a self-hosted media server for the library you already own. It scans your films
-and shows, music, podcasts, audiobooks, photos, family archives, and karaoke tracks, and streams
-them to a browser or a client app: direct play when the device can handle the file, HLS
-transcoding only when it can't.
+<p align="center">
+  <strong>A self-hosted media server for everything you own, in one Go binary.</strong><br>
+  Films and shows, music, podcasts, audiobooks, photos, family archives, and karaoke,
+  streamed to any browser, with no account, no cloud, and no telemetry.
+</p>
 
-It is one Go binary with embedded SQLite, using FFmpeg for media work. There is no database
-server, no Beamfall account, and no telemetry. It is free software under the [AGPL-3.0](LICENSE).
+<p align="center">
+  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue"></a>
+  <a href="go.mod"><img alt="Go 1.27" src="https://img.shields.io/badge/go-1.27-00ADD8"></a>
+  <img alt="Status: pre-release" src="https://img.shields.io/badge/status-pre--release-orange">
+</p>
+
+<p align="center">
+  <img src="docs/images/readme/films-grid.jpg" alt="The Beamfall web app showing a Films library as a grid of posters" width="900">
+</p>
 
 > [!IMPORTANT]
-> **Status: pre-release.** This repository was published on 2026-10-20 as a single curated
-> commit. No version has been tagged and no release artifacts or container images have been
-> published from it yet, so today the way to run Core is to [build it from source](#from-source).
-> See [Project status](#project-status) for exactly what is and isn't in place.
+> **Pre-release.** No version has been tagged yet, so there are no published binaries or container
+> images. You run Core today by [building it from source](#quick-start), natively or as a Docker
+> image. [Project status](#project-status) lists exactly what is and isn't in place.
 
-## New to Beamfall? Start here
+## Why Beamfall
 
-There is no installer yet, so the first run means building Beamfall yourself. In short:
+- **One server for the whole household's media.** Seven library types ship in the box, each with
+  its own browsing and metadata, on one domain-agnostic core.
+- **Yours, start to finish.** It reads the folders you already have. There is no Beamfall account
+  and no telemetry, the update check is off until you turn it on, and remote access stays off
+  until you configure it.
+- **Small to run.** One Go binary with embedded SQLite that calls FFmpeg for media work. There is
+  no database server or separate web server, and no runtime services to manage.
+- **Built to be checked.** The code is AGPL-3.0, the API has a published OpenAPI document, and the
+  [Verification Claims Register](docs/security/CLAIMS.md) records what has been tested and what
+  each check does *not* prove.
 
-1. **Check what you need.** A Mac or Linux computer that stays on and can read your media files,
-   with Git, [Go](go.mod), FFmpeg, and Node.js with npm installed. The server does not run on
-   Windows yet.
-2. **Download and build it:**
+## Highlights
 
-   ```sh
-   git clone https://github.com/beamfall/core.git
-   cd core
-   npm --prefix internal/web/app ci
-   npm --prefix internal/web/app run build
-   go build -o beamfall ./cmd/beamfall
-   ```
-
-3. **Start it** and leave the terminal open:
-
-   ```sh
-   ./beamfall serve --addr 0.0.0.0:2326 --data-dir "$HOME/beamfall-data"
-   ```
-
-4. **Finish setup in your browser.** Open the address the server prints under "From this network"
-   from any browser on your home network. Setup asks for an admin password, the kinds of media you
-   have and the folder that holds them, then scans it. Select a title and press Play.
-
-**Need help?** Search or ask in [GitHub Issues](https://github.com/beamfall/core/issues). Posts
-there are public, so leave out passwords, tokens and pairing codes. Report security problems
-privately instead, as [Contributing and security](#contributing-and-security) describes.
-
-A step-by-step owner guide with screenshots is written but not published yet. Until it is, the
-rest of this README and [`docs/README.md`](docs/README.md) are the reference.
-
-## Features
-
-### Playback
-
-When a device can play a file as-is, Core streams it untouched. When it can't, Core transcodes
-to HLS, probing for hardware encoders: Intel Quick Sync and VA-API, NVIDIA NVENC, and Apple
-VideoToolbox.
-
-### Library types
-
-Seven first-party plugin bundles are compiled into the binary: film/TV, music, podcasts,
-audiobooks, photos, family archive, and karaoke. Each brings its own vocabulary and browse
-sections, and operators can activate or deactivate each one. The core itself stays
-domain-agnostic.
-
-### Privacy and remote access
-
-- No telemetry and no account.
-- The update check is opt-in and off by default, and it checks a signed release manifest.
-- Remote access is off until you configure it: either direct HTTPS with an ACME certificate, or
-  an outbound connection to a relay endpoint you run yourself.
-
-### Trash and backups
-
-Deletes go to a server-side Trash that is on by default. `beamfall backup` requests a
-server-side backup, and `beamfall restore` restores one while the server is stopped.
-
-### Profiles
-
-Each Profile has its own library access, rating ceilings, concurrent stream limit, transcode
-permission, and preferred audio and subtitle languages, stored and enforced on the server.
-
-In the web app, open **Manage › Switch profile › Profile settings** and unlock with the admin
-password. Pick an adult Profile to set or change the PIN used to enter that Profile. Use
-**Preferred subtitle languages for your current profile** to edit the list. Enter language codes
-such as `en, fr-CA` in order of preference, or clear the field to remove your preferences, then save.
-To unlock restricted content, use the separate PIN in **Manage › Show restricted content**.
-
-### Organizing and browsing
-
-Collections, Tags, Markers, saved filters, and smart collections; full-text search;
-byte-identical duplicate detection; intro, recap, and credits skip detection; trickplay
-scrubbing previews; and watch folders that queue a scan when files change.
-
-### Importers
-
-The bundled plugins provide migration importers for Plex, Emby, Jellyfin, Trakt, and NFO
-sidecars (film/TV); Last.fm, ListenBrainz, and Navidrome (music); OPML, Overcast, and AntennaPod
-(podcasts); Audiobookshelf (audiobooks); and Immich (photos).
-
-### Developer API
-
-A versioned `/v1` Developer API ([OpenAPI 3.1](docs/api/openapi.json)) with scoped bearer keys,
-a server-sent event stream at `/v1/events`, an HMAC-signed webhook emitter, and
-[home-automation examples](docs/api/home-automation.md).
-
-### Query latency budgets
-
-`make bench` builds a synthetic library of 100,000 media items and 10,000 entities and asserts a
-P95 budget for each query in its suite, for example 1 ms for "recently added" and 60 ms for
-full-text search. The release gate runs it.
-
-### Tests and release signing
-
-The gate runs architecture, vocabulary, golden, and wire-contract conformance tests. The
-tag-triggered release workflow is built to produce signed archives with an SBOM and SLSA
-provenance, and a cosign-signed amd64/arm64 container image. The
-[Verification Claims Register](docs/security/CLAIMS.md) records what has been checked, at which
-revision, and what each check does *not* prove.
-
-## Project status
-
-As of the initial public commit:
-
-| Area | Status |
+| | |
 |---|---|
-| Releases | None yet. There is no `v*` tag, and [`release.yml`](.github/workflows/release.yml) runs only on such a tag, so no signed archives, deploy bundles, or `ghcr.io/beamfall/core` images have been published from this repository. |
-| Server | Builds from source with the Go version in [`go.mod`](go.mod) and runs locally via `make dev-run`. |
-| CI | Being brought up. At publication the [gate workflow](.github/workflows/gate.yml) failed to parse and some date-dependent waivers had expired; the fixes are in [#3](https://github.com/beamfall/core/pull/3). Treat CI as not yet green. |
-| Cross-repo checks | Some checks need sibling Beamfall repositories that are not public. The consumer-pin and relay-vector freshness checks report a loud skip, never a pass, when the sibling checkout is absent, and the cross-repo wire-conformance check clones a consumer repository. These are meant to run in the maintainers' multi-repo workspace. |
-| Tracked drift | [`contracts/registry.json`](contracts/registry.json) lists each contract boundary core produces or consumes, with its consumers. Consumer pins and drift records (each with a ticket and a deadline, for example native client executors for the visual behavior matrix) are kept in the private workspace registry, not here; see [the public contract registry design](docs/architecture/public-contract-registry.md). |
-| Container and NAS deployment | Templates are included, but they accept only a digest-pinned image from a release, so they become usable with the first release. |
-| Supported versions | Before the first stable release, security reports should name a `main` revision ([`SECURITY.md`](SECURITY.md)). |
+| **Playback that adapts** | Direct play when the device can handle the file. Otherwise Core remuxes or transcodes to HLS, using Intel Quick Sync, VA-API, NVIDIA NVENC, or Apple VideoToolbox when present, and tone-maps HDR for SDR screens when the FFmpeg build supports it and tone mapping is on in the Console (Dolby Vision profile 5 is refused). |
+| **Seven library types** | Film and TV, music, podcasts, audiobooks, photos, family archive, and karaoke (MP3+G with CD+G rendering, and timed LRC lyrics). Activate only the ones you need. |
+| **Bring your history** | Importers for Plex, Emby, Jellyfin, Trakt, and NFO sidecars; Last.fm, ListenBrainz, and Navidrome; OPML, Overcast, and AntennaPod; Audiobookshelf; and Immich. |
+| **Watch comfortably** | Intro, recap, and credits skip detection; trickplay scrubbing previews; styled ASS subtitles rendered with libass; preferred audio and subtitle languages per Profile; Chromecast from Chromium browsers over HTTPS. |
+| **A household of Profiles** | Each Profile has its own library access, content-rating ceilings, stream limit, and transcode permission, all enforced by the server. A PIN guards restricted content. |
+| **Organize your way** | Collections, smart collections, Tags, and Markers; full-text search; duplicate detection; and watch folders that rescan when files change. |
+| **Music visualizers** | Audio-reactive visuals and photo slideshow transitions from [Oscillux](https://github.com/beamfall/oscillux), Beamfall's open-source visuals engine. |
+| **Safe by default** | Deletes go to a server-side Trash. `beamfall backup` and `beamfall restore` save and restore the server's databases and settings (your media files stay where they are). Remote access is off until you choose direct HTTPS with an ACME certificate or a relay. |
+| **Built for integrations** | A versioned `/v1` Developer API ([OpenAPI 3.1](docs/api/openapi.json)) with scoped keys, a server-sent event stream, HMAC-signed webhooks, an opt-in Jellyfin-compatible API, and `beamfall mcp`, a Model Context Protocol server for AI agents. |
 
-## Get started
+## Screenshots
 
-Choose an [operator install guide for your platform](docs/operations/install/README.md).
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/readme/film-detail.jpg" alt="A film's detail page with poster, rating, studio, genres, plot, and play controls"></td>
+    <td width="50%"><img src="docs/images/readme/player.jpg" alt="The web player streaming a film, with scrubber and playback controls"></td>
+  </tr>
+  <tr>
+    <td>Detail pages built from your metadata: local NFO sidecars here, or a metadata provider.</td>
+    <td>The web player: direct play, or HLS when the browser needs it.</td>
+  </tr>
+</table>
 
-### From source
+<p align="center">
+  <img src="docs/images/readme/mobile-detail.jpg" alt="The same detail page on a phone-width screen" width="280"><br>
+  <sub>The web app at phone width.</sub>
+</p>
 
-You need:
+<sub>All screenshots are of the web app from this repository, running on a local server. The films, posters, and metadata are synthetic demo content generated for these images.</sub>
 
-- Go, at the version in [`go.mod`](go.mod), which is the version authority;
-- FFmpeg on `PATH`, for probing and transcoding;
-- Node.js and npm to build the Web UI. Only a placeholder page is committed in
-  `internal/web/app-dist`, so a plain Go build from a clean clone serves that placeholder at
-  `/web/`. Build the real UI first with `npm --prefix internal/web/app ci` and then
-  `npm --prefix internal/web/app run build` (or `make web-build`, which runs the UI's checks first);
-  the bundle lands in the ignored `internal/web/app-dist/production` and the next Go build embeds it.
+## Clients and platforms
 
-Build the binary:
+| Surface | Status |
+|---|---|
+| **Server** | Linux and macOS, natively or in Docker. On Windows, WSL2 and Docker Desktop are documented but untested. Native Windows is not supported. |
+| **Web app** | Ships with the server at `/web/` and is in this repository. It covers first-run setup, browsing, playback, and the Beamfall Console for administration. It works in any modern browser, can be installed as a Progressive Web App, and casts to Chromecast from Chromium browsers over HTTPS. |
+| **Native apps** | Apps for Mac, iPhone and iPad, Apple TV, and Android are separate products. They are in development and not yet released. They use Core's network API, and Core never needs them to run. |
+
+## Quick start
+
+You need Git, Go at the version in [`go.mod`](go.mod), Node.js 22.22 or newer with npm, and
+`ffmpeg` and `ffprobe` on `PATH`. For the Docker route you need only Git and Docker Engine 25 or
+newer with BuildKit (the default builder).
+
+### Docker (image built from source)
 
 ```sh
+git clone https://github.com/beamfall/core.git && cd core
+docker build -t beamfall-core:local .
+docker run -d --name beamfall -p 2326:2326 \
+  -v beamfall-data:/data -v /path/to/media:/media:ro \
+  beamfall-core:local
+```
+
+The image bundles FFmpeg and the web app. For hardware transcoding, public HTTPS, or TrueNAS, use
+the [Compose overlays](packaging/compose/README.md) with `BEAMFALL_IMAGE=beamfall-core:local`.
+On Unraid, put `beamfall-core:local` in the template's **Repository** field. Docker on macOS
+transcodes on the CPU only.
+
+### Native binary
+
+```sh
+git clone https://github.com/beamfall/core.git && cd core
+npm --prefix internal/web/app ci
+npm --prefix internal/web/app run build
 go build -o beamfall ./cmd/beamfall
-./beamfall --help
+./beamfall serve --addr 0.0.0.0:2326 --data-dir "$HOME/beamfall-data"
 ```
 
-Or run a development server:
+The web build writes to the ignored `internal/web/app-dist/production`, and `go build` embeds it.
+Skip it and a plain `go build` serves only the placeholder page committed in
+`internal/web/app-dist`. `make web-build` runs the UI's checks before building.
 
-```sh
-make dev-run
-```
+### Finish setup in your browser
 
-`dev-run` reads an optional `.env` (start from `.env.example`), listens on
-`http://127.0.0.1:8090`, keeps its data in `/tmp/beamfall-core-dev`, and sets a development-only
-admin password (see the `dev-run` target in the [`Makefile`](Makefile)). Open the address and the
-root redirects to the Web UI at `/web/`.
+Open `http://<server-address>:2326/web/` from a browser on your home network. No token is needed
+there. The server also prints a one-time setup link for the machine it runs on: use
+`docker logs beamfall` to see it. Setup asks for an admin password, the kinds of media you have,
+and the folders that hold them, then scans them.
 
-The CLI covers day-to-day operation:
+For a platform walkthrough, see the [install guides](docs/operations/install/README.md) for Linux,
+macOS, Unraid, and Windows through WSL2. For local development, `make dev-run`
+starts a server on `http://127.0.0.1:8090` with a throwaway data directory and a fixed dev admin
+password (see the [`Makefile`](Makefile)).
+
+<details>
+<summary><strong>Command-line reference</strong></summary>
 
 | Command | What it does |
 |---|---|
 | `beamfall serve` | Run the server (the default command). |
-| `beamfall library list` | List library ids, names and roots (the ids `scan --library-id` takes). |
+| `beamfall library list` | List library ids, names, and roots (the ids `scan --library-id` takes). |
 | `beamfall scan` | Queue a library scan. |
 | `beamfall backup` / `beamfall restore` | Request a server-side backup; restore one while the server is stopped. |
 | `beamfall token` | Manage local API tokens. |
-| `beamfall export-config` / `apply-config` | Export or apply a Console config document: background workers, plugin activation and Libraries with their roots. `apply-config` creates missing Libraries and roots and never removes one. |
+| `beamfall export-config` / `apply-config` | Export or apply a Console config document: background workers, plugin activation, and Libraries with their roots. `apply-config` creates missing Libraries and roots and never removes one. |
 | `beamfall reset-admin-password` | Set the local admin password while the server is stopped. |
-| `beamfall pairing-code` | Mint a one-time owner pairing code to sign a browser back in; run it on the server host while the server is stopped, then start the server to redeem the code. |
+| `beamfall pairing-code` | Mint a one-time owner pairing code to sign a browser back in. Run it on the server host while the server is stopped, then start the server to redeem it. |
+| `beamfall mcp` | Run a Model Context Protocol stdio server for AI agents. |
 | `beamfall capabilities` / `version` | Print runtime capabilities or build metadata. |
 
-`library list`, `scan`, `backup`, `token list` and `token revoke` talk to the running server with
-`--token`: mint one with `beamfall token create` while the server is stopped. The token passes the
-Admin Session gate for exactly those operations; every other Console operation, including any change
-to a library, still needs a browser Admin Session. To scan from the CLI, find the library first:
+`library list`, `scan`, `backup`, `token list`, and `token revoke` talk to the running server with
+`--token`. Mint one while the server is stopped; `--access` picks its tier (`cli` by default,
+`diagnostics` adds most admin reads plus cancelling and retrying jobs, `agent` adds most admin changes), so give each token the lowest
+tier that does the job.
 
 ```sh
-beamfall library list --token "$TOKEN"
-beamfall scan --token "$TOKEN" --library-id <id> --root <root>
+# With the server stopped, capture the token it prints, then start the server again.
+TOKEN=$(./beamfall token create --name operator --data-dir "$HOME/beamfall-data")
+./beamfall library list --token "$TOKEN"   # set LIBRARY_ID and ROOT from its output
+./beamfall scan --token "$TOKEN" --library-id "$LIBRARY_ID" --root "$ROOT"
 ```
 
-### Docker Compose (after the first release)
-
-The reference deployment lives in [`packaging/compose`](packaging/compose/README.md), with overlays
-for CPU-only, Intel VA-API/QSV, and NVIDIA transcoding, plus an optional Caddy overlay for public
-HTTPS. Each release publishes digest-pinned renders of these templates bound to its cosign-signed
-image; running those is the supported way to run a release. The source templates require
-`BEAMFALL_IMAGE` but accept any reference: use the release's `ghcr.io/beamfall/core@sha256:…`
-digest for a published image, or your own tag for an image built from source. A mutable channel tag
-is not what a release signed. [Unraid](packaging/unraid/beamfall-core.xml) and [TrueNAS](packaging/truenas/README.md)
-templates follow the same release contract; the release paths cannot be used until a release is
-published.
-
-## Build / test
-
-| Command | What it runs |
-|---|---|
-| `make build` | `go build ./...` |
-| `make test` | `go test ./...` |
-| `make gate-preflight` | The cheap fail-fast subset of the gate: selftests and static data lints. It is not a merge signal. |
-| `make gate` | The full pre-merge gate: gofmt, golangci-lint, the Go test suite with a coverage ratchet, conformance tests, race checks, the Web UI build, typecheck, Vitest, and Playwright smoke tests, plus repository policy checks. It is long-running and needs Python 3, Node.js and npm, `golangci-lint`, and a Playwright Chromium. |
-| `make bench` | The 100k-item query latency budgets plus scan, direct-play, and transcode performance floors. It is not part of `make gate`; the release gate runs it. |
-| `make orient` | A one-page map of the codebase. |
-| `make coverage` | The feature-coverage ledger: `testing/features.yaml` against the markers in tests. |
-
-The Web UI source is `internal/web/app`. `npm --prefix internal/web/app run build` writes its
-production bundle to the ignored `internal/web/app-dist/production`, which the server embeds and
-serves at `/web/`; without it the server serves the committed placeholder in `internal/web/app-dist`.
-`make web-build` runs the UI's checks and typecheck before building.
-
-Nightly workflows for fuzzing, race detection, mutation testing, vulnerability scanning, the scale
-fixture, and the UI catalog are defined in [`.github/workflows`](.github/workflows). Like the gate,
-they are being brought up on this repository.
+</details>
 
 ## How it's built
 
-Beamfall Core is a from-scratch Go modular monolith: `cmd/beamfall` plus `internal/<capability>`.
-See [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md). Where that document
-and the architecture test in `internal/conformance` disagree, the test wins.
+```mermaid
+flowchart LR
+  web["Web app<br/>(embedded, /web/)"] -->|GraphQL| core
+  apps["Native apps"] -->|GraphQL| core
+  integ["Scripts and integrations"] -->|"/v1 API, events"| core
+  core -->|webhooks| integ
+  subgraph core["beamfall (one Go binary)"]
+    direction TB
+    plugins["Domain plugins<br/>film/TV, music, podcasts, ..."] --> platform["Domain-agnostic core<br/>Media, Folders, Tags, Markers, Collections"]
+    platform --> sqlite[("SQLite")]
+  end
+  core --> ffmpeg["FFmpeg<br/>probe, transcode, HLS"]
+  core -.->|"separate processes"| workers["Integration Workers"]
+```
 
-- The core is domain-agnostic. It serves playable Media organized by Folders, Tags, Markers, and
-  Collections. A vocabulary conformance test keeps domain words out of the core.
-- The first-party domain plugins are separate public Go modules
-  (`github.com/beamfall/plugin-<id>`) built on the public
-  [plugin SDK](https://github.com/beamfall/plugin-sdk) and composed into the binary in
+- **A modular monolith.** `cmd/beamfall` plus `internal/<capability>`, from scratch in Go with no
+  lineage to any earlier server. [`ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) has the
+  package map. Where it and the architecture test in `internal/conformance` disagree, the test
+  wins.
+- **A domain-agnostic core.** The core serves playable Media organized by Folders, Tags, Markers,
+  and Collections, and a vocabulary test keeps domain words out of it. Films, albums, and episodes
+  come from the first-party plugins: separate public Go modules (`github.com/beamfall/plugin-<id>`)
+  built on the public [plugin SDK](https://github.com/beamfall/plugin-sdk) and compiled in by
   [`cmd/beamfall/bundles.go`](cmd/beamfall/bundles.go).
-- Third-party integration code runs out of process. Integration Workers run as separate processes,
-  verified by hash and signing key, behind a narrow local Integration Host API that enforces a
-  closed permission vocabulary.
-- There are two APIs. Clients use a hand-written GraphQL contract in `internal/graph`, checked by
-  conformance tests rather than generated from a schema. Integrations use the stable `/v1`
-  Developer API.
-- Each cross-repository wire boundary is registered in
-  [`contracts/registry.json`](contracts/registry.json) with its artifact, active version,
-  consumers and conformance test. Consumer pins and drift records live in the private
-  workspace registry.
+- **Third-party code runs out of process.** Integration Workers are separate processes, each pinned to
+  a SHA-256 hash or an Ed25519 signing key that verifies its detached signature, behind a narrow local API with a closed permission vocabulary.
+- **Two APIs.** Clients use a hand-written GraphQL contract in `internal/graph`, held in place by
+  conformance tests. Integrations use the stable `/v1` Developer API. Each cross-repository wire
+  boundary is registered in [`contracts/registry.json`](contracts/registry.json).
+- **Measured.** `make bench` builds a synthetic library of 100,000 media items and holds each query
+  to a P95 budget, for example 1 ms for "recently added" and 60 ms for full-text search.
 
-> Domain language: [CONTEXT.md](CONTEXT.md). This codebase has no lineage to any predecessor
-> server.
+Domain language is defined in [`CONTEXT.md`](CONTEXT.md).
 
-### Clients
+## Build and test
 
-Core serves its own Web UI at `/web/`: first-run setup, the Beamfall Console for
-administration, library management, and a browser player. On a fresh server, open
-`http://<server-ip>:2326/web/` from a browser on the same network to finish first-run setup; no
-token is needed there. It lives in this repository under the
-same license. Native Beamfall apps are separate products and are not part of this repository.
-They talk to Core over its network API, and Core never needs them to run.
+| Command | What it runs |
+|---|---|
+| `make build` / `make test` | `go build ./...` / `go test ./...` |
+| `make web-build` | The web app's checks, typecheck, and production build. |
+| `make gate` | The full pre-merge gate: gofmt, golangci-lint, Go tests with a coverage ratchet, architecture, vocabulary, golden and wire-contract conformance tests, race checks, the web app build, typecheck, Vitest and Playwright smoke tests, and repository policy checks. It needs Python 3, Node.js and npm, `golangci-lint`, and Playwright's Chromium. |
+| `make gate-preflight` | The fast subset of the gate: selftests and static data lints. Not a merge signal. |
+| `make bench` | The 100k-item query budgets plus scan, direct-play, and transcode performance floors. The release gate runs it. |
+| `make orient` | A one-page map of the codebase. |
+| `make coverage` | The feature-coverage ledger: `testing/features.yaml` against markers in the tests. |
+
+## Project status
+
+| Area | Status |
+|---|---|
+| Releases | None yet. [`release.yml`](.github/workflows/release.yml) runs on a `v*` tag and is built to produce signed archives with an SBOM and SLSA provenance, plus a cosign-signed amd64/arm64 image at `ghcr.io/beamfall/core`. No tag exists, so none of these have been published. |
+| Server | Builds and runs from source with the Go version in [`go.mod`](go.mod), natively or as a Docker image built from this repository. |
+| CI | Changes merge on a green local `make gate` run on the exact commit. The hosted workflows in [`.github/workflows`](.github/workflows) are not yet green and are not the merge signal. |
+| Cross-repo checks | Some checks need sibling Beamfall repositories. Without a sibling checkout they clone and verify the pinned version where a source is configured, or else skip loudly or fail; a missing checkout never counts as a pass. |
+| Deployment templates | The [Compose](packaging/compose/README.md), [Unraid](packaging/unraid/beamfall-core.xml), and [TrueNAS](packaging/truenas/README.md) templates are included. Their release path expects a digest-pinned image, so it becomes usable with the first release; until then, point them at an image you built. |
+| Supported versions | Before the first stable release, security reports should name a `main` revision ([`SECURITY.md`](SECURITY.md)). |
 
 ## Documentation
 
-Start at [`docs/README.md`](docs/README.md). It has task-oriented paths for operation and
-recovery, API integration, architecture, plugin development, design contracts, and contribution.
-Revision-specific checks live in the [Verification Claims Register](docs/security/CLAIMS.md).
+Start at [`docs/README.md`](docs/README.md), which has paths for running and recovering a server,
+integrating with the API, the architecture, writing plugins, and contributing. Revision-specific
+checks are in the [Verification Claims Register](docs/security/CLAIMS.md).
+
+**Questions?** Search or ask in [GitHub Issues](https://github.com/beamfall/core/issues). Posts
+there are public, so leave out passwords, tokens, and pairing codes.
 
 ## Contributing and security
 
@@ -279,7 +236,7 @@ GitHub's [private vulnerability reporting](https://github.com/beamfall/core/secu
 
 ## License
 
-[AGPL-3.0](LICENSE). The server and the embedded Web UI are free software.
+[AGPL-3.0](LICENSE). The server and the embedded web app are free software.
 
 - The `LICENSE` file ends with a trademark notice under AGPL-3.0 section 7(e): the Beamfall name
   and logo are not licensed with the code. See [`TRADEMARKS.md`](TRADEMARKS.md).
