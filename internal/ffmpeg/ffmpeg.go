@@ -1799,7 +1799,8 @@ func (r Rendition) withBurnSeek(seek string) Rendition {
 
 // textBurnFilters is the libass chain for a text burn: shift the frames back
 // onto the source timeline after an input seek, render the script, and shift
-// them back again.
+// them back by the same offset, so a gap between the seek point and the first
+// frame survives and video stays aligned with audio.
 func (t textBurn) filters() []string {
 	ass := "ass=filename=" + escapeFilterValue(t.file)
 	if t.fontsDir != "" {
@@ -1808,7 +1809,7 @@ func (t textBurn) filters() []string {
 	if t.seek == "" || t.seek == "0" {
 		return []string{ass}
 	}
-	return []string{"setpts=PTS+" + t.seek + "/TB", ass, "setpts=PTS-STARTPTS"}
+	return []string{"setpts=PTS+" + t.seek + "/TB", ass, "setpts=PTS-" + t.seek + "/TB"}
 }
 
 // burnsSubtitle reports whether this rendition burns a subtitle in, and the

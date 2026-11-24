@@ -387,6 +387,8 @@ func promoteReservation(reservation, prepared *hlsSession) *hlsSession {
 	reservation.audioStreamIndex = prepared.audioStreamIndex
 	reservation.sourceVideo = prepared.sourceVideo
 	reservation.burnSubtitleIndex = prepared.burnSubtitleIndex
+	reservation.burnSubtitleFile = prepared.burnSubtitleFile
+	reservation.burnFontsDir = prepared.burnFontsDir
 	reservation.audioSource = prepared.audioSource
 	reservation.primed = prepared.primed
 	reservation.priority = prepared.priority

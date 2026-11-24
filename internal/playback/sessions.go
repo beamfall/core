@@ -22,6 +22,7 @@ import (
 	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/governor"
+	"github.com/beamfall/core/internal/playback/subtitleingest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/fsnotify/fsnotify"
 )
@@ -1567,7 +1568,7 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 		existing.sourceGeneration == sourceGeneration && (existing.sourceInfo == nil || sameSourceFile(existing.sourceInfo, sourceInfo)) &&
 		existing.src == src && existing.durationSeconds == durationSeconds && existing.primed == primed &&
 		existing.timeline == timeline && existing.degraded == degraded && rungsEqual(existing.rungs, requestedRungs) &&
-		existing.sourceVideo == sourceVideo && existing.burnSubtitleIndex == burnSubtitleIndex &&
+		existing.sourceVideo == sourceVideo && existing.burnSubtitleIndex == burnSubtitleIndex && (existing.burnSubtitleFile != "") == (burnText && burnSubtitleIndex >= 0) &&
 		audioProfilesEqual(existing.audioProfile, audioProfile) && equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) &&
 		(existing.composed == nil) == (picture == nil) && existing.adjust == adjust && (existing.secure == nil) == (secure == nil) {
 		if err := ctx.Err(); err != nil {
@@ -2494,6 +2495,11 @@ func (s *Sessions) extractBurnSubtitle(ctx context.Context, src, dir string, ind
 	script, err := extractor.ExtractStyledSubtitle(ctx, src, index)
 	if err != nil {
 		return "", "", fmt.Errorf("playback: extract styled subtitle %d: %w", index, err)
+	}
+	// The same input limits as the styled sidecar route: libass parses this
+	// script in the server's encoder.
+	if err := subtitleingest.Guard("ass", script); err != nil {
+		return "", "", fmt.Errorf("playback: styled subtitle %d: %w", index, err)
 	}
 	base := filepath.Join(dir, "burn-subtitle")
 	fontsDir = filepath.Join(base, "fonts")

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/playback/subtitleingest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/streamtoken"
 )
@@ -78,6 +79,18 @@ func TestStyledSubtitleBurnInOnOverlayProfile(t *testing.T) {
 	}
 	assertCaptionURLs(t, resp.CaptionTracks, map[int]bool{assIndex: true, 3: true})
 
+	// A profile that may not transcode could never receive the burn, so it
+	// keeps the flattened sidecar too.
+	disallowed := false
+	setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{TranscodeAllowed: &disallowed})
+	resp, err = service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: appleOverlayProfile})
+	if err != nil {
+		t.Fatalf("Info (transcode disallowed): %v", err)
+	}
+	assertCaptionURLs(t, resp.CaptionTracks, map[int]bool{assIndex: true, 3: true})
+	allowed := true
+	setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{TranscodeAllowed: &allowed})
+
 	// Without libass the ASS track keeps its flattened WebVTT sidecar.
 	withTextSubtitleBurnIn(t, false)
 	resp, err = service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: appleOverlayProfile})
@@ -127,12 +140,16 @@ func TestBurnSubtitleIsText(t *testing.T) {
 type fakeStyledExtractor struct {
 	Transcoder
 	scriptErr error
+	script    []byte
 	fonts     map[int][]byte
 }
 
 func (f fakeStyledExtractor) ExtractStyledSubtitle(_ context.Context, _ string, index int) ([]byte, error) {
 	if f.scriptErr != nil {
 		return nil, f.scriptErr
+	}
+	if f.script != nil {
+		return f.script, nil
 	}
 	return []byte("[Script Info]\n; stream " + string(rune('0'+index)) + "\n"), nil
 }
@@ -179,5 +196,24 @@ func TestExtractBurnSubtitleWritesScriptAndFonts(t *testing.T) {
 	s.transcoder = fakeStyledExtractor{scriptErr: errors.New("boom")}
 	if _, _, err := s.extractBurnSubtitle(context.Background(), "/src.mkv", t.TempDir(), 2); err == nil {
 		t.Fatal("extractBurnSubtitle succeeded without a script")
+	}
+
+	// The script passes the same input limits as the styled sidecar route
+	// before libass parses it in the encoder.
+	oversized := append([]byte("[Script Info]\n; "), strings.Repeat("x", subtitleingest.MaxASSLineBytes+1)...)
+	s.transcoder = fakeStyledExtractor{script: oversized}
+	if _, _, err := s.extractBurnSubtitle(context.Background(), "/src.mkv", t.TempDir(), 2); err == nil {
+		t.Fatal("extractBurnSubtitle accepted a script over the ASS line limit")
+	}
+}
+
+// TestPromoteReservationKeepsBurnInputs: a fresh session is prepared apart from
+// its reservation, and the promoted session must keep the extracted script and
+// fonts, or the encoder falls back to the bitmap overlay path.
+func TestPromoteReservationKeepsBurnInputs(t *testing.T) {
+	prepared := &hlsSession{burnSubtitleIndex: 2, burnSubtitleFile: "/s/subtitle.ass", burnFontsDir: "/s/fonts"}
+	got := promoteReservation(&hlsSession{burnSubtitleIndex: -1}, prepared)
+	if got.burnSubtitleIndex != 2 || got.burnSubtitleFile != prepared.burnSubtitleFile || got.burnFontsDir != prepared.burnFontsDir {
+		t.Fatalf("promoted burn inputs = %d %q %q", got.burnSubtitleIndex, got.burnSubtitleFile, got.burnFontsDir)
 	}
 }

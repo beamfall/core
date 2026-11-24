@@ -5,8 +5,8 @@
 When the server's FFmpeg provides the libass `ass` filter, the server SHALL burn a selected ASS or
 SSA stream into the HLS picture for a Capability Profile that does not declare `ass`, rendering it
 with libass from the extracted script and the file's font attachments. A Capability Profile that
-declares `ass` SHALL keep receiving the styled sidecar. Without the `ass` filter, or on an
-Encrypted Library, the server SHALL keep delivering the stream as a WebVTT sidecar.
+declares `ass` SHALL keep receiving the styled sidecar. When it cannot burn, the server SHALL keep
+delivering the stream as a WebVTT sidecar.
 
 #### Scenario: Positioned anime subtitles on a client without an ASS renderer
 
@@ -29,6 +29,11 @@ Encrypted Library, the server SHALL keep delivering the stream as a WebVTT sidec
 
 - **WHEN** the server's FFmpeg lacks the `ass` filter
 - **THEN** the ASS track is delivered as a WebVTT sidecar, as before
+
+#### Scenario: Other cases that cannot burn
+
+- **WHEN** the Library is encrypted, the media is audio, or the profile may not transcode
+- **THEN** the ASS track is delivered as a WebVTT sidecar
 
 ### Requirement: A caption track the server burns in has no WebVTT URL
 

@@ -1280,10 +1280,12 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 	if s.sealed != nil && s.sealed(media.LibraryID) {
 		return unavailableDecision(), nil
 	}
-	if textSubtitleBurnInSupported(ctx) {
+	if media.Class != store.MediaClassAudio && policy.TranscodeAllowed && textSubtitleBurnInSupported(ctx) {
 		// Styled (ASS/SSA) burn-in needs a libass-capable FFmpeg, and an
 		// encrypted Library refuses every burn-in, so it keeps the flattened
-		// sidecar (openspec change styled-subtitle-burn-in).
+		// sidecar (openspec change styled-subtitle-burn-in). Audio media has
+		// no picture to burn into, and a Profile that may not transcode could
+		// never receive the burn, so both keep the sidecar too.
 		encrypted, err := s.store.LibraryEncrypted(ctx, media.LibraryID)
 		if err != nil {
 			return decision{}, err

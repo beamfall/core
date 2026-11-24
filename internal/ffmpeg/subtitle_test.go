@@ -288,7 +288,7 @@ func TestRenditionTextBurnInArgs(t *testing.T) {
 
 	seeked := Rendition{}.WithBurnTextSubtitle(3, "/s/sub.ass", "").withBurnSeek("12.5")
 	wantSeeked := []string{
-		"-filter_complex", "[0:v:0]setpts=PTS+12.5/TB,ass=filename=/s/sub.ass,setpts=PTS-STARTPTS[vsub]",
+		"-filter_complex", "[0:v:0]setpts=PTS+12.5/TB,ass=filename=/s/sub.ass,setpts=PTS-12.5/TB[vsub]",
 		"-map", "[vsub]", "-map", "0:a:0?",
 	}
 	if got := seeked.args(); !equalArgs(got, wantSeeked) {
