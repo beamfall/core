@@ -1,0 +1,7 @@
+- [x] FFmpeg: `ResolveStyledSubtitleDelivery`, libass text burn rendition with seek offset, `ass` filter probe
+- [x] FFmpeg: confinement grants read access to the extracted script and fonts
+- [x] Playback: decision burns ASS/SSA for profiles without `ass` when libass is present and the Library is not encrypted
+- [x] Sessions: extract the script and font attachments into the session directory for the burn
+- [x] Go coverage for delivery, rendition args, confinement, decision and extraction
+- [x] Real run against a libass FFmpeg, checked by eye against mpv
+- [ ] `openspec archive core-3448-styled-subtitle-burn-in` after landing
