@@ -200,6 +200,7 @@ type encoderRun struct {
 	transfer    *encoderStart
 	waiting     atomic.Int32
 	paused      atomic.Bool
+	resumedAt   atomic.Int64 // UnixNano of last Resume(); floors stall check
 	live        *encderiv.LiveRun
 }
 
@@ -208,8 +209,19 @@ func (r *encoderRun) resumeIfPaused() {
 		return
 	}
 	if r.paused.CompareAndSwap(true, false) {
+		r.resumedAt.Store(time.Now().UnixNano())
 		_ = r.proc.Resume()
 	}
+}
+
+func (r *encoderRun) lastProgressAt() time.Time {
+	progressed := r.proc.ProgressedAt()
+	if resumed := r.resumedAt.Load(); resumed > 0 {
+		if t := time.Unix(0, resumed); t.After(progressed) {
+			return t
+		}
+	}
+	return progressed
 }
 
 func (r *encoderRun) exitedChan() <-chan struct{} {
@@ -1944,7 +1956,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 			old.stopIssued = true
 		}
 		s.mu.Unlock()
-		launched, err := s.startEncoder(ctx, key, start, old, stopOld, rung, segment, requested != initRequest)
+		launched, err := s.startEncoder(ctx, session.key, start, old, stopOld, rung, segment, requested != initRequest)
 		s.finishEncoderStart(start, err)
 		return launched, err
 	}
@@ -2044,7 +2056,7 @@ func (s *Sessions) watchForStall(run *encoderRun, stall time.Duration) {
 		case <-ticker.C:
 			if run.waiting.Load() > 0 {
 				run.resumeIfPaused()
-				if time.Since(run.proc.ProgressedAt()) >= stall {
+				if time.Since(run.lastProgressAt()) >= stall {
 					s.mu.Lock()
 					active := run.session.proc == run.proc && run.session.run == run
 					if active {
@@ -2085,11 +2097,23 @@ func (s *Sessions) maybePauseAhead(run *encoderRun) {
 	if !scanned || frontier-req < encodeAheadHighWater {
 		return
 	}
-	if run.waiting.Load() > 0 {
+	s.mu.Lock()
+	stillActive := run.session.proc == run.proc && run.session.run == run && run.session.state == sessionRunning
+	if stillActive {
+		s.transitionLocked(run.session, advanceFrontier{run: run, rungID: rungID, base: base, scanned: frontier})
+		stillActive = frontier-run.session.requestedFrontier >= encodeAheadHighWater
+	}
+	s.mu.Unlock()
+	if !stillActive || run.waiting.Load() > 0 {
 		return
 	}
 	if run.proc.Pause() {
 		run.paused.Store(true)
+		// Close the narrow race where a waiter arrived between waiting.Load()
+		// and paused.Store(true).
+		if run.waiting.Load() > 0 {
+			run.resumeIfPaused()
+		}
 	}
 }
 

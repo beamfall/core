@@ -432,10 +432,10 @@ func (g *Governor) ClassAllowed(class string) bool {
 
 // StartJob registers one in-flight job of the given class and returns a release
 // func the caller MUST invoke when the job finishes. cancel is stored so
-// CancelClass can preempt the job (typically a context.CancelFunc); a job that
-// completes normally releases without ever being cancelled. StartJob does not
-// itself gate on transcode preemption — callers check ClassAllowed first; this
-// keeps the registry a pure lifecycle ledger the disable path can cancel.
+// BeginTranscode and CancelClass can preempt the job (typically a
+// context.CancelFunc); if a realtime transcode is already active, cancel is
+// invoked immediately and a no-op release is returned so no heavy job can slip
+// past preemption via a ClassAllowed/StartJob race.
 func (g *Governor) StartJob(class string, cancel func()) (release func()) {
 	g.mu.Lock()
 	if g.activeTranscodes > 0 {

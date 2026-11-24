@@ -1284,12 +1284,15 @@ func (h *Handler) servePrecomputedHLS(w http.ResponseWriter, r *http.Request, gr
 	}
 }
 
-const renditionUseDebounce = time.Minute
+const (
+	renditionUseDebounce = time.Minute
+	renditionUseMaxKeys  = 4096
+)
 
 func (h *Handler) recordRenditionUseDebounced(ctx context.Context, id store.PlaybackRenditionID) {
 	now := time.Now().UTC()
 	h.renditionUseMu.Lock()
-	if h.renditionUseAt == nil {
+	if h.renditionUseAt == nil || len(h.renditionUseAt) >= renditionUseMaxKeys {
 		h.renditionUseAt = make(map[store.PlaybackRenditionID]time.Time)
 	}
 	if last, ok := h.renditionUseAt[id]; ok && now.Sub(last) < renditionUseDebounce {

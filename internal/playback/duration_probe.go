@@ -150,7 +150,9 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	seconds := 0
 	valid := true
 	if leader {
-		probeCtx, cancel := context.WithTimeout(ctx, durationProbeTimeout)
+		// Detach from caller 1's cancellation so one client disconnecting
+		// cannot abort the shared singleflight probe for concurrent waiters.
+		probeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), durationProbeTimeout)
 		if probe, err := prober.Probe(probeCtx, path); err == nil && probe.DurationSeconds > 0 {
 			seconds = probe.DurationSeconds
 		}

@@ -710,8 +710,8 @@ func TestRenditionRateControlArgsPerEncoder(t *testing.T) {
 		want  []string
 	}{
 		{"software", "", "h264", []string{"-maxrate", "6000k", "-bufsize", "12000k"}},
-		{"nvenc", HWAccelNVENC, "h264", []string{"-preset", "p4", "-forced-idr", "1", "-spatial-aq", "1", "-temporal-aq", "1", "-rc", "vbr", "-cq", "23", "-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}},
-		{"nvenc hevc", HWAccelNVENC, "hevc", []string{"-preset", "p4", "-forced-idr", "1", "-spatial-aq", "1", "-temporal-aq", "1", "-rc", "vbr", "-cq", "23", "-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}},
+		{"nvenc", HWAccelNVENC, "h264", []string{"-preset", "p4", "-forced-idr", "1", "-spatial-aq", "1", "-temporal-aq", "1", "-rc", "vbr", "-cq", "23", "-b:v", "0", "-maxrate", "6000k", "-bufsize", "12000k"}},
+		{"nvenc hevc", HWAccelNVENC, "hevc", []string{"-preset", "p4", "-forced-idr", "1", "-spatial-aq", "1", "-rc", "vbr", "-cq", "23", "-b:v", "0", "-maxrate", "6000k", "-bufsize", "12000k"}},
 		{"vaapi", HWAccelVAAPI, "h264", []string{"-rc_mode", "VBR", "-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}},
 		{"qsv", HWAccelQSV, "h264", []string{"-preset", "veryfast", "-forced_idr", "1", "-b:v", "6000k", "-maxrate", "6001k", "-bufsize", "12000k"}},
 		{"videotoolbox", HWAccelVideoToolbox, "h264", []string{"-profile:v", "high", "-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}},
@@ -761,10 +761,15 @@ func TestRenditionSDRDeviceDecodeZeroCopy(t *testing.T) {
 	if got, want := vaapi.videoFilters(), []string{"scale_vaapi=w=-2:h=min(ih\\,720):format=nv12"}; !equalArgs(got, want) {
 		t.Fatalf("VAAPI SDR videoFilters = %v, want %v", got, want)
 	}
-	// 10-bit SDR stays off the 8-bit nv12 SDR device-decode path.
-	tenBit := Rendition{Height: 720, SourceVideoCodec: "hevc", SourceVideoBitDepth: 10, hwAccel: HWAccelNVENC}.withSDRDeviceDecode(true)
-	if tenBit.usesSDRDeviceDecode() {
-		t.Fatal("10-bit source must not enter 8-bit nv12 SDR device-decode")
+	// 10-bit, unprobed bit-depth, and uncertified codecs stay off the 8-bit nv12 SDR device-decode path.
+	for _, r := range []Rendition{
+		Rendition{Height: 720, SourceVideoCodec: "hevc", SourceVideoBitDepth: 10, hwAccel: HWAccelNVENC}.withSDRDeviceDecode(true),
+		Rendition{Height: 720, SourceVideoCodec: "h264", SourceVideoBitDepth: 0, hwAccel: HWAccelNVENC}.withSDRDeviceDecode(true),
+		Rendition{Height: 720, SourceVideoCodec: "av1", SourceVideoBitDepth: 8, hwAccel: HWAccelNVENC}.withSDRDeviceDecode(true),
+	} {
+		if r.usesSDRDeviceDecode() {
+			t.Fatalf("unexpected SDR device-decode eligibility for %+v", r)
+		}
 	}
 }
 

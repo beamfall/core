@@ -1880,12 +1880,12 @@ func (r Rendition) withRubberband(on bool) Rendition {
 	return r
 }
 
-// sdrDeviceDecodeEligible reports whether an 8-bit SDR source can be decoded,
-// scaled, and encoded end-to-end on the GPU (NVENC/CUDA, VAAPI, or QSV)
-// without CPU filter roundtrips.
+// sdrDeviceDecodeEligible reports whether an explicitly probed 8-bit SDR
+// H.264/HEVC source can be decoded, scaled, and encoded end-to-end on the GPU
+// (NVENC/CUDA or VAAPI) without CPU filter roundtrips.
 func (r Rendition) sdrDeviceDecodeEligible() bool {
 	switch r.hwAccel {
-	case HWAccelNVENC, HWAccelVAAPI, HWAccelQSV:
+	case HWAccelNVENC, HWAccelVAAPI:
 	default:
 		return false
 	}
@@ -1893,11 +1893,11 @@ func (r Rendition) sdrDeviceDecodeEligible() bool {
 		return false
 	}
 	switch strings.ToLower(r.SourceVideoCodec) {
-	case "h264", "hevc", "vp9", "av1":
+	case "h264", "hevc":
 	default:
 		return false
 	}
-	if r.SourceVideoBitDepth > 8 {
+	if r.SourceVideoBitDepth != 8 {
 		return false
 	}
 	if _, composed := r.Picture(); composed {
@@ -2072,7 +2072,10 @@ func (r Rendition) rateControlArgs() []string {
 		high := r.quality == QualityHigh
 		switch r.hwAccel {
 		case HWAccelNVENC:
-			out = append(out, "-preset", pick(high, "p6", "p4"), "-forced-idr", "1", "-spatial-aq", "1", "-temporal-aq", "1")
+			out = append(out, "-preset", pick(high, "p6", "p4"), "-forced-idr", "1", "-spatial-aq", "1")
+			if r.VideoCodec != "hevc" {
+				out = append(out, "-temporal-aq", "1")
+			}
 			if high {
 				out = append(out, "-rc-lookahead", "20")
 			}
@@ -2097,20 +2100,24 @@ func (r Rendition) rateControlArgs() []string {
 		target := r.hardwareTargetKbps()
 		switch r.hwAccel {
 		case HWAccelNVENC:
-			out = append(out, "-rc", "vbr", "-cq", r.softwareCRF())
+			// Capped quality-VBR: -b:v 0 lets -cq drive quality while
+			// -maxrate/-bufsize enforce the rung's bitrate ceiling.
+			out = append(out, "-rc", "vbr", "-cq", r.softwareCRF(), "-b:v", "0")
 		case HWAccelVAAPI:
-			out = append(out, "-rc_mode", "VBR")
+			out = append(out, "-rc_mode", "VBR", "-b:v", fmt.Sprintf("%dk", target))
 		case HWAccelAMF:
 			// Peak-constrained VBR: -b:v is the target, -maxrate the cap.
-			out = append(out, "-rc", "vbr_peak")
+			out = append(out, "-rc", "vbr_peak", "-b:v", fmt.Sprintf("%dk", target))
 		case HWAccelQSV:
 			// h264/hevc_qsv pick CBR when -maxrate equals -b:v; one kb/s of
 			// headroom keeps them in capped VBR instead of padding to the rung.
 			if target == maxrate {
 				maxrate++
 			}
+			out = append(out, "-b:v", fmt.Sprintf("%dk", target))
+		default:
+			out = append(out, "-b:v", fmt.Sprintf("%dk", target))
 		}
-		out = append(out, "-b:v", fmt.Sprintf("%dk", target))
 	}
 	return append(out,
 		"-maxrate", fmt.Sprintf("%dk", maxrate),
