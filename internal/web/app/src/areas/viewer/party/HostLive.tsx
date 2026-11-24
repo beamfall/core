@@ -30,7 +30,9 @@ import {
   partyRemoveParticipant,
   partyRestore,
   partyReview,
+  partyScreenAddDisplay,
   partyScreenDrop,
+  partyScreenLead,
   partyScreenTicker,
   type SearchResultItem,
   searchResult,
@@ -299,9 +301,11 @@ export function PartyScreens({ session, run }: PanelProps) {
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate font-medium">{screen.name}</span>
                   <span className="bf-party-muted text-sm">
-                    {screen.kind === "popout"
-                      ? t("partyHostScreenPopout")
-                      : t("partyHostScreenJoined")}
+                    {screen.playerDisplay
+                      ? t("partyDisplayMarker")
+                      : screen.kind === "popout"
+                        ? t("partyHostScreenPopout")
+                        : t("partyHostScreenJoined")}
                     {" · "}
                     <span className="bf-party-sync" data-in-sync={inSync}>
                       {status}
@@ -317,6 +321,18 @@ export function PartyScreens({ session, run }: PanelProps) {
                   />
                   {t("partyHostTicker")}
                 </label>
+                {screen.lead ? (
+                  <span className="bf-party-badge text-sm">{t("partyScreenLead")}</span>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={t("partyScreenMakeLeadLabel", { name: screen.name })}
+                    onClick={() => void run(() => partyScreenLead(screen.id))}
+                  >
+                    {t("partyScreenMakeLead")}
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -330,11 +346,62 @@ export function PartyScreens({ session, run }: PanelProps) {
           })}
         </ul>
       )}
+      <AvailableDisplays session={session} run={run} />
       <a href={joinHref} target="_blank" rel="noopener" className="bf-party-link text-sm">
         {t("partyHostJoinAsScreen")}
         <ExternalLink className="ml-1 inline size-3.5" aria-hidden />
       </a>
     </Panel>
+  );
+}
+
+// The host's player displays that can join as screens (ADR-0240 D10). Offline
+// displays stay listed so the host knows to wake them; a display that cannot
+// show some of the session's Libraries says how many.
+function AvailableDisplays({ session, run }: PanelProps) {
+  const t = useT();
+  const displays = session.availableDisplays ?? [];
+  if (displays.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="m-0 text-sm font-semibold">{t("partyDisplaysHeading")}</h3>
+      <ul className="flex flex-col gap-2">
+        {displays.map((d) => {
+          const offline = d.presence === "offline";
+          return (
+            <li key={d.handle} className="bf-party-row">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="break-words font-medium">{d.displayName}</span>
+                <span className="bf-party-muted text-sm">
+                  {d.joined
+                    ? t("partyDisplayJoined")
+                    : offline
+                      ? t("playerDisplayOpenOn", { name: d.displayName })
+                      : d.presence === "ready"
+                        ? t("playerDisplayReady")
+                        : t("partyDisplayMarker")}
+                  {!d.coversLibraries &&
+                    ` · ${t("partyDisplayMissingLibraries", { count: d.missingLibraryIDs.length })}`}
+                </span>
+              </div>
+              {!d.joined && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={offline}
+                  aria-label={t("partyDisplayAddLabel", { name: d.displayName })}
+                  onClick={() =>
+                    void run(() => partyScreenAddDisplay(d.handle).then((r) => r.session))
+                  }
+                >
+                  {t("partyDisplayAdd")}
+                </Button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

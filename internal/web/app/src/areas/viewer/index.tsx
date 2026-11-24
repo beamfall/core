@@ -32,6 +32,7 @@ import { PartyHostPage } from "./pages/PartyHostPage";
 import { PartyStagePage } from "./pages/PartyStagePage";
 import { PlaylistPage } from "./pages/PlaylistPage";
 import { PlaylistsPage } from "./pages/PlaylistsPage";
+import { PlayOnDisplayPage } from "./pages/PlayOnDisplayPage";
 import { ProfilePickerPage } from "./pages/ProfilePickerPage";
 import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 import { RemotePage } from "./pages/RemotePage";
@@ -186,6 +187,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/remote" element={<RemotePage />} />
+        <Route path="/play-on" element={<PlayOnDisplayPage />} />
         <Route path="/profiles" element={<ProfilePickerPage />} />
         <Route path="/settings" element={<ProfileSettingsPage />} />
         <Route path="/view/*" element={<ImageViewerPage />} />

@@ -44,6 +44,7 @@ import type {
   OperationsGovernorInfo,
   PlaybackCacheInfo,
   PlaybackCacheOpResult,
+  PlayerControllersInfo,
   PlayHistoryFilter,
   PlayInfo,
   PlayStatsFilter,
@@ -500,7 +501,8 @@ export async function terminateSession(
 
 // --- Device administration (ADR-0081) -------------------------------------
 
-const DEVICES_QUERY = "query Devices { devices { deviceID name role revoked current signedIn } }";
+const DEVICES_QUERY =
+  "query Devices { devices { deviceID name role revoked current signedIn playerProfileID playerDisplayName } }";
 
 /** Devices — every enrolled device for the Console administration list. */
 export async function fetchDevices(signal?: AbortSignal): Promise<DeviceInfo[]> {
@@ -559,6 +561,97 @@ export async function setDeviceRole(
     signal,
   );
   return data.setDeviceRole;
+}
+
+// --- Player displays (ADR-0240) --------------------------------------------
+
+const DEVICE_FIELDS =
+  "deviceID name role revoked current signedIn playerProfileID playerDisplayName";
+
+const SET_DEVICE_PLAYER_BINDING_MUTATION = `mutation SetDevicePlayerBinding($deviceID: String!, $profileID: String!, $displayName: String) { setDevicePlayerBinding(deviceID: $deviceID, profileID: $profileID, displayName: $displayName) { ${DEVICE_FIELDS} } }`;
+
+/** SetDevicePlayerBinding — bind a Device to a Player Profile as a player display (D2). */
+export async function setDevicePlayerBinding(
+  deviceID: string,
+  profileID: string,
+  displayName?: string,
+  signal?: AbortSignal,
+): Promise<DeviceInfo> {
+  const vars: Record<string, unknown> = { deviceID, profileID };
+  if (displayName) vars.displayName = displayName;
+  const data = await graphql<{ setDevicePlayerBinding: DeviceInfo }>(
+    SET_DEVICE_PLAYER_BINDING_MUTATION,
+    vars,
+    signal,
+  );
+  return data.setDevicePlayerBinding;
+}
+
+const CLEAR_DEVICE_PLAYER_BINDING_MUTATION = `mutation ClearDevicePlayerBinding($deviceID: String!) { clearDevicePlayerBinding(deviceID: $deviceID) { ${DEVICE_FIELDS} } }`;
+
+/** ClearDevicePlayerBinding — return a bound Device to an ordinary viewer (D2). */
+export async function clearDevicePlayerBinding(
+  deviceID: string,
+  signal?: AbortSignal,
+): Promise<DeviceInfo> {
+  const data = await graphql<{ clearDevicePlayerBinding: DeviceInfo }>(
+    CLEAR_DEVICE_PLAYER_BINDING_MUTATION,
+    { deviceID },
+    signal,
+  );
+  return data.clearDevicePlayerBinding;
+}
+
+const CONTROLLERS_FIELDS = "playerControllers { profileID allAdults include exclude }";
+
+const PLAYER_PROFILES_QUERY = `query PlayerProfiles { playerProfiles { id name kind libraryIDs avatar pictureURL walkUpEnabled ${CONTROLLERS_FIELDS} } }`;
+
+/** A Player Profile as the Console lists it, with its controllers (D1, D4, D7). */
+export type PlayerProfileAdminInfo = ProfileAdminInfo & {
+  playerControllers?: PlayerControllersInfo | null;
+};
+
+/**
+ * fetchPlayerProfiles — the household's Player Profiles. `profiles` leaves
+ * them out because it backs the viewer's picker, so the Console reads them
+ * from this owner-only listing.
+ */
+export async function fetchPlayerProfiles(signal?: AbortSignal): Promise<PlayerProfileAdminInfo[]> {
+  const data = await graphql<{
+    playerProfiles: Omit<PlayerProfileAdminInfo, "disabled">[] | null;
+  }>(PLAYER_PROFILES_QUERY, {}, signal);
+  return (data.playerProfiles ?? []).map((p) => ({ ...p, disabled: false }));
+}
+
+const SET_PLAYER_WALK_UP_MUTATION =
+  "mutation SetPlayerWalkUp($profileID: String!, $enabled: Boolean!) { setPlayerWalkUp(profileID: $profileID, enabled: $enabled) { id walkUpEnabled } }";
+
+/** SetPlayerWalkUp — turn walk-up browsing on or off for a Player Profile (D7). */
+export async function setPlayerWalkUp(
+  profileID: string,
+  enabled: boolean,
+  signal?: AbortSignal,
+): Promise<{ id: string; walkUpEnabled: boolean }> {
+  const data = await graphql<{ setPlayerWalkUp: { id: string; walkUpEnabled: boolean } }>(
+    SET_PLAYER_WALK_UP_MUTATION,
+    { profileID, enabled },
+    signal,
+  );
+  return data.setPlayerWalkUp;
+}
+
+const SET_PLAYER_CONTROLLERS_MUTATION = `mutation SetPlayerControllers($profileID: String!, $allAdults: Boolean, $include: [String!], $exclude: [String!]) { setPlayerControllers(profileID: $profileID, allAdults: $allAdults, include: $include, exclude: $exclude) { id ${CONTROLLERS_FIELDS} } }`;
+
+/** SetPlayerControllers — replace a Player Profile's controllers list (D4). */
+export async function setPlayerControllers(
+  profileID: string,
+  controllers: { allAdults: boolean; include: string[]; exclude: string[] },
+  signal?: AbortSignal,
+): Promise<PlayerControllersInfo | null> {
+  const data = await graphql<{
+    setPlayerControllers: { id: string; playerControllers?: PlayerControllersInfo | null };
+  }>(SET_PLAYER_CONTROLLERS_MUTATION, { profileID, ...controllers }, signal);
+  return data.setPlayerControllers.playerControllers ?? null;
 }
 
 // --- Playback rendition cache (ADR-0057, PLAY-7) --------------------------

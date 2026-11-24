@@ -25,6 +25,9 @@ vi.mock("@/lib/graphql", () => ({
   setConsoleConfig: vi.fn(),
   mintPairingCode: vi.fn(),
   setDeviceRole: vi.fn(),
+  fetchPlayerProfiles: vi.fn(async () => []),
+  setDevicePlayerBinding: vi.fn(),
+  clearDevicePlayerBinding: vi.fn(),
   fetchRemoteAccess: vi.fn(),
 }));
 
