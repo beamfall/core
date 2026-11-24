@@ -252,8 +252,87 @@
   letter-spacing: 0.14em;
 }
 
+/* Up next (CORE-3378): singer, song and expected time are separate parts, so
+   a song title is never read as a name. */
+.bf-party-next {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  min-width: 0;
+}
+
+.bf-party-next-singer {
+  flex: none;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.bf-party-next-song {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bf-party-next-artist {
+  color: var(--on-scrim-muted);
+}
+
+.bf-party-next-eta {
+  flex: none;
+  padding: 0.1em 0.55em;
+  border-radius: 999px;
+  font-size: 0.8em;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in oklab, var(--on-scrim) 12%, transparent);
+  color: var(--on-scrim-muted);
+}
+
+/* The idle column centres its children, so the list sets its own width. */
+.bf-party-stage-next-wrap {
+  width: min(100%, 44rem);
+}
+
+.bf-party-stage-next-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: start;
+}
+
 .bf-party-stage-next {
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-radius: var(--radius-card);
   font-size: clamp(1rem, 2.2vw, 1.6rem);
+  background: color-mix(in oklab, var(--on-scrim) 6%, transparent);
+}
+
+.bf-party-stage-next .bf-party-next-song {
+  flex: 1;
+}
+
+/* A long name wraps rather than pushing the time off the screen. */
+.bf-party-stage-next .bf-party-next-singer {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A short screen keeps all three entries in view. */
+@media (max-height: 560px) {
+  .bf-party-stage-idle {
+    gap: 16px;
+    padding-block: 12px;
+  }
+
+  .bf-party-stage-next-list {
+    gap: 6px;
+  }
+
+  .bf-party-stage-next {
+    padding: 6px 14px;
+  }
 }
 
 .bf-party-stage-alert {
@@ -279,6 +358,39 @@
   flex: none;
   font-weight: 700;
   color: var(--accent);
+}
+
+/* Entries run left to right; whatever does not fit fades out at the end. */
+.bf-party-ticker-list {
+  display: flex;
+  gap: 2.2em;
+  min-width: 0;
+  /* The fade sits over this padding, so entries that fit never fade. */
+  padding-inline-end: 3em;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, var(--text-primary) calc(100% - 3em), transparent);
+}
+
+.bf-party-ticker .bf-party-next {
+  flex: none;
+}
+
+/* The next singer always shows in full: their song title gives way first. */
+.bf-party-ticker .bf-party-next:first-child {
+  flex: 0 1 auto;
+}
+
+.bf-party-ticker .bf-party-next-singer {
+  color: var(--text-primary);
+}
+
+.bf-party-ticker .bf-party-next-artist,
+.bf-party-ticker .bf-party-next-eta {
+  color: var(--text-secondary);
+}
+
+.bf-party-ticker .bf-party-next-eta {
+  background: color-mix(in oklab, var(--text-primary) 10%, transparent);
 }
 
 @media (prefers-reduced-motion: no-preference) {

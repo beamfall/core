@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createRef } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -108,7 +108,8 @@ describe("PartyStagePage", () => {
     const { container } = renderStage("/party/stage/s1?joined=1");
 
     expect(await screen.findByText("QZXW")).toBeInTheDocument();
-    expect(screen.getByText("Paper Lanterns · Juniper")).toBeInTheDocument();
+    expect(screen.getByText("Juniper")).toHaveClass("bf-party-next-singer");
+    expect(screen.getByText("Paper Lanterns")).toHaveClass("bf-party-next-song");
     await waitFor(() =>
       expect(partyScreenRegister).toHaveBeenCalledWith({
         sessionID: "s1",
@@ -121,6 +122,44 @@ describe("PartyStagePage", () => {
       expect(window.sessionStorage.getItem("beamfall.partyScreen.joined.s1")).toBe("scr-1"),
     );
     await expectNoAxeViolations(container);
+  });
+
+  it("names the singer, song and expected time of each entry on the ticker", async () => {
+    vi.mocked(fetchPartyStage).mockResolvedValue(
+      stage({
+        current: song,
+        upNext: [
+          {
+            ...song,
+            id: "e2",
+            title: "Caught Up",
+            subtitle: "July",
+            participantName: "Steve",
+            state: "waiting",
+            position: 1,
+            etaSeconds: 30,
+          },
+          {
+            ...song,
+            id: "e3",
+            title: "Electric Co",
+            participantName: "Mara",
+            state: "waiting",
+            position: 2,
+            etaSeconds: 400,
+          },
+        ],
+      }),
+    );
+    renderStage();
+
+    const ticker = await screen.findByRole("region", { name: "Up next" });
+    const items = within(ticker).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "Steve: Caught Up · , July, next",
+      "Mara: Electric Co, in about 7 min",
+    ]);
+    expect(within(items[0]).getByText("Steve")).toHaveClass("bf-party-next-singer");
   });
 
   it("advances the rotation once when the song ends", async () => {

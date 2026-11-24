@@ -182,16 +182,47 @@ export function PartyStagePage() {
       {stage && current && stage.ticker && stage.upNext.length > 0 && (
         <div className="bf-party-ticker" role="region" aria-label={t("partyHostUpNext")}>
           <span className="bf-party-ticker-label">{t("partyHostUpNext")}</span>
-          <span className="truncate">
-            {stage.upNext
-              .map((entry) =>
-                t("partyHostTickerItem", { title: entry.title, name: entry.participantName }),
-              )
-              .join("  ·  ")}
-          </span>
+          <ol className="bf-party-ticker-list">
+            {stage.upNext.map((entry) => (
+              <li key={entry.id} className="bf-party-next">
+                <UpNextEntry entry={entry} />
+              </li>
+            ))}
+          </ol>
         </div>
       )}
     </main>
+  );
+}
+
+/**
+ * One up-next entry (CORE-3378): the singer, then the song and its artist, then
+ * when the singer is expected, each its own part so a song is never read as a
+ * name. The hidden separators keep it one sentence for a screen reader.
+ */
+function UpNextEntry({ entry }: { entry: PartyEntry }) {
+  const t = useT();
+  const eta =
+    entry.position === 1 && entry.etaSeconds < 60
+      ? t("partyHostEtaNext")
+      : t("partyHostEta", { minutes: Math.max(1, Math.round(entry.etaSeconds / 60)) });
+  return (
+    <>
+      <span className="bf-party-next-singer">{entry.participantName}</span>
+      <span className="sr-only">: </span>
+      <span className="bf-party-next-song">
+        {entry.title}
+        {entry.subtitle !== "" && (
+          <span className="bf-party-next-artist">
+            <span aria-hidden="true"> · </span>
+            <span className="sr-only">, </span>
+            {entry.subtitle}
+          </span>
+        )}
+      </span>
+      <span className="sr-only">, </span>
+      <span className="bf-party-next-eta">{eta}</span>
+    </>
   );
 }
 
@@ -219,12 +250,12 @@ function StageIdle({
         </div>
       </div>
       {stage.upNext.length > 0 && (
-        <div className="flex flex-col gap-2">
+        <div className="bf-party-stage-next-wrap flex flex-col gap-2">
           <p className="bf-party-stage-kicker">{t("partyHostUpNext")}</p>
-          <ol className="flex flex-col gap-1">
+          <ol className="bf-party-stage-next-list">
             {stage.upNext.map((entry) => (
-              <li key={entry.id} className="bf-party-stage-next">
-                {t("partyHostTickerItem", { title: entry.title, name: entry.participantName })}
+              <li key={entry.id} className="bf-party-next bf-party-stage-next">
+                <UpNextEntry entry={entry} />
               </li>
             ))}
           </ol>
