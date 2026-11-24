@@ -68,6 +68,16 @@ func TestStyledSubtitleBurnInOnOverlayProfile(t *testing.T) {
 	}
 	assertCaptionURLs(t, resp.CaptionTracks, map[int]bool{assIndex: true, 3: true})
 
+	// A sidecar consumer that declares webvtt (a Cast receiver) cannot request
+	// burn-in, so it keeps the flattened sidecar rather than losing the track.
+	castProfile := appleOverlayProfile
+	castProfile.SubtitleFormats = []string{"webvtt"}
+	resp, err = service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: castProfile})
+	if err != nil {
+		t.Fatalf("Info (cast profile): %v", err)
+	}
+	assertCaptionURLs(t, resp.CaptionTracks, map[int]bool{assIndex: true, 3: true})
+
 	// Without libass the ASS track keeps its flattened WebVTT sidecar.
 	withTextSubtitleBurnIn(t, false)
 	resp, err = service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: appleOverlayProfile})

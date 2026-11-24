@@ -34,10 +34,15 @@ Encrypted Library, the server SHALL keep delivering the stream as a WebVTT sidec
 
 A muxed caption track that the server would burn in for the requesting Capability Profile SHALL be
 advertised with its stream index and without a WebVTT URL, so a native client routes it to burn-in
-as it does a bitmap track.
+as it does a bitmap track. A profile that declares `webvtt` SHALL keep the URL.
 
 #### Scenario: Native clients see the track as burn-in only
 
 - **WHEN** the server would burn an ASS track in for the requesting profile
 - **THEN** that track's caption entry carries its stream index and no WebVTT URL
 - **AND** a plain text track in the same file keeps its WebVTT URL
+
+#### Scenario: A sidecar consumer keeps the flattened track
+
+- **WHEN** a profile that declares `webvtt` but not `ass`, such as a Cast receiver, requests playback
+- **THEN** the ASS track keeps its WebVTT URL

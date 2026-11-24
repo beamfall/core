@@ -21,7 +21,8 @@ anime subtitles everywhere.
 - The encoder's confinement grants read access to the extracted script and fonts.
 - A track the server would burn in is advertised with its stream index and no WebVTT URL, the
   shape a bitmap track already has, so the Apple and Android kits route it to burn-in rather than
-  to the flattened overlay.
+  to the flattened overlay. A profile that declares `webvtt` (a Cast receiver, whose sender cannot
+  request burn-in) keeps the flattened sidecar.
 - Clients that declare `ass` keep rendering it themselves. No wire change: the existing
   `BurnSubtitleIndex` grant field carries the verdict.
 
