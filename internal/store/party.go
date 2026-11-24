@@ -162,9 +162,13 @@ type PartyScreenView struct {
 	Carrier           string
 	Lead              bool
 	Ticker            bool
-	OffsetMS          int64
-	RTTMS             int64
-	ReportedAt        time.Time
+	// QRCorner is where the stage draws the join QR during a song: off or
+	// one of the PartyQRCorners.
+	QRCorner   string
+	Muted      bool
+	OffsetMS   int64
+	RTTMS      int64
+	ReportedAt time.Time
 }
 
 // PartyScreenJoinView is the result of adding a player display to a party.
@@ -201,6 +205,8 @@ type PartyStageView struct {
 	UpNext      []PartyEntryView
 	Ticker      bool
 	Lead        bool
+	QRCorner    string
+	Muted       bool
 	JoinCode    string
 }
 
@@ -277,6 +283,8 @@ type partyScreenRow struct {
 	chosenLead          bool
 	name, kind, carrier string
 	ticker              bool
+	qrCorner            string
+	muted               bool
 	offsetMS, rttMS     int64
 	registeredAtMS      int64
 	reportedAtMS        int64
@@ -743,7 +751,7 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 		return partyState{}, err
 	}
 	rows, err = q.QueryContext(ctx, `SELECT screen_id, profile_id, auth_session_id, device_id, binding_generation, chosen_lead,
-			name, kind, carrier, ticker, offset_ms, rtt_ms, registered_at_ms, COALESCE(reported_at_ms, 0)
+			name, kind, carrier, ticker, qr_corner, muted, offset_ms, rtt_ms, registered_at_ms, COALESCE(reported_at_ms, 0)
 		FROM party_screen WHERE session_id = ? AND dropped_at_ms IS NULL
 		ORDER BY registered_at_ms, screen_id`, session.ID)
 	if err != nil {
@@ -751,10 +759,10 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 	}
 	for rows.Next() {
 		var row partyScreenRow
-		var ticker, chosenLead int
+		var ticker, chosenLead, muted int
 		var authSess, devID string
 		if err := rows.Scan(&row.id, &row.profileID, &authSess, &devID, &row.bindingGeneration, &chosenLead,
-			&row.name, &row.kind, &row.carrier, &ticker, &row.offsetMS, &row.rttMS,
+			&row.name, &row.kind, &row.carrier, &ticker, &row.qrCorner, &muted, &row.offsetMS, &row.rttMS,
 			&row.registeredAtMS, &row.reportedAtMS); err != nil {
 			_ = rows.Close()
 			return partyState{}, err
@@ -763,6 +771,7 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 		row.deviceID = DeviceID(devID)
 		row.chosenLead = chosenLead == 1
 		row.ticker = ticker == 1
+		row.muted = muted == 1
 		row.lastSeenMS = max(row.registeredAtMS, row.reportedAtMS)
 		row.active = nowMS-row.lastSeenMS < partyScreenSilence.Milliseconds()
 		state.screens = append(state.screens, row)
@@ -955,7 +964,16 @@ func (s *Store) buildPartyViewLocked(ctx context.Context, state partyState, nowM
 		case PartyEntryDone:
 			view.Recent = append(view.Recent, entryView(entry))
 		case PartyEntrySkipped:
-			view.Skipped = append(view.Skipped, entryView(entry))
+			// A removed singer's skips go with them. A skip whose Media is no
+			// longer visible stays listed, its title redacted, so the host
+			// sees why the singer was passed over; it cannot be brought back.
+			if state.participants[entry.participantID].removedAtMS == 0 {
+				v := entryView(entry)
+				if !visible(entry.mediaID) {
+					v.MediaID, v.LastPlayedAt = "", time.Time{}
+				}
+				view.Skipped = append(view.Skipped, v)
+			}
 		case PartyEntryDeclined:
 			view.Declined = append(view.Declined, entryView(entry))
 		case PartyEntryRemoved:
@@ -984,7 +1002,6 @@ func (s *Store) buildPartyViewLocked(ctx context.Context, state partyState, nowM
 	slices.SortStableFunc(view.Skipped, newestFirst(func(v PartyEntryView) int64 { return finished[v.ID] }))
 	slices.SortStableFunc(view.Removed, newestFirst(func(v PartyEntryView) int64 { return removed[v.ID] }))
 	view.Recent = view.Recent[:min(len(view.Recent), partyRecentLimit)]
-	view.Skipped = view.Skipped[:min(len(view.Skipped), partyRecentLimit)]
 	turns := state.lastTurns()
 	for _, participant := range state.sortedParticipants() {
 		if participant.removedAtMS > 0 {
@@ -1040,7 +1057,7 @@ func (row partyScreenRow) view() PartyScreenView {
 		ID: row.id, ProfileID: row.profileID, AuthSessionID: row.authSessionID,
 		DeviceID: row.deviceID, BindingGeneration: row.bindingGeneration, ChosenLead: row.chosenLead,
 		Name: row.name, Kind: row.kind, Carrier: row.carrier,
-		Lead: row.lead, Ticker: row.ticker, OffsetMS: row.offsetMS, RTTMS: row.rttMS,
+		Lead: row.lead, Ticker: row.ticker, QRCorner: row.qrCorner, Muted: row.muted, OffsetMS: row.offsetMS, RTTMS: row.rttMS,
 		ReportedAt: millisToTime(row.reportedAtMS),
 	}
 }
@@ -1372,21 +1389,61 @@ func (s *Store) RemovePartyEntry(ctx context.Context, host ProfileID, filter Lib
 	})
 }
 
-// RestorePartyEntry returns a recently removed entry to its earlier state.
+// SkipPartyEntry skips the current entry: unlike a song that ends, it is
+// recorded as skipped, so RestorePartyEntry can bring the singer back.
+// Naming an entry that is no longer current leaves the session unchanged.
+func (s *Store) SkipPartyEntry(ctx context.Context, host ProfileID, filter LibraryFilter, entryID string) error {
+	return s.partyHostWrite(ctx, host, filter, func(tx *sql.Tx, session PartySession, nowMS int64) error {
+		entryID = strings.TrimSpace(entryID)
+		if entryID == "" || entryID != session.CurrentEntryID {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE party_entry SET state = 'skipped', pinned_position = NULL,
+			finished_at_ms = ? WHERE entry_id = ? AND state = 'current'`, nowMS, entryID); err != nil {
+			return err
+		}
+		return s.advancePartyLocked(ctx, tx, session, nowMS)
+	})
+}
+
+// RestorePartyEntry returns a recently removed entry to its earlier state,
+// or brings a skipped entry back as next up without interrupting the
+// current one.
 func (s *Store) RestorePartyEntry(ctx context.Context, host ProfileID, filter LibraryFilter, entryID string) error {
 	return s.partyHostWrite(ctx, host, filter, func(tx *sql.Tx, session PartySession, nowMS int64) error {
 		var state, prior string
+		var mediaID MediaID
 		var removedAtMS int64
 		var participantRemoved bool
+		entryID = strings.TrimSpace(entryID)
 		err := tx.QueryRowContext(ctx, `SELECT e.state, COALESCE(e.prior_state, ''), COALESCE(e.removed_at_ms, 0),
-				p.removed_at_ms IS NOT NULL
+				p.removed_at_ms IS NOT NULL, e.media_id
 			FROM party_entry e JOIN party_participant p ON p.participant_id = e.participant_id
-			WHERE e.entry_id = ? AND e.session_id = ?`, strings.TrimSpace(entryID), session.ID).
-			Scan(&state, &prior, &removedAtMS, &participantRemoved)
+			WHERE e.entry_id = ? AND e.session_id = ?`, entryID, session.ID).
+			Scan(&state, &prior, &removedAtMS, &participantRemoved, &mediaID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return partyInvalid("entry not found")
 		}
 		if err != nil {
+			return err
+		}
+		if state == PartyEntrySkipped && !participantRemoved {
+			// A song skipped because it could not play stays skipped.
+			visible, err := s.visibleMediaIDsSQL(ctx, []MediaID{mediaID}, session.hostFilter)
+			if err != nil {
+				return err
+			}
+			if _, ok := visible[mediaID]; !ok {
+				return partyInvalid("entry cannot be restored")
+			}
+			// It takes the head of the rotation from any entry pinned there,
+			// and its new turn records its own start.
+			if _, err := tx.ExecContext(ctx, `UPDATE party_entry SET pinned_position = NULL
+				WHERE session_id = ? AND state = 'waiting' AND pinned_position = 1`, session.ID); err != nil {
+				return err
+			}
+			_, err = tx.ExecContext(ctx, `UPDATE party_entry SET state = 'waiting', pinned_position = 1,
+				current_at_ms = NULL, played_at_ms = NULL, finished_at_ms = NULL WHERE entry_id = ?`, entryID)
 			return err
 		}
 		if state != PartyEntryRemoved || prior == "" || participantRemoved ||
@@ -1578,6 +1635,24 @@ func (s *Store) SetPartyScreenTicker(ctx context.Context, host ProfileID, filter
 	})
 }
 
+// PartyQRCorners are the corners a stage screen may draw its join QR in.
+var PartyQRCorners = []string{"top-left", "top-right", "bottom-left", "bottom-right"}
+
+// SetPartyScreenDisplay sets where a screen draws its join QR during a song
+// ("off" or one of PartyQRCorners) and whether it plays sound.
+func (s *Store) SetPartyScreenDisplay(ctx context.Context, host ProfileID, filter LibraryFilter, screenID, qrCorner string, muted bool) error {
+	if qrCorner != PartyQROff && !slices.Contains(PartyQRCorners, qrCorner) {
+		return partyInvalid("qrCorner must be off, top-left, top-right, bottom-left or bottom-right")
+	}
+	return s.partyHostWrite(ctx, host, filter, func(tx *sql.Tx, session PartySession, _ int64) error {
+		return requirePartyScreenUpdate(tx.ExecContext(ctx, `UPDATE party_screen SET qr_corner = ?, muted = ?
+			WHERE screen_id = ? AND session_id = ? AND dropped_at_ms IS NULL`, qrCorner, boolInt(muted), strings.TrimSpace(screenID), session.ID))
+	})
+}
+
+// PartyQROff is the qrCorner of a screen that draws no join QR.
+const PartyQROff = "off"
+
 // DropPartyScreen removes a screen from the session.
 func (s *Store) DropPartyScreen(ctx context.Context, host ProfileID, filter LibraryFilter, screenID string) error {
 	screenID = strings.TrimSpace(screenID)
@@ -1679,7 +1754,7 @@ func (s *Store) RegisterPartyScreen(ctx context.Context, sessionID string, profi
 		}
 		view = PartyScreenView{
 			ID: id, ProfileID: profile, AuthSessionID: authSessionID,
-			Name: name, Kind: kind, Carrier: carrier, Lead: lead, Ticker: !lead,
+			Name: name, Kind: kind, Carrier: carrier, Lead: lead, Ticker: !lead, QRCorner: PartyQROff,
 		}
 		return nil
 	})
@@ -1729,16 +1804,16 @@ func (s *Store) PartyStage(ctx context.Context, sessionID, screenID string, call
 		if err != nil {
 			return PartySession{}, err
 		}
-		var ticker, chosenLead int
+		var ticker, chosenLead, muted int
 		var authSess, devID string
 		err = q.QueryRowContext(ctx, `SELECT screen_id, profile_id, auth_session_id, device_id, binding_generation, chosen_lead,
-				name, kind, carrier, ticker, offset_ms, rtt_ms, registered_at_ms, COALESCE(reported_at_ms, 0)
+				name, kind, carrier, ticker, qr_corner, muted, offset_ms, rtt_ms, registered_at_ms, COALESCE(reported_at_ms, 0)
 			FROM party_screen s
 			WHERE screen_id = ? AND session_id = ? AND auth_session_id = ? AND `+activePartyScreenSQL,
 			screenID, session.ID, callerSession, now-partyScreenSilence.Milliseconds()).
 			Scan(&callerScreen.id, &callerScreen.profileID, &authSess, &devID, &callerScreen.bindingGeneration, &chosenLead,
-				&callerScreen.name, &callerScreen.kind, &callerScreen.carrier, &ticker, &callerScreen.offsetMS, &callerScreen.rttMS,
-				&callerScreen.registeredAtMS, &callerScreen.reportedAtMS)
+				&callerScreen.name, &callerScreen.kind, &callerScreen.carrier, &ticker, &callerScreen.qrCorner, &muted,
+				&callerScreen.offsetMS, &callerScreen.rttMS, &callerScreen.registeredAtMS, &callerScreen.reportedAtMS)
 		if errors.Is(err, sql.ErrNoRows) {
 			return PartySession{}, partyInvalid("screen not found")
 		}
@@ -1749,6 +1824,7 @@ func (s *Store) PartyStage(ctx context.Context, sessionID, screenID string, call
 		callerScreen.deviceID = DeviceID(devID)
 		callerScreen.chosenLead = chosenLead == 1
 		callerScreen.ticker = ticker == 1
+		callerScreen.muted = muted == 1
 		if callerScreen.deviceID != "" {
 			valid, reason := s.isPartyPlayerScreenValidLocked(ctx, session.HostProfileID, callerScreen)
 			if !valid {
@@ -1770,7 +1846,8 @@ func (s *Store) PartyStage(ctx context.Context, sessionID, screenID string, call
 
 	stage := PartyStageView{
 		SessionID: view.Session.ID, ServerNowMS: nowMS, Current: view.Current, Playback: view.Playback,
-		UpNext: view.Waiting[:min(len(view.Waiting), PartyUpNext)], Ticker: callerScreen.ticker, JoinCode: view.Session.JoinCode,
+		UpNext: view.Waiting[:min(len(view.Waiting), PartyUpNext)], Ticker: callerScreen.ticker,
+		QRCorner: callerScreen.qrCorner, Muted: callerScreen.muted, JoinCode: view.Session.JoinCode,
 	}
 	for _, screen := range view.Screens {
 		if screen.ID == screenID {
@@ -1785,18 +1862,6 @@ func (s *Store) PartyStage(ctx context.Context, sessionID, screenID string, call
 		return PartyStageView{}, err
 	}
 	return stage, nil
-}
-
-func (s *Store) partyScreenTicker(ctx context.Context, sessionID, screenID string) (bool, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.guardLocked() != nil {
-		return false, false
-	}
-	var ticker int
-	err := s.eventsR.QueryRowContext(ctx, `SELECT ticker FROM party_screen
-		WHERE screen_id = ? AND session_id = ? AND dropped_at_ms IS NULL`, screenID, sessionID).Scan(&ticker)
-	return ticker == 1, err == nil
 }
 
 const partyGuestQuery = `SELECT p.participant_id, p.name, p.session_id,

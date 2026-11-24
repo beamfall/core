@@ -135,7 +135,10 @@ package store
 // binding_generation, and chosen_lead to party_screen for session-bound
 // stage reads, player display joining, and release tracking, off the
 // entity-query hot path.
+// Events 0034 (CORE-3379) adds party_screen.qr_corner and muted, the host's
+// per-screen join-QR corner and sound setting, read only by party reads, off
+// the entity-query hot path.
 const (
-	schemaFreezeEventsMigrations           = 33
+	schemaFreezeEventsMigrations           = 34
 	schemaFreezeEncryptedLibraryMigrations = 13
 )

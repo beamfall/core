@@ -2557,6 +2557,28 @@
   pointer-events: none;
 }
 
+/* Karaoke (CORE-3373): the lyrics are the picture, so nothing may cover them.
+ * The picture letterboxes into the stage between the top bar's controls and
+ * the transport, whose sizes the player measures, and keeps that size while
+ * the chrome hides. The strips are the stage's own scrim, so no gradient is
+ * drawn over the lyrics, and the play and seek controls stay in the bottom
+ * row instead of centring over the picture on a phone. */
+.bf-player-stage.is-karaoke video {
+  /* A video is a replaced element: between top and bottom, height: auto falls
+   * back to its intrinsic size, so the height is explicit. */
+  top: var(--bf-chrome-top, 0px);
+  height: calc(100% - var(--bf-chrome-top, 0px) - var(--bf-chrome-reserve, 0px));
+}
+
+.bf-player-stage.is-karaoke .bf-transport-scrim {
+  display: none;
+}
+
+.bf-player-stage.is-karaoke .bf-transport .bf-primary-controls {
+  position: static;
+  transform: none;
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .bf-transport-scrim {
     height: auto;

@@ -19,7 +19,10 @@ import { NativeSelect } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { displayString } from "@/lib/display";
 import {
+  PARTY_QR_CORNERS,
   type PartyEntry,
+  type PartyQRCorner,
+  type PartyScreen,
   type PartySession,
   type PlaybackAdjustmentRanges,
   partyAdd,
@@ -31,9 +34,11 @@ import {
   partyRestore,
   partyReview,
   partyScreenAddDisplay,
+  partyScreenDisplay,
   partyScreenDrop,
   partyScreenLead,
   partyScreenTicker,
+  partySkip,
   type SearchResultItem,
   searchResult,
 } from "@/lib/graphql";
@@ -77,6 +82,36 @@ function Panel({
   );
 }
 
+/**
+ * Skips the current entry and offers an Undo that brings it back as next up.
+ * The notice goes once the entry is back in the rotation by any route.
+ */
+export function useSkipUndo(session: PartySession, run: RunPartyOp) {
+  const t = useT();
+  const [skippedID, setSkippedID] = useState("");
+  const skip = async (entry: PartyEntry) => {
+    if (await run(() => partySkip(entry.id))) setSkippedID(entry.id);
+  };
+  // Read from the live list: a song that has since gone away comes back
+  // redacted, and its skip can no longer be undone.
+  const undo = session.skipped.find((entry) => entry.id === skippedID && entry.title !== "");
+  const notice = undo && (
+    <p role="status" className="bf-party-notice flex flex-wrap items-center gap-2" data-tone="ok">
+      {t("partyHostSkippedNotice", { name: undo.participantName, title: undo.title })}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={async () => {
+          if (await run(() => partyRestore(undo.id))) setSkippedID("");
+        }}
+      >
+        {t("partyHostUndo")}
+      </Button>
+    </p>
+  );
+  return { skip, notice };
+}
+
 export function PartyMonitor({
   session,
   run,
@@ -88,6 +123,7 @@ export function PartyMonitor({
   const [, setTick] = useState(0);
   const [scrubMS, setScrubMS] = useState<number | null>(null);
   const playing = playback?.state === "playing" && playback.entryID === current?.id;
+  const { skip, notice: skipNotice } = useSkipUndo(session, run);
 
   useEffect(() => {
     if (!playing) return;
@@ -98,6 +134,7 @@ export function PartyMonitor({
   if (!current) {
     return (
       <Panel title={t("partyHostNowSinging")} className="bf-party-monitor">
+        {skipNotice}
         <p className="bf-party-muted">
           {session.entries.length > 0 ? t("partyHostIdleReady") : t("partyHostIdleEmpty")}
         </p>
@@ -203,11 +240,12 @@ export function PartyMonitor({
         >
           <Redo2 className="size-4" aria-hidden />
         </Button>
-        <Button variant="secondary" onClick={() => void run(() => partyAdvance(current.id))}>
+        <Button variant="secondary" onClick={() => void skip(current)}>
           <SkipForward className="size-4" aria-hidden />
           {t("partyHostSkip")}
         </Button>
       </div>
+      {skipNotice}
       {ranges && (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <Stepper
@@ -279,9 +317,35 @@ function Stepper({
   );
 }
 
+const QR_CORNER_LABEL = {
+  off: "partyHostQROff",
+  "top-left": "partyHostQRTopLeft",
+  "top-right": "partyHostQRTopRight",
+  "bottom-left": "partyHostQRBottomLeft",
+  "bottom-right": "partyHostQRBottomRight",
+} as const satisfies Record<PartyQRCorner, string>;
+
 export function PartyScreens({ session, run }: PanelProps) {
   const t = useT();
   const joinHref = useHref(stagePath(session.id, true));
+  // The last display each screen was asked for, until its write settles, so a
+  // second control sent before the first returns does not undo it.
+  const pending = useRef(new Map<string, { qrCorner: PartyQRCorner; muted: boolean }>());
+  const [, rerender] = useState(0);
+  const displayOf = (screen: PartyScreen) => pending.current.get(screen.id) ?? screen;
+  const setDisplay = (
+    screen: PartyScreen,
+    next: Partial<Pick<PartyScreen, "qrCorner" | "muted">>,
+  ) => {
+    const current = displayOf(screen);
+    const want = { qrCorner: current.qrCorner, muted: current.muted, ...next };
+    pending.current.set(screen.id, want);
+    rerender((n) => n + 1);
+    void run(() => partyScreenDisplay(screen.id, want.qrCorner, want.muted)).finally(() => {
+      if (pending.current.get(screen.id) === want) pending.current.delete(screen.id);
+      rerender((n) => n + 1);
+    });
+  };
   return (
     <Panel title={t("partyHostScreens")} className="bf-party-screens">
       {session.screens.length === 0 ? (
@@ -290,6 +354,7 @@ export function PartyScreens({ session, run }: PanelProps) {
         <ul className="flex flex-col gap-2">
           {session.screens.map((screen) => {
             const inSync = screenInSync(screen);
+            const display = displayOf(screen);
             const status =
               screen.reportedAt === ""
                 ? t("partyHostScreenWaiting")
@@ -312,27 +377,53 @@ export function PartyScreens({ session, run }: PanelProps) {
                     </span>
                   </span>
                 </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <Switch
-                    checked={screen.ticker}
-                    onCheckedChange={(ticker) =>
-                      void run(() => partyScreenTicker(screen.id, ticker))
-                    }
-                  />
-                  {t("partyHostTicker")}
-                </label>
-                {screen.lead ? (
-                  <span className="bf-party-badge text-sm">{t("partyScreenLead")}</span>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label={t("partyScreenMakeLeadLabel", { name: screen.name })}
-                    onClick={() => void run(() => partyScreenLead(screen.id))}
-                  >
-                    {t("partyScreenMakeLead")}
-                  </Button>
-                )}
+                <div className="bf-party-screen-controls">
+                  <label className="flex items-center gap-2 text-sm">
+                    <span>{t("partyHostQRCorner")}</span>
+                    <NativeSelect
+                      value={display.qrCorner}
+                      aria-label={t("partyHostQRCornerOn", { name: screen.name })}
+                      onValueChange={(corner) =>
+                        setDisplay(screen, { qrCorner: corner as PartyQRCorner })
+                      }
+                    >
+                      {PARTY_QR_CORNERS.map((corner) => (
+                        <option key={corner} value={corner}>
+                          {t(QR_CORNER_LABEL[corner])}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Switch
+                      checked={display.muted}
+                      aria-label={t("partyHostMuteScreen", { name: screen.name })}
+                      onCheckedChange={(muted) => setDisplay(screen, { muted })}
+                    />
+                    {t("partyHostMute")}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Switch
+                      checked={screen.ticker}
+                      onCheckedChange={(ticker) =>
+                        void run(() => partyScreenTicker(screen.id, ticker))
+                      }
+                    />
+                    {t("partyHostTicker")}
+                  </label>
+                  {screen.lead ? (
+                    <span className="bf-party-badge text-sm">{t("partyScreenLead")}</span>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={t("partyScreenMakeLeadLabel", { name: screen.name })}
+                      onClick={() => void run(() => partyScreenLead(screen.id))}
+                    >
+                      {t("partyScreenMakeLead")}
+                    </Button>
+                  )}
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -693,13 +784,6 @@ export function PartyRotation({ session, run }: PanelProps) {
           </Button>
         </p>
       )}
-      {session.skipped.length > 0 && (
-        <p className="bf-party-muted text-sm">
-          {t("partyHostSkipped", {
-            titles: session.skipped.map((entry) => entry.title).join(", "),
-          })}
-        </p>
-      )}
       {waiting.length === 0 ? (
         <p className="bf-party-muted">{t("partyHostRotationEmpty")}</p>
       ) : (
@@ -773,6 +857,37 @@ export function PartyRotation({ session, run }: PanelProps) {
             ))}
           </ol>
         </>
+      )}
+      {session.skipped.length > 0 && (
+        <div className="bf-party-skipped flex flex-col gap-2">
+          <h3 className="bf-party-label">{t("partyHostSkippedHeading")}</h3>
+          <ul className="flex flex-col gap-2">
+            {session.skipped.map((entry) => (
+              <li key={entry.id} className="bf-party-row">
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate font-medium">{entry.participantName}</span>
+                  <span className="bf-party-muted truncate text-sm">
+                    {entry.title || t("partyHostSkippedUnavailable")}
+                  </span>
+                </div>
+                {/* The server redacts the title of Media the session can no longer see; such a skip cannot come back. */}
+                {entry.title !== "" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={t("partyHostBringBackTitle", {
+                      name: entry.participantName,
+                      title: entry.title,
+                    })}
+                    onClick={() => void run(() => partyRestore(entry.id))}
+                  >
+                    {t("partyHostBringBack")}
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </Panel>
   );

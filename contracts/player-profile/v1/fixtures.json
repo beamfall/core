@@ -46,7 +46,7 @@
     {
       "name": "party-screen-player-display",
       "type": "PartyScreenInfo",
-      "value": {"id": "screen-7", "name": "Karaoke room TV", "kind": "joined", "carrier": "local", "lead": false, "ticker": true, "offsetMS": 12, "rttMS": 34, "reportedAt": "2026-11-23T18:04:05Z", "playerDisplay": true, "playerDisplayHandle": "pd_4f1c2a9e"}
+      "value": {"id": "screen-7", "name": "Karaoke room TV", "kind": "joined", "carrier": "local", "lead": false, "ticker": true, "qrCorner": "off", "muted": false, "offsetMS": 12, "rttMS": 34, "reportedAt": "2026-11-23T18:04:05Z", "playerDisplay": true, "playerDisplayHandle": "pd_4f1c2a9e"}
     },
     {
       "name": "control-applied",

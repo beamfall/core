@@ -105,6 +105,14 @@
   object-fit: cover;
 }
 
+.bf-mini-artwork-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+  margin: 13px;
+  color: color-mix(in oklab, var(--on-scrim) 62%, transparent);
+}
+
 .bf-mini-meta {
   display: flex;
   min-width: 0;

@@ -709,6 +709,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"partyreview":                        newFieldHandler("partyReview", "party", fieldMutation, roleSession, 159),
 	"partymove":                          newFieldHandler("partyMove", "party", fieldMutation, roleSession, 159),
 	"partyremove":                        newFieldHandler("partyRemove", "party", fieldMutation, roleSession, 159),
+	"partyskip":                          newFieldHandler("partySkip", "party", fieldMutation, roleSession, 159),
 	"partyrestore":                       newFieldHandler("partyRestore", "party", fieldMutation, roleSession, 159),
 	"partyadvance":                       newFieldHandler("partyAdvance", "party", fieldMutation, roleSession, 159),
 	"partyplayback":                      newFieldHandler("partyPlayback", "party", fieldMutation, roleSession, 159),
@@ -716,6 +717,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"partyscreenregister":                newFieldHandler("partyScreenRegister", "party", fieldMutation, roleSession, 159),
 	"partyscreenreport":                  newFieldHandler("partyScreenReport", "party", fieldMutation, roleSession, 159),
 	"partyscreenticker":                  newFieldHandler("partyScreenTicker", "party", fieldMutation, roleSession, 159),
+	"partyscreendisplay":                 newFieldHandler("partyScreenDisplay", "party", fieldMutation, roleSession, 159),
 	"partyscreendrop":                    newFieldHandler("partyScreenDrop", "party", fieldMutation, roleSession, 159),
 	"partyscreenadddisplay":              newFieldHandler("partyScreenAddDisplay", "party", fieldMutation, roleSession, 159),
 	"partyscreenlead":                    newFieldHandler("partyScreenLead", "party", fieldMutation, roleSession, 159),
@@ -4922,6 +4924,10 @@ func dispatchFieldBlock159(dispatch *fieldDispatchContext) response {
 		result, err := h.partyRemoveWrite(ctx, scope, req)
 		return resolveField(dispatch, "partyremove", result, err)
 	}
+	if fields["partyskip"] {
+		result, err := h.partySkipWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyskip", result, err)
+	}
 	if fields["partyrestore"] {
 		result, err := h.partyRestoreWrite(ctx, scope, req)
 		return resolveField(dispatch, "partyrestore", result, err)
@@ -4949,6 +4955,10 @@ func dispatchFieldBlock159(dispatch *fieldDispatchContext) response {
 	if fields["partyscreenticker"] {
 		result, err := h.partyScreenTickerWrite(ctx, scope, req)
 		return resolveField(dispatch, "partyscreenticker", result, err)
+	}
+	if fields["partyscreendisplay"] {
+		result, err := h.partyScreenDisplayWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreendisplay", result, err)
 	}
 	if fields["partyscreendrop"] {
 		result, err := h.partyScreenDropWrite(ctx, scope, req)

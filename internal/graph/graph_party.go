@@ -69,6 +69,8 @@ type PartyScreenInfo struct {
 	Carrier             string `json:"carrier"`
 	Lead                bool   `json:"lead"`
 	Ticker              bool   `json:"ticker"`
+	QRCorner            string `json:"qrCorner"`
+	Muted               bool   `json:"muted"`
 	OffsetMS            int64  `json:"offsetMS"`
 	RTTMS               int64  `json:"rttMS"`
 	ReportedAt          string `json:"reportedAt"`
@@ -129,6 +131,8 @@ type PartyStageInfo struct {
 	UpNext      []PartyEntryInfo   `json:"upNext"`
 	Ticker      bool               `json:"ticker"`
 	Lead        bool               `json:"lead"`
+	QRCorner    string             `json:"qrCorner"`
+	Muted       bool               `json:"muted"`
 	JoinCode    string             `json:"joinCode"`
 	JoinPath    string             `json:"joinPath"`
 }
@@ -240,7 +244,7 @@ func partyPlaybackInfo(playback *store.PartyPlaybackView) *PartyPlaybackInfo {
 func (h *Handler) partyScreenInfo(screen store.PartyScreenView, playerControl bool) PartyScreenInfo {
 	info := PartyScreenInfo{
 		ID: screen.ID, Name: screen.Name, Kind: screen.Kind, Carrier: screen.Carrier, Lead: screen.Lead,
-		Ticker: screen.Ticker, OffsetMS: screen.OffsetMS, RTTMS: screen.RTTMS, ReportedAt: PartyTime(screen.ReportedAt),
+		Ticker: screen.Ticker, QRCorner: screen.QRCorner, Muted: screen.Muted, OffsetMS: screen.OffsetMS, RTTMS: screen.RTTMS, ReportedAt: PartyTime(screen.ReportedAt),
 	}
 	if playerControl && screen.DeviceID != "" {
 		info.PlayerDisplay = true
@@ -427,7 +431,7 @@ func (h *Handler) partyStageRead(ctx context.Context, scope auth.Scope, req requ
 	return PartyStageInfo{
 		SessionID: stage.SessionID, ServerNowMS: stage.ServerNowMS,
 		Current: h.partyCurrent(stage.Current), Playback: partyPlaybackInfo(stage.Playback),
-		UpNext: h.partyEntryInfos(stage.UpNext), Ticker: stage.Ticker, Lead: stage.Lead,
+		UpNext: h.partyEntryInfos(stage.UpNext), Ticker: stage.Ticker, Lead: stage.Lead, QRCorner: stage.QRCorner, Muted: stage.Muted,
 		JoinCode: stage.JoinCode, JoinPath: PartyJoinPath(stage.JoinCode),
 	}, nil
 }
@@ -558,6 +562,13 @@ func (h *Handler) partyRemoveWrite(ctx context.Context, scope auth.Scope, req re
 	})
 }
 
+// partySkipWrite resolves partySkip.
+func (h *Handler) partySkipWrite(ctx context.Context, scope auth.Scope, req request) (*PartySessionInfo, error) {
+	return h.partyHostWrite(ctx, scope, req, func(host store.ProfileID, filter store.LibraryFilter) error {
+		return h.store.SkipPartyEntry(ctx, host, filter, trimmedVariable(req, "entryID"))
+	})
+}
+
 // partyRestoreWrite resolves partyRestore.
 func (h *Handler) partyRestoreWrite(ctx context.Context, scope auth.Scope, req request) (*PartySessionInfo, error) {
 	return h.partyHostWrite(ctx, scope, req, func(host store.ProfileID, filter store.LibraryFilter) error {
@@ -630,6 +641,21 @@ func (h *Handler) partyScreenTickerWrite(ctx context.Context, scope auth.Scope, 
 			return clientError("ticker is required")
 		}
 		return h.store.SetPartyScreenTicker(ctx, host, filter, trimmedVariable(req, "screenID"), ticker)
+	})
+}
+
+// partyScreenDisplayWrite resolves partyScreenDisplay.
+func (h *Handler) partyScreenDisplayWrite(ctx context.Context, scope auth.Scope, req request) (*PartySessionInfo, error) {
+	return h.partyHostWrite(ctx, scope, req, func(host store.ProfileID, filter store.LibraryFilter) error {
+		v := newVars(req)
+		muted, ok := v.Bool("muted")
+		if err := v.Err(); err != nil {
+			return err
+		}
+		if !ok {
+			return clientError("muted is required")
+		}
+		return h.store.SetPartyScreenDisplay(ctx, host, filter, trimmedVariable(req, "screenID"), trimmedVariable(req, "qrCorner"), muted)
 	})
 }
 

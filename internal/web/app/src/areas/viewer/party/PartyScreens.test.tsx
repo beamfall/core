@@ -13,7 +13,9 @@ import { I18nProvider } from "@/lib/i18n";
 import { PartyScreens } from "./HostLive";
 
 vi.mock("@/lib/graphql", () => ({
+  PARTY_QR_CORNERS: ["off", "top-left", "top-right", "bottom-left", "bottom-right"],
   partyScreenAddDisplay: vi.fn(),
+  partyScreenDisplay: vi.fn(),
   partyScreenLead: vi.fn(),
   partyScreenDrop: vi.fn(),
   partyScreenTicker: vi.fn(),
@@ -26,6 +28,8 @@ const screenBase: PartyScreen = {
   carrier: "web" as PartyScreen["carrier"],
   lead: true,
   ticker: false,
+  qrCorner: "off",
+  muted: false,
   offsetMS: 0,
   rttMS: 0,
   reportedAt: "",

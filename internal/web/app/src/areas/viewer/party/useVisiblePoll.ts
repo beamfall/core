@@ -3,12 +3,14 @@ import { useEffect, useRef } from "react";
 /**
  * Runs `tick` about every `intervalMS` while the page is visible and `enabled`,
  * one at a time: the next tick waits for the previous one to settle. A hidden
- * page stops polling and polls at once when it is shown again.
+ * page stops polling and polls at once when it is shown again, unless
+ * `whileHidden` keeps it going (a stage still playing in a background tab).
  */
 export function useVisiblePoll(
   tick: (signal: AbortSignal) => Promise<unknown>,
   intervalMS: number,
   enabled = true,
+  whileHidden = false,
 ): void {
   const tickRef = useRef(tick);
   tickRef.current = tick;
@@ -19,7 +21,7 @@ export function useVisiblePoll(
     let running = false;
     const schedule = () => {
       window.clearTimeout(timer);
-      if (controller.signal.aborted || document.hidden) return;
+      if (controller.signal.aborted || (document.hidden && !whileHidden)) return;
       timer = window.setTimeout(run, intervalMS);
     };
     const run = () => {
@@ -35,7 +37,7 @@ export function useVisiblePoll(
     };
     const onVisibility = () => {
       if (!document.hidden) run();
-      else window.clearTimeout(timer);
+      else if (!whileHidden) window.clearTimeout(timer);
     };
     document.addEventListener("visibilitychange", onVisibility);
     run();
@@ -44,5 +46,5 @@ export function useVisiblePoll(
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [enabled, intervalMS]);
+  }, [enabled, intervalMS, whileHidden]);
 }

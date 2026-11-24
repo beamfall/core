@@ -229,6 +229,7 @@ var resultTypes = map[string]any{
 	"partyreview":                        PartySessionInfo{},
 	"partymove":                          PartySessionInfo{},
 	"partyremove":                        PartySessionInfo{},
+	"partyskip":                          PartySessionInfo{},
 	"partyrestore":                       PartySessionInfo{},
 	"partyadvance":                       PartySessionInfo{},
 	"partyplayback":                      PartySessionInfo{},
@@ -236,6 +237,7 @@ var resultTypes = map[string]any{
 	"partyscreenregister":                PartyScreenInfo{},
 	"partyscreenreport":                  partyBooleanResult{},
 	"partyscreenticker":                  PartySessionInfo{},
+	"partyscreendisplay":                 PartySessionInfo{},
 	"partyscreendrop":                    PartySessionInfo{},
 	"partyscreenadddisplay":              PartyScreenJoinResult{},
 	"partyscreenlead":                    PartySessionInfo{},
@@ -568,6 +570,10 @@ var fieldArguments = map[string][]NestedArgument{
 		{Name: "entryID", Kind: "string"},
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
 	},
+	"partyskip": {
+		{Name: "entryID", Kind: "string"},
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+	},
 	"partyadvance": {
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "fromEntryID", Kind: "string", Optional: true},
@@ -601,6 +607,12 @@ var fieldArguments = map[string][]NestedArgument{
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "screenID", Kind: "string"},
 		{Name: "ticker", Kind: "boolean"},
+	},
+	"partyscreendisplay": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "muted", Kind: "boolean"},
+		{Name: "qrCorner", Kind: "string"},
+		{Name: "screenID", Kind: "string"},
 	},
 	"partyscreendrop": {
 		{Name: "expectedProfileID", Kind: "string", Optional: true},

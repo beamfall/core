@@ -146,6 +146,8 @@ export function PartyStagePage() {
     POLL_MS,
     // ADR-0240 D10: no stage read before this screen's registration completes.
     sessionID !== "" && screenID !== null,
+    // A stage in a background tab keeps playing, so it keeps hearing mute and pause.
+    true,
   );
 
   useEffect(() => {
@@ -193,6 +195,7 @@ export function PartyStagePage() {
           playback={stage.playback}
           serverNow={serverNow}
           driftRef={driftRef}
+          stage={stage}
         />
       ) : (
         <StageIdle stage={stage} driftRef={driftRef} />
@@ -200,18 +203,51 @@ export function PartyStagePage() {
       {stage && current && stage.ticker && stage.upNext.length > 0 && (
         <div className="bf-party-ticker" role="region" aria-label={t("partyHostUpNext")}>
           <span className="bf-party-ticker-label">{t("partyHostUpNext")}</span>
-          <span className="truncate">
-            {stage.upNext
-              .map((entry) =>
-                entry.ineligible
-                  ? entry.label || entry.participantName
-                  : t("partyHostTickerItem", { title: entry.title, name: entry.participantName }),
-              )
-              .join("  ·  ")}
-          </span>
+          <ol className="bf-party-ticker-list">
+            {stage.upNext.map((entry) => (
+              <li key={entry.id} className="bf-party-next">
+                <UpNextEntry entry={entry} />
+              </li>
+            ))}
+          </ol>
         </div>
       )}
     </main>
+  );
+}
+
+/**
+ * One up-next entry (CORE-3378): the singer, then the song and its artist, then
+ * when the singer is expected, each its own part so a song is never read as a
+ * name. The hidden separators keep it one sentence for a screen reader.
+ */
+function UpNextEntry({ entry }: { entry: PartyEntry }) {
+  const t = useT();
+  // ADR-0240: an entry this screen may not show carries only its label.
+  if (entry.ineligible) {
+    return <span className="bf-party-next-singer">{entry.label || entry.participantName}</span>;
+  }
+  const eta =
+    entry.position === 1 && entry.etaSeconds < 60
+      ? t("partyHostEtaNext")
+      : t("partyHostEta", { minutes: Math.max(1, Math.round(entry.etaSeconds / 60)) });
+  return (
+    <>
+      <span className="bf-party-next-singer">{entry.participantName}</span>
+      <span className="sr-only">: </span>
+      <span className="bf-party-next-song">
+        {entry.title}
+        {entry.subtitle !== "" && (
+          <span className="bf-party-next-artist">
+            <span aria-hidden="true"> · </span>
+            <span className="sr-only">, </span>
+            {entry.subtitle}
+          </span>
+        )}
+      </span>
+      <span className="sr-only">, </span>
+      <span className="bf-party-next-eta">{eta}</span>
+    </>
   );
 }
 
@@ -257,14 +293,12 @@ function StageIdle({
         </div>
       </div>
       {stage.upNext.length > 0 && (
-        <div className="flex flex-col gap-2">
+        <div className="bf-party-stage-next-wrap flex flex-col gap-2">
           <p className="bf-party-stage-kicker">{t("partyHostUpNext")}</p>
-          <ol className="flex flex-col gap-1">
+          <ol className="bf-party-stage-next-list">
             {stage.upNext.map((entry) => (
-              <li key={entry.id} className="bf-party-stage-next">
-                {entry.ineligible
-                  ? entry.label || entry.participantName
-                  : t("partyHostTickerItem", { title: entry.title, name: entry.participantName })}
+              <li key={entry.id} className="bf-party-next bf-party-stage-next">
+                <UpNextEntry entry={entry} />
               </li>
             ))}
           </ol>
@@ -274,16 +308,37 @@ function StageIdle({
   );
 }
 
+/**
+ * The join QR and code in the corner the host chose for this screen, drawn
+ * over the song (CORE-3379) so latecomers can join without the idle screen.
+ */
+function CornerJoin({ stage }: { stage: PartyStage }) {
+  const t = useT();
+  return (
+    <div className="bf-party-stage-corner" data-corner={stage.qrCorner}>
+      <QrCode
+        value={`${window.location.origin}${stage.joinPath}`}
+        label={t("partyHostQRLabel", { code: stage.joinCode })}
+        className="bf-party-stage-corner-qr"
+      />
+      <p className="bf-party-stage-corner-code">{stage.joinCode}</p>
+    </div>
+  );
+}
+
 function StagePlayer({
   entry,
   playback,
   serverNow,
   driftRef,
+  stage,
 }: {
   entry: PartyEntry;
   playback: PartyPlayback | null;
   serverNow: () => number;
   driftRef: React.MutableRefObject<number>;
+  /** The screen's display settings: the join QR corner and mute (CORE-3379). */
+  stage: PartyStage;
 }) {
   const t = useT();
   const anchor = playback && playback.entryID === entry.id ? playback : null;
@@ -319,6 +374,15 @@ function StagePlayer({
   anchorRef.current = anchor;
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // A muted screen plays silently, which most browsers allow without a
+  // gesture; the sync loop retries play, and a browser that blocks all
+  // autoplay still gets the start button.
+  const muted = stage.muted;
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) video.muted = muted;
+  }, [muted, videoRef]);
 
   const tempo = anchor?.tempo ?? 1;
   const pitch = anchor?.pitchSemitones ?? 0;
@@ -367,9 +431,16 @@ function StagePlayer({
   };
 
   const failed = state.phase === "message" || state.phase === "terminal";
+  const corner = stage.qrCorner;
   return (
-    <div className="bf-party-stage-player">
-      <video ref={videoRef} className="bf-party-stage-video" playsInline onEnded={onEnded} />
+    <div className="bf-party-stage-player" data-qr-corner={corner}>
+      <video
+        ref={videoRef}
+        className="bf-party-stage-video"
+        playsInline
+        muted={muted}
+        onEnded={onEnded}
+      />
       <div className="bf-party-stage-caption">
         <p className="bf-party-stage-title">{entry.title}</p>
         {entry.subtitle !== "" && <p className="bf-party-stage-singer">{entry.subtitle}</p>}
@@ -377,6 +448,7 @@ function StagePlayer({
           {t("partyHostSungBy", { name: entry.participantName })}
         </p>
       </div>
+      {corner !== "off" && <CornerJoin stage={stage} />}
       {needsGesture && !failed && (
         <div className="bf-party-stage-overlay">
           <Button

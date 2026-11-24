@@ -61,6 +61,17 @@ export interface PartyPlayback {
   pitchSemitones: number;
 }
 
+/** Where a stage screen draws the join QR during songs. */
+export type PartyQRCorner = "off" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+export const PARTY_QR_CORNERS: readonly PartyQRCorner[] = [
+  "off",
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+];
+
 export interface PartyScreen {
   id: string;
   name: string;
@@ -68,6 +79,9 @@ export interface PartyScreen {
   carrier: PartyScreenCarrier;
   lead: boolean;
   ticker: boolean;
+  qrCorner: PartyQRCorner;
+  /** The screen plays songs silently. */
+  muted: boolean;
   offsetMS: number;
   rttMS: number;
   /** "" before the first report. */
@@ -128,6 +142,10 @@ export interface PartyStage {
   upNext: PartyEntry[];
   /** For the screen asked about; true when none was named. */
   ticker: boolean;
+  /** For the screen asked about; "off" when none was named. */
+  qrCorner: PartyQRCorner;
+  /** For the screen asked about; false when none was named. */
+  muted: boolean;
   joinCode: string;
   joinPath: string;
 }
@@ -136,10 +154,10 @@ const ENTRY =
   "id mediaID title subtitle durationSeconds artworkURL participantID participantName state pinned position etaSeconds pitchSemitones addedAt lastPlayedAt";
 const PLAYBACK = "entryID state positionMS anchorAtMS tempo pitchSemitones";
 const SCREEN =
-  "id name kind carrier lead ticker offsetMS rttMS reportedAt playerDisplay playerDisplayHandle";
+  "id name kind carrier lead ticker qrCorner muted offsetMS rttMS reportedAt playerDisplay playerDisplayHandle";
 const SESSION = `id joinCode joinPath fairness autoAdd joinOpen libraryIDs startedAt expiresAt changeoverSeconds current { ${ENTRY} } playback { ${PLAYBACK} } entries { ${ENTRY} } requests { ${ENTRY} } recent { ${ENTRY} } removed { ${ENTRY} } participants { id name guest waiting lastTurnAt } screens { ${SCREEN} } skipped { ${ENTRY} } availableDisplays { handle displayName presence joined coversLibraries missingLibraryIDs }`;
 const STAGE_ENTRY = `${ENTRY} ineligible label`;
-const STAGE = `sessionID serverNowMS current { ${STAGE_ENTRY} } playback { ${PLAYBACK} } upNext { ${STAGE_ENTRY} } ticker joinCode joinPath`;
+const STAGE = `sessionID serverNowMS current { ${STAGE_ENTRY} } playback { ${PLAYBACK} } upNext { ${STAGE_ENTRY} } ticker qrCorner muted joinCode joinPath`;
 
 const PARTY_SESSION_QUERY = `query PartySession { partySession { ${SESSION} } }`;
 const PARTY_STAGE_QUERY = `query PartyStage($sessionID: String!, $screenID: String) { partyStage(sessionID: $sessionID, screenID: $screenID) { ${STAGE} } }`;
@@ -152,12 +170,14 @@ const PARTY_REVIEW_MUTATION = `mutation PartyReview($entryID: String!, $approve:
 const PARTY_MOVE_MUTATION = `mutation PartyMove($entryID: String!, $position: Int!) { partyMove(entryID: $entryID, position: $position) { ${SESSION} } }`;
 const PARTY_REMOVE_MUTATION = `mutation PartyRemove($entryID: String!) { partyRemove(entryID: $entryID) { ${SESSION} } }`;
 const PARTY_RESTORE_MUTATION = `mutation PartyRestore($entryID: String!) { partyRestore(entryID: $entryID) { ${SESSION} } }`;
+const PARTY_SKIP_MUTATION = `mutation PartySkip($entryID: String!) { partySkip(entryID: $entryID) { ${SESSION} } }`;
 const PARTY_ADVANCE_MUTATION = `mutation PartyAdvance($fromEntryID: String) { partyAdvance(fromEntryID: $fromEntryID) { ${SESSION} } }`;
 const PARTY_PLAYBACK_MUTATION = `mutation PartyPlayback($entryID: String!, $state: String!, $positionMS: Int!, $tempo: Float, $pitchSemitones: Int) { partyPlayback(entryID: $entryID, state: $state, positionMS: $positionMS, tempo: $tempo, pitchSemitones: $pitchSemitones) { ${SESSION} } }`;
 const PARTY_REMOVE_PARTICIPANT_MUTATION = `mutation PartyRemoveParticipant($participantID: String!) { partyRemoveParticipant(participantID: $participantID) { ${SESSION} } }`;
 const PARTY_SCREEN_REGISTER_MUTATION = `mutation PartyScreenRegister($sessionID: String!, $name: String!, $kind: String!, $carrier: String!) { partyScreenRegister(sessionID: $sessionID, name: $name, kind: $kind, carrier: $carrier) { ${SCREEN} } }`;
 const PARTY_SCREEN_REPORT_MUTATION =
   "mutation PartyScreenReport($screenID: String!, $offsetMS: Int!, $rttMS: Int!) { partyScreenReport(screenID: $screenID, offsetMS: $offsetMS, rttMS: $rttMS) }";
+const PARTY_SCREEN_DISPLAY_MUTATION = `mutation PartyScreenDisplay($screenID: String!, $qrCorner: String!, $muted: Boolean!) { partyScreenDisplay(screenID: $screenID, qrCorner: $qrCorner, muted: $muted) { ${SESSION} } }`;
 const PARTY_SCREEN_TICKER_MUTATION = `mutation PartyScreenTicker($screenID: String!, $ticker: Boolean!) { partyScreenTicker(screenID: $screenID, ticker: $ticker) { ${SESSION} } }`;
 const PARTY_SCREEN_ADD_DISPLAY_MUTATION = `mutation PartyScreenAddDisplay($handle: String!) { partyScreenAddDisplay(handle: $handle) { screen { ${SCREEN} } session { ${SESSION} } coversLibraries missingLibraryIDs } }`;
 const PARTY_SCREEN_LEAD_MUTATION = `mutation PartyScreenLead($screenID: String!) { partyScreenLead(screenID: $screenID) { ${SESSION} } }`;
@@ -258,6 +278,11 @@ export function partyRestore(entryID: string): Promise<PartySession> {
   return sessionOp("partyRestore", PARTY_RESTORE_MUTATION, { entryID });
 }
 
+/** Skips the current entry; partyRestore brings it back as next up. */
+export function partySkip(entryID: string): Promise<PartySession> {
+  return sessionOp("partySkip", PARTY_SKIP_MUTATION, { entryID });
+}
+
 /** Moves to the next entry; idempotent when `fromEntryID` names the entry advanced from. */
 export function partyAdvance(fromEntryID?: string): Promise<PartySession> {
   return sessionOp("partyAdvance", PARTY_ADVANCE_MUTATION, { fromEntryID });
@@ -313,6 +338,19 @@ export async function partyScreenReport(
 
 export function partyScreenTicker(screenID: string, ticker: boolean): Promise<PartySession> {
   return sessionOp("partyScreenTicker", PARTY_SCREEN_TICKER_MUTATION, { screenID, ticker });
+}
+
+/** Sets where a screen draws the join QR during songs and whether it plays sound. */
+export function partyScreenDisplay(
+  screenID: string,
+  qrCorner: PartyQRCorner,
+  muted: boolean,
+): Promise<PartySession> {
+  return sessionOp("partyScreenDisplay", PARTY_SCREEN_DISPLAY_MUTATION, {
+    screenID,
+    qrCorner,
+    muted,
+  });
 }
 
 export function partyScreenDrop(screenID: string): Promise<PartySession> {

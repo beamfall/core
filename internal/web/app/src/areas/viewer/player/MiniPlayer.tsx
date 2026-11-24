@@ -1,4 +1,4 @@
-import { Maximize2, Pause, Play, SkipForward, X } from "lucide-react";
+import { type LucideIcon, Maximize2, Pause, Play, SkipForward, X } from "lucide-react";
 import {
   Fragment,
   type KeyboardEvent,
@@ -31,6 +31,7 @@ export function MiniPlayer({
   title,
   credits,
   artworkURL,
+  fallbackIcon: FallbackIcon,
   mediaID,
   songScale,
   durationSeconds,
@@ -47,6 +48,8 @@ export function MiniPlayer({
   /** The stage's credits: person credits form the artist line, the first container is the album. */
   credits: readonly MediaCredit[];
   artworkURL: string;
+  /** Drawn in the artwork square when there is no artwork (a karaoke song shows a microphone). */
+  fallbackIcon?: LucideIcon;
   mediaID: string;
   /** Song seconds per stream second (CORE-1659): times read in song time. */
   songScale: number;
@@ -154,8 +157,10 @@ export function MiniPlayer({
   const people = credits.filter((credit) => credit.archetype === "person" && credit.title);
   const album = credits.find((credit) => credit.archetype === "container" && credit.title);
   const albumPath = linked && album?.entityID ? creditPath(album) : "";
-  const artwork = showArtwork && (
+  const artwork = showArtwork ? (
     <img src={artworkURL} alt="" onError={() => setFailedArtwork(artworkURL)} />
+  ) : (
+    FallbackIcon && <FallbackIcon className="bf-mini-artwork-icon" aria-hidden="true" />
   );
 
   return (

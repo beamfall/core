@@ -1,4 +1,4 @@
-import { AlertCircle, LoaderCircle } from "lucide-react";
+import { AlertCircle, LoaderCircle, Mic } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useNavigationType } from "react-router";
 import { MAIN_CONTENT_ID, SkipLink } from "@/components/chrome/SkipLink";
@@ -111,6 +111,7 @@ import { useAmbientChoice, useAmbientIdle } from "../player/useAmbient";
 import { type PartySeekAutoSkip, useAutoSkip } from "../player/useAutoSkip";
 import { useCaptionLoad } from "../player/useCaptionLoad";
 import { idleChromeClass, useChromeAutoHide } from "../player/useChromeAutoHide";
+import { useChromeReserve } from "../player/useChromeReserve";
 import {
   decodableStream,
   handBack,
@@ -700,6 +701,8 @@ function FeaturePlayer({
     menuOpen: menuOpen || partyOpen,
     mounted: stageMounted,
   });
+  // A karaoke picture sits above the transport, never under it (CORE-3373).
+  const chromeReserve = useChromeReserve(stageRef, karaokeSong && stageMounted);
 
   // Advance to another Media's watch route, carrying its title and the queue
   // forward. The new item resets the engine (resume, markers, trickplay,
@@ -1521,7 +1524,16 @@ function FeaturePlayer({
                 ambient,
               }) +
               (ambient ? " is-ambient" : "") +
-              (ambientIdle ? " is-ambient-idle" : "")
+              (ambientIdle ? " is-ambient-idle" : "") +
+              (chromeReserve !== null ? " is-karaoke" : "")
+            }
+            style={
+              chromeReserve !== null
+                ? ({
+                    "--bf-chrome-top": `${chromeReserve.top}px`,
+                    "--bf-chrome-reserve": `${chromeReserve.bottom}px`,
+                  } as React.CSSProperties)
+                : undefined
             }
           >
             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
@@ -1794,6 +1806,7 @@ function FeaturePlayer({
           title={stage.title}
           credits={stage.credits}
           artworkURL={stage.artworkURL}
+          fallbackIcon={karaokeSong ? Mic : undefined}
           mediaID={mediaId}
           songScale={songScale}
           durationSeconds={infoIsCurrent ? state.info?.timeline?.durationSeconds : undefined}

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createRef } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,6 +65,8 @@ function stage(over: Partial<PartyStage> = {}): PartyStage {
     playback: null,
     upNext: [],
     ticker: true,
+    qrCorner: "off",
+    muted: false,
     joinCode: "QZXW",
     joinPath: "/web/join/QZXW",
     ...over,
@@ -93,6 +95,8 @@ beforeEach(() => {
     carrier: "local",
     lead: false,
     ticker: true,
+    qrCorner: "off",
+    muted: false,
     offsetMS: 0,
     rttMS: 0,
     reportedAt: "",
@@ -112,7 +116,8 @@ describe("PartyStagePage", () => {
     const { container } = renderStage("/party/stage/s1?joined=1");
 
     expect(await screen.findByText("QZXW")).toBeInTheDocument();
-    expect(screen.getByText("Paper Lanterns · Juniper")).toBeInTheDocument();
+    expect(screen.getByText("Juniper")).toHaveClass("bf-party-next-singer");
+    expect(screen.getByText("Paper Lanterns")).toHaveClass("bf-party-next-song");
     await waitFor(() =>
       expect(partyScreenRegister).toHaveBeenCalledWith({
         sessionID: "s1",
@@ -125,6 +130,44 @@ describe("PartyStagePage", () => {
       expect(window.sessionStorage.getItem("beamfall.partyScreen.joined.s1")).toBe("scr-1"),
     );
     await expectNoAxeViolations(container);
+  });
+
+  it("names the singer, song and expected time of each entry on the ticker", async () => {
+    vi.mocked(fetchPartyStage).mockResolvedValue(
+      stage({
+        current: song,
+        upNext: [
+          {
+            ...song,
+            id: "e2",
+            title: "Caught Up",
+            subtitle: "July",
+            participantName: "Steve",
+            state: "waiting",
+            position: 1,
+            etaSeconds: 30,
+          },
+          {
+            ...song,
+            id: "e3",
+            title: "Electric Co",
+            participantName: "Mara",
+            state: "waiting",
+            position: 2,
+            etaSeconds: 400,
+          },
+        ],
+      }),
+    );
+    renderStage();
+
+    const ticker = await screen.findByRole("region", { name: "Up next" });
+    const items = within(ticker).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "Steve: Caught Up · , July, next",
+      "Mara: Electric Co, in about 7 min",
+    ]);
+    expect(within(items[0]).getByText("Steve")).toHaveClass("bf-party-next-singer");
   });
 
   it("reads the stage only for its own registered screen (ADR-0240 D10)", async () => {
@@ -146,6 +189,8 @@ describe("PartyStagePage", () => {
       carrier: "local",
       lead: false,
       ticker: true,
+      qrCorner: "off",
+      muted: false,
       offsetMS: 0,
       rttMS: 0,
       reportedAt: "",
@@ -168,6 +213,30 @@ describe("PartyStagePage", () => {
 
     expect(partyAdvance).toHaveBeenCalledTimes(1);
     expect(partyAdvance).toHaveBeenCalledWith("e1");
+  });
+
+  it("draws the join QR in the chosen corner during a song and plays muted", async () => {
+    vi.mocked(fetchPartyStage).mockResolvedValue(
+      stage({ current: song, qrCorner: "bottom-right", muted: true }),
+    );
+    const { container } = renderStage();
+
+    expect(await screen.findByText("Sung by Juniper")).toBeInTheDocument();
+    const corner = container.querySelector(".bf-party-stage-corner");
+    expect(corner).toHaveAttribute("data-corner", "bottom-right");
+    expect(within(corner as HTMLElement).getByText("QZXW")).toBeInTheDocument();
+    expect(within(corner as HTMLElement).getByRole("img")).toBeInTheDocument();
+    expect((container.querySelector("video") as HTMLVideoElement).muted).toBe(true);
+    await expectNoAxeViolations(container);
+  });
+
+  it("leaves the corner empty and the sound on by default", async () => {
+    vi.mocked(fetchPartyStage).mockResolvedValue(stage({ current: song }));
+    const { container } = renderStage();
+
+    expect(await screen.findByText("Sung by Juniper")).toBeInTheDocument();
+    expect(container.querySelector(".bf-party-stage-corner")).toBeNull();
+    expect((container.querySelector("video") as HTMLVideoElement).muted).toBe(false);
   });
 
   it("keeps playing through a network blip", async () => {
@@ -208,12 +277,12 @@ describe("PartyStagePage", () => {
     const { container } = renderStage();
 
     expect(await screen.findByText("Sung by Juniper")).toBeInTheDocument();
-    expect(screen.getByText("Paper Lanterns · Juniper")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Up next" })).toBeInTheDocument();
     expect(container.querySelector("video")).not.toBeNull();
 
     expect(await screen.findByRole("alert", {}, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.queryByText("Sung by Juniper")).not.toBeInTheDocument();
-    expect(screen.queryByText("Paper Lanterns · Juniper")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Up next" })).not.toBeInTheDocument();
     expect(container.querySelector("video")).toBeNull();
   });
 
@@ -246,6 +315,8 @@ describe("PartyStagePage", () => {
       carrier: "local",
       lead: true,
       ticker: false,
+      qrCorner: "off",
+      muted: false,
       offsetMS: 0,
       rttMS: 0,
       reportedAt: "",
