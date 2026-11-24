@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"strings"
 )
 
 // compatBindingKey is the private context key carrying compatBinding.
@@ -59,9 +60,24 @@ func VersionedResponseNotModified(w http.ResponseWriter, r *http.Request, versio
 	etag := `"` + validator + `"`
 	w.Header().Set("Cache-Control", cacheControl)
 	w.Header().Set("ETag", etag)
-	if r.Header.Get("If-None-Match") == etag {
+	if ifNoneMatchMatches(r.Header.Values("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return true
+	}
+	return false
+}
+
+// ifNoneMatchMatches evaluates RFC 9110 §13.1.2 weak ETag comparison across
+// multiple header lines, comma-separated tag lists, weak W/ prefixes, and *.
+func ifNoneMatchMatches(headers []string, etag string) bool {
+	target := strings.TrimPrefix(etag, "W/")
+	for _, h := range headers {
+		for _, part := range strings.Split(h, ",") {
+			token := strings.TrimSpace(part)
+			if token == "*" || strings.TrimPrefix(token, "W/") == target {
+				return true
+			}
+		}
 	}
 	return false
 }

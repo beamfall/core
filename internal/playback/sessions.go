@@ -2365,6 +2365,7 @@ func waitForArtifact(ctx context.Context, path string, exited, cutoff <-chan str
 	}
 	defer settle.Stop()
 	var settleC <-chan time.Time
+	cleanPath := filepath.Clean(path)
 	for {
 		select {
 		case <-cutoff:
@@ -2379,7 +2380,7 @@ func waitForArtifact(ctx context.Context, path string, exited, cutoff <-chan str
 			}
 			return errEncoderExited
 		case event := <-watcher.Events:
-			if filepath.Clean(event.Name) != filepath.Clean(path) {
+			if filepath.Clean(event.Name) != cleanPath {
 				continue
 			}
 			if ready(path) {

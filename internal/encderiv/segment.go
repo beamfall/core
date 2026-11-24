@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"slices"
 	"time"
 )
 
@@ -305,8 +306,10 @@ func (s *segmenter) appendBox(header []byte, boxLen int64) error {
 		return ErrTooLarge
 	}
 	at := len(s.buf)
-	s.buf = append(s.buf, header...)
-	s.buf = append(s.buf, make([]byte, boxLen-int64(len(header)))...)
+	n := int(boxLen)
+	s.buf = slices.Grow(s.buf, n)
+	s.buf = s.buf[:at+n]
+	copy(s.buf[at:], header)
 	if _, err := io.ReadFull(s.src, s.buf[at+len(header):]); err != nil {
 		return s.parser.readFailure(err)
 	}

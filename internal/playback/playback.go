@@ -2100,6 +2100,9 @@ func precomputedAudioCompatible(wanted ffmpeg.AudioProfile) bool {
 // MaxHeight unset (no ceiling) — means "no client ceiling", so the ladder falls
 // back to source-only rungs, byte-identical to the prior rungsFor behaviour.
 func clientLadderCeiling(profile CapabilityProfile) int {
+	if cap, ok := videoCodecCap(profile.VideoCodecs, "h264"); ok && cap.MaxHeight > 0 {
+		return cap.MaxHeight
+	}
 	ceiling := 0
 	for _, c := range profile.VideoCodecs {
 		if c.MaxHeight <= 0 {

@@ -1002,7 +1002,7 @@ func (r *Runner) LoudnessMeasure(ctx context.Context, src string) (integratedLUF
 		"-protocol_whitelist", productionProtocolAllowlist,
 		"-i", src,
 		"-map", "0:a:0",
-		"-af", "ebur128=peak=true",
+		"-af", "ebur128=peak=true:framelog=quiet",
 		"-f", "null",
 		"--", os.DevNull,
 	)
@@ -2010,11 +2010,21 @@ func (r Rendition) rateControlArgs() []string {
 		high := r.quality == QualityHigh
 		switch r.hwAccel {
 		case HWAccelNVENC:
-			out = append(out, "-preset", pick(high, "p6", "p4"), "-forced-idr", "1")
+			out = append(out, "-preset", pick(high, "p6", "p4"), "-forced-idr", "1", "-spatial-aq", "1", "-temporal-aq", "1")
+			if high {
+				out = append(out, "-rc-lookahead", "20")
+			}
 		case HWAccelQSV:
-			out = append(out, "-preset", pick(high, "medium", "veryfast"))
+			out = append(out, "-preset", pick(high, "medium", "veryfast"), "-forced_idr", "1")
 		case HWAccelAMF:
-			out = append(out, "-quality", pick(high, "balanced", "speed"), "-forced_idr", "1")
+			out = append(out, "-quality", pick(high, "balanced", "speed"), "-forced_idr", "1", "-vbaq", "1")
+			if high {
+				out = append(out, "-preanalysis", "1")
+			}
+		case HWAccelVideoToolbox:
+			if r.VideoCodec != "hevc" {
+				out = append(out, "-profile:v", "high")
+			}
 		}
 	}
 	if r.VideoKbps <= 0 {
@@ -2025,7 +2035,7 @@ func (r Rendition) rateControlArgs() []string {
 		target := r.hardwareTargetKbps()
 		switch r.hwAccel {
 		case HWAccelNVENC:
-			out = append(out, "-rc", "vbr")
+			out = append(out, "-rc", "vbr", "-cq", r.softwareCRF())
 		case HWAccelVAAPI:
 			out = append(out, "-rc_mode", "VBR")
 		case HWAccelAMF:

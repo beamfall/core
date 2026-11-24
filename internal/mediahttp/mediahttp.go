@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/beamfall/core/internal/artwork"
@@ -46,6 +47,8 @@ type Handler struct {
 	encryptedBytes        EncryptedByteDecryptor
 	mediaResolver         func(context.Context, store.MediaID, store.LibraryFilter) (store.Media, error)
 	subtitleSearch        SubtitleSearcher
+	renditionUseMu        sync.Mutex
+	renditionUseAt        map[store.PlaybackRenditionID]time.Time
 }
 
 // SealedPredicate reports whether a Library is currently Sealed (ADR-0098 area
@@ -1098,19 +1101,15 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid stream token", http.StatusUnauthorized)
 		return
 	}
-	sealed := h.sealedMedia(r, grant.MediaID, scope)
-	if ended() {
-		return
-	}
-	if sealed {
-		http.Error(w, "media unavailable", http.StatusNotFound)
-		return
-	}
 	media, err := h.store.Media(r.Context(), grant.MediaID, scope.PlaybackFilter())
 	if ended() {
 		return
 	}
 	if err != nil {
+		http.Error(w, "media unavailable", http.StatusNotFound)
+		return
+	}
+	if h.sealed != nil && h.sealed(media.LibraryID) {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
 	}
@@ -1262,10 +1261,7 @@ func (h *Handler) servePrecomputedHLS(w http.ResponseWriter, r *http.Request, gr
 		http.Error(w, "stream unavailable", http.StatusNotFound)
 		return
 	}
-	if err := h.store.RecordPlaybackRenditionUse(r.Context(), rendition.ID, time.Now().UTC()); err != nil {
-		http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
-		return
-	}
+	h.recordRenditionUseDebounced(r.Context(), rendition.ID)
 	if strings.HasSuffix(name, ".m3u8") {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	} else {
@@ -1285,6 +1281,25 @@ func (h *Handler) servePrecomputedHLS(w http.ResponseWriter, r *http.Request, gr
 	if err := serveRooted(w, r, filepath.Base(member.rel), member, info.ModTime()); err != nil {
 		http.Error(w, "stream unavailable", rootScopeStatus(err))
 		return
+	}
+}
+
+const renditionUseDebounce = time.Minute
+
+func (h *Handler) recordRenditionUseDebounced(ctx context.Context, id store.PlaybackRenditionID) {
+	now := time.Now().UTC()
+	h.renditionUseMu.Lock()
+	if h.renditionUseAt == nil {
+		h.renditionUseAt = make(map[store.PlaybackRenditionID]time.Time)
+	}
+	if last, ok := h.renditionUseAt[id]; ok && now.Sub(last) < renditionUseDebounce {
+		h.renditionUseMu.Unlock()
+		return
+	}
+	h.renditionUseAt[id] = now
+	h.renditionUseMu.Unlock()
+	if err := h.store.RecordPlaybackRenditionUse(ctx, id, now); err != nil {
+		slog.Debug("record playback rendition use failed", "rendition", id, "error", err)
 	}
 }
 
