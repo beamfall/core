@@ -1023,6 +1023,11 @@
       "tier": "session"
     },
     {
+      "field": "playerprofiles",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
       "field": "playhistory",
       "effect": "read",
       "tier": "admin"
@@ -43588,6 +43593,145 @@
       ]
     },
     {
+      "field": "playerprofiles",
+      "kind": "object",
+      "children": [
+        {
+          "name": "audioLanguages",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "certificationCeilings",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "allowUnrated",
+                "kind": "scalar"
+              },
+              {
+                "name": "ceiling",
+                "kind": "scalar"
+              },
+              {
+                "name": "pluginID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "allowUnrated",
+              "kind": "scalar"
+            },
+            {
+              "name": "ceiling",
+              "kind": "scalar"
+            },
+            {
+              "name": "pluginID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "disabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "kind",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryIDs",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "maxConcurrentStreams",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "playerControllers",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "allAdults",
+              "kind": "scalar"
+            },
+            {
+              "name": "exclude",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "include",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "profileID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "preferSDH",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
+          "name": "subtitleLanguages",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "subtitleMode",
+          "kind": "scalar"
+        },
+        {
+          "name": "transcodeAllowed",
+          "kind": "scalar"
+        },
+        {
+          "name": "walkUpEnabled",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "playhistory",
       "kind": "object",
       "children": [
@@ -65774,6 +65918,10 @@
       },
       {
         "field": "playercontrollers",
+        "effect": "read"
+      },
+      {
+        "field": "playerprofiles",
         "effect": "read"
       },
       {
