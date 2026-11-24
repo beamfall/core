@@ -2,13 +2,13 @@
   "source": {
     "repo": "oscillux",
     "paths": {
-      "shaders/manifest.json": "c86a85897ff275f8c7cc74b7e6a875d90fd5974f07663f740428bfdbc64ea585",
+      "shaders/manifest.json": "435e86bfd44bf14bd1667e20a6c91ad41f5722b16d5f6e21e06d15b6e7dbc93e",
       "shaders/originals/manifest.json": "34aa8beec2a33d7ea8ea75c51438843ad298f56c0e131154287212f223ce7118"
     },
-    "rev": "bb2f05c631f6d3a894fa95c3f3212a70fb22950c",
-    "release": "v0.2.20",
+    "rev": "99aa4a708fb3dfee20354d3d357d29700894d484",
+    "release": "v0.2.21",
     "license": "AGPL-3.0-only",
-    "note": "The release set the v0.2.20 shader legs ship (tools/shader/manifest.mjs loadReleaseSet at the pinned rev), in catalogOrder. A visual a rebuilt original overrides takes the original's header, palette, trailDecay and params and its post as the release set resolves it, and keeps the catalog's name, tier and calm flag; the paths map gives each manifest's SHA-256. Data only: the shader bytes are in glsl300/."
+    "note": "The release set the v0.2.21 shader legs ship (tools/shader/manifest.mjs loadReleaseSet at the pinned rev), in catalogOrder. A visual a rebuilt original overrides takes the original's header, palette, trailDecay and params and its post as the release set resolves it, and keeps the catalog's name, tier and calm flag; the paths map gives each manifest's SHA-256. Data only: the shader bytes are in glsl300/."
   },
   "visuals": [
     {
@@ -2169,6 +2169,66 @@
         "chroma": 0,
         "vignette": 0,
         "grain": 0
+      }
+    },
+    {
+      "id": "cover-drift",
+      "name": "Cover Drift",
+      "header": "// Cover Drift: Album cover colours dissolved into slow-drifting blurred light.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": true,
+      "palette": [
+        10,
+        0,
+        10,
+        0
+      ],
+      "trailDecay": 0,
+      "params": [
+        {
+          "id": "speed",
+          "uniform": "param0",
+          "label": "Speed",
+          "labelKey": "visual.cover-drift.speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "softness",
+          "uniform": "param1",
+          "label": "Softness",
+          "labelKey": "visual.cover-drift.softness",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "glow",
+          "uniform": "param2",
+          "label": "Glow",
+          "labelKey": "visual.cover-drift.glow",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.25,
+        "bloomThreshold": 0.96,
+        "chroma": 0,
+        "vignette": 0.35,
+        "grain": 0.02
       }
     },
     {

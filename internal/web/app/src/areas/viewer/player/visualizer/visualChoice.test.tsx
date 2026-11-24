@@ -27,7 +27,7 @@ describe("visual choice and rotation (CORE-2368)", () => {
   });
 
   it("offers every visual the pinned Oscillux release ships for web", () => {
-    expect(VISUALS).toHaveLength(62);
+    expect(VISUALS).toHaveLength(63);
     expect(VISUALS.map((v) => v.id)).toEqual(manifest.visuals.map((v) => v.id));
     expect(new Set(VISUALS.map((v) => v.id)).size).toBe(VISUALS.length);
     expect(VISUALS.some((v) => v.calm)).toBe(true);
