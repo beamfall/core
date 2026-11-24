@@ -2126,9 +2126,7 @@ func (s *Store) SetSessionProfile(ctx context.Context, id SessionID, profileID P
 	if profile.Disabled {
 		return ErrProfileDisabled
 	}
-	result, err := s.catalogW.ExecContext(ctx,
-		`UPDATE auth_session SET profile_id = ?, revealed = 0, admin_until_ms = NULL WHERE id = ?`,
-		profileID, id)
+	result, err := s.catalogW.ExecContext(ctx, setSessionProfileSQL, profileID, id)
 	if err != nil {
 		return err
 	}
@@ -2139,8 +2137,14 @@ func (s *Store) SetSessionProfile(ctx context.Context, id SessionID, profileID P
 	if affected == 0 {
 		return errors.New("session not found")
 	}
+	_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE session_id = ?`, id)
+	_, _ = s.eventsW.ExecContext(ctx, `UPDATE party_screen SET profile_id = ? WHERE auth_session_id = ? AND dropped_at_ms IS NULL`, profileID, id)
 	return nil
 }
+
+const setSessionProfileSQL = `UPDATE auth_session
+	SET profile_id = ?, revealed = 0, admin_until_ms = NULL, reveal_generation = randomblob(32)
+	WHERE id = ?`
 
 // Libraries returns Libraries visible under the provided filter.
 func (s *Store) Libraries(ctx context.Context, filter LibraryFilter) ([]Library, error) {

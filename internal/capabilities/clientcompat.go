@@ -18,10 +18,14 @@ const (
 	// CapabilityPlayerDisplay declares that the client build implements the
 	// ADR-0240 player display shell, ready screen, and update-required flow.
 	CapabilityPlayerDisplay ClientCapability = "player-display"
+	// CapabilityPlayerControl declares that the client build understands
+	// Player Profile display rows; only such clients receive them (ADR-0240 D11).
+	CapabilityPlayerControl ClientCapability = "player-control"
 )
 
 var knownClientCapabilities = map[ClientCapability]struct{}{
 	CapabilityPlayerDisplay: {},
+	CapabilityPlayerControl: {},
 }
 
 // KnownClientCapability reports whether capability is in the closed client

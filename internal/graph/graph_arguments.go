@@ -685,6 +685,8 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"partyscreenticker":      fieldArguments["partyscreenticker"],
 	"partyscreendisplay":     fieldArguments["partyscreendisplay"],
 	"partyscreendrop":        fieldArguments["partyscreendrop"],
+	"partyscreenadddisplay":  fieldArguments["partyscreenadddisplay"],
+	"partyscreenlead":        fieldArguments["partyscreenlead"],
 	"playqueue":              {},
 	"queueaddmany":           fieldArguments["queueaddmany"],
 	"queuemoveentry":         fieldArguments["queuemoveentry"],
@@ -773,11 +775,13 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "durationSeconds", Kind: "int", Optional: true},
 		{Name: "eventTimeMS", Kind: "number", Optional: true},
 		{Name: "finished", Kind: "boolean", Optional: true},
+		{Name: "grantID", Kind: "string", Optional: true},
 		{Name: "mediaID", Kind: "string"},
 		{Name: "paused", Kind: "boolean", Optional: true},
 		{Name: "playbackID", Kind: "string", Optional: true},
 		{Name: "playedMS", Kind: "int", Optional: true},
 		{Name: "positionSeconds", Kind: "int", Optional: true},
+		{Name: "sequence", Kind: "int", Optional: true},
 	},
 	"replayofflineengagement": {
 		{Name: "events", Kind: "list", Elem: &NestedArgument{Kind: "object", Fields: []NestedArgument{

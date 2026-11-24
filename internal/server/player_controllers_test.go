@@ -144,6 +144,11 @@ func TestEventStreamKeepaliveTouchesPlayerDisplayPresenceAndLastSeen(t *testing.
 	if resp := compatHandshakeRecord(t, srv, withCap, authTV); resp.Decision != "compatible" {
 		t.Fatalf("compat handshake = %+v", resp)
 	}
+	controller := compatTestContract("ipad-manager")
+	controller.RequestedCapabilities = []string{string(capabilities.CapabilityPlayerControl)}
+	if resp := compatHandshakeRecord(t, srv, controller, authorizeViewer); resp.Decision != "compatible" {
+		t.Fatalf("controller compat handshake = %+v", resp)
+	}
 
 	// Open SSE stream long enough for at least one keepalive frame, while checking
 	// playerDisplays reports "ready" during the stream.

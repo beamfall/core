@@ -37,12 +37,17 @@ import (
 // live), the token service, and the fixed `now` for minting further tokens.
 func streamTokenLifecycleHandler(t *testing.T) (*Handler, *auth.Service, *streamtoken.Service, time.Time) {
 	t.Helper()
-	st := storetest.Open(t)
-	authService := auth.NewService(st)
 	now := time.Unix(100, 0).UTC()
+	handler, authService, tokens := streamTokenLifecycleServices(t, storetest.Open(t), now)
+	return handler, authService, tokens, now
+}
+
+func streamTokenLifecycleServices(t *testing.T, st *store.Store, now time.Time) (*Handler, *auth.Service, *streamtoken.Service) {
+	t.Helper()
+	authService := auth.NewService(st)
 	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
 	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
-	return handler, authService, tokens, now
+	return handler, authService, tokens
 }
 
 // streamTokenLifecycleSetBytes writes body to a temp file and registers it as
@@ -121,7 +126,12 @@ func TestStreamTokenLifecycleUnrestrictedServesOverByteRoute(t *testing.T) {
 // 2xx bytes.
 func TestStreamTokenLifecycleRestrictedDiesOnRelockWhileUnrestrictedSurvives(t *testing.T) {
 	// feature:relock
-	handler, authService, tokens, now := streamTokenLifecycleHandler(t)
+	now := time.Unix(100, 0).UTC()
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	handler, authService, tokens := streamTokenLifecycleServices(t, st, now)
+	tokens.SetRecorder(st)
+	tokens.SetStreamGenerationResolver(st)
 	streamTokenLifecycleSetBytes(t, handler, "media-archive", []byte("restricted bytes"))
 	streamTokenLifecycleSetBytes(t, handler, "media-alpha", []byte("unrestricted in-flight bytes"))
 
@@ -177,6 +187,69 @@ func TestStreamTokenLifecycleRestrictedDiesOnRelockWhileUnrestrictedSurvives(t *
 	}
 	if survivor.Body.String() != "unrestricted in-flight bytes" {
 		t.Fatalf("post-relock unrestricted body = %q, want in-flight bytes", survivor.Body.String())
+	}
+
+	if err := st.SetSessionRevealed(t.Context(), "session-revealed", true); err != nil {
+		t.Fatal(err)
+	}
+	if stale := streamTokenLifecycleFetch(handler, restrictedToken); stale.Code != http.StatusUnauthorized {
+		t.Fatalf("pre-relock token after revealing again = %d, want 401", stale.Code)
+	}
+	freshToken := streamTokenLifecycleDirectToken(t, handler, tokens, now, "session-revealed", "media-archive", true)
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened := storetest.OpenAt(t, dataDir)
+	handler, _, tokens = streamTokenLifecycleServices(t, reopened, now)
+	tokens.SetStreamGenerationResolver(reopened)
+	if stale := streamTokenLifecycleFetch(handler, restrictedToken); stale.Code != http.StatusUnauthorized {
+		t.Fatalf("pre-relock token after reopening the store = %d, want 401", stale.Code)
+	}
+	if fresh := streamTokenLifecycleFetch(handler, freshToken); fresh.Code != http.StatusOK || fresh.Body.String() != "restricted bytes" {
+		t.Fatalf("post-reveal token after reopening the store = %d %q, want restricted bytes", fresh.Code, fresh.Body.String())
+	}
+}
+
+func TestUnrestrictedStreamTokenDoesNotSurviveProfileRoundTrip(t *testing.T) {
+	for _, name := range []string{"direct switch", "switch with entry PIN"} {
+		t.Run(name, func(t *testing.T) {
+			handler, _, tokens, now := streamTokenLifecycleHandler(t)
+			st := handler.store
+			tokens.SetStreamGenerationResolver(st)
+			streamTokenLifecycleSetBytes(t, handler, "media-alpha", []byte("unrestricted bytes"))
+			const session = "session-default"
+			switchProfile := func(profile store.ProfileID, pin string) {
+				t.Helper()
+				var err error
+				if name == "switch with entry PIN" {
+					err = st.SetSessionProfileWithEntryPIN(t.Context(), session, profile, pin)
+				} else {
+					err = st.SetSessionProfile(t.Context(), session, profile)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			check := func(token string, wantStatus int) {
+				t.Helper()
+				if got := streamTokenLifecycleFetch(handler, token); got.Code != wantStatus {
+					t.Fatalf("unrestricted stream status = %d, want %d", got.Code, wantStatus)
+				}
+			}
+			old := streamTokenLifecycleDirectToken(t, handler, tokens, now, session, "media-alpha", false)
+			check(old, http.StatusOK)
+			switchProfile("profile-managed", "")
+			check(old, http.StatusUnauthorized)
+			switchProfile("profile-default", "2468")
+			check(old, http.StatusUnauthorized)
+
+			fresh := streamTokenLifecycleDirectToken(t, handler, tokens, now, session, "media-alpha", false)
+			check(fresh, http.StatusOK)
+			if err := st.SetSessionRevealed(t.Context(), session, false); err != nil {
+				t.Fatal(err)
+			}
+			check(fresh, http.StatusOK)
+		})
 	}
 }
 

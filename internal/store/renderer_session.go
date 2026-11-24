@@ -271,8 +271,10 @@ func (s *Store) controlRendererSession(
 	if err := s.guardLocked(); err != nil {
 		return RendererSessionControlResult{}, err
 	}
+	var targetDeviceID DeviceID
 	if guard != nil {
-		if err := s.verifyPlayerControlLocked(ctx, target, *guard); err != nil {
+		var err error
+		if targetDeviceID, err = s.verifyPlayerControlLocked(ctx, target, *guard); err != nil {
 			return RendererSessionControlResult{}, err
 		}
 	}
@@ -318,6 +320,17 @@ func (s *Store) controlRendererSession(
 		return RendererSessionControlResult{}, err
 	}
 
+	wrotePartyOutbox := false
+	if guard != nil && payload.Command != SessionCommandStop {
+		inParty, err := s.playerDeviceInLivePartyTx(ctx, tx, targetDeviceID, target, nowMS, &wrotePartyOutbox)
+		if err != nil {
+			return RendererSessionControlResult{}, err
+		}
+		if inParty {
+			return RendererSessionControlResult{}, ErrDisplayInParty
+		}
+	}
+
 	var currentRevision int64
 	err = tx.QueryRowContext(ctx, `SELECT revision FROM renderer_session_revision WHERE session_id = ?`, target).Scan(&currentRevision)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -333,11 +346,38 @@ func (s *Store) controlRendererSession(
 		}
 	}
 
+	if guard != nil && payload.Command == SessionCommandPlayMedia && payload.PositionMs == nil {
+		if posSec, ok, err := playbackResumePositionSQL(ctx, tx, guard.CallerProfileID, payload.MediaID); err != nil {
+			return RendererSessionControlResult{}, err
+		} else if ok {
+			posMS := int64(posSec) * 1000
+			payload.PositionMs = &posMS
+			if rawPayload, err = sessionControlPayloadJSON(target, payload); err != nil {
+				return RendererSessionControlResult{}, err
+			}
+		}
+	}
+
 	if err := appendSessionControlEventSQL(ctx, tx, target, rawPayload, now); err != nil {
 		return RendererSessionControlResult{}, err
 	}
-	if playerBound {
+	if guard != nil && payload.Command == SessionCommandPlayMedia {
+		if err := recordPlayerCommandedMediaWithOriginatorSQL(
+			ctx, tx, target, payload.MediaID,
+			guard.CallerProfileID, guard.CallerSessionID, guard.BindingGeneration, now,
+		); err != nil {
+			return RendererSessionControlResult{}, err
+		}
+	} else if playerBound {
 		if err := recordPlayerCommandedMediaSQL(ctx, tx, target, payload.MediaID, now); err != nil {
+			return RendererSessionControlResult{}, err
+		}
+	}
+	if guard != nil && payload.Command == SessionCommandStop {
+		if err := stopPlayerSessionPlaybackSQL(ctx, tx, target, now); err != nil {
+			return RendererSessionControlResult{}, err
+		}
+		if err := s.dropPartyScreensForStopTx(ctx, tx, targetDeviceID, target, nowMS, &wrotePartyOutbox); err != nil {
 			return RendererSessionControlResult{}, err
 		}
 	}

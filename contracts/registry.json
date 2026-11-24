@@ -27,9 +27,9 @@
     {
       "boundary": "client-core-wire",
       "producer": "beamfall",
-      "artifact": "internal/conformance/wire-contract-v2.55.0.json",
-      "version": "2.55.0",
-      "activeArtifactVersion": "2.55.0",
+      "artifact": "internal/conformance/wire-contract-v2.56.0.json",
+      "version": "2.56.0",
+      "activeArtifactVersion": "2.56.0",
       "license": "AGPL",
       "consumers": ["beamfall-web", "beamfall-apple", "beamfall-android", "beamfall-windows"],
       "conformanceTest": "internal/conformance/wire_contract_test.go",
@@ -146,6 +146,17 @@
       "license": "AGPL",
       "consumers": ["beamfall-apple", "beamfall-android", "beamfall-windows"],
       "conformanceTest": "internal/conformance/backup_capture_upload_contract_test.go - fixtures pin the ADR-0045 §2.11 client capture loop against the existing /v1/backups/media upload endpoint; consumer repos vendor schema + fixtures one-way",
+      "knownDrift": []
+    },
+    {
+      "boundary": "player-profile-wire",
+      "producer": "beamfall",
+      "artifact": "contracts/player-profile/v1/fixtures.json",
+      "version": "1.0.0",
+      "activeArtifactVersion": "1.0.0",
+      "license": "AGPL",
+      "consumers": ["beamfall-apple-ui", "beamfall-android-ui"],
+      "conformanceTest": "internal/conformance/player_profile_wire_contract_test.go - ADR-0240 D11 fixtures decode strictly into core's Player Profile response types and re-encode byte-identically; consumer kits vendor fixtures.json one-way",
       "knownDrift": []
     },
     {

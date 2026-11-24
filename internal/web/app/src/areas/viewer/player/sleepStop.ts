@@ -23,6 +23,11 @@ export function noteSkip(): void {
   skip = stops;
 }
 
+/** Forgets a skip's mark: the skip declined, so no load will take it. */
+export function dropSkip(): void {
+  skip = null;
+}
+
 /** The mark for a load beginning now: the skip's, when one asked for it. */
 export function loadSleepMark(): number {
   const pending = skip;

@@ -1,0 +1,67 @@
+{
+  "contractVersion": "1.0.0",
+  "capability": "player-control",
+  "presence": ["offline", "ready", "playing"],
+  "fixtures": [
+    {
+      "name": "binding-unbound",
+      "type": "PlayerBindingInfo",
+      "value": {"bound": false, "generation": 0, "walkUpEnabled": false, "updateRequired": false}
+    },
+    {
+      "name": "binding-bound",
+      "type": "PlayerBindingInfo",
+      "value": {"bound": true, "profileID": "profile-karaoke-room", "displayName": "Karaoke room TV", "generation": 3, "walkUpEnabled": true, "updateRequired": false}
+    },
+    {
+      "name": "controllers-all-adults",
+      "type": "PlayerControllersInfo",
+      "value": {"profileID": "profile-karaoke-room", "allAdults": true, "include": ["profile-teen"], "exclude": ["profile-guest"]}
+    },
+    {
+      "name": "display-offline",
+      "type": "PlayerDisplayInfo",
+      "value": {"handle": "pd_4f1c2a9e", "playerProfileID": "profile-karaoke-room", "displayName": "Karaoke room TV", "presence": "offline", "lastSeenAt": "2026-11-23T18:04:05Z"}
+    },
+    {
+      "name": "display-ready",
+      "type": "PlayerDisplayInfo",
+      "value": {"handle": "pd_4f1c2a9e", "sessionID": "session-karaoke-tv", "playerProfileID": "profile-karaoke-room", "displayName": "Karaoke room TV", "presence": "ready", "lastSeenAt": "2026-11-23T18:04:05Z"}
+    },
+    {
+      "name": "display-playing",
+      "type": "PlayerDisplayInfo",
+      "value": {"handle": "pd_4f1c2a9e", "sessionID": "session-karaoke-tv", "playerProfileID": "profile-karaoke-room", "displayName": "Karaoke room TV", "presence": "playing", "lastSeenAt": "2026-11-23T18:04:05Z", "currentItem": {"mediaID": "media-alpha", "title": "Alpha", "libraryID": "library-local", "artworkURL": "/artwork/media-alpha/poster", "positionSeconds": 42, "durationSeconds": 215}, "inParty": true}
+    },
+    {
+      "name": "display-playing-private-item",
+      "type": "PlayerDisplayInfo",
+      "value": {"handle": "pd_4f1c2a9e", "sessionID": "session-karaoke-tv", "playerProfileID": "profile-karaoke-room", "displayName": "Karaoke room TV", "presence": "playing", "lastSeenAt": "2026-11-23T18:04:05Z", "currentItem": {"privateItem": true, "label": "Private item", "positionSeconds": 42, "durationSeconds": 215}}
+    },
+    {
+      "name": "party-available-display",
+      "type": "PartyAvailableDisplayInfo",
+      "value": {"handle": "pd_4f1c2a9e", "displayName": "Karaoke room TV", "presence": "ready", "joined": false, "coversLibraries": false, "missingLibraryIDs": ["library-archive"]}
+    },
+    {
+      "name": "party-screen-player-display",
+      "type": "PartyScreenInfo",
+      "value": {"id": "screen-7", "name": "Karaoke room TV", "kind": "joined", "carrier": "local", "lead": false, "ticker": true, "qrCorner": "off", "muted": false, "offsetMS": 12, "rttMS": 34, "reportedAt": "2026-11-23T18:04:05Z", "playerDisplay": true, "playerDisplayHandle": "pd_4f1c2a9e"}
+    },
+    {
+      "name": "control-applied",
+      "type": "ControlRendererSessionResult",
+      "value": {"status": "APPLIED", "sessionID": "session-karaoke-tv", "command": "pause", "revision": 8}
+    },
+    {
+      "name": "control-conflict",
+      "type": "ControlRendererSessionResult",
+      "value": {"status": "CONFLICT", "sessionID": "session-karaoke-tv", "command": "pause", "revision": 9, "snapshot": [{"sessionID": "session-karaoke-tv", "deviceID": "pd_4f1c2a9e", "deviceName": "Karaoke room TV", "deviceRole": "viewer", "current": false, "mediaID": "media-alpha", "title": "Alpha", "libraryID": "library-local", "transcoding": false, "positionSeconds": 44, "durationSeconds": 215, "revision": 9}]}
+    },
+    {
+      "name": "control-conflict-private-snapshot",
+      "type": "ControlRendererSessionResult",
+      "value": {"status": "CONFLICT", "sessionID": "session-karaoke-tv", "command": "stop", "revision": 12, "snapshot": [{"sessionID": "session-karaoke-tv", "deviceID": "pd_4f1c2a9e", "deviceName": "Karaoke room TV", "deviceRole": "viewer", "current": false, "mediaID": "media-alpha", "title": "Alpha", "libraryID": "library-local", "artworkURL": "/artwork/media-alpha/poster", "transcoding": true, "positionSeconds": 12, "durationSeconds": 215, "revision": 12}, {"sessionID": "session-karaoke-tv", "deviceID": "pd_4f1c2a9e", "deviceName": "Karaoke room TV", "deviceRole": "viewer", "current": false, "privateItem": true, "label": "Private item", "transcoding": false, "positionSeconds": 300, "durationSeconds": 1800, "revision": 12}]}
+    }
+  ]
+}

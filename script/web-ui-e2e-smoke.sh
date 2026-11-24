@@ -341,7 +341,7 @@ receipt_file="${evidence_dir}/web-ui-e2e-smoke.json"
 timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p "${evidence_dir}"
 pending_receipt="$(mktemp "${evidence_dir}/.web-ui-e2e-smoke.XXXXXX")"
-publisher_file="$(mktemp "${TMPDIR:-/tmp}/beamfall-web-ui-publisher.XXXXXX.py")"
+publisher_file="$(mktemp "${TMPDIR:-/tmp}/beamfall-web-ui-publisher.XXXXXX")"
 cat >"${publisher_file}" <<'PY'
 import fcntl
 import json

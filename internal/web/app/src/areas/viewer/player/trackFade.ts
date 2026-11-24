@@ -1,5 +1,5 @@
 import { listenerMuted } from "./listenerMute";
-import { noteSkip } from "./sleepStop";
+import { dropSkip, noteSkip } from "./sleepStop";
 
 /** How long a listener's skip fades the playing track out, and the next one in. */
 export const TRACK_FADE_MS = 350;
@@ -88,7 +88,7 @@ export function fadeBaseVolume(video: HTMLMediaElement): number {
 type Run = {
   supersede: () => void;
   cancel: () => void;
-  finish: () => void;
+  finish: () => boolean;
 };
 const runs = new WeakMap<HTMLMediaElement, Run>();
 // Skips still fading out, on any element: a retried track mounts a new one.
@@ -110,17 +110,30 @@ export function dropFadeAdvance(video: HTMLMediaElement) {
 /**
  * Moves every skip still fading out on at once: the track ended, so nothing is
  * left to fade, and the listener's pick owns what plays next. Needs no
- * animation frame, so a hidden tab still advances. Returns whether one did.
+ * animation frame, so a hidden tab still advances. Returns whether a skip
+ * owns what plays next; one that declined leaves the end to act as usual.
  */
 export function finishFadeAdvance(): boolean {
-  const pending = [...fadingOut];
-  for (const run of pending) run.finish();
-  return pending.length > 0;
+  let owned = false;
+  for (const run of [...fadingOut]) if (run.finish()) owned = true;
+  return owned;
 }
 
-/** Runs `advance` after a short fade out, then fades the element back in once it plays again. */
-export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void) {
-  if (!video) return advance();
+/**
+ * Runs `advance` after a short fade out, then fades the element back in once it plays again.
+ * An `advance` that returns false declined: nothing moved on, and the skip lets go at once.
+ * `withdraw` runs once the skip lets go of what plays next, unless a newer skip replaced it:
+ * the item it left may join its next one again (CORE-3360).
+ */
+export function fadeAdvance(
+  video: HTMLMediaElement | null,
+  advance: () => boolean | void,
+  withdraw?: () => void,
+) {
+  if (!video) {
+    advance();
+    return;
+  }
   // A second skip mid-fade replaces the first: its level comes back, and only the newer skip happens.
   runs.get(video)?.supersede();
   // A hidden tab runs no animation frames (CORE-3356): there the skip is a cut.
@@ -150,15 +163,20 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
   };
   // The skip owns what plays next until it fades in, the item changes or the wait runs out:
   // the outgoing track's own end must not advance a second time.
-  const go = () => {
+  // Returns false when the skip declined and let go.
+  const go = (): boolean => {
     advanced = true;
     advancing = true;
     noteSkip();
+    let moved: boolean | void;
     try {
-      advance();
+      moved = advance();
     } finally {
       advancing = false;
     }
+    if (moved !== false) return true;
+    decline();
+    return false;
   };
   const run: Run = {
     supersede: () => done(true),
@@ -167,16 +185,36 @@ export function fadeAdvance(video: HTMLMediaElement | null, advance: () => void)
       if (advancing) return;
       if (!advanced) done(true);
       else fadingOut.delete(run);
+      withdraw?.();
     },
     // The track ended: the listener's level comes back at once, with no fade
     // in to wait on frames, and the skip happens.
     finish: () => {
-      if (advanced) return;
+      if (advanced) return true;
       done(true);
-      go();
+      const moved = go();
+      if (moved) withdraw?.();
+      return moved;
     },
   };
-  const stop = () => done(true);
+  // Nothing moved on: the track plays on, back at the listener's level, and its end acts as usual.
+  const decline = () => {
+    // No load follows, so none takes the skip's mark: a later one must not begin from it.
+    dropSkip();
+    fadingOut.delete(run);
+    withdraw?.();
+    // Settled, cut or already let go, nothing is left to fade back in.
+    if (runs.get(video) !== run || !hold) return done(false);
+    clearTimeout(wait);
+    video.removeEventListener("loadstart", loading);
+    video.removeEventListener("playing", fadeIn);
+    ramp(fadeInGain, () => done(true));
+  };
+  const stop = () => {
+    const owned = fadingOut.has(run);
+    done(true);
+    if (owned) withdraw?.();
+  };
   // Equal power, so the level sounds even.
   const ramp = (gain: (t: number) => number, then: () => void) => {
     const started = performance.now();

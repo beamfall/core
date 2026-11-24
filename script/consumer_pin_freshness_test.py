@@ -58,11 +58,14 @@ FIXTURE_CONSUMERS = {
     "apple-core-goldens": "beamfall-apple",
     "apple-core-corpus": "beamfall-apple",
     "android-core-wire-binding": "beamfall-android",
+    "apple-ui-player-profile-fixtures": "beamfall-apple-ui",
+    "android-ui-player-profile-fixtures": "beamfall-android-ui",
 }
 FIXTURE_CLASSES = {
     "beamfall-apple": "client-shell",
     "beamfall-apple-ui": "client-library",
     "beamfall-android": "client-shell",
+    "beamfall-android-ui": "client-library",
 }
 
 

@@ -42,6 +42,7 @@ type PlayerDisplayInfo struct {
 	Presence        string                 `json:"presence"`
 	LastSeenAt      string                 `json:"lastSeenAt,omitempty"`
 	CurrentItem     *PlayerDisplayItemInfo `json:"currentItem,omitempty"`
+	InParty         bool                   `json:"inParty,omitempty"`
 }
 
 // PlayerDisplayItemInfo is the current item playing on a display, filtered
@@ -375,8 +376,14 @@ func (h *Handler) playerDisplayHandle(deviceID store.DeviceID) string {
 	return string(deviceID)
 }
 
+// declaresPlayerControl reports whether the caller's client declared
+// player-control. Older controllers never see player rows (ADR-0240 D11).
+func declaresPlayerControl(scope auth.Scope) bool {
+	return scope.HasClientCapability(string(capabilities.CapabilityPlayerControl))
+}
+
 func (h *Handler) playerDisplays(ctx context.Context, scope auth.Scope) ([]PlayerDisplayInfo, error) {
-	if scope.ProfileID == "" || scope.IsPlayerBound() {
+	if scope.ProfileID == "" || scope.IsPlayerBound() || !declaresPlayerControl(scope) {
 		return []PlayerDisplayInfo{}, nil
 	}
 	bound, err := h.store.PlayerBoundDevices(ctx)
@@ -426,6 +433,11 @@ func (h *Handler) playerDisplays(ctx context.Context, scope auth.Scope) ([]Playe
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	inPartyByDevice, err := h.store.PlayerDevicesInLiveParty(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	out := make([]PlayerDisplayInfo, 0, len(controlled))
@@ -479,6 +491,7 @@ func (h *Handler) playerDisplays(ctx context.Context, scope auth.Scope) ([]Playe
 			Presence:        presence,
 			LastSeenAt:      lastSeenStr,
 			CurrentItem:     currentItem,
+			InParty:         inPartyByDevice[d.DeviceID],
 		})
 	}
 	slices.SortFunc(out, func(a, b PlayerDisplayInfo) int {
@@ -530,7 +543,14 @@ func (h *Handler) requireWalkUpOrCommandedMedia(ctx context.Context, scope auth.
 	if err != nil {
 		return err
 	}
-	if !ok {
+	if ok {
+		return nil
+	}
+	partyOK, err := h.store.IsPlayerPartyCurrentMedia(ctx, scope.SessionID, mediaID)
+	if err != nil {
+		return err
+	}
+	if !partyOK {
 		return clientError("walk-up browsing is disabled")
 	}
 	return nil

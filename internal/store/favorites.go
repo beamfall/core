@@ -25,6 +25,9 @@ func (s *Store) SetMediaFavorite(ctx context.Context, profileID ProfileID, media
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	if err := s.ensureNotPlayerProfileLocked(ctx, profileID); err != nil {
+		return err
+	}
 	catalog, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
 		return err

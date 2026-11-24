@@ -3,8 +3,10 @@ package streamtoken
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,18 +61,18 @@ func TestAuthenticatedGrantValidatesMACOnceAndFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Authenticate returned error: %v", err)
 	}
-	if _, err := service.VerifyAuthenticated(authenticated, scope); err != nil {
+	if _, err := service.VerifyAuthenticated(t.Context(), authenticated, scope); err != nil {
 		t.Fatalf("VerifyAuthenticated returned error: %v", err)
 	}
 	if validations != 1 {
 		t.Fatalf("MAC validations = %d, want exactly 1", validations)
 	}
 
-	if _, err := service.VerifyAuthenticated(AuthenticatedGrant{}, scope); err == nil {
+	if _, err := service.VerifyAuthenticated(t.Context(), AuthenticatedGrant{}, scope); err == nil {
 		t.Fatal("VerifyAuthenticated accepted a zero/fabricated grant")
 	}
 	other := NewService([]byte("test-key"), func() time.Time { return now })
-	if _, err := other.VerifyAuthenticated(authenticated, scope); err == nil {
+	if _, err := other.VerifyAuthenticated(t.Context(), authenticated, scope); err == nil {
 		t.Fatal("VerifyAuthenticated accepted a cross-service grant")
 	}
 }
@@ -392,5 +394,175 @@ func TestHasResolvedProfileCapability(t *testing.T) {
 				t.Fatalf("HasResolvedProfileCapability(%q) = %v, want %v", tc.capability, got, tc.want)
 			}
 		})
+	}
+}
+
+type fakeGenerations struct {
+	generation []byte
+	err        error
+}
+
+func (f *fakeGenerations) StreamTokenGeneration(context.Context, store.SessionID, store.ProfileID, store.DeviceID, bool) ([]byte, error) {
+	return f.generation, f.err
+}
+
+type fakePlaybackGrants struct {
+	active bool
+	err    error
+	got    store.PlaybackGrant
+}
+
+func (f *fakePlaybackGrants) PlayerPlaybackGrantActive(_ context.Context, grant store.PlaybackGrant, _ time.Time) (bool, error) {
+	f.got = grant
+	return f.active, f.err
+}
+
+func generationTestGrant(now time.Time, restricted bool) Grant {
+	return Grant{
+		Target:     TargetMediaDirect,
+		MediaID:    "media-alpha",
+		DeviceID:   "device-tv",
+		SessionID:  "session-default",
+		ProfileID:  "profile-default",
+		Restricted: restricted,
+		ExpiresAt:  now.Add(time.Minute),
+	}
+}
+
+func TestGenerationBoundTokenEndsWhenGenerationChanges(t *testing.T) {
+	now := time.Unix(100, 0).UTC()
+	service := NewService([]byte("test-key"), func() time.Time { return now })
+	generations := &fakeGenerations{generation: []byte("0123456789abcdef")}
+	service.SetStreamGenerationResolver(generations)
+	scope := auth.Scope{DeviceID: "device-tv", SessionID: "session-default", ProfileID: "profile-default", Revealed: true}
+
+	token, err := service.Issue(context.Background(), generationTestGrant(now, true))
+	if err != nil {
+		t.Fatalf("Issue returned error: %v", err)
+	}
+	if _, err := service.Verify(token, TargetMediaDirect, scope); err != nil {
+		t.Fatalf("Verify rejected bound token: %v", err)
+	}
+
+	generations.generation = []byte("fedcba9876543210")
+	if _, err := service.Verify(token, TargetMediaDirect, scope); err == nil {
+		t.Fatal("Verify accepted token after its generation changed")
+	}
+	generations.generation, generations.err = []byte("0123456789abcdef"), errors.New("store down")
+	if _, err := service.Verify(token, TargetMediaDirect, scope); err == nil {
+		t.Fatal("Verify accepted token when the generation lookup failed")
+	}
+
+	// A service without a resolver refuses a bound token.
+	unbound := NewService([]byte("test-key"), func() time.Time { return now })
+	if _, err := unbound.Verify(token, TargetMediaDirect, scope); err == nil {
+		t.Fatal("unbound service accepted a generation-bound token")
+	}
+}
+
+func TestGenerationBoundTokenRejectsTamperedGeneration(t *testing.T) {
+	now := time.Unix(100, 0).UTC()
+	service := NewService([]byte("test-key"), func() time.Time { return now })
+	service.SetStreamGenerationResolver(&fakeGenerations{generation: []byte("0123456789abcdef")})
+
+	token, err := service.Issue(context.Background(), generationTestGrant(now, false))
+	if err != nil {
+		t.Fatalf("Issue returned error: %v", err)
+	}
+	parts := strings.Split(token, ".")
+	signature, err := decode(parts[1])
+	if err != nil {
+		t.Fatalf("decode signature: %v", err)
+	}
+	if len(signature) != sha256.Size+streamGenerationSize {
+		t.Fatalf("signature length = %d, want MAC plus generation", len(signature))
+	}
+	signature[len(signature)-1] ^= 0xff
+	if _, err := service.Authenticate(parts[0]+"."+encode(signature), TargetMediaDirect); err == nil {
+		t.Fatal("Authenticate accepted a token with a tampered generation")
+	}
+}
+
+func TestIssueRefusesInvalidGeneration(t *testing.T) {
+	now := time.Unix(100, 0).UTC()
+	for name, generations := range map[string]*fakeGenerations{
+		"lookup error":            {err: errors.New("store down")},
+		"restricted no binding":   {},
+		"wrong generation length": {generation: []byte("short")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			service := NewService([]byte("test-key"), func() time.Time { return now })
+			service.SetStreamGenerationResolver(generations)
+			if _, err := service.Issue(context.Background(), generationTestGrant(now, true)); err == nil {
+				t.Fatal("Issue accepted an invalid session binding")
+			}
+		})
+	}
+
+	// Unrestricted grants without a generation still sign unbound.
+	service := NewService([]byte("test-key"), func() time.Time { return now })
+	service.SetStreamGenerationResolver(&fakeGenerations{})
+	token, err := service.Issue(context.Background(), generationTestGrant(now, false))
+	if err != nil {
+		t.Fatalf("Issue returned error: %v", err)
+	}
+	scope := auth.Scope{DeviceID: "device-tv", SessionID: "session-default", ProfileID: "profile-default"}
+	if _, err := service.Verify(token, TargetMediaDirect, scope); err != nil {
+		t.Fatalf("Verify rejected unbound token: %v", err)
+	}
+}
+
+func TestVerifyChecksPlaybackGrantLedger(t *testing.T) {
+	now := time.Unix(100, 0).UTC()
+	scope := auth.Scope{DeviceID: "device-tv", SessionID: "session-default", ProfileID: "profile-default", PlayerBindingGeneration: 7}
+	grant := generationTestGrant(now, false)
+	grant.GrantID = "grant-1"
+
+	service := NewService([]byte("test-key"), func() time.Time { return now })
+	token, err := service.Issue(context.Background(), grant)
+	if err != nil {
+		t.Fatalf("Issue returned error: %v", err)
+	}
+	if _, err := service.Verify(token, TargetMediaDirect, scope); err == nil {
+		t.Fatal("Verify accepted a player grant without a ledger")
+	}
+
+	ledger := &fakePlaybackGrants{active: true}
+	service.SetPlaybackGrantResolver(ledger)
+	if _, err := service.Verify(token, TargetMediaDirect, scope); err != nil {
+		t.Fatalf("Verify rejected an active player grant: %v", err)
+	}
+	if ledger.got.GrantID != "grant-1" || ledger.got.MediaID != "media-alpha" || ledger.got.PlayerBindingGeneration != 7 {
+		t.Fatalf("ledger lookup = %+v", ledger.got)
+	}
+
+	ledger.active = false
+	if _, err := service.Verify(token, TargetMediaDirect, scope); err == nil {
+		t.Fatal("Verify accepted an inactive player grant")
+	}
+	ledger.active, ledger.err = true, errors.New("store down")
+	if _, err := service.Verify(token, TargetMediaDirect, scope); err == nil {
+		t.Fatal("Verify accepted a player grant when the ledger lookup failed")
+	}
+}
+
+func TestVerifyAuthenticatedRejectsForeignProof(t *testing.T) {
+	now := time.Unix(100, 0).UTC()
+	issuer := NewService([]byte("test-key"), func() time.Time { return now })
+	token, err := issuer.Issue(context.Background(), generationTestGrant(now, false))
+	if err != nil {
+		t.Fatalf("Issue returned error: %v", err)
+	}
+	authenticated, err := issuer.Authenticate(token, TargetMediaDirect)
+	if err != nil {
+		t.Fatalf("Authenticate returned error: %v", err)
+	}
+	other := NewService([]byte("test-key"), func() time.Time { return now })
+	scope := auth.Scope{DeviceID: "device-tv", SessionID: "session-default", ProfileID: "profile-default"}
+	if _, err := other.VerifyAuthenticated(context.Background(), authenticated, scope); err == nil {
+		t.Fatal("VerifyAuthenticated accepted a proof from another service")
+	}
+	if _, err := issuer.VerifyAuthenticated(context.Background(), AuthenticatedGrant{}, scope); err == nil {
+		t.Fatal("VerifyAuthenticated accepted a zero proof")
 	}
 }

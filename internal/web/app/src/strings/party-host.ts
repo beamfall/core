@@ -42,6 +42,7 @@ export const partyHostStrings = {
     partyHostStageStartSound: "Start sound",
     partyHostStageRetry: "Try again",
     partyHostUpNext: "Up next",
+    partyHostUpNextParticipant: "Up next: {name}",
     partyHostSungBy: "Sung by {name}",
   },
   fr: {
@@ -87,6 +88,7 @@ export const partyHostStrings = {
     partyHostStageStartSound: "Activer le son",
     partyHostStageRetry: "Réessayer",
     partyHostUpNext: "À suivre",
+    partyHostUpNextParticipant: "À suivre : {name}",
     partyHostSungBy: "Chanté par {name}",
   },
   de: {
@@ -132,6 +134,7 @@ export const partyHostStrings = {
     partyHostStageStartSound: "Ton starten",
     partyHostStageRetry: "Erneut versuchen",
     partyHostUpNext: "Als Nächstes",
+    partyHostUpNextParticipant: "Als Nächstes: {name}",
     partyHostSungBy: "Gesungen von {name}",
   },
   es: {
@@ -176,6 +179,7 @@ export const partyHostStrings = {
     partyHostStageStartSound: "Activar sonido",
     partyHostStageRetry: "Reintentar",
     partyHostUpNext: "A continuación",
+    partyHostUpNextParticipant: "A continuación: {name}",
     partyHostSungBy: "Canta {name}",
   },
   pt: {
@@ -220,6 +224,7 @@ export const partyHostStrings = {
     partyHostStageStartSound: "Ativar som",
     partyHostStageRetry: "Tentar de novo",
     partyHostUpNext: "A seguir",
+    partyHostUpNextParticipant: "A seguir: {name}",
     partyHostSungBy: "Canta {name}",
   },
 };

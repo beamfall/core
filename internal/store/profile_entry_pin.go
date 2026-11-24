@@ -288,9 +288,7 @@ func (s *Store) SetSessionProfileWithEntryPIN(ctx context.Context, sessionID Ses
 		}
 	}
 
-	result, err := tx.ExecContext(ctx,
-		`UPDATE auth_session SET profile_id = ?, revealed = 0, admin_until_ms = NULL WHERE id = ?`,
-		profileID, sessionID)
+	result, err := tx.ExecContext(ctx, setSessionProfileSQL, profileID, sessionID)
 	if err != nil {
 		return err
 	}
@@ -301,7 +299,12 @@ func (s *Store) SetSessionProfileWithEntryPIN(ctx context.Context, sessionID Ses
 	if affected != 1 {
 		return errors.New("session not found")
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE session_id = ?`, sessionID)
+	_, _ = s.eventsW.ExecContext(ctx, `UPDATE party_screen SET profile_id = ? WHERE auth_session_id = ? AND dropped_at_ms IS NULL`, profileID, sessionID)
+	return nil
 }
 
 // ProfileEntryPINsSet reports which adult Profiles have an entry PIN, so a

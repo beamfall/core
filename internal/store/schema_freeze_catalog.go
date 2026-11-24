@@ -142,4 +142,5 @@ package store
 // and Player Profile walk-up policy, off the entity-query hot path.
 // CORE-3311 adds 0137_player_controllers for Player Profile controller lists
 // and display last-seen tracking, off the entity-query hot path.
-const schemaFreezeCatalogMigrations = 133
+// CORE-3313 adds 0138_reveal_generation on auth_session for restricted streams.
+const schemaFreezeCatalogMigrations = 134

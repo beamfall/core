@@ -239,6 +239,8 @@ var resultTypes = map[string]any{
 	"partyscreenticker":                  PartySessionInfo{},
 	"partyscreendisplay":                 PartySessionInfo{},
 	"partyscreendrop":                    PartySessionInfo{},
+	"partyscreenadddisplay":              PartyScreenJoinResult{},
+	"partyscreenlead":                    PartySessionInfo{},
 	"queueaddmany":                       PlayQueueInfo{},
 	"queuemoveentry":                     PlayQueueInfo{},
 	"queueremoveentry":                   PlayQueueInfo{},
@@ -520,6 +522,8 @@ var fieldArguments = map[string][]NestedArgument{
 	"preplayqueue":      {{Name: "mediaID", Kind: "string"}},
 	"searchresult":      {{Name: "limit", Kind: "int", Optional: true}, searchModeArgument(), {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}},
 	"partystage": {
+		// Optional on the wire so 2.x stays additive; partyStageRead refuses a
+		// missing screenID (ADR-0240 D10). The schema requires it at the next major.
 		{Name: "screenID", Kind: "string", Optional: true},
 		{Name: "sessionID", Kind: "string"},
 	},
@@ -610,6 +614,15 @@ var fieldArguments = map[string][]NestedArgument{
 		{Name: "screenID", Kind: "string"},
 	},
 	"partyscreendrop": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "screenID", Kind: "string"},
+	},
+	"partyscreenadddisplay": {
+		{Name: "carrier", Kind: "string", Optional: true, Enum: []string{"local", "relay"}},
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "handle", Kind: "string"},
+	},
+	"partyscreenlead": {
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "screenID", Kind: "string"},
 	},

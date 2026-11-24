@@ -58,6 +58,11 @@ type PlaybackProgress struct {
 	PlaybackID string
 	Paused     *bool
 	PlayedMS   *int64
+	// GrantID and ReportSequence are write-only inputs for player-display
+	// playback reports (ADR-0240 D5), used to bind reports to a playback_grant
+	// and deduplicate per (grant, sequence). Empty/nil for ordinary clients.
+	GrantID        string
+	ReportSequence *int64
 	// Provenance is the ADR-0009 §7 import discriminator: "" native,
 	// a shape-named source value for imported engagement. Write-only on input
 	// is via UpsertPlaybackProgressWithProvenance; this field is the read-back.
@@ -207,6 +212,9 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	if err := s.ensureNotPlayerProfileLocked(ctx, progress.ProfileID); err != nil {
 		return err
 	}
 	event, err := newPlaybackProgressEvent(progress, finished, policy, prov, timeToMillis(time.Now().UTC()))
@@ -387,6 +395,9 @@ func (s *Store) ApplyImportedPlays(ctx context.Context, profileID ProfileID, med
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	if err := s.ensureNotPlayerProfileLocked(ctx, profileID); err != nil {
+		return err
+	}
 	now := timeToMillis(time.Now().UTC())
 	var playedAtMS *int64
 	if !playedAt.IsZero() {
@@ -455,13 +466,17 @@ func (s *Store) PlaybackProgressFor(ctx context.Context, profileID ProfileID, me
 	if err := s.guardLocked(); err != nil {
 		return PlaybackProgress{}, false, err
 	}
+	return playbackProgressForSQL(ctx, s.eventsR, profileID, mediaID)
+}
+
+func playbackProgressForSQL(ctx context.Context, q queryRower, profileID ProfileID, mediaID MediaID) (PlaybackProgress, bool, error) {
 	var progress PlaybackProgress
 	var watched int
 	var updated int64
 	var occurred sql.NullInt64
 	var eventTime sql.NullInt64
 	var runID, importerID, matchMethod sql.NullString
-	err := s.eventsR.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT profile_id, media_id, position_seconds, duration_seconds, watched, updated_at_ms, play_count, provenance, occurred_at_ms, import_run_id, import_importer_id, import_match_method, event_time_ms
 		FROM playback_progress
 		WHERE profile_id = ? AND media_id = ?

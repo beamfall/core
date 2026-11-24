@@ -411,16 +411,30 @@ func profileAndDeviceSessionIDsTx(ctx context.Context, tx *sql.Tx, profileID Pro
 }
 
 func (s *Store) cleanupEndedDeviceSessions(ctx context.Context, deviceID DeviceID, sessionIDs []SessionID) {
+	nowMS := timeToMillis(s.serverNow())
 	if deviceID != "" {
 		_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE device_id = ?`, deviceID)
+		_, _ = s.eventsW.ExecContext(ctx, `
+			UPDATE playback_grant
+			SET cancelled_at_ms = ?
+			WHERE device_id = ? AND ended_at_ms IS NULL AND cancelled_at_ms IS NULL
+		`, nowMS, deviceID)
+		_, _ = s.eventsW.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ? WHERE device_id = ? AND dropped_at_ms IS NULL`, nowMS, deviceID)
 	}
 	s.cleanupEndedSessionRows(ctx, sessionIDs)
 }
 
 func (s *Store) cleanupEndedSessionRows(ctx context.Context, sessionIDs []SessionID) {
+	nowMS := timeToMillis(s.serverNow())
 	for _, id := range sessionIDs {
 		_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE session_id = ?`, id)
 		_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM player_commanded_media WHERE session_id = ?`, id)
+		_, _ = s.eventsW.ExecContext(ctx, `
+			UPDATE playback_grant
+			SET cancelled_at_ms = ?
+			WHERE session_id = ? AND ended_at_ms IS NULL AND cancelled_at_ms IS NULL
+		`, nowMS, id)
+		_, _ = s.eventsW.ExecContext(ctx, `UPDATE party_screen SET dropped_at_ms = ? WHERE auth_session_id = ? AND dropped_at_ms IS NULL`, nowMS, id)
 		_, _ = s.eventsW.ExecContext(ctx,
 			`DELETE FROM event_outbox WHERE kind = ? AND aggregate_type = ? AND aggregate_id = ?`,
 			SessionControlKind, OutboxAggregateSession, id,

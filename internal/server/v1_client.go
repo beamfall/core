@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/playback"
@@ -121,6 +122,7 @@ type v1PlaybackInfoResponse struct {
 	DurationSeconds     int                `json:"durationSeconds"`
 	PositionSeconds     int                `json:"positionSeconds,omitempty"`
 	CaptionTracks       []v1CaptionTrack   `json:"captionTracks,omitempty"`
+	GrantID             string             `json:"grantID,omitempty"`
 }
 
 type v1PlaybackStream struct {
@@ -178,6 +180,7 @@ func v1PlaybackInfoFrom(resp playback.InfoResponse) v1PlaybackInfoResponse {
 		Streams:             make([]v1PlaybackStream, 0, min(len(resp.Streams), v1PlaybackStreamLimit)),
 		DurationSeconds:     resp.Timeline.DurationSeconds,
 		PositionSeconds:     resp.Timeline.PositionSeconds,
+		GrantID:             resp.GrantID,
 	}
 	for _, stream := range resp.Streams[:min(len(resp.Streams), v1PlaybackStreamLimit)] {
 		item := v1PlaybackStream{
@@ -258,6 +261,10 @@ type v1ProgressRequest struct {
 	// groups a play by it (CORE-1703). Optional, validated exactly as sent
 	// (store.ValidatePlaybackID), the same as GraphQL reportPlayback.
 	PlaybackID string `json:"playbackID,omitempty"`
+	// GrantID and Sequence bind a player-display report to its server-issued
+	// playback grant and deduplicate per (grantID, sequence) (ADR-0240 D5).
+	GrantID  string `json:"grantID,omitempty"`
+	Sequence *int64 `json:"sequence,omitempty"`
 	// Paused says whether the player was paused when it reported; a client
 	// that omits it reads as playing.
 	Paused *bool `json:"paused,omitempty"`
@@ -300,8 +307,8 @@ func (s *Server) v1ReportProgress(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "positionSeconds is required")
 		return
 	}
-	if *req.PositionSeconds < 0 || req.DurationSeconds < 0 || req.EventTimeMS < 0 || (req.PlayedMS != nil && *req.PlayedMS < 0) {
-		writeError(w, r, http.StatusBadRequest, "positionSeconds, durationSeconds, eventTimeMS and playedMS must not be negative")
+	if *req.PositionSeconds < 0 || req.DurationSeconds < 0 || req.EventTimeMS < 0 || (req.PlayedMS != nil && *req.PlayedMS < 0) || (req.Sequence != nil && *req.Sequence < 0) {
+		writeError(w, r, http.StatusBadRequest, "positionSeconds, durationSeconds, eventTimeMS, playedMS and sequence must not be negative")
 		return
 	}
 	if err := store.ValidatePlaybackID(req.PlaybackID); err != nil {
@@ -318,6 +325,8 @@ func (s *Server) v1ReportProgress(w http.ResponseWriter, r *http.Request) {
 		DurationSeconds: req.DurationSeconds,
 		EventTimeMS:     req.EventTimeMS,
 		PlaybackID:      req.PlaybackID,
+		GrantID:         strings.TrimSpace(req.GrantID),
+		ReportSequence:  req.Sequence,
 		Paused:          req.Paused,
 		PlayedMS:        req.PlayedMS,
 	}, req.Finished)

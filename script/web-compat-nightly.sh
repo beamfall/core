@@ -156,7 +156,7 @@ receipt_file="$evidence_dir/web-compat-nightly.json"
 timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p "$evidence_dir"
 pending_receipt="$(mktemp "$evidence_dir/.web-compat-nightly.XXXXXX")"
-publisher_file="$(mktemp "${TMPDIR:-/tmp}/beamfall-web-compat-publisher.XXXXXX.py")"
+publisher_file="$(mktemp "${TMPDIR:-/tmp}/beamfall-web-compat-publisher.XXXXXX")"
 cat >"$publisher_file" <<'PY'
 import fcntl
 import json

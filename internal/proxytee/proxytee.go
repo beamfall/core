@@ -521,7 +521,7 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid stream token", http.StatusUnauthorized)
 		return
 	}
-	grant, err = s.tokens.VerifyAuthenticated(authenticated, scope)
+	grant, err = s.tokens.VerifyAuthenticated(r.Context(), authenticated, scope)
 	if err != nil {
 		http.Error(w, "invalid stream token", http.StatusUnauthorized)
 		return

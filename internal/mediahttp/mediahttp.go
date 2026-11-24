@@ -162,7 +162,7 @@ func (h *Handler) verifyAuthenticatedMediaGrant(ctx context.Context, authenticat
 	grant := authenticated.Grant()
 	scope, err := h.auth.Scope(ctx, grant.SessionID)
 	if err != nil {
-		if auth.AccessScheduleEnded(err) && !h.grantMaySeeScheduleReason(ctx, err, grant) {
+		if auth.AccessScheduleEnded(err) && !h.grantMaySeeScheduleReason(ctx, err, authenticated) {
 			// The schedule refusal belongs to the Profile the session held
 			// when the schedule was evaluated. A token signed for another
 			// Profile or device, or one whose own bindings no longer hold,
@@ -217,11 +217,12 @@ func (e sessionUnresolvedError) Unwrap() error { return e.err }
 // grantMaySeeScheduleReason reports whether a grant refused on the access
 // schedule may carry that reason. The session snapshot the schedule was
 // evaluated against must hold the grant's session, Profile and device, and
-// the grant's compatibility decision and receiver binding must still verify,
+// the grant's live bindings and compatibility decision must still verify,
 // exactly as they would have to before the grant serves bytes. A restricted
 // grant never qualifies: Reveal holds only for an adult Profile, and a Profile
 // under an access schedule is never one, so the grant fails Reveal on its own.
-func (h *Handler) grantMaySeeScheduleReason(ctx context.Context, err error, grant streamtoken.Grant) bool {
+func (h *Handler) grantMaySeeScheduleReason(ctx context.Context, err error, authenticated streamtoken.AuthenticatedGrant) bool {
+	grant := authenticated.Grant()
 	if grant.Restricted {
 		return false
 	}
@@ -229,7 +230,11 @@ func (h *Handler) grantMaySeeScheduleReason(ctx context.Context, err error, gran
 	if !auth.AccessScheduleReasonVisible(err, &bound) {
 		return false
 	}
-	if h.tokens.VerifyCompatDecision(ctx, grant) != nil {
+	// The evaluated Profile is managed, so it can hold neither Reveal nor a
+	// Player binding. The snapshot supplies the identity for live verification.
+	if _, err := h.verifyCompatDecision(ctx, authenticated, auth.Scope{
+		SessionID: bound.SessionID, ProfileID: bound.ProfileID, DeviceID: bound.DeviceID,
+	}); err != nil {
 		return false
 	}
 	return verifyReceiverBinding(grant) == nil
@@ -387,6 +392,20 @@ func (h *Handler) Assets(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, "invalid stream token", http.StatusUnauthorized)
 		return
+	}
+	if grant.PlayerPreviewBinding != "" || (grant.GrantID == "" && scope.IsPlayerBound() && !scope.WalkUpEnabled) {
+		// Controlled display previews need an explicit live binding. Older
+		// standalone URLs lack one and cannot survive release.
+		if grant.PlayerPreviewBinding == "" || !scope.IsPlayerBound() {
+			http.Error(w, "invalid stream token", http.StatusUnauthorized)
+			return
+		}
+		binding, err := h.store.PlayerPreviewBinding(r.Context(), scope.PlayerProfileID, scope.SessionID, grant.MediaID, scope.PlayerBindingGeneration,
+			store.PlayerOriginatorPolicy{CertificationConstraints: h.auth.CertificationConstraints})
+		if err != nil || binding != grant.PlayerPreviewBinding {
+			http.Error(w, "invalid stream token", http.StatusUnauthorized)
+			return
+		}
 	}
 	if h.assets == nil {
 		http.Error(w, "unknown asset", http.StatusNotFound)

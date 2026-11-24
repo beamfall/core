@@ -35,6 +35,7 @@ type PlayerDisplay struct {
 type PlayerControlGuard struct {
 	PlayerProfileID   ProfileID
 	CallerProfileID   ProfileID
+	CallerSessionID   SessionID
 	BindingGeneration int
 }
 
@@ -205,6 +206,7 @@ func (s *Store) SetPlayerControllers(ctx context.Context, profileID ProfileID, a
 	if err := tx.Commit(); err != nil {
 		return PlayerControllers{}, err
 	}
+	s.releaseIneligiblePartyDisplaysForPlayerLocked(ctx, profileID)
 	return readPlayerControllers(ctx, s.catalogR, profileID)
 }
 
@@ -376,37 +378,37 @@ func (s *Store) TouchDeviceLastSeenBySession(ctx context.Context, sessionID Sess
 	return err
 }
 
-func (s *Store) verifyPlayerControlLocked(ctx context.Context, target SessionID, guard PlayerControlGuard) error {
+func (s *Store) verifyPlayerControlLocked(ctx context.Context, target SessionID, guard PlayerControlGuard) (DeviceID, error) {
 	if target == "" || guard.PlayerProfileID == "" || guard.CallerProfileID == "" {
-		return ErrPlayerControlUnauthorized
+		return "", ErrPlayerControlUnauthorized
 	}
 	var sessionProfile ProfileID
 	var revoked, generation int
-	var playerProfileID string
+	var deviceID, playerProfileID string
 	err := s.catalogR.QueryRowContext(ctx, `
-		SELECT s.profile_id, d.revoked, COALESCE(d.player_profile_id, ''), d.player_binding_generation
+		SELECT s.profile_id, d.id, d.revoked, COALESCE(d.player_profile_id, ''), d.player_binding_generation
 		FROM auth_session s
 		JOIN device d ON d.id = s.device_id
 		WHERE s.id = ?
-	`, target).Scan(&sessionProfile, &revoked, &playerProfileID, &generation)
+	`, target).Scan(&sessionProfile, &deviceID, &revoked, &playerProfileID, &generation)
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrPlayerControlUnauthorized
+		return "", ErrPlayerControlUnauthorized
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	if revoked != 0 ||
 		sessionProfile != guard.PlayerProfileID ||
 		ProfileID(playerProfileID) != guard.PlayerProfileID ||
 		generation != guard.BindingGeneration {
-		return ErrPlayerControlUnauthorized
+		return "", ErrPlayerControlUnauthorized
 	}
 	ok, err := isPlayerControllerLocked(ctx, s.catalogR, guard.PlayerProfileID, guard.CallerProfileID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !ok {
-		return ErrPlayerControlUnauthorized
+		return "", ErrPlayerControlUnauthorized
 	}
-	return nil
+	return DeviceID(deviceID), nil
 }

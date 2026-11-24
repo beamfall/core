@@ -112,7 +112,13 @@ import { type PartySeekAutoSkip, useAutoSkip } from "../player/useAutoSkip";
 import { useCaptionLoad } from "../player/useCaptionLoad";
 import { idleChromeClass, useChromeAutoHide } from "../player/useChromeAutoHide";
 import { useChromeReserve } from "../player/useChromeReserve";
-import { decodableStream, handBack, skipJoin, useGaplessAudio } from "../player/useGaplessAudio";
+import {
+  decodableStream,
+  handBack,
+  rejoinSkip,
+  skipJoin,
+  useGaplessAudio,
+} from "../player/useGaplessAudio";
 import { useLongPauseSkip, usePlaybackSpeed, useSleepTimer } from "../player/useListening";
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
@@ -285,7 +291,13 @@ function FeaturePlayer({
   const [musicQueueOpen, setMusicQueueOpen] = useState(false);
   // The audio stage's lyrics view (CORE-1638); it stays open across tracks.
   const [lyricsOpen, setLyricsOpen] = useState(false);
-  const { view: musicQueue, refresh: refreshMusicQueue, readMedia, isCurrent } = useMusicQueue();
+  const {
+    view: musicQueue,
+    refresh: refreshMusicQueue,
+    readMedia,
+    isCurrent,
+    latestRows: latestQueueRows,
+  } = useMusicQueue();
   const queueAllowed = !serverQueueRun || (queueMatchesProfile && !musicQueue?.invalid);
   const queueReady = queueAllowed && (!serverQueueRun || musicQueue?.rows !== undefined);
   const queueReadFailed = serverQueueRun && queueAllowed && musicQueue?.failed;
@@ -1050,6 +1062,13 @@ function FeaturePlayer({
         const issued = serverQueueRun || queued || !issuedNext?.streams ? undefined : issuedNext;
         const advance = playNowTarget
           ? () => {
+              // A queue read mid-fade that drops or locks the named item
+              // (CORE-3361) declines the skip: the track fades back in, and
+              // its own end reads the queue afresh as usual.
+              const rows = latestQueueRows();
+              if (!rows?.some((row) => row.id === playNowTarget && playableMusic(row))) {
+                return false;
+              }
               endedWithoutNext.current = null;
               playItemRef.current(playNowTarget, "", true, profileID);
             }
@@ -1058,11 +1077,16 @@ function FeaturePlayer({
             : issued
               ? () => openNextRef.current.advanceToNext(issued)
               : () => openNextRef.current.playNext?.();
-        // A relock mid-fade voids a choice made under the revealed session.
-        fadeAdvance(video, () => {
-          if (chosenUnder?.aborted) return;
-          advance();
-        });
+        // A relock mid-fade voids a choice made under the revealed session. The
+        // skip still holds the track's end: the relock, not the old queue, decides
+        // what plays next. Withdrawn without moving on, the item joins its next
+        // one again (CORE-3360).
+        const left = mediaId || "";
+        fadeAdvance(
+          video,
+          () => (chosenUnder?.aborted ? undefined : advance()),
+          video ? () => rejoinSkip(video, left) : undefined,
+        );
       }
     : undefined;
   // Anything else that changes what plays (another item, a relock, leaving)

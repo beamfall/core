@@ -429,6 +429,10 @@ type InfoResponse struct {
 	// (the streams then play unadjusted). Stream positions are then song
 	// positions divided by the tempo; Timeline stays in song positions.
 	Adjustment *PlaybackAdjustment `json:"adjustment,omitempty"`
+	// GrantID is the server-issued playback grant ID for player-bound displays
+	// (ADR-0240 D5). Displays pass it back on progress/completion reports so
+	// reports are fenced per grant and attributed server-side.
+	GrantID string `json:"grantID,omitempty"`
 }
 
 // CaptionTrack is one caption track surfaced in playbackInfo. Sidecar tracks use
@@ -632,6 +636,7 @@ type Timeline struct {
 // Service owns playbackInfo decisions.
 type Service struct {
 	store         *store.Store
+	auth          *auth.Service
 	tokens        *streamtoken.Service
 	now           func() time.Time
 	sessions      *Sessions
@@ -742,6 +747,12 @@ func (s *Service) SetPartyRoster(roster PartyRoster) {
 	s.roster = roster
 }
 
+// SetAuth wires the auth service for becoming-current originator playback
+// authorization checks on Player displays (ADR-0240 D4, D5).
+func (s *Service) SetAuth(authService *auth.Service) {
+	s.auth = authService
+}
+
 // SetQuirks installs a device-quirks database, replacing the
 // release-embedded baseline. It VALIDATES its argument with the same rules
 // ParseQuirkDB applies and installs a deep clone, so no path can bypass the
@@ -849,6 +860,9 @@ type decision struct {
 	// adjustment is the pitch shift and tempo change the streams encode; zero
 	// when none was requested or it does not apply to this decision.
 	adjustment ffmpeg.AudioAdjust
+	// grantID is the server-issued playback_grant ID when serving a player
+	// display (ADR-0240 D5).
+	grantID string
 }
 
 // PartInfo is one ordered Part of the negotiated Version. Parts play
@@ -952,6 +966,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		// item it fetched.
 		BehaviorFlags: ov.flags,
 		Adjustment:    playbackAdjustment(main.adjustment),
+		GrantID:       main.grantID,
 	}
 	if main.overlayApplied {
 		resp.AppliedQuirks = ov.overrideIDs
@@ -964,7 +979,8 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	resp.Loudness = main.loudnessInfo
 	resp.SelectedSubtitleTrack = main.subtitles.selection
 	resp.SubtitlesUnavailableReason = main.subtitles.unavailableReason
-	if nextID := strings.TrimSpace(req.NextMediaID); nextID != "" {
+	// Commanded and party eligibility is evaluated when an item becomes current.
+	if nextID := strings.TrimSpace(req.NextMediaID); nextID != "" && (!scope.IsPlayerBound() || scope.WalkUpEnabled) {
 		// Best-effort: any next item that cannot be served — unknown,
 		// outside the session scope, or with no playable file — is silently
 		// omitted; current playback is never affected.
@@ -1029,7 +1045,17 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 	if mediaID == "" {
 		return PreviewInfoResponse{}, ErrInvalidRequest
 	}
-	media, err := s.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
+	filter := scope.LibraryFilter()
+	var previewBinding string
+	if scope.IsPlayerBound() && !scope.WalkUpEnabled {
+		var err error
+		previewBinding, err = s.store.PlayerPreviewBinding(ctx, scope.PlayerProfileID, scope.SessionID, store.MediaID(mediaID), scope.PlayerBindingGeneration, s.playerOriginatorPolicy())
+		if err != nil || previewBinding == "" {
+			return PreviewInfoResponse{}, err
+		}
+		filter = scope.PlaybackFilter()
+	}
+	media, err := s.store.Media(ctx, store.MediaID(mediaID), filter)
 	if err != nil {
 		var validation store.ValidationError
 		if errors.As(err, &validation) {
@@ -1041,7 +1067,7 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 	if s.sealed != nil && s.sealed(media.LibraryID) {
 		return PreviewInfoResponse{}, nil
 	}
-	file, err := s.store.PrimaryMediaFile(ctx, media.ID, scope.LibraryFilter())
+	file, err := s.store.PrimaryMediaFile(ctx, media.ID, filter)
 	if err != nil {
 		return PreviewInfoResponse{MediaID: string(media.ID)}, nil
 	}
@@ -1051,12 +1077,13 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 	}
 	expiresAt := s.now().Add(time.Hour).UTC()
 	assets, err := s.assetsInfo(ctx, streamtoken.Grant{
-		MediaID:    media.ID,
-		DeviceID:   scope.DeviceID,
-		SessionID:  scope.SessionID,
-		ProfileID:  scope.ProfileID,
-		Restricted: restricted,
-		ExpiresAt:  expiresAt,
+		MediaID:              media.ID,
+		DeviceID:             scope.DeviceID,
+		SessionID:            scope.SessionID,
+		ProfileID:            scope.ProfileID,
+		PlayerPreviewBinding: previewBinding,
+		Restricted:           restricted,
+		ExpiresAt:            expiresAt,
 	}, file.ContentFingerprint, false, expiresAt)
 	if err != nil {
 		return PreviewInfoResponse{}, err
@@ -1078,13 +1105,43 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 // adjust is the requested pitch shift and tempo change; it applies only to an
 // audio Media served through a transcode, which it then forces.
 func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
-	media, err := s.decisionLookup.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
+	lookupFilter := scope.LibraryFilter()
+	var commandRevision int64
+	if scope.IsPlayerBound() {
+		lookupFilter = scope.PlaybackFilter()
+		if suffix == mainSuffix && s.store != nil {
+			commandRevision, err = s.store.RendererSessionRevision(ctx, scope.SessionID)
+			if err != nil {
+				return decision{}, err
+			}
+		}
+	}
+	media, err := s.decisionLookup.Media(ctx, store.MediaID(mediaID), lookupFilter)
 	if err != nil {
 		var validation store.ValidationError
 		if errors.As(err, &validation) {
 			return unavailableDecision(), nil
 		}
 		return decision{}, err
+	}
+	resumeProfileID := scope.ProfileID
+	var playerGrant *store.PlaybackGrant
+	originatorPolicy := s.playerOriginatorPolicy()
+	if scope.IsPlayerBound() {
+		resumeProfileID = ""
+		if suffix == mainSuffix {
+			grant, allowed, err := s.preparePlayerPlaybackGrant(ctx, scope, media, commandRevision, originatorPolicy)
+			if err != nil {
+				return decision{}, err
+			}
+			if !allowed {
+				return unavailableDecision(), nil
+			}
+			playerGrant = grant
+			if grant != nil {
+				resumeProfileID = grant.OriginatorProfileID
+			}
+		}
 	}
 	parent := ctx
 	var op *libraryOperation
@@ -1100,8 +1157,11 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 		ctx = s.sessions.libraryProbeContext(op)
 	}
 	batch := &decisionGrants{}
+	if playerGrant != nil {
+		batch.grantID = playerGrant.GrantID
+	}
 	ctx = context.WithValue(ctx, decisionGrantsKey{}, batch)
-	dec, err = s.decideMedia(ctx, op, batch, scope, media, suffix, profile, policy, priority, selectedSubtitleIndex, selectedAudioIndex, selectedVersion, ov, adjust)
+	dec, err = s.decideMedia(ctx, op, batch, scope, resumeProfileID, media, suffix, profile, policy, priority, selectedSubtitleIndex, selectedAudioIndex, selectedVersion, ov, adjust)
 	if err == nil {
 		dec.loudnessInfo = s.loudnessInfo(dec, profile)
 		if suffix == mainSuffix && dec.media.ID != "" {
@@ -1126,6 +1186,23 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	if suffix != mainSuffix && dec.verdict == "unavailable" {
 		return dec, nil
 	}
+	if playerGrant != nil && dec.verdict != "unavailable" {
+		now := s.now().UTC()
+		tokenLifetime := max(time.Hour, 2*time.Duration(dec.media.DurationSeconds)*time.Second)
+		grantToSave := *playerGrant
+		grantToSave.LastPositionSeconds = dec.timeline.PositionSeconds
+		grantToSave.LastDurationSeconds = dec.timeline.DurationSeconds
+		grantToSave.CreatedAt = now
+		grantToSave.ExpiresAt = now.Add(tokenLifetime)
+		published, err := s.store.CreatePlaybackGrant(parent, grantToSave, commandRevision, originatorPolicy)
+		if err != nil {
+			return decision{}, err
+		}
+		if !published {
+			return unavailableDecision(), nil
+		}
+		dec.grantID = grantToSave.GrantID
+	}
 	for _, record := range batch.records {
 		record(parent)
 	}
@@ -1135,7 +1212,68 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	return dec, nil
 }
 
-func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *decisionGrants, scope auth.Scope, media store.Media, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
+func (s *Service) playerOriginatorPolicy() store.PlayerOriginatorPolicy {
+	policy := store.PlayerOriginatorPolicy{Now: s.now}
+	if s.auth != nil {
+		policy.CertificationConstraints = s.auth.CertificationConstraints
+	}
+	return policy
+}
+
+func (s *Service) preparePlayerPlaybackGrant(ctx context.Context, scope auth.Scope, media store.Media, revision int64, policy store.PlayerOriginatorPolicy) (*store.PlaybackGrant, bool, error) {
+	if s.store == nil {
+		return nil, true, nil
+	}
+	now := s.now().UTC()
+	party, err := s.store.IsPlayerPartyCurrentMedia(ctx, scope.SessionID, media.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	var attr store.PlayerCommandedAttribution
+	var walkUp bool
+	if !party {
+		var commanded bool
+		attr, commanded, err = s.store.ActivePlayerCommandedAttribution(ctx, scope.SessionID, media.ID, now)
+		if err != nil {
+			return nil, false, err
+		}
+		if commanded {
+			allowed := false
+			if attr.PlayerBindingGeneration == scope.PlayerBindingGeneration {
+				allowed, err = s.store.PlayerOriginatorPlaybackAllowed(ctx, scope.PlayerProfileID, attr.OriginatorProfileID, attr.OriginatorSessionID, media.ID, policy)
+				if err != nil {
+					return nil, false, err
+				}
+			}
+			if !allowed {
+				return nil, false, s.store.SkipPlayerCommandedAttribution(ctx, scope.SessionID, media.ID, revision)
+			}
+		} else {
+			if !scope.WalkUpEnabled {
+				return nil, false, nil
+			}
+			walkUp = true
+		}
+	}
+
+	grantID, err := store.NewPlaybackGrantID()
+	if err != nil {
+		return nil, false, err
+	}
+	return &store.PlaybackGrant{
+		GrantID:                 grantID,
+		SessionID:               scope.SessionID,
+		DeviceID:                scope.DeviceID,
+		ProfileID:               scope.ProfileID,
+		MediaID:                 media.ID,
+		OriginatorProfileID:     attr.OriginatorProfileID,
+		OriginatorSessionID:     attr.OriginatorSessionID,
+		PlayerBindingGeneration: scope.PlayerBindingGeneration,
+		WalkUp:                  walkUp,
+	}, true, nil
+}
+
+func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *decisionGrants, scope auth.Scope, resumeProfileID store.ProfileID, media store.Media, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
 	// A Sealed Library gets no stream, no selector-bearing Parts, and no asset
 	// advertisement (ADR-0098 area 2). Indistinguishable from unavailable on the
 	// wire, exactly like a Library the scope cannot see (Reveal contract).
@@ -1143,8 +1281,10 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 		return unavailableDecision(), nil
 	}
 	timeline := Timeline{DurationSeconds: media.DurationSeconds}
-	if progress, ok, err := s.store.PlaybackProgressFor(ctx, scope.ProfileID, media.ID); err == nil && ok && !progress.Watched {
-		timeline.PositionSeconds = progress.PositionSeconds
+	if resumeProfileID != "" {
+		if progress, ok, err := s.store.PlaybackProgressFor(ctx, resumeProfileID, media.ID); err == nil && ok && !progress.Watched {
+			timeline.PositionSeconds = progress.PositionSeconds
+		}
 	}
 	// 1:N files: fetch every available file, group into Versions
 	// (alternate encodes) and Parts (timeline segments), then negotiate the best

@@ -201,8 +201,8 @@ func (s *Store) ReadEventOutboxFiltered(ctx context.Context, afterSeq int64, lim
 // are reveal-gated; everything else content-free passes.
 func (s *Store) workerEventPermitted(ctx context.Context, event OutboxEvent, filter LibraryFilter) (bool, error) {
 	switch event.AggregateType {
-	case OutboxAggregateSession, OutboxAggregateGroup, OutboxAggregateExtension:
-		// Device-subscriber signals gated on a Profile a worker does not carry.
+	case OutboxAggregateSession, OutboxAggregateGroup, OutboxAggregateExtension, OutboxAggregateParty:
+		// Device-subscriber signals gated on a Profile/Session a worker does not carry.
 		return false, nil
 	case OutboxAggregateMedia:
 		if event.Kind == MediaEventDeleted {
@@ -1036,6 +1036,48 @@ func (s *Store) AppendGroupSyncEvent(ctx context.Context, payload GroupSyncPaylo
 	}
 	now = normalizeTime(now)
 	return s.appendOutboxRow(ctx, timeToMillis(now), GroupSyncKind, OutboxAggregateGroup, payload.GroupID, string(normalizeJSON(raw)))
+}
+
+// OutboxAggregateParty is the AggregateType for party stage screen lifecycle
+// and sync signals (ADR-0240 D10). AggregateID is the screenID; the SSE
+// surface delivers events only to the auth Session that owns screenID, and
+// re-checks live host controller membership and Media eligibility before
+// delivery.
+const OutboxAggregateParty = "party"
+
+// PartyStageEventKind is the single outbox Kind for party stage screen events.
+const PartyStageEventKind = "party.stage"
+
+const (
+	PartyStageActionJoined   = "joined"
+	PartyStageActionChanged  = "changed"
+	PartyStageActionReleased = "released"
+)
+
+// PartyStageEventPayload is the JSON body of a party.stage outbox event.
+type PartyStageEventPayload struct {
+	PartySessionID string    `json:"partySessionID"`
+	ScreenID       string    `json:"screenID"`
+	AuthSessionID  SessionID `json:"authSessionID"`
+	ProfileID      ProfileID `json:"profileID"`
+	HostProfileID  ProfileID `json:"hostProfileID,omitempty"`
+	DeviceID       DeviceID  `json:"deviceID,omitempty"`
+	Action         string    `json:"action"`
+	Reason         string    `json:"reason,omitempty"`
+	MediaID        MediaID   `json:"mediaID,omitempty"`
+	Lead           bool      `json:"lead,omitempty"`
+}
+
+func appendPartyStageEventSQL(ctx context.Context, exec sqlExecer, payload PartyStageEventPayload, nowMS int64) error {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = exec.ExecContext(ctx,
+		"INSERT INTO event_outbox(occurred_at_ms, kind, aggregate_type, aggregate_id, payload_json) VALUES (?, ?, ?, ?, ?)",
+		nowMS, PartyStageEventKind, OutboxAggregateParty, payload.ScreenID, string(normalizeJSON(raw)),
+	)
+	return err
 }
 
 // playMediaTargetsPlayerLocked reports whether payload is a play-media command

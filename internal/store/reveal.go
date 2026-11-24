@@ -178,8 +178,13 @@ func (s *Store) SetSessionRevealed(ctx context.Context, id SessionID, revealed b
 		}
 	}
 	result, err := s.catalogW.ExecContext(ctx,
-		`UPDATE auth_session SET revealed = ? WHERE id = ?`,
-		boolToInt(revealed), id)
+		`UPDATE auth_session
+		SET reveal_generation = CASE WHEN ? = 0 OR revealed = 0
+			THEN CAST(randomblob(16) || substr(reveal_generation, 17) AS BLOB)
+			ELSE reveal_generation END,
+			revealed = ?
+		WHERE id = ?`,
+		boolToInt(revealed), boolToInt(revealed), id)
 	if err != nil {
 		return err
 	}
@@ -190,5 +195,58 @@ func (s *Store) SetSessionRevealed(ctx context.Context, id SessionID, revealed b
 	if affected == 0 {
 		return errors.New("session not found")
 	}
+	if !revealed {
+		_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE session_id = ? AND restricted = 1`, id)
+	}
 	return nil
+}
+
+// StreamTokenGeneration reads the durable authorization generation for a
+// session's current Profile. The first 16 bytes of reveal_generation bind
+// restricted tokens to one Reveal. The optional second 16 bytes bind public
+// tokens across relock and change only on Profile switch. Before the first
+// switch there is no Profile generation.
+func (s *Store) StreamTokenGeneration(ctx context.Context, id SessionID, profileID ProfileID, deviceID DeviceID, restricted bool) ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	var generation []byte
+	err := s.catalogR.QueryRowContext(ctx, `
+		SELECT CASE WHEN ? THEN substr(reveal_generation, 1, 16)
+			ELSE substr(reveal_generation, 17) END
+		FROM auth_session
+		WHERE id = ? AND profile_id = ? AND device_id = ? AND (NOT ? OR revealed = 1)
+	`, restricted, id, profileID, deviceID, restricted).Scan(&generation)
+	return generation, err
+}
+
+// SessionRestrictedStreamMediaIDs returns the Media IDs of active restricted
+// playback grants held by session id, used to detach in-flight transcodes on
+// relock (ADR-0004 §4, ADR-0240 D10).
+func (s *Store) SessionRestrictedStreamMediaIDs(ctx context.Context, id SessionID) ([]MediaID, error) {
+	if id == "" {
+		return nil, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := s.eventsR.QueryContext(ctx,
+		`SELECT DISTINCT media_id FROM stream_token_ledger WHERE session_id = ? AND restricted = 1`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []MediaID
+	for rows.Next() {
+		var mediaID MediaID
+		if err := rows.Scan(&mediaID); err != nil {
+			return nil, err
+		}
+		ids = append(ids, mediaID)
+	}
+	return ids, rows.Err()
 }

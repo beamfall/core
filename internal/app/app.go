@@ -831,10 +831,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// issues Stream Tokens — issuance stays main-side. Main keeps issuing.
 	tokenService.SetRole(cfg.Role)
 	// Record issued Stream Tokens in the transparency ledger so the My Data
-	// panel can present a Profile its own outstanding tokens. The
-	// ledger never authorizes bytes — that stays the signed grant's job.
+	// panel can present a Profile its own outstanding tokens.
 	tokenService.SetRecorder(st)
+	tokenService.SetStreamGenerationResolver(st)
+	tokenService.SetPlaybackGrantResolver(st)
 	playbackInfo := playback.NewService(st, tokenService, readClock)
+	playbackInfo.SetAuth(authService)
 	// Console resource graphs: an in-memory ring of host samples, never persisted.
 	hostSampler := hostmetrics.New(hostmetrics.DefaultInterval, hostmetrics.DefaultWindow)
 	var hlsSessions *playback.Sessions
