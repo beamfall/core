@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -151,7 +152,7 @@ func (f fakeStyledExtractor) ExtractStyledSubtitle(_ context.Context, _ string, 
 	if f.script != nil {
 		return f.script, nil
 	}
-	return []byte("[Script Info]\n; stream " + string(rune('0'+index)) + "\n"), nil
+	return []byte("[Script Info]\n; stream " + strconv.Itoa(index) + "\n"), nil
 }
 
 func (f fakeStyledExtractor) SubtitleFontIndexes(context.Context, string) ([]int, error) {
@@ -178,7 +179,8 @@ func TestExtractBurnSubtitleWritesScriptAndFonts(t *testing.T) {
 	if file != filepath.Join(dir, "burn-subtitle", "subtitle.ass") || fontsDir != filepath.Join(dir, "burn-subtitle", "fonts") {
 		t.Fatalf("paths = %q, %q", file, fontsDir)
 	}
-	if data, err := os.ReadFile(file); err != nil || !strings.Contains(string(data), "stream 2") {
+	data, err := os.ReadFile(file) // #nosec G304,G703 -- path is beneath a test-owned temporary directory.
+	if err != nil || !strings.Contains(string(data), "stream 2") {
 		t.Fatalf("script = %q, %v", data, err)
 	}
 	entries, err := os.ReadDir(fontsDir)
