@@ -1,8 +1,8 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { commandPlayerDisplay, fetchPlayerDisplays } from "@/lib/graphql";
 import type { PlayerDisplayInfo } from "@/lib/graphql/types";
@@ -120,17 +120,50 @@ describe("PlayOnDisplayPage", () => {
     vi.mocked(fetchPlayerDisplays)
       .mockReturnValueOnce(new Promise((r) => (resolveFirst = r)))
       .mockResolvedValue([]);
-    const view = renderAt("?display=h-lounge");
-    view.rerender(
+    let go: (to: string) => void = () => {};
+    function Nav() {
+      go = useNavigate();
+      return null;
+    }
+    render(
       <I18nProvider>
-        <MemoryRouter initialEntries={["/play-on?display=h-other"]} key="b">
+        <MemoryRouter initialEntries={["/play-on?display=h-lounge"]}>
+          <Nav />
           <PlayOnDisplayPage />
         </MemoryRouter>
       </I18nProvider>,
     );
+    act(() => go("/play-on?display=h-other"));
     expect(await screen.findByRole("alert")).toHaveTextContent("This display isn’t available.");
-    resolveFirst([LOUNGE]);
-    await new Promise((r) => setTimeout(r, 0));
+    await act(async () => resolveFirst([LOUNGE]));
     expect(screen.queryByText("Lounge TV")).not.toBeInTheDocument();
+  });
+
+  it("shows the newest command's outcome when commands overlap", async () => {
+    let resolvePause: () => void = () => {};
+    let rejectStop: (e: Error) => void = () => {};
+    vi.mocked(commandPlayerDisplay)
+      .mockReturnValueOnce(new Promise<void>((r) => (resolvePause = r)) as never)
+      .mockReturnValueOnce(new Promise<never>((_, j) => (rejectStop = j)) as never);
+    vi.mocked(fetchPlayerDisplays).mockResolvedValue([LOUNGE]);
+    renderAt("?display=h-lounge");
+    await userEvent.click(await screen.findByRole("button", { name: /Pause/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Stop/ }));
+    await act(async () => resolvePause());
+    await act(async () => rejectStop(new Error("display command CONFLICT")));
+    expect(screen.queryByText("Sent.")).not.toBeInTheDocument();
+  });
+
+  it("revalidates while open, so a revoked display drops away", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(fetchPlayerDisplays).mockResolvedValueOnce([LOUNGE]).mockResolvedValue([]);
+      renderAt("?display=h-lounge");
+      expect(await screen.findByText(/Lounge TV/)).toBeInTheDocument();
+      await act(async () => vi.advanceTimersByTime(15_000));
+      expect(await screen.findByRole("alert")).toHaveTextContent("This display isn’t available.");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

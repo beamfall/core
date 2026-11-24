@@ -158,6 +158,27 @@ describe("PlayerProfiles", () => {
     );
   });
 
+  it("moves a Profile out of the other list when it is chosen", async () => {
+    const user = userEvent.setup();
+    renderSection(
+      state([
+        {
+          ...lounge,
+          playerControllers: { profileID: "pl1", allAdults: false, include: ["a2"], exclude: [] },
+        },
+      ]),
+    );
+    await user.click(screen.getByRole("checkbox", { name: "All adults" }));
+    const exceptions = screen.getAllByRole("checkbox", { name: "Sam" })[0];
+    await user.click(exceptions);
+    await user.click(screen.getByRole("button", { name: "Save controllers" }));
+    expect(setPlayerControllers).toHaveBeenCalledWith(
+      "pl1",
+      { allAdults: true, include: [], exclude: ["a2"] },
+      expect.anything(),
+    );
+  });
+
   it("reports a failed save", async () => {
     const user = userEvent.setup();
     vi.mocked(setPlayerControllers).mockRejectedValueOnce(new Error("FORBIDDEN"));

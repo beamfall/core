@@ -16,6 +16,8 @@ type Lookup =
   | { kind: "missing" }
   | { kind: "found"; display: PlayerDisplayInfo };
 
+const REVALIDATE_MS = 15_000;
+
 type Command = "pause" | "resume" | "stop" | "mute" | "unmute";
 
 /**
@@ -34,6 +36,11 @@ export function PlayOnDisplayPage() {
   // Each lookup gets a number; only the latest may set state, so a slow
   // answer for an earlier handle never lands under the current URL.
   const latest = useRef(0);
+  // Separate counters for the handle's lifetime and for commands: a lookup
+  // finishing never voids a command's outcome, and only the newest command's
+  // outcome becomes the notice.
+  const generation = useRef(0);
+  const lastCommand = useRef(0);
 
   const refresh = useCallback(() => {
     const request = ++latest.current;
@@ -58,25 +65,32 @@ export function PlayOnDisplayPage() {
     setLookup({ kind: "loading" });
     setNotice(null);
     refresh();
+    // Revalidate while the page is open, so a display revoked or unbound
+    // elsewhere drops to "not available" even when nobody presses a button.
+    const timer = window.setInterval(refresh, REVALIDATE_MS);
     return () => {
+      window.clearInterval(timer);
       latest.current++;
+      generation.current++;
     };
   }, [refresh]);
 
   async function send(display: PlayerDisplayInfo, command: Command) {
     if (!display.sessionID) return;
-    const request = latest.current;
+    const gen = generation.current;
+    const id = ++lastCommand.current;
+    const current = () => gen === generation.current && id === lastCommand.current;
     try {
       await commandPlayerDisplay({ sessionID: display.sessionID, command });
-      if (request === latest.current) setNotice(t("remoteSent"));
+      if (current()) setNotice(t("remoteSent"));
     } catch (err) {
-      if (request === latest.current)
+      if (current())
         setNotice(displayErrorText(err, display.displayName, t) ?? t("remoteSendError"));
     }
     // Re-resolve after every command: a revoked controller or a display that
     // went away drops to "not available" instead of keeping its card. Skip it
     // when the page has moved on to another handle since the command left.
-    if (request === latest.current) refresh();
+    if (gen === generation.current) refresh();
   }
 
   return (

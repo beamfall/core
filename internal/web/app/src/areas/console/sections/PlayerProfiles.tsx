@@ -225,7 +225,12 @@ function Controllers({
           idPrefix={`${profile.id}-exclude`}
           profiles={adults}
           selected={exclude}
-          onChange={(id, checked) => setExclude((l) => toggle(l, id, checked))}
+          onChange={(id, checked) => {
+            setExclude((l) => toggle(l, id, checked));
+            // A Profile can't be both added and excepted; the server refuses
+            // the whole edit if it is, so the newer choice wins.
+            if (checked) setInclude((l) => l.filter((x) => x !== id));
+          }}
         />
       )}
       {includable.length > 0 && (
@@ -234,7 +239,10 @@ function Controllers({
           idPrefix={`${profile.id}-include`}
           profiles={includable}
           selected={include}
-          onChange={(id, checked) => setInclude((l) => toggle(l, id, checked))}
+          onChange={(id, checked) => {
+            setInclude((l) => toggle(l, id, checked));
+            if (checked) setExclude((l) => l.filter((x) => x !== id));
+          }}
         />
       )}
       <div className="flex flex-wrap items-center gap-3">
