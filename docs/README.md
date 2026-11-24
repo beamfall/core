@@ -6,7 +6,7 @@ restating it.
 ## Run and operate Core
 
 - [Install Core on your platform](operations/install/README.md)
-- [Build and run locally](../README.md#build--test)
+- [Build and run locally](../README.md#build-and-test)
 - [Operations runbook](operations/runbook.md)
 - [Restore](operations/restore.md)
 - [Deploy](security/runbooks/deploy.md)

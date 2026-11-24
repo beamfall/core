@@ -25,7 +25,7 @@ go build -o beamfall ./cmd/beamfall
 ```
 
 Without the UI build, a clean checkout embeds only a placeholder. See
-[From source](../../../README.md#from-source) for the build contract.
+[Native binary](../../../README.md#native-binary) for the build contract.
 
 Untested: the following native Linux installation and systemd example have not been exercised
 on a Linux host. The paths are suggested installation locations. Create a dedicated account
