@@ -83,6 +83,21 @@ const MENU_WAIT = { timeout: 10_000 };
 // 5s default, a slow menu timed out the whole test before the wait could finish (CORE-2883).
 const MENU_TEST_TIMEOUT = 15_000;
 
+// Under gate load a More click can land on a row that is re-rendered as the page's data settles,
+// so the menu never opens and a single long wait times out (CORE-3063). Click, give the menu a
+// short wait, and click a freshly queried trigger again until the MENU_WAIT budget runs out.
+async function openMenuItem(trigger: () => HTMLElement | Promise<HTMLElement>, name: string) {
+  const deadline = Date.now() + MENU_WAIT.timeout;
+  for (;;) {
+    fireEvent.click(await trigger());
+    try {
+      return await screen.findByRole("menuitem", { name }, { timeout: 2_000 });
+    } catch (error) {
+      if (Date.now() >= deadline) throw error;
+    }
+  }
+}
+
 const related: SourceItem = {
   id: "m1",
   kind: "media",
@@ -612,8 +627,10 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     async () => {
       const queueWindow = vi.spyOn(watchQueue, "queueWindow");
       renderEntity();
-      fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
-      const details = await screen.findByRole("menuitem", { name: "Details" }, MENU_WAIT);
+      const details = await openMenuItem(
+        () => screen.findByRole("button", { name: "More actions for Related item" }),
+        "Details",
+      );
       expect(queueWindow).not.toHaveBeenCalled();
       fireEvent.click(details);
       expect(screen.getByRole("status", { name: "detail" })).toHaveTextContent("m1");
@@ -630,10 +647,11 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
         { ...related, id: "m2", title: "Video child", mediaClass: "video" },
       ]);
       renderEntity();
-      fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
-
       expect(
-        await screen.findByRole("menuitem", { name: "Mark played" }, MENU_WAIT),
+        await openMenuItem(
+          () => screen.findByRole("button", { name: "More actions for Related item" }),
+          "Mark played",
+        ),
       ).toBeInTheDocument();
       expect(screen.queryByRole("menuitem", { name: "Mark watched" })).toBeNull();
     },
@@ -649,8 +667,16 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
       const row = within(link.closest("li")!);
       expect(queueWindow).not.toHaveBeenCalled();
       if (entry === "menu") {
-        fireEvent.click(row.getByRole("button", { name: "More actions for Related item" }));
-        fireEvent.click(await screen.findByRole("menuitem", { name: "Play" }, MENU_WAIT));
+        fireEvent.click(
+          await openMenuItem(
+            () =>
+              within(screen.getByRole("link", { name: /Related item/ }).closest("li")!).getByRole(
+                "button",
+                { name: "More actions for Related item" },
+              ),
+            "Play",
+          ),
+        );
       } else {
         fireEvent.click(row.getByRole("button", { name: "Play Related item" }));
       }
@@ -796,9 +822,11 @@ describe.each(["list", "grid"] as const)(
           fireEvent.click(link.querySelector("img")!);
         } else {
           fireEvent.click(
-            within(children).getByRole("button", { name: "More actions for Related item" }),
+            await openMenuItem(
+              () => within(children).getByRole("button", { name: "More actions for Related item" }),
+              entry,
+            ),
           );
-          fireEvent.click(await screen.findByRole("menuitem", { name: entry }, MENU_WAIT));
         }
 
         const destination = entry === "Play" ? "player" : "detail";
@@ -998,8 +1026,15 @@ describe("EntityPage audio container order", () => {
         expect(link).toHaveAttribute("href", "/media/d2t1");
         fireEvent.click(within(link).getByText("Second Disc Opener"));
       } else {
-        fireEvent.click(disc.getByRole("button", { name: "More actions for Second Disc Opener" }));
-        fireEvent.click(await screen.findByRole("menuitem", { name: "Details" }, MENU_WAIT));
+        fireEvent.click(
+          await openMenuItem(
+            () =>
+              within(screen.getByRole("list", { name: "Disc 2" })).getByRole("button", {
+                name: "More actions for Second Disc Opener",
+              }),
+            "Details",
+          ),
+        );
       }
 
       const output = screen.getByRole("status", { name: "detail" }).textContent!;
