@@ -261,6 +261,7 @@ func AudioAdjustSupportedContext(ctx context.Context, rendition Rendition) bool 
 	return err == nil && len(caps.missingFor(rendition.audioArgs())) == 0
 }
 
+<<<<<<< HEAD
 // TextSubtitleBurnInSupportedContext reports whether the resolved FFmpeg build
 // can burn a styled text subtitle (ASS/SSA) into the video: it needs the
 // libass `ass` filter. A build whose components cannot be listed cannot, and a
@@ -268,4 +269,11 @@ func AudioAdjustSupportedContext(ctx context.Context, rendition Rendition) bool 
 func TextSubtitleBurnInSupportedContext(ctx context.Context) bool {
 	caps, err := capabilitiesForCurrentBuild(ctx)
 	return err == nil && caps.Filters["ass"]
+=======
+// rubberbandSupported reports whether the resolved FFmpeg build includes the
+// librubberband filter for high-quality formant-preserving pitch shifting.
+func rubberbandSupported(ctx context.Context) bool {
+	caps, err := capabilitiesForCurrentBuild(ctx)
+	return err == nil && caps.Filters["rubberband"]
+>>>>>>> 089fdeb7e (Video & streaming architectural upgrades: encode-ahead pacing (CORE-0022), time-based seek lookahead (CORE-0023), zero-copy SDR HW decode, runtime librubberband, and 1-to-N live fan-out (CORE-3445, CORE-3446))
 }

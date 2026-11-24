@@ -746,6 +746,36 @@ func TestRenditionHardwareUploadFilters(t *testing.T) {
 	}
 }
 
+func TestRenditionSDRDeviceDecodeZeroCopy(t *testing.T) {
+	nvenc := Rendition{Height: 1080, SourceVideoCodec: "h264", SourceVideoBitDepth: 8, hwAccel: HWAccelNVENC}.withSDRDeviceDecode(true)
+	if got, want := nvenc.inputArgs(), []string{"-hwaccel", "cuda", "-hwaccel_output_format", "cuda"}; !equalArgs(got, want) {
+		t.Fatalf("NVENC SDR inputArgs = %v, want %v", got, want)
+	}
+	if got, want := nvenc.videoFilters(), []string{"scale_cuda=-2:min(ih\\,1080):format=nv12"}; !equalArgs(got, want) {
+		t.Fatalf("NVENC SDR videoFilters = %v, want %v", got, want)
+	}
+	vaapi := Rendition{Height: 720, SourceVideoCodec: "hevc", SourceVideoBitDepth: 8, hwAccel: HWAccelVAAPI}.withSDRDeviceDecode(true)
+	if got, want := vaapi.inputArgs(), []string{"-hwaccel", "vaapi", "-hwaccel_device", vaapiDevicePath(), "-hwaccel_output_format", "vaapi"}; !equalArgs(got, want) {
+		t.Fatalf("VAAPI SDR inputArgs = %v, want %v", got, want)
+	}
+	if got, want := vaapi.videoFilters(), []string{"scale_vaapi=w=-2:h=min(ih\\,720):format=nv12"}; !equalArgs(got, want) {
+		t.Fatalf("VAAPI SDR videoFilters = %v, want %v", got, want)
+	}
+	// 10-bit SDR stays off the 8-bit nv12 SDR device-decode path.
+	tenBit := Rendition{Height: 720, SourceVideoCodec: "hevc", SourceVideoBitDepth: 10, hwAccel: HWAccelNVENC}.withSDRDeviceDecode(true)
+	if tenBit.usesSDRDeviceDecode() {
+		t.Fatal("10-bit source must not enter 8-bit nv12 SDR device-decode")
+	}
+}
+
+func TestAudioAdjustRubberbandFilter(t *testing.T) {
+	adj := AudioAdjust{PitchSemitones: 2, Tempo: 0.9}
+	got := adj.FiltersWithRubberband(true)
+	if len(got) != 1 || !strings.HasPrefix(got[0], "rubberband=pitch=") || !strings.Contains(got[0], ":tempo=0.9:formant=preserved") {
+		t.Fatalf("FiltersWithRubberband(true) = %v", got)
+	}
+}
+
 func equalArgs(got, want []string) bool {
 	if len(got) != len(want) {
 		return false

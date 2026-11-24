@@ -103,6 +103,9 @@ func (r *Runner) startComposedHLSSegments(ctx context.Context, audioSrc, dir str
 	}
 	conf := dirConfinement(audioSrc, dir)
 	rendition = r.withQuality(rendition)
+	if !rendition.adjust.IsZero() && rendition.adjust.PitchSemitones != 0 && rubberbandSupported(ctx) {
+		rendition = rendition.withRubberband(true)
+	}
 	cmd := r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, composedSegmentArgs(audioSrc, dir, picture, startSegment, segmentSeconds, rendition))
 	process, err := startComposedProcess(ctx, cmd, audioSrc, picture, rendition, startSegment*segmentSeconds)
 	if err != nil {

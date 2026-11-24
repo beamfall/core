@@ -90,8 +90,19 @@ const (
 	// seekLookaheadSegments is how far past the produced frontier a request
 	// may wait for the running transcode instead of forcing a restart.
 	seekLookaheadSegments = 3
-	sessionIdleTimeout    = 5 * time.Minute
-	fileWaitTimeout       = 15 * time.Second
+	// Time-based lookahead for keyframe timelines where encoder GOPs are short
+	// (1–2s), preventing unnecessary remux/transcode restarts on small forward
+	// seeks or 10s merged-segment prefetches (CORE-0023).
+	encodeSeekLookahead = 16 * time.Second
+	copySeekLookahead   = 30 * time.Second
+	// Encode-ahead pacing thresholds (CORE-0022): pause the live encoder when
+	// it has produced encodeAheadHighWater segments past the client's playhead
+	// with no waiting requests, and resume when the playhead approaches within
+	// encodeAheadLowWater segments of the produced frontier.
+	encodeAheadHighWater = 16
+	encodeAheadLowWater  = 6
+	sessionIdleTimeout   = 5 * time.Minute
+	fileWaitTimeout      = 15 * time.Second
 	// safetyPollInterval is the coarse re-check cadence in the event-driven
 	// waitForFile: long enough that it is not a busy-poll (the old loop spun at
 	// 100ms), short enough that a missed/coalesced fsnotify event still resolves
@@ -188,7 +199,17 @@ type encoderRun struct {
 	carry       *encoderStart
 	transfer    *encoderStart
 	waiting     atomic.Int32
+	paused      atomic.Bool
 	live        *encderiv.LiveRun
+}
+
+func (r *encoderRun) resumeIfPaused() {
+	if r == nil || r.proc == nil {
+		return
+	}
+	if r.paused.CompareAndSwap(true, false) {
+		_ = r.proc.Resume()
+	}
 }
 
 func (r *encoderRun) exitedChan() <-chan struct{} {
@@ -264,6 +285,7 @@ type hlsSession struct {
 	sourceOwner           *sourceGenerationOwner
 	sourceGeneration      string
 	durationSeconds       int
+	requestedFrontier     int
 	rungs                 []Rung
 	audioProfile          ffmpeg.AudioProfile
 	audioStreamIndex      *int
@@ -1580,6 +1602,22 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 		existing.scratch.users++
 		return existing, nil
 	}
+	// 1-to-N live fan-out (CORE-3446): for unencrypted live composed karaoke
+	// streams and Watch Party foreground streams, multiple screens watching the
+	// exact same Media with identical immutable encode parameters share the
+	// already-running encoder and scratch segments instead of spawning N
+	// independent FFmpeg (+ wazero) processes.
+	if existing == nil && secure == nil && (picture != nil || priority == PriorityForeground) {
+		if donor := s.findSharedDonorLocked(key, library, sourceGeneration, sourceInfo, src, durationSeconds, primed, timeline, degraded, requestedRungs, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, adjust, policy, priority); donor != nil {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			s.transitionLocked(donor, reuseSession{priority: priority, at: now})
+			source.publishLocked()
+			donor.scratch.users++
+			return donor, nil
+		}
+	}
 	allocation := &scratchAllocation{key: key, library: library}
 	if s.allocations == nil {
 		s.allocations = make(map[*scratchAllocation]struct{})
@@ -1801,7 +1839,19 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 			return nil, ErrSessionEvicted
 		}
 		if ready {
+			var resumeRun *encoderRun
+			if session.currentRung == rung.ID && requested >= 0 {
+				if requested > session.requestedFrontier {
+					session.requestedFrontier = requested
+				}
+				if session.run != nil && session.run.paused.Load() && requested+encodeAheadLowWater >= session.frontier {
+					resumeRun = session.run
+				}
+			}
 			s.mu.Unlock()
+			if resumeRun != nil {
+				resumeRun.resumeIfPaused()
+			}
 			return nil, nil
 		}
 		if err := ctx.Err(); err != nil {
@@ -1835,9 +1885,17 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		}
 		old := session.run
 		if session.proc != nil && session.currentRung == rung.ID {
+			if requested >= 0 && requested > session.requestedFrontier {
+				session.requestedFrontier = requested
+			}
 			if requested == initRequest || session.durationSeconds == 0 ||
-				segment >= session.baseSegment && segment <= session.frontier+seekLookaheadSegments {
+				session.withinSeekLookaheadLocked(rung, session.baseSegment, segment) {
+				shouldResume := old != nil && old.paused.Load() &&
+					(requested == initRequest || requested+encodeAheadLowWater >= session.frontier)
 				s.mu.Unlock()
+				if shouldResume {
+					old.resumeIfPaused()
+				}
 				return old, nil
 			}
 			base := session.baseSegment
@@ -1858,10 +1916,20 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 				continue
 			}
 			if scanned && s.transitionLocked(session, advanceFrontier{run: old, rungID: rung.ID, base: base, scanned: frontier}).accepted &&
-				segment >= base && segment <= session.frontier+seekLookaheadSegments {
+				session.withinSeekLookaheadLocked(rung, base, segment) {
+				shouldResume := old != nil && old.paused.Load() &&
+					(requested == initRequest || requested+encodeAheadLowWater >= session.frontier)
 				s.mu.Unlock()
+				if shouldResume {
+					old.resumeIfPaused()
+				}
 				return old, nil
 			}
+		}
+		if requested >= 0 {
+			session.requestedFrontier = requested
+		} else {
+			session.requestedFrontier = segment
 		}
 		runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 		run := &encoderRun{session: session, ctx: runCtx, cancel: cancel, reaped: make(chan struct{}), exited: make(chan struct{})}
@@ -1974,20 +2042,137 @@ func (s *Sessions) watchForStall(run *encoderRun, stall time.Duration) {
 		case <-run.reaped:
 			return
 		case <-ticker.C:
-			if run.waiting.Load() > 0 && time.Since(run.proc.ProgressedAt()) >= stall {
-				s.mu.Lock()
-				active := run.session.proc == run.proc && run.session.run == run
-				if active {
-					run.acceptReasonLocked(exitStalled)
+			if run.waiting.Load() > 0 {
+				run.resumeIfPaused()
+				if time.Since(run.proc.ProgressedAt()) >= stall {
+					s.mu.Lock()
+					active := run.session.proc == run.proc && run.session.run == run
+					if active {
+						run.acceptReasonLocked(exitStalled)
+					}
+					s.mu.Unlock()
+					if active {
+						run.proc.Kill()
+					}
+					return
 				}
-				s.mu.Unlock()
-				if active {
-					run.proc.Kill()
-				}
-				return
+				continue
 			}
+			s.maybePauseAhead(run)
 		}
 	}
+}
+
+// maybePauseAhead pauses a live encoder that has raced encodeAheadHighWater
+// segments past the viewer's highest requested segment while no request is
+// waiting on it (CORE-0022).
+func (s *Sessions) maybePauseAhead(run *encoderRun) {
+	if run == nil || run.proc == nil || run.paused.Load() || run.live != nil {
+		return
+	}
+	s.mu.Lock()
+	active := run.session != nil && run.session.proc == run.proc && run.session.run == run && run.session.state == sessionRunning
+	if !active {
+		s.mu.Unlock()
+		return
+	}
+	rungID := run.session.currentRung
+	base := run.session.baseSegment
+	req := run.session.requestedFrontier
+	s.mu.Unlock()
+
+	frontier, scanned := run.session.scanFrontier(rungID, base)
+	if !scanned || frontier-req < encodeAheadHighWater {
+		return
+	}
+	if run.waiting.Load() > 0 {
+		return
+	}
+	if run.proc.Pause() {
+		run.paused.Store(true)
+	}
+}
+
+func (s *hlsSession) withinSeekLookaheadLocked(rung Rung, base, segment int) bool {
+	if segment < base {
+		return false
+	}
+	if segment <= s.frontier+seekLookaheadSegments {
+		return true
+	}
+	if s.timeline == nil || rung.AudioOnly {
+		return false
+	}
+	maxAhead := encodeSeekLookahead
+	if rung.CopyVideo {
+		maxAhead = copySeekLookahead
+	}
+	frontierPos := s.segmentStart(rung, max(s.frontier, base))
+	targetPos := s.segmentStart(rung, segment)
+	return targetPos >= frontierPos && targetPos-frontierPos <= maxAhead
+}
+
+// findSharedDonorLocked returns an already-running unencrypted session whose
+// immutable encode parameters match the caller's request so multiple screens
+// watching the same stream share one FFmpeg process and scratch directory.
+// Callers hold s.mu.
+func (s *Sessions) findSharedDonorLocked(
+	key SessionKey,
+	library store.LibraryID,
+	sourceGeneration string,
+	sourceInfo os.FileInfo,
+	src string,
+	durationSeconds int,
+	primed primedGrid,
+	timeline *keyframeTimeline,
+	degraded bool,
+	requestedRungs []Rung,
+	sourceVideo VideoSignal,
+	burnSubtitleIndex int,
+	audioProfile ffmpeg.AudioProfile,
+	audioStreamIndex *int,
+	picture *ComposedPicture,
+	adjust ffmpeg.AudioAdjust,
+	policy *ffmpeg.EncodePolicy,
+	priority Priority,
+) *hlsSession {
+	for _, donor := range s.sessions {
+		if donor == nil || donor.state != sessionRunning || donor.scratch == nil || donor.secure != nil || donor.proc == nil || donor.start != nil {
+			continue
+		}
+		if picture == nil && donor.priority != priority {
+			continue
+		}
+		if donor.key.MediaID != key.MediaID || donor.scratch.library != library {
+			continue
+		}
+		if donor.sourceGeneration != sourceGeneration || (donor.sourceInfo != nil && !sameSourceFile(donor.sourceInfo, sourceInfo)) {
+			continue
+		}
+		if donor.src != src || donor.durationSeconds != durationSeconds || donor.primed != primed ||
+			donor.timeline != timeline || donor.degraded != degraded || !rungsEqual(donor.rungs, requestedRungs) {
+			continue
+		}
+		if donor.sourceVideo != sourceVideo || donor.burnSubtitleIndex != burnSubtitleIndex ||
+			!audioProfilesEqual(donor.audioProfile, audioProfile) || !equalOptionalInt(donor.audioStreamIndex, audioStreamIndex) {
+			continue
+		}
+		if (donor.composed == nil) != (picture == nil) || (picture != nil && *donor.composed != *picture) {
+			continue
+		}
+		if donor.adjust != adjust || !equalEncodePolicy(donor.encodePolicy, policy) {
+			continue
+		}
+		return donor
+	}
+	return nil
+}
+
+func equalEncodePolicy(a, b *ffmpeg.EncodePolicy) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // reapProcess waits for run's process to exit, classifies the exit, releases
