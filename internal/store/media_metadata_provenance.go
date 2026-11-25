@@ -38,12 +38,11 @@ func (s *Store) SetMediaMetadataProvenance(ctx context.Context, mediaID MediaID,
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	if ok, err := s.mediaExistsSQL(ctx, mediaID); err != nil {
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
 		return err
-	} else if !ok {
-		return ValidationError("media not found")
 	}
-	return upsertMediaMetadataProvenance(ctx, s.catalogW, mediaID, provenance)
+	return upsertMediaMetadataProvenance(ctx, plane.writer, mediaID, provenance)
 }
 
 func normalizeMediaMetadataProvenance(provenance MediaMetadataProvenance) (MediaMetadataProvenance, error) {
@@ -70,59 +69,12 @@ func upsertMediaMetadataProvenance(ctx context.Context, db sqlExecer, mediaID Me
 }
 
 // ApplyMediaIdentification commits the replacement metadata, selected lock
-// clears, candidate provenance and plugin fields together at operator precedence.
-// Identification is supported on the shared catalog, which owns provenance.
+// clears, candidate provenance and plugin fields together at operator
+// precedence on the Media's own plane, as one unreplayable identification
+// revision (CommitMediaIdentification with a fresh request ID).
 func (s *Store) ApplyMediaIdentification(ctx context.Context, id MediaID, metadata MediaMetadata, provenance MediaMetadataProvenance, fields []MediaField) error {
-	if err := validateMediaMetadata(id, metadata); err != nil {
-		return err
-	}
-	if err := validateMediaFields(fields); err != nil {
-		return err
-	}
-	provenance, err := normalizeMediaMetadataProvenance(provenance)
-	if err != nil {
-		return err
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return err
-	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	metadata.Source = MutationSourceOperator
-	if err := updateMediaMetadataTx(ctx, tx, id, metadata); err != nil {
-		return err
-	}
-	if err := upsertMediaMetadataProvenance(ctx, tx, id, provenance); err != nil {
-		return err
-	}
-	if metadata.OperatorOrdinal != nil {
-		_, err = tx.ExecContext(ctx, `
-			INSERT INTO media_operator_ordinal(media_id, sequence, ordinal_index, set_at_ms, actor_profile_id)
-			VALUES (?, ?, ?, ?, NULLIF(?, ''))
-			ON CONFLICT(media_id) DO UPDATE SET sequence = excluded.sequence,
-				ordinal_index = excluded.ordinal_index, set_at_ms = excluded.set_at_ms,
-				actor_profile_id = excluded.actor_profile_id`,
-			id, metadata.OperatorOrdinal.Sequence, metadata.OperatorOrdinal.Index,
-			timeToMillis(s.serverNow().UTC()), metadata.OrdinalActor)
-	} else if metadata.ClearOrdinal {
-		_, err = deleteMediaOrdinal(ctx, tx, id)
-	}
-	if err != nil {
-		return err
-	}
-	if _, err := upsertMediaFieldsTx(ctx, tx, id, fields, MutationSourceOperator, false); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	s.emitMediaUpdated(ctx, id)
-	return nil
+	_, err := s.CommitMediaIdentification(ctx, id, IdentificationCommit{Metadata: metadata, Provenance: provenance, Fields: fields})
+	return err
 }
 
 // MediaMetadataProvenance returns the recorded metadata provenance for a Media
@@ -134,8 +86,15 @@ func (s *Store) MediaMetadataProvenance(ctx context.Context, mediaID MediaID) (M
 	if err := s.guardLocked(); err != nil {
 		return MediaMetadataProvenance{}, false, err
 	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return MediaMetadataProvenance{}, false, nil
+	}
+	if err != nil {
+		return MediaMetadataProvenance{}, false, err
+	}
 	var record MediaMetadataProvenance
-	err := s.catalogR.QueryRowContext(ctx,
+	err = plane.reader.QueryRowContext(ctx,
 		`SELECT plugin_id, scraper_id, candidate_id FROM media_metadata_provenance WHERE media_id = ?`, mediaID).
 		Scan(&record.PluginID, &record.ScraperID, &record.CandidateID)
 	if errors.Is(err, sql.ErrNoRows) {

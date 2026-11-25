@@ -152,7 +152,11 @@ package store
 // and 0102's unmatched_suppression in the owning Library plane, read only by
 // the review inbox and the re-scan suppression check, off the entity-query hot
 // path.
+// Encrypted-library 0018 (CORE-0706) mirrors catalog 0113/0119 provenance,
+// 0132's operator ordinal and 0140's identification revisions in the owning
+// Library plane, written by identification commits and read by Fix Match and
+// provenance reads, off the entity-query hot path.
 const (
 	schemaFreezeEventsMigrations           = 34
-	schemaFreezeEncryptedLibraryMigrations = 17
+	schemaFreezeEncryptedLibraryMigrations = 18
 )
