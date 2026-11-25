@@ -148,4 +148,7 @@ package store
 // CORE-0706 adds 0140_identification_revision, the immutable per-Media
 // identification revisions and idempotency receipts, written by identification
 // commits and read by their replay check, off the entity-query hot path.
-const schemaFreezeCatalogMigrations = 136
+// CORE-0706 adds 0141_artwork_action, the pending post-commit artwork actions
+// written by identification commits and drained by the artwork worker and its
+// restart replay, off the entity-query hot path.
+const schemaFreezeCatalogMigrations = 137

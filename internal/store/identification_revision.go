@@ -175,6 +175,9 @@ func (s *Store) commitIdentification(ctx context.Context, id MediaID, commit Ide
 	if err != nil {
 		return IdentificationReceipt{}, err
 	}
+	if err := enqueueArtworkActionsTx(ctx, tx, id, revision, commit, now); err != nil {
+		return IdentificationReceipt{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return IdentificationReceipt{}, err
 	}
@@ -296,8 +299,9 @@ func identificationDigest(kind string, commit IdentificationCommit) (string, err
 		Actor                     ProfileID
 		Provenance                MediaMetadataProvenance
 		Fields                    []MediaField
+		Artwork                   map[string]string
 	}{kind, m.Title, m.Summary, m.SortTitle, m.Year, m.ClearLocks, m.OperatorOrdinal, m.ClearOrdinal, m.OrdinalActor,
-		commit.Provenance, commit.Fields})
+		commit.Provenance, commit.Fields, m.Artwork})
 	if err != nil {
 		return "", err
 	}

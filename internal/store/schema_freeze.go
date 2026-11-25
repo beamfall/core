@@ -156,7 +156,10 @@ package store
 // 0132's operator ordinal and 0140's identification revisions in the owning
 // Library plane, written by identification commits and read by Fix Match and
 // provenance reads, off the entity-query hot path.
+// Encrypted-library 0019 (CORE-0706) mirrors catalog 0141's pending artwork
+// actions in the owning Library plane, written by identification commits and
+// read by the post-commit artwork worker and its restart replay.
 const (
 	schemaFreezeEventsMigrations           = 34
-	schemaFreezeEncryptedLibraryMigrations = 18
+	schemaFreezeEncryptedLibraryMigrations = 19
 )

@@ -594,6 +594,10 @@ type MediaMetadata struct {
 	OperatorOrdinal *MediaOrdinal
 	OrdinalActor    ProfileID
 	ClearOrdinal    bool
+	// Artwork maps an artwork slot to the source URL an identification will
+	// fetch for it after the commit. Identification commits record each as a
+	// pending artwork action in the same transaction; other writes ignore it.
+	Artwork map[string]string
 }
 
 // ArtworkCandidate is one persisted scraped artwork alternative for a
