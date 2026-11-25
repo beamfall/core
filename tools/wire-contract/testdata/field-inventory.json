@@ -74,7 +74,9 @@
         "lastDrill",
         "lastFailure",
         "lastIntegrityFailure",
+        "lastIntegrityPass",
         "lastSuccess",
+        "updateGateClear",
         "upgradeGate"
       ]
     },
@@ -364,6 +366,8 @@
         "createdAt",
         "directory",
         "error",
+        "keyFingerprint",
+        "keyState",
         "sizeBytes",
         "valid"
       ]
@@ -388,7 +392,9 @@
         "lastDrill",
         "lastFailure",
         "lastIntegrityFailure",
+        "lastIntegrityPass",
         "lastSuccess",
+        "updateGateClear",
         "upgradeGate"
       ]
     },
@@ -4421,7 +4427,9 @@
         "lastDrill",
         "lastFailure",
         "lastIntegrityFailure",
+        "lastIntegrityPass",
         "lastSuccess",
+        "updateGateClear",
         "upgradeGate"
       ]
     },

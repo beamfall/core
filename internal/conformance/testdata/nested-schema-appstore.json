@@ -264,6 +264,25 @@
         ]
       },
       {
+        "name": "lastIntegrityPass",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "lastSuccess",
         "kind": "object",
         "nullable": true,
@@ -281,6 +300,10 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "updateGateClear",
+        "kind": "scalar"
       },
       {
         "name": "upgradeGate",
@@ -2025,6 +2048,14 @@
         "optional": true
       },
       {
+        "name": "keyFingerprint",
+        "kind": "scalar"
+      },
+      {
+        "name": "keyState",
+        "kind": "scalar"
+      },
+      {
         "name": "sizeBytes",
         "kind": "scalar"
       },
@@ -2142,6 +2173,25 @@
         ]
       },
       {
+        "name": "lastIntegrityPass",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "lastSuccess",
         "kind": "object",
         "nullable": true,
@@ -2159,6 +2209,10 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "updateGateClear",
+        "kind": "scalar"
       },
       {
         "name": "upgradeGate",
@@ -48235,6 +48289,25 @@
         ]
       },
       {
+        "name": "lastIntegrityPass",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "lastSuccess",
         "kind": "object",
         "nullable": true,
@@ -48252,6 +48325,10 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "updateGateClear",
+        "kind": "scalar"
       },
       {
         "name": "upgradeGate",
