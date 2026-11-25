@@ -1478,8 +1478,8 @@ func TestDatabaseBackupHandlerPrunesToKeepN(t *testing.T) {
 
 	handler := databaseBackupHandler(st, dest, nil)
 	// Run the scheduled handler more times than the retention floor; each run
-	// writes a distinct set and then prunes so only databaseBackupKeepN remain.
-	for i := range databaseBackupKeepN + 3 {
+	// writes a distinct set and then prunes so only store.BackupDailyKeep remain.
+	for i := range store.BackupDailyKeep + 3 {
 		if _, err := handler(ctx, store.Job{ID: store.JobID("backup-job"), Kind: databaseBackupJobKind}); err != nil {
 			t.Fatalf("handler run %d: %v", i, err)
 		}
@@ -1491,8 +1491,8 @@ func TestDatabaseBackupHandlerPrunesToKeepN(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(history) != databaseBackupKeepN {
-		t.Fatalf("retained %d backup sets, want keep-N %d", len(history), databaseBackupKeepN)
+	if len(history) != store.BackupDailyKeep {
+		t.Fatalf("retained %d backup sets, want keep-N %d", len(history), store.BackupDailyKeep)
 	}
 }
 

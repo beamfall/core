@@ -2896,35 +2896,6 @@ func eventsCompactionHandler(st *store.Store, logger *slog.Logger) jobs.Handler 
 	}
 }
 
-// databaseBackupKeepN is the retention floor for the scheduled database backup:
-// keep the newest N published sets under the destination and prune older ones
-// after a successful backup. Pruning old backup *copies* is not a media delete
-// (invariant #6); the live data + trash are untouched and PruneBackups never
-// wipes the set entirely (keep >= 1).
-const databaseBackupKeepN = 14
-
-func databaseBackupHandler(st *store.Store, dest string, encryptedBackupCipher func() store.EncryptedLibraryDBCipher) jobs.Handler {
-	return func(ctx context.Context, job store.Job) (jobs.Result, error) {
-		var backupErr error
-		if encryptedBackupCipher != nil {
-			_, backupErr = st.BackupWithOptions(ctx, dest, store.BackupOptions{EncryptedLibraryDBCipher: encryptedBackupCipher()})
-		} else {
-			_, backupErr = st.Backup(ctx, dest)
-		}
-		if backupErr != nil {
-			return jobs.Result{}, backupErr
-		}
-		// Retention pruning runs only after a successful backup and is
-		// non-fatal: a prune error is logged but does not fail the job, so a
-		// cleanup failure can never trigger a retry that writes another full
-		// backup (Gate-A MED). The backup itself already succeeded.
-		if _, pruneErr := st.PruneBackups(ctx, dest, databaseBackupKeepN); pruneErr != nil {
-			slog.WarnContext(ctx, "backup retention prune failed", "dest", dest, "keep", databaseBackupKeepN, "error", pruneErr)
-		}
-		return jobs.Result{}, nil
-	}
-}
-
 func enqueueArtworkSweep(ctx context.Context, st *store.Store, logger *slog.Logger, wake *jobWake) {
 	job, err := artwork.NewSweepJob(time.Now().UTC())
 	if err == nil {
