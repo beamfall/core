@@ -37,6 +37,15 @@ func (id MediaExternalID) PublicFeedIdentity(title string) (value, safeTitle str
 	return value, title
 }
 
+// externalIDValue keeps a feed entry's GUID exact (CORE-0706): a feed key is
+// compared byte for byte, so only plugin identifiers are trimmed.
+func externalIDValue(scheme, value string) string {
+	if scheme == subscriptionFeedGUIDScheme || scheme == ProvisionalExternalIDScheme {
+		return value
+	}
+	return strings.TrimSpace(value)
+}
+
 // AddMediaExternalID attaches an external identifier to Media idempotently.
 // A newly attached identifier announces media.updated, so a subscriber waiting
 // for an identifier (a request tool watching for one it asked for) sees it even
@@ -44,7 +53,7 @@ func (id MediaExternalID) PublicFeedIdentity(title string) (value, safeTitle str
 // identifier the Media already carries is a silent no-op.
 func (s *Store) AddMediaExternalID(ctx context.Context, mediaID MediaID, scheme string, value string) error {
 	scheme = strings.TrimSpace(scheme)
-	value = strings.TrimSpace(value)
+	value = externalIDValue(scheme, value)
 	if mediaID == "" {
 		return ValidationError("media ID is required")
 	}
@@ -177,7 +186,7 @@ func mediaExternalIDsChunk(ctx context.Context, reader *sql.DB, chunk []MediaID,
 // imports may share an identifier until a later dedupe pass resolves them.
 func (s *Store) MediaIDsByExternalID(ctx context.Context, scheme string, value string) ([]MediaID, error) {
 	scheme = strings.TrimSpace(scheme)
-	value = strings.TrimSpace(value)
+	value = externalIDValue(scheme, value)
 	if !validExternalIDScheme(scheme) {
 		return nil, ValidationError("external ID scheme is invalid")
 	}

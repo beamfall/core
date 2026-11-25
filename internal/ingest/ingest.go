@@ -191,6 +191,11 @@ func Handler(p *Poller) jobs.Handler {
 // backoff) and feed-move observations. Returns how many enclosures were
 // published, resumed crash residue included.
 func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscription) (int, error) {
+	// An Encrypted Library's feed entries cannot be recorded without reaching
+	// the shared catalog (CORE-0706): refuse before any fetch or download.
+	if err := p.store.SubscriptionPrivacyCheck(ctx, subscription.ID); err != nil {
+		return 0, err
+	}
 	now := p.now()
 	root, err := filepath.Abs(subscription.Root)
 	if err != nil {

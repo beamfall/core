@@ -256,6 +256,9 @@ func (s *Store) resumeProfileDeleteStateLocked(ctx context.Context, state profil
 				return err
 			}
 		case profileDeleteCatalogDeleted:
+			if err := s.eraseProfileFromUnsealedPlanesLocked(ctx); err != nil {
+				return err
+			}
 			_, err := s.catalogW.ExecContext(ctx, `DELETE FROM server_config WHERE key = ?`, profileDeleteIntentKey(state.ProfileID))
 			return err
 		default:
@@ -312,6 +315,9 @@ func (s *Store) deleteProfileCatalogAndSaveStateLocked(ctx context.Context, stat
 	}
 	defer tx.Rollback()
 	if err := deleteMyCatalogFootprintTx(ctx, tx, state.ProfileID); err != nil {
+		return err
+	}
+	if err := recordPlaneErasuresTx(ctx, tx, state.ProfileID, timeToMillis(s.serverNow().UTC())); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(state)
@@ -401,4 +407,159 @@ func (s *Store) resumeProfileFootprintDeletes(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// privacyPlaneErasePrefix keys a Profile footprint erase that an Encrypted
+// Library's plane still owes. The catalog phase records one marker per
+// Encrypted Library in the same transaction that erases the shared footprint;
+// an unsealed plane applies it before the intent clears, and a sealed plane
+// applies it at its next unseal (CORE-0768, CORE-0769).
+const privacyPlaneErasePrefix = "privacy.plane-erase:"
+
+type planeErasure struct {
+	key       string
+	LibraryID LibraryID `json:"libraryID"`
+	ProfileID ProfileID `json:"profileID"`
+	// CutoffMS bounds the erase to rows created before the delete, so rows the
+	// Profile creates later in a still-sealed plane survive its next unseal.
+	CutoffMS int64 `json:"cutoffMS"`
+}
+
+func planeErasurePrefix(libraryID LibraryID) string {
+	return privacyPlaneErasePrefix + string(libraryID) + ":"
+}
+
+func recordPlaneErasuresTx(ctx context.Context, tx *sql.Tx, profileID ProfileID, cutoffMS int64) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM library WHERE encrypted != 0 ORDER BY id`)
+	if err != nil {
+		return err
+	}
+	var libraries []LibraryID
+	for rows.Next() {
+		var id LibraryID
+		if err := rows.Scan(&id); err != nil {
+			return errors.Join(err, rows.Close())
+		}
+		libraries = append(libraries, id)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return err
+	}
+	for _, libraryID := range libraries {
+		raw, err := json.Marshal(planeErasure{LibraryID: libraryID, ProfileID: profileID, CutoffMS: cutoffMS})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO server_config(key, value, updated_at_ms) VALUES (?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at_ms = excluded.updated_at_ms`,
+			planeErasurePrefix(libraryID)+string(profileID), string(raw), cutoffMS); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// pendingPlaneErasuresLocked lists the erasures owed by one Library's plane.
+// The prefix is compared with substr rather than LIKE so an ID holding a
+// wildcard cannot match another Library's markers.
+func (s *Store) pendingPlaneErasuresLocked(ctx context.Context, libraryID LibraryID) ([]planeErasure, error) {
+	prefix := planeErasurePrefix(libraryID)
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT key, value FROM server_config WHERE substr(key, 1, ?) = ? ORDER BY key`, len(prefix), prefix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []planeErasure
+	for rows.Next() {
+		var key, raw string
+		if err := rows.Scan(&key, &raw); err != nil {
+			return nil, err
+		}
+		var erasure planeErasure
+		if err := json.Unmarshal([]byte(raw), &erasure); err != nil {
+			return nil, fmt.Errorf("decode plane erasure %q: %w", key, err)
+		}
+		if erasure.LibraryID != libraryID || key != prefix+string(erasure.ProfileID) {
+			return nil, fmt.Errorf("plane erasure %q does not match its key", key)
+		}
+		erasure.key = key
+		out = append(out, erasure)
+	}
+	return out, rows.Err()
+}
+
+// applyPlaneErasuresLocked erases each owed Profile footprint from the plane
+// in one plane transaction. The markers are left for the caller to clear only
+// once that erase can no longer be discarded.
+func (s *Store) applyPlaneErasuresLocked(ctx context.Context, plane catalogPlane) ([]string, error) {
+	erasures, err := s.pendingPlaneErasuresLocked(ctx, plane.libraryID)
+	if err != nil || len(erasures) == 0 {
+		return nil, err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	keys := make([]string, 0, len(erasures))
+	for _, e := range erasures {
+		for _, table := range []string{"saved_filter", "saved_station"} {
+			// #nosec G202 -- table is drawn from the closed literal list above.
+			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE profile_id = ? AND created_at_ms <= ?`, e.ProfileID, e.CutoffMS); err != nil {
+				return nil, err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE smart_collection SET created_by_profile_id = NULL
+			WHERE created_by_profile_id = ? AND created_at_ms <= ?`, e.ProfileID, e.CutoffMS); err != nil {
+			return nil, err
+		}
+		keys = append(keys, e.key)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+func deletePlaneErasureMarkers(ctx context.Context, exec interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, keys []string) error {
+	for _, key := range keys {
+		if _, err := exec.ExecContext(ctx, `DELETE FROM server_config WHERE key = ?`, key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// eraseProfileFromUnsealedPlanesLocked applies owed erasures to every live
+// plane. A live plane's writes are durable, so its markers clear at once; a
+// crash before that repeats an idempotent erase.
+func (s *Store) eraseProfileFromUnsealedPlanesLocked(ctx context.Context) error {
+	for _, plane := range s.unsealedEncryptedPlanesLocked() {
+		keys, err := s.applyPlaneErasuresLocked(ctx, plane)
+		if err != nil {
+			return err
+		}
+		if err := deletePlaneErasureMarkers(ctx, s.catalogW, keys); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// planeErasureEvacuationLocked applies owed erasures to a plane being
+// unsealed. Its markers clear in the shared evacuation transaction, so an
+// unseal that unwinds and discards the working plane keeps them for the retry.
+func (s *Store) planeErasureEvacuationLocked(ctx context.Context, plane catalogPlane) (evacuationPlan, error) {
+	keys, err := s.applyPlaneErasuresLocked(ctx, plane)
+	if err != nil || len(keys) == 0 {
+		return evacuationPlan{}, err
+	}
+	return evacuationPlan{deleteRows: func(ctx context.Context, tx *sql.Tx) error {
+		return deletePlaneErasureMarkers(ctx, tx, keys)
+	}}, nil
 }

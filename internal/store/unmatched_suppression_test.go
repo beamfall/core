@@ -2,8 +2,20 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
+
+// queueSuppressionRecord queues the Unmatched Record a record-bearing
+// suppression names: SuppressUnmatched refuses a record no plane holds.
+func queueSuppressionRecord(t *testing.T, st *Store, id string) {
+	t.Helper()
+	if _, err := st.QueueUnmatchedRecord(context.Background(), UnmatchedRecord{
+		ID: id, Origin: UnmatchedOriginScan, SourceHandle: "/media/one.mkv",
+	}); err != nil {
+		t.Fatalf("QueueUnmatchedRecord(%s): %v", id, err)
+	}
+}
 
 // METAPARITY-7 (ADR-0068 §A): the three suppression scopes must be
 // independently resettable, and each must carry the provenance the operator
@@ -16,6 +28,7 @@ import (
 func TestSuppressionScopesAreIndependent(t *testing.T) {
 	ctx := context.Background()
 	st := openSeeded(t)
+	queueSuppressionRecord(t, st, "urec-1")
 	candidateKey := CandidateSuppressionKey("urec-1", "cand-9")
 	all := []struct{ scope, key string }{
 		{SuppressionScopeSourceRecord, "urec-1"},
@@ -60,6 +73,7 @@ func TestSuppressionScopesAreIndependent(t *testing.T) {
 func TestCandidateSuppressionIsPerRecord(t *testing.T) {
 	ctx := context.Background()
 	st := openSeeded(t)
+	queueSuppressionRecord(t, st, "urec-1")
 	if err := st.SuppressUnmatched(ctx, UnmatchedSuppression{
 		Scope:    SuppressionScopeCandidate,
 		Key:      CandidateSuppressionKey("urec-1", "cand-9"),
@@ -83,6 +97,7 @@ func TestCandidateSuppressionIsPerRecord(t *testing.T) {
 func TestSuppressUnmatchedIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	st := openSeeded(t)
+	queueSuppressionRecord(t, st, "urec-1")
 	for i := 0; i < 2; i++ {
 		if err := st.SuppressUnmatched(ctx, UnmatchedSuppression{
 			Scope: SuppressionScopeSourceRecord, Key: "urec-1",
@@ -116,10 +131,29 @@ func TestSuppressUnmatchedIsIdempotent(t *testing.T) {
 func TestSuppressUnmatchedRejectsUnknownScope(t *testing.T) {
 	ctx := context.Background()
 	st := openSeeded(t)
+	queueSuppressionRecord(t, st, "urec-1")
 	if err := st.SuppressUnmatched(ctx, UnmatchedSuppression{Scope: "everything", Key: "urec-1"}); err == nil {
 		t.Fatal("SuppressUnmatched accepted an unknown scope")
 	}
 	if err := st.SuppressUnmatched(ctx, UnmatchedSuppression{Scope: SuppressionScopeFile}); err == nil {
 		t.Fatal("SuppressUnmatched accepted an empty key")
+	}
+}
+
+// TestSuppressUnmatchedRefusesUnknownRecord keeps a suppression that names a
+// record no readable plane holds (unknown, or on a sealed Encrypted Library
+// plane) out of the shared catalog instead of writing it there.
+func TestSuppressUnmatchedRefusesUnknownRecord(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	err := st.SuppressUnmatched(ctx, UnmatchedSuppression{
+		Scope: SuppressionScopeSourceRecord, Key: "urec-missing", RecordID: "urec-missing",
+		SourceHandle: "/media/secret.mkv",
+	})
+	if !errors.Is(err, ErrUnmatchedRecordNotFound) {
+		t.Fatalf("SuppressUnmatched(unknown record) = %v, want ErrUnmatchedRecordNotFound", err)
+	}
+	if suppressed, err := st.UnmatchedSuppressed(ctx, SuppressionScopeSourceRecord, "urec-missing"); err != nil || suppressed {
+		t.Fatalf("UnmatchedSuppressed = %v, %v; want no row written", suppressed, err)
 	}
 }

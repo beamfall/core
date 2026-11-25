@@ -42,8 +42,34 @@ func provisionalMediaID(libraryID LibraryID, guid string) MediaID {
 
 // ProvisionalMediaID returns the stable identity used by the proxy lifecycle
 // coordinator before it mutates durable provisional state.
+//
+// The GUID is the feed's exact key (CORE-0706): it is never trimmed, so the
+// proxy, the feed catalogue and RegisterProvisionalMedia all derive the same
+// Media ID from the same bytes and concurrent paths converge on one Media.
 func ProvisionalMediaID(libraryID LibraryID, guid string) MediaID {
-	return provisionalMediaID(libraryID, strings.TrimSpace(guid))
+	return provisionalMediaID(libraryID, guid)
+}
+
+// ErrEncryptedLibraryProvisionalMedia refuses a provisional feed Media in an
+// Encrypted Library (CORE-0706): its title, tee path and GUID External ID
+// would otherwise be written to the shared catalog in plaintext.
+var ErrEncryptedLibraryProvisionalMedia = ValidationError("provisional feed Media are not available in an Encrypted Library yet")
+
+// provisionalLibraryTx admits a provisional Media only into an existing
+// plaintext Library.
+func provisionalLibraryTx(ctx context.Context, tx *sql.Tx, libraryID LibraryID) error {
+	var encrypted int
+	err := tx.QueryRowContext(ctx, "SELECT encrypted FROM library WHERE id = ?", libraryID).Scan(&encrypted)
+	if errors.Is(err, sql.ErrNoRows) {
+		return errors.New("library not found")
+	}
+	if err != nil {
+		return err
+	}
+	if encrypted != 0 {
+		return ErrEncryptedLibraryProvisionalMedia
+	}
+	return nil
 }
 
 // ErrProvisionalRegistrationConflict means a registration attempted to revive
@@ -164,13 +190,10 @@ func (s *Store) RegisterProvisionalMedia(ctx context.Context, p ProvisionalMedia
 		return "", "", err
 	}
 	defer tx.Rollback()
-	var one int
-	if err := tx.QueryRowContext(ctx, "SELECT 1 FROM library WHERE id = ?", p.LibraryID).Scan(&one); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", "", errors.New("library not found")
-		}
+	if err := provisionalLibraryTx(ctx, tx, p.LibraryID); err != nil {
 		return "", "", err
 	}
+	var one int
 	var provisional int
 	err = tx.QueryRowContext(ctx, `SELECT path, provisional FROM media_file WHERE media_id = ?`, mediaID).Scan(&previousPath, &provisional)
 	if err == nil {
@@ -201,9 +224,13 @@ func (s *Store) RegisterProvisionalMedia(ctx context.Context, p ProvisionalMedia
 		// A file-less Media keyed by this registration's GUID External ID (a
 		// catalogued entry not yet fetched) gains the provisional file in place;
 		// its title and metadata stay. Any other existing row is not ours.
+		// The exact GUID forms match; the trimmed forms match rows written
+		// before GUIDs stopped being trimmed.
+		trimmed := strings.TrimSpace(p.GUID)
 		if err := tx.QueryRowContext(ctx, `
-			SELECT 1 FROM media_external_id WHERE media_id = ? AND scheme = ? AND value IN (?, ?)
-		`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(strings.TrimSpace(p.GUID)), strings.TrimSpace(p.GUID)).Scan(&one); err != nil {
+			SELECT 1 FROM media_external_id WHERE media_id = ? AND scheme = ? AND value IN (?, ?, ?, ?)
+		`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(p.GUID), p.GUID,
+			provisionalGUIDExternalID(trimmed), trimmed).Scan(&one); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return "", "", ErrProvisionalRegistrationConflict
 			}
@@ -229,7 +256,7 @@ func (s *Store) RegisterProvisionalMedia(ctx context.Context, p ProvisionalMedia
 	if err := insertProvisionalMediaFile(ctx, tx, mediaID, p.TeePath); err != nil {
 		return "", "", err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(strings.TrimSpace(p.GUID))); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(p.GUID)); err != nil {
 		return "", "", err
 	}
 	if err := tx.Commit(); err != nil {
@@ -321,12 +348,7 @@ func (s *Store) createProvisionalMediaSQL(ctx context.Context, mediaID MediaID, 
 	}
 	defer tx.Rollback()
 
-	var one int
-	err = tx.QueryRowContext(ctx, "SELECT 1 FROM library WHERE id = ?", p.LibraryID).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return errors.New("library not found")
-	}
-	if err != nil {
+	if err := provisionalLibraryTx(ctx, tx, p.LibraryID); err != nil {
 		return err
 	}
 	// Idempotent on the GUID-derived ID: a re-play of the same entry must not
@@ -350,7 +372,7 @@ func (s *Store) createProvisionalMediaSQL(ctx context.Context, mediaID MediaID, 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
 		VALUES (?, ?, ?)
-	`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(strings.TrimSpace(p.GUID))); err != nil {
+	`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(p.GUID)); err != nil {
 		return err
 	}
 	return tx.Commit()

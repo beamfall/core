@@ -19,6 +19,17 @@ import (
 // ErrSubscriptionNotFound means no Subscription exists with the given ID.
 var ErrSubscriptionNotFound = errors.New("subscription not found")
 
+// ErrEncryptedLibrarySubscription refuses a Subscription in an Encrypted
+// Library (CORE-0706). Its feed URL, title, root, entry GUIDs and download
+// paths would sit in the shared catalog in plaintext, so the operation is
+// refused until the Library's own plane can hold them.
+var ErrEncryptedLibrarySubscription = ValidationError("subscriptions are not available in an Encrypted Library yet")
+
+// ErrSubscriptionEntryCollision reports that an entry GUID already names a
+// different file. The conflicting binding is kept for review in
+// subscription_entry_collision instead of being dropped.
+var ErrSubscriptionEntryCollision = ValidationError("entry GUID is already associated with a different media file")
+
 // SubscriptionID is a stable Subscription identifier.
 type SubscriptionID string
 
@@ -96,12 +107,8 @@ func (s *Store) AddSubscription(ctx context.Context, subscription Subscription, 
 	if err := s.guardLocked(); err != nil {
 		return Subscription{}, err
 	}
-	var count int
-	if err := s.catalogR.QueryRowContext(ctx, `SELECT COUNT(*) FROM library WHERE id = ?`, subscription.LibraryID).Scan(&count); err != nil {
+	if err := s.subscriptionLibraryLocked(ctx, subscription.LibraryID); err != nil {
 		return Subscription{}, err
-	}
-	if count == 0 {
-		return Subscription{}, ValidationError("library not found")
 	}
 	if subscription.Root == "" {
 		roots, err := libraryRootsSQL(ctx, s.catalogR, subscription.LibraryID)
@@ -161,12 +168,8 @@ func (s *Store) GetOrCreateSubscription(ctx context.Context, subscription Subscr
 	if err := s.guardLocked(); err != nil {
 		return Subscription{}, false, err
 	}
-	var count int
-	if err := s.catalogR.QueryRowContext(ctx, `SELECT COUNT(*) FROM library WHERE id = ?`, subscription.LibraryID).Scan(&count); err != nil {
+	if err := s.subscriptionLibraryLocked(ctx, subscription.LibraryID); err != nil {
 		return Subscription{}, false, err
-	}
-	if count == 0 {
-		return Subscription{}, false, ValidationError("library not found")
 	}
 	existing, err := scanSubscription(s.catalogR.QueryRowContext(ctx, subscriptionColumns+` WHERE library_id = ? AND feed_url = ?`, subscription.LibraryID, subscription.FeedURL))
 	if err == nil {
@@ -215,6 +218,56 @@ func (s *Store) GetOrCreateSubscription(ctx context.Context, subscription Subscr
 		return Subscription{}, false, err
 	}
 	return subscription, true, nil
+}
+
+// subscriptionLibraryLocked admits a new Subscription only into an existing
+// plaintext Library; see ErrEncryptedLibrarySubscription.
+func (s *Store) subscriptionLibraryLocked(ctx context.Context, libraryID LibraryID) error {
+	var encrypted int
+	err := s.catalogR.QueryRowContext(ctx, `SELECT encrypted FROM library WHERE id = ?`, libraryID).Scan(&encrypted)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ValidationError("library not found")
+	}
+	if err != nil {
+		return err
+	}
+	if encrypted != 0 {
+		return ErrEncryptedLibrarySubscription
+	}
+	return nil
+}
+
+// SubscriptionPrivacyCheck reports ErrEncryptedLibrarySubscription when the
+// Subscription belongs to an Encrypted Library, so the poller can stop before
+// fetching the feed or downloading an enclosure it could not record.
+func (s *Store) SubscriptionPrivacyCheck(ctx context.Context, id SubscriptionID) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	return s.refuseEncryptedSubscriptionLocked(ctx, id)
+}
+
+// refuseEncryptedSubscriptionLocked refuses an entry or title write for a
+// Subscription that an Encrypted Library left in the shared catalog before
+// this refusal existed, so no new GUID, path or title of it lands there. An
+// unknown Subscription passes through to the caller's own not-found handling.
+func (s *Store) refuseEncryptedSubscriptionLocked(ctx context.Context, id SubscriptionID) error {
+	var encrypted int
+	err := s.catalogR.QueryRowContext(ctx, `
+		SELECT l.encrypted FROM subscription sub JOIN library l ON l.id = sub.library_id WHERE sub.id = ?
+	`, id).Scan(&encrypted)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if encrypted != 0 {
+		return ErrEncryptedLibrarySubscription
+	}
+	return nil
 }
 
 func normalizeSubscriptionFeedURL(raw string) (string, error) {
@@ -403,6 +456,9 @@ func (s *Store) FillSubscriptionTitle(ctx context.Context, id SubscriptionID, ti
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	if err := s.refuseEncryptedSubscriptionLocked(ctx, id); err != nil {
+		return false, err
+	}
 	var feedURL string
 	if err := s.catalogW.QueryRowContext(ctx, `SELECT feed_url FROM subscription WHERE id = ?`, id).Scan(&feedURL); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -508,6 +564,9 @@ func (s *Store) markSubscriptionEntrySeen(ctx context.Context, id SubscriptionID
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	if err := s.refuseEncryptedSubscriptionLocked(ctx, id); err != nil {
+		return err
+	}
 	_, err := s.catalogW.ExecContext(ctx, `
 		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path, feed_position)
 		VALUES (?, ?, ?, ?, ?)
@@ -525,6 +584,9 @@ func (s *Store) PublishSubscriptionEntry(ctx context.Context, id SubscriptionID,
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	if err := s.refuseEncryptedSubscriptionLocked(ctx, id); err != nil {
 		return err
 	}
 	tx, err := s.catalogW.BeginTx(ctx, nil)
@@ -569,6 +631,9 @@ func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionI
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	if err := s.refuseEncryptedSubscriptionLocked(ctx, id); err != nil {
+		return err
+	}
 	_, err := s.catalogW.ExecContext(ctx, `
 		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path, feed_position)
 		SELECT subscription_id, ?, seen_at_ms, path, feed_position FROM subscription_seen_entry
@@ -585,11 +650,12 @@ func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionI
 // caller supplies the Media explicitly; this method never resolves by
 // duplicate-friendly GUID alone.
 func (s *Store) AssociateSubscriptionEntryMedia(ctx context.Context, id SubscriptionID, guid string, mediaID MediaID, now time.Time) (SubscriptionEntryAssociation, error) {
-	guid = strings.TrimSpace(guid)
+	// The GUID is the feed's exact key: it is matched byte for byte against
+	// the poller's receipts, never trimmed or otherwise normalized.
 	if id == "" {
 		return SubscriptionEntryAssociation{}, errors.New("subscription ID is required")
 	}
-	if guid == "" {
+	if strings.TrimSpace(guid) == "" {
 		return SubscriptionEntryAssociation{}, errors.New("entry GUID is required")
 	}
 	if mediaID == "" {
@@ -597,6 +663,10 @@ func (s *Store) AssociateSubscriptionEntryMedia(ctx context.Context, id Subscrip
 	}
 	s.mu.RLock()
 	if err := s.guardLocked(); err != nil {
+		s.mu.RUnlock()
+		return SubscriptionEntryAssociation{}, err
+	}
+	if err := s.refuseEncryptedSubscriptionLocked(ctx, id); err != nil {
 		s.mu.RUnlock()
 		return SubscriptionEntryAssociation{}, err
 	}
@@ -678,7 +748,10 @@ func (s *Store) upsertSubscriptionEntryAssociationLocked(ctx context.Context, id
 	if err == nil {
 		existing = strings.TrimSpace(existing)
 		if existing != "" && existing != path {
-			return ValidationError("entry GUID is already associated with a different media file")
+			if err := s.recordSubscriptionEntryCollisionLocked(ctx, id, guid, existing, path, mediaID, now); err != nil {
+				return err
+			}
+			return ErrSubscriptionEntryCollision
 		}
 		_, err = s.catalogW.ExecContext(ctx, `
 			UPDATE subscription_seen_entry
@@ -699,6 +772,68 @@ func (s *Store) upsertSubscriptionEntryAssociationLocked(ctx context.Context, id
 		VALUES (?, ?, ?)
 	`, mediaID, subscriptionFeedGUIDScheme, feedGUIDExternalID(guid))
 	return err
+}
+
+// SubscriptionEntryCollision is one durable review item: a feed entry GUID
+// that already names BoundPath was offered for a different file.
+type SubscriptionEntryCollision struct {
+	SubscriptionID  SubscriptionID
+	GUID            string
+	BoundPath       string
+	IncomingPath    string
+	IncomingMediaID MediaID
+	FirstSeenAt     time.Time
+	LastSeenAt      time.Time
+	Observations    int
+}
+
+// recordSubscriptionEntryCollisionLocked keeps a same-GUID, different-file
+// offer for review. A repeat offer of the same file refreshes the one row.
+func (s *Store) recordSubscriptionEntryCollisionLocked(ctx context.Context, id SubscriptionID, guid, boundPath, incomingPath string, mediaID MediaID, now time.Time) error {
+	at := now.UTC().UnixMilli()
+	_, err := s.catalogW.ExecContext(ctx, `
+		INSERT INTO subscription_entry_collision(subscription_id, guid, bound_path, incoming_path, incoming_media_id, first_seen_at_ms, last_seen_at_ms)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(subscription_id, guid, incoming_path) DO UPDATE SET
+			bound_path = excluded.bound_path,
+			incoming_media_id = excluded.incoming_media_id,
+			last_seen_at_ms = excluded.last_seen_at_ms,
+			observations = subscription_entry_collision.observations + 1
+	`, id, guid, boundPath, incomingPath, mediaID, at, at)
+	return err
+}
+
+// SubscriptionEntryCollisions lists one Subscription's GUID collisions, oldest
+// first, for operator review.
+func (s *Store) SubscriptionEntryCollisions(ctx context.Context, id SubscriptionID) ([]SubscriptionEntryCollision, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT subscription_id, guid, bound_path, incoming_path, incoming_media_id,
+		       first_seen_at_ms, last_seen_at_ms, observations
+		FROM subscription_entry_collision WHERE subscription_id = ?
+		ORDER BY first_seen_at_ms, guid, incoming_path
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SubscriptionEntryCollision
+	for rows.Next() {
+		var c SubscriptionEntryCollision
+		var first, last int64
+		if err := rows.Scan(&c.SubscriptionID, &c.GUID, &c.BoundPath, &c.IncomingPath, &c.IncomingMediaID,
+			&first, &last, &c.Observations); err != nil {
+			return nil, err
+		}
+		c.FirstSeenAt = time.UnixMilli(first).UTC()
+		c.LastSeenAt = time.UnixMilli(last).UTC()
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 func pathWithinRoot(root, path string) bool {

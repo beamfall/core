@@ -143,4 +143,9 @@ package store
 // CORE-3311 adds 0137_player_controllers for Player Profile controller lists
 // and display last-seen tracking, off the entity-query hot path.
 // CORE-3313 adds 0138_reveal_generation on auth_session for restricted streams.
-const schemaFreezeCatalogMigrations = 134
+// CORE-0706 adds 0139_subscription_entry_collision, the durable review queue
+// for a feed GUID offered for a second file, off the entity-query hot path.
+// CORE-0706 adds 0140_identification_revision, the immutable per-Media
+// identification revisions and idempotency receipts, written by identification
+// commits and read by their replay check, off the entity-query hot path.
+const schemaFreezeCatalogMigrations = 136

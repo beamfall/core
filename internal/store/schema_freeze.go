@@ -148,7 +148,15 @@ package store
 // smart_collection, saved_station and channel tables in the owning Library
 // plane, read by their own by-ID and per-Library list reads, export and My
 // Data, off the entity-query hot path.
+// Encrypted-library 0017 (CORE-0706) mirrors catalog 0094's unmatched_record
+// and 0102's unmatched_suppression in the owning Library plane, read only by
+// the review inbox and the re-scan suppression check, off the entity-query hot
+// path.
+// Encrypted-library 0018 (CORE-0706) mirrors catalog 0113/0119 provenance,
+// 0132's operator ordinal and 0140's identification revisions in the owning
+// Library plane, written by identification commits and read by Fix Match and
+// provenance reads, off the entity-query hot path.
 const (
 	schemaFreezeEventsMigrations           = 34
-	schemaFreezeEncryptedLibraryMigrations = 16
+	schemaFreezeEncryptedLibraryMigrations = 18
 )
