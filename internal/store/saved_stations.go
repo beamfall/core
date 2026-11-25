@@ -45,8 +45,16 @@ func (s *Store) SavedStations(ctx context.Context, profileID ProfileID, libraryI
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT id, profile_id, library_id, name, seed_json, rules_json, tuning_json, created_at_ms
+	stations := []SavedStation{}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if errors.Is(err, ErrEncryptedLibraryDBDisabled) {
+		return stations, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT `+savedStationColumns+`
 		FROM saved_station
 		WHERE profile_id = ? AND library_id = ?
 		ORDER BY created_at_ms DESC
@@ -55,7 +63,6 @@ func (s *Store) SavedStations(ctx context.Context, profileID ProfileID, libraryI
 		return nil, err
 	}
 	defer rows.Close()
-	var stations []SavedStation
 	for rows.Next() {
 		st, err := scanSavedStation(rows)
 		if err != nil {
@@ -63,15 +70,14 @@ func (s *Store) SavedStations(ctx context.Context, profileID ProfileID, libraryI
 		}
 		stations = append(stations, st)
 	}
-	if stations == nil {
-		stations = []SavedStation{}
-	}
 	return stations, rows.Err()
 }
 
 // CreateSavedStation inserts a new SavedStation for a Profile+Library pair. The
-// Library must exist (enforced by FK). Name is trimmed; empty name is rejected.
-// Empty seed/rules/tuning default to "{}" so the columns are always valid JSON.
+// Library must exist. Name is trimmed; empty name is rejected. Empty
+// seed/rules/tuning default to "{}" so the columns are always valid JSON. An
+// Encrypted Library's Station is written to its protected plane, and creating
+// one while the Library is Sealed fails with ErrEncryptedLibraryDBDisabled.
 func (s *Store) CreateSavedStation(ctx context.Context, st SavedStation, now time.Time) (SavedStation, error) {
 	st.Name = strings.TrimSpace(st.Name)
 	if st.ProfileID == "" {
@@ -98,7 +104,16 @@ func (s *Store) CreateSavedStation(ctx context.Context, st SavedStation, now tim
 	if err := s.guardLocked(); err != nil {
 		return SavedStation{}, err
 	}
-	_, err = s.catalogW.ExecContext(ctx, `
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, st.LibraryID)
+	if err != nil {
+		return SavedStation{}, err
+	}
+	if plane.encrypted {
+		if err := s.requireProfileLocked(ctx, st.ProfileID); err != nil {
+			return SavedStation{}, err
+		}
+	}
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT INTO saved_station (id, profile_id, library_id, name, seed_json, rules_json, tuning_json, created_at_ms)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, st.ID, st.ProfileID, st.LibraryID, st.Name, st.SeedJSON, st.RulesJSON, st.TuningJSON, createdAtMS)
@@ -119,14 +134,20 @@ func (s *Store) SavedStationByID(ctx context.Context, id SavedStationID) (SavedS
 	if err := s.guardLocked(); err != nil {
 		return SavedStation{}, err
 	}
-	st, err := scanSavedStation(s.catalogR.QueryRowContext(ctx, `
-		SELECT id, profile_id, library_id, name, seed_json, rules_json, tuning_json, created_at_ms
-		FROM saved_station WHERE id = ?
-	`, id))
+	_, st, err := s.savedStationLocked(ctx, id)
+	return st, err
+}
+
+func (s *Store) savedStationLocked(ctx context.Context, id SavedStationID) (catalogPlane, SavedStation, error) {
+	plane, err := s.expressionPlaneLocked(ctx, "saved_station", string(id), ErrSavedStationNotFound)
 	if err != nil {
-		return SavedStation{}, ErrSavedStationNotFound
+		return catalogPlane{}, SavedStation{}, err
 	}
-	return st, nil
+	st, err := scanSavedStation(plane.reader.QueryRowContext(ctx, `SELECT `+savedStationColumns+` FROM saved_station WHERE id = ?`, id))
+	if err != nil {
+		return catalogPlane{}, SavedStation{}, ErrSavedStationNotFound
+	}
+	return plane, st, nil
 }
 
 // DeleteSavedStation removes a SavedStation by ID and returns the deleted row.
@@ -139,18 +160,19 @@ func (s *Store) DeleteSavedStation(ctx context.Context, id SavedStationID) (Save
 	if err := s.guardLocked(); err != nil {
 		return SavedStation{}, err
 	}
-	st, err := scanSavedStation(s.catalogR.QueryRowContext(ctx, `
-		SELECT id, profile_id, library_id, name, seed_json, rules_json, tuning_json, created_at_ms
-		FROM saved_station WHERE id = ?
-	`, id))
+	plane, st, err := s.savedStationLocked(ctx, id)
 	if err != nil {
-		return SavedStation{}, ErrSavedStationNotFound
+		return SavedStation{}, err
 	}
-	if _, err := s.catalogW.ExecContext(ctx, `DELETE FROM saved_station WHERE id = ?`, id); err != nil {
+	if _, err := plane.writer.ExecContext(ctx, `DELETE FROM saved_station WHERE id = ?`, id); err != nil {
 		return SavedStation{}, err
 	}
 	return st, nil
 }
+
+// savedStationColumns is the read shape shared by catalog.db and an Encrypted
+// Library's protected plane (CORE-0769).
+const savedStationColumns = `id, profile_id, library_id, name, seed_json, rules_json, tuning_json, created_at_ms`
 
 func scanSavedStation(scanner rowScanner) (SavedStation, error) {
 	var st SavedStation

@@ -54,7 +54,38 @@ type SmartCollection struct {
 	CreatedAt        time.Time
 }
 
+// savedFilterColumns and smartCollectionColumns are the read shapes shared by
+// catalog.db and an Encrypted Library's protected plane (CORE-0769).
+const (
+	savedFilterColumns     = `id, profile_id, library_id, name, filter_json, pinned, created_at_ms`
+	smartCollectionColumns = `id, library_id, name, source_expr, sort_expr, created_at_ms`
+)
+
+func scanSavedFilter(row rowScanner) (SavedFilter, error) {
+	var f SavedFilter
+	var pinnedInt int
+	var createdAtMS int64
+	if err := row.Scan(&f.ID, &f.ProfileID, &f.LibraryID, &f.Name, &f.FilterJSON, &pinnedInt, &createdAtMS); err != nil {
+		return SavedFilter{}, err
+	}
+	f.Pinned = pinnedInt != 0
+	f.CreatedAt = time.UnixMilli(createdAtMS).UTC()
+	return f, nil
+}
+
+func scanSmartCollection(row rowScanner) (SmartCollection, error) {
+	var c SmartCollection
+	var createdAtMS int64
+	if err := row.Scan(&c.ID, &c.LibraryID, &c.Name, &c.SourceExpr, &c.SortExpr, &createdAtMS); err != nil {
+		return SmartCollection{}, err
+	}
+	c.CreatedAt = time.UnixMilli(createdAtMS).UTC()
+	return c, nil
+}
+
 // SavedFilters returns the Profile's saved filters for a Library, newest first.
+// An Encrypted Library's filters live in its protected plane; while it is
+// Sealed the list is empty.
 func (s *Store) SavedFilters(ctx context.Context, profileID ProfileID, libraryID LibraryID) ([]SavedFilter, error) {
 	if profileID == "" || libraryID == "" {
 		return nil, ValidationError("profile ID and library ID are required")
@@ -64,8 +95,16 @@ func (s *Store) SavedFilters(ctx context.Context, profileID ProfileID, libraryID
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT id, profile_id, library_id, name, filter_json, pinned, created_at_ms
+	filters := []SavedFilter{}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if errors.Is(err, ErrEncryptedLibraryDBDisabled) {
+		return filters, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT `+savedFilterColumns+`
 		FROM saved_filter
 		WHERE profile_id = ? AND library_id = ?
 		ORDER BY created_at_ms DESC
@@ -74,26 +113,20 @@ func (s *Store) SavedFilters(ctx context.Context, profileID ProfileID, libraryID
 		return nil, err
 	}
 	defer rows.Close()
-	var filters []SavedFilter
 	for rows.Next() {
-		var f SavedFilter
-		var pinnedInt int
-		var createdAtMS int64
-		if err := rows.Scan(&f.ID, &f.ProfileID, &f.LibraryID, &f.Name, &f.FilterJSON, &pinnedInt, &createdAtMS); err != nil {
+		f, err := scanSavedFilter(rows)
+		if err != nil {
 			return nil, err
 		}
-		f.Pinned = pinnedInt != 0
-		f.CreatedAt = time.UnixMilli(createdAtMS).UTC()
 		filters = append(filters, f)
-	}
-	if filters == nil {
-		filters = []SavedFilter{}
 	}
 	return filters, rows.Err()
 }
 
 // CreateSavedFilter inserts a new SavedFilter for a Profile+Library pair. The
-// Library must exist (enforced by FK). Name is trimmed; empty name is rejected.
+// Library must exist. Name is trimmed; empty name is rejected. An Encrypted
+// Library's filter is written to its protected plane, and creating one while
+// the Library is Sealed fails with ErrEncryptedLibraryDBDisabled.
 func (s *Store) CreateSavedFilter(ctx context.Context, f SavedFilter, now time.Time) (SavedFilter, error) {
 	f.Name = strings.TrimSpace(f.Name)
 	if f.ProfileID == "" {
@@ -124,7 +157,16 @@ func (s *Store) CreateSavedFilter(ctx context.Context, f SavedFilter, now time.T
 	if err := s.guardLocked(); err != nil {
 		return SavedFilter{}, err
 	}
-	_, err = s.catalogW.ExecContext(ctx, `
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, f.LibraryID)
+	if err != nil {
+		return SavedFilter{}, err
+	}
+	if plane.encrypted {
+		if err := s.requireProfileLocked(ctx, f.ProfileID); err != nil {
+			return SavedFilter{}, err
+		}
+	}
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT INTO saved_filter (id, profile_id, library_id, name, filter_json, pinned, created_at_ms)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, f.ID, f.ProfileID, f.LibraryID, f.Name, f.FilterJSON, pinnedInt, createdAtMS)
@@ -145,22 +187,20 @@ func (s *Store) SavedFilterByID(ctx context.Context, id SavedFilterID) (SavedFil
 	if err := s.guardLocked(); err != nil {
 		return SavedFilter{}, err
 	}
-	var f SavedFilter
-	var pinnedInt int
-	var createdAtMS int64
-	err := s.catalogR.QueryRowContext(ctx, `
-		SELECT id, profile_id, library_id, name, filter_json, pinned, created_at_ms
-		FROM saved_filter WHERE id = ?
-	`, id).Scan(&f.ID, &f.ProfileID, &f.LibraryID, &f.Name, &f.FilterJSON, &pinnedInt, &createdAtMS)
-	if errors.Is(err, sql.ErrNoRows) {
-		return SavedFilter{}, ErrSavedFilterNotFound
-	}
+	_, f, err := s.savedFilterLocked(ctx, id)
+	return f, err
+}
+
+func (s *Store) savedFilterLocked(ctx context.Context, id SavedFilterID) (catalogPlane, SavedFilter, error) {
+	plane, err := s.expressionPlaneLocked(ctx, "saved_filter", string(id), ErrSavedFilterNotFound)
 	if err != nil {
-		return SavedFilter{}, err
+		return catalogPlane{}, SavedFilter{}, err
 	}
-	f.Pinned = pinnedInt != 0
-	f.CreatedAt = time.UnixMilli(createdAtMS).UTC()
-	return f, nil
+	f, err := scanSavedFilter(plane.reader.QueryRowContext(ctx, `SELECT `+savedFilterColumns+` FROM saved_filter WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return catalogPlane{}, SavedFilter{}, ErrSavedFilterNotFound
+	}
+	return plane, f, err
 }
 
 // DeleteSavedFilter removes a SavedFilter by ID and returns the deleted row.
@@ -173,28 +213,19 @@ func (s *Store) DeleteSavedFilter(ctx context.Context, id SavedFilterID) (SavedF
 	if err := s.guardLocked(); err != nil {
 		return SavedFilter{}, err
 	}
-	var f SavedFilter
-	var pinnedInt int
-	var createdAtMS int64
-	err := s.catalogR.QueryRowContext(ctx, `
-		SELECT id, profile_id, library_id, name, filter_json, pinned, created_at_ms
-		FROM saved_filter WHERE id = ?
-	`, id).Scan(&f.ID, &f.ProfileID, &f.LibraryID, &f.Name, &f.FilterJSON, &pinnedInt, &createdAtMS)
-	if errors.Is(err, sql.ErrNoRows) {
-		return SavedFilter{}, ErrSavedFilterNotFound
-	}
+	plane, f, err := s.savedFilterLocked(ctx, id)
 	if err != nil {
 		return SavedFilter{}, err
 	}
-	f.Pinned = pinnedInt != 0
-	f.CreatedAt = time.UnixMilli(createdAtMS).UTC()
-	if _, err := s.catalogW.ExecContext(ctx, `DELETE FROM saved_filter WHERE id = ?`, id); err != nil {
+	if _, err := plane.writer.ExecContext(ctx, `DELETE FROM saved_filter WHERE id = ?`, id); err != nil {
 		return SavedFilter{}, err
 	}
 	return f, nil
 }
 
 // SmartCollections returns all SmartCollections for a Library, newest first.
+// An Encrypted Library's smart Collections live in its protected plane; while
+// it is Sealed the list is empty.
 func (s *Store) SmartCollections(ctx context.Context, libraryID LibraryID) ([]SmartCollection, error) {
 	if libraryID == "" {
 		return nil, ValidationError("library ID is required")
@@ -204,8 +235,16 @@ func (s *Store) SmartCollections(ctx context.Context, libraryID LibraryID) ([]Sm
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT id, library_id, name, source_expr, sort_expr, created_at_ms
+	collections := []SmartCollection{}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if errors.Is(err, ErrEncryptedLibraryDBDisabled) {
+		return collections, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT `+smartCollectionColumns+`
 		FROM smart_collection
 		WHERE library_id = ?
 		ORDER BY created_at_ms DESC
@@ -214,24 +253,20 @@ func (s *Store) SmartCollections(ctx context.Context, libraryID LibraryID) ([]Sm
 		return nil, err
 	}
 	defer rows.Close()
-	var collections []SmartCollection
 	for rows.Next() {
-		var c SmartCollection
-		var createdAtMS int64
-		if err := rows.Scan(&c.ID, &c.LibraryID, &c.Name, &c.SourceExpr, &c.SortExpr, &createdAtMS); err != nil {
+		c, err := scanSmartCollection(rows)
+		if err != nil {
 			return nil, err
 		}
-		c.CreatedAt = time.UnixMilli(createdAtMS).UTC()
 		collections = append(collections, c)
-	}
-	if collections == nil {
-		collections = []SmartCollection{}
 	}
 	return collections, rows.Err()
 }
 
 // CreateSmartCollection inserts a new SmartCollection for a Library. The
-// Library must exist (FK). Name is trimmed; empty name is rejected.
+// Library must exist. Name is trimmed; empty name is rejected. An Encrypted
+// Library's smart Collection is written to its protected plane, and creating
+// one while the Library is Sealed fails with ErrEncryptedLibraryDBDisabled.
 func (s *Store) CreateSmartCollection(ctx context.Context, c SmartCollection, now time.Time) (SmartCollection, error) {
 	c.Name = strings.TrimSpace(c.Name)
 	if c.LibraryID == "" {
@@ -261,7 +296,16 @@ func (s *Store) CreateSmartCollection(ctx context.Context, c SmartCollection, no
 	if err := s.guardLocked(); err != nil {
 		return SmartCollection{}, err
 	}
-	_, err = s.catalogW.ExecContext(ctx, `
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, c.LibraryID)
+	if err != nil {
+		return SmartCollection{}, err
+	}
+	if plane.encrypted && c.CreatedByProfile != "" {
+		if err := s.requireProfileLocked(ctx, c.CreatedByProfile); err != nil {
+			return SmartCollection{}, err
+		}
+	}
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT INTO smart_collection (id, library_id, name, source_expr, sort_expr, created_by_profile_id, created_at_ms)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, c.ID, c.LibraryID, c.Name, c.SourceExpr, c.SortExpr, nullString(string(c.CreatedByProfile)), createdAtMS)
@@ -282,20 +326,20 @@ func (s *Store) SmartCollectionByID(ctx context.Context, id SmartCollectionID) (
 	if err := s.guardLocked(); err != nil {
 		return SmartCollection{}, err
 	}
-	var c SmartCollection
-	var createdAtMS int64
-	err := s.catalogR.QueryRowContext(ctx, `
-		SELECT id, library_id, name, source_expr, sort_expr, created_at_ms
-		FROM smart_collection WHERE id = ?
-	`, id).Scan(&c.ID, &c.LibraryID, &c.Name, &c.SourceExpr, &c.SortExpr, &createdAtMS)
-	if errors.Is(err, sql.ErrNoRows) {
-		return SmartCollection{}, ErrSmartCollectionNotFound
-	}
+	_, c, err := s.smartCollectionLocked(ctx, id)
+	return c, err
+}
+
+func (s *Store) smartCollectionLocked(ctx context.Context, id SmartCollectionID) (catalogPlane, SmartCollection, error) {
+	plane, err := s.expressionPlaneLocked(ctx, "smart_collection", string(id), ErrSmartCollectionNotFound)
 	if err != nil {
-		return SmartCollection{}, err
+		return catalogPlane{}, SmartCollection{}, err
 	}
-	c.CreatedAt = time.UnixMilli(createdAtMS).UTC()
-	return c, nil
+	c, err := scanSmartCollection(plane.reader.QueryRowContext(ctx, `SELECT `+smartCollectionColumns+` FROM smart_collection WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return catalogPlane{}, SmartCollection{}, ErrSmartCollectionNotFound
+	}
+	return plane, c, err
 }
 
 // UpdateSmartCollection updates editable SmartCollection metadata and source
@@ -304,7 +348,12 @@ func (s *Store) UpdateSmartCollection(ctx context.Context, c SmartCollection) (S
 	if c.ID == "" {
 		return SmartCollection{}, ValidationError("id is required")
 	}
-	existing, err := s.SmartCollectionByID(ctx, c.ID)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return SmartCollection{}, err
+	}
+	plane, existing, err := s.smartCollectionLocked(ctx, c.ID)
 	if err != nil {
 		return SmartCollection{}, err
 	}
@@ -323,12 +372,7 @@ func (s *Store) UpdateSmartCollection(ctx context.Context, c SmartCollection) (S
 	if err := validateSmartRuleExprs(sourceExpr, sortExpr); err != nil {
 		return SmartCollection{}, err
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return SmartCollection{}, err
-	}
-	if _, err := s.catalogW.ExecContext(ctx, `
+	if _, err := plane.writer.ExecContext(ctx, `
 		UPDATE smart_collection SET name = ?, source_expr = ?, sort_expr = ? WHERE id = ?
 	`, name, sourceExpr, sortExpr, c.ID); err != nil {
 		return SmartCollection{}, err
@@ -353,20 +397,11 @@ func (s *Store) DeleteSmartCollection(ctx context.Context, id SmartCollectionID)
 	if err := s.guardLocked(); err != nil {
 		return SmartCollection{}, err
 	}
-	var c SmartCollection
-	var createdAtMS int64
-	err := s.catalogR.QueryRowContext(ctx, `
-		SELECT id, library_id, name, source_expr, sort_expr, created_at_ms
-		FROM smart_collection WHERE id = ?
-	`, id).Scan(&c.ID, &c.LibraryID, &c.Name, &c.SourceExpr, &c.SortExpr, &createdAtMS)
-	if errors.Is(err, sql.ErrNoRows) {
-		return SmartCollection{}, ErrSmartCollectionNotFound
-	}
+	plane, c, err := s.smartCollectionLocked(ctx, id)
 	if err != nil {
 		return SmartCollection{}, err
 	}
-	c.CreatedAt = time.UnixMilli(createdAtMS).UTC()
-	if _, err := s.catalogW.ExecContext(ctx, `DELETE FROM smart_collection WHERE id = ?`, id); err != nil {
+	if _, err := plane.writer.ExecContext(ctx, `DELETE FROM smart_collection WHERE id = ?`, id); err != nil {
 		return SmartCollection{}, err
 	}
 	return c, nil

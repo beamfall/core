@@ -469,9 +469,8 @@ func (s *Store) smartRuleScanLocked(ctx context.Context, query string, args []an
 // isSmartRuleCollectionLocked reports whether a Smart Collection id names a
 // rule source. The caller holds s.mu.
 func (s *Store) isSmartRuleCollectionLocked(ctx context.Context, id string) bool {
-	var expr string
-	err := s.catalogR.QueryRowContext(ctx, `SELECT source_expr FROM smart_collection WHERE id = ?`, strings.TrimSpace(id)).Scan(&expr)
-	return err == nil && isSmartRuleSourceExpr(expr)
+	_, collection, err := s.smartCollectionLocked(ctx, SmartCollectionID(strings.TrimSpace(id)))
+	return err == nil && isSmartRuleSourceExpr(collection.SourceExpr)
 }
 
 var errSmartRuleEngagementCap = errors.New("the Profile's play history is too large to evaluate smart playlist rules")
