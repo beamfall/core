@@ -159,7 +159,10 @@ package store
 // Encrypted-library 0019 (CORE-0706) mirrors catalog 0141's pending artwork
 // actions in the owning Library plane, written by identification commits and
 // read by the post-commit artwork worker and its restart replay.
+// Encrypted-library 0020 (CORE-0706) adds holding tables for legacy
+// Subscription and item-state import rows evacuated once at unseal; nothing
+// reads them on a request path.
 const (
 	schemaFreezeEventsMigrations           = 34
-	schemaFreezeEncryptedLibraryMigrations = 19
+	schemaFreezeEncryptedLibraryMigrations = 20
 )
