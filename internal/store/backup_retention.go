@@ -9,7 +9,8 @@ import (
 )
 
 // Backup retention policy (ADR-0192 §6): keep the newest BackupDailyKeep sets,
-// plus the newest set in each further 7-day age bucket out to BackupWeeklyHorizon,
+// plus the newest set in each further fixed 7-day calendar bucket (anchored to the
+// Unix epoch, so a kept weekly set stays kept as time passes) out to BackupWeeklyHorizon,
 // hard-capped at BackupRetentionCap sets overall. The cap drops the oldest
 // weeklies first, so the newest BackupDailyKeep sets are never pruned.
 const (
@@ -45,7 +46,9 @@ func backupSetsToPrune(names []string, now time.Time) []string {
 	seenBucket := map[int64]bool{}
 	for i, name := range sets {
 		created, _ := backupSetTime(name)
+		bucket := created.Unix() / int64(backupWeeklyBucket/time.Second)
 		if i < BackupDailyKeep {
+			seenBucket[bucket] = true // a week the daily floor already covers needs no weekly set
 			keep[name] = true
 			kept = append(kept, name)
 			continue
@@ -53,10 +56,6 @@ func backupSetsToPrune(names []string, now time.Time) []string {
 		age := now.Sub(created)
 		if age > BackupWeeklyHorizon {
 			continue
-		}
-		bucket := int64(max(age, 0) / backupWeeklyBucket)
-		if bucket == 0 {
-			continue // the first week is covered by the daily floor
 		}
 		if !seenBucket[bucket] {
 			seenBucket[bucket] = true

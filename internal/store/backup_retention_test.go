@@ -61,3 +61,34 @@ func TestBackupSetsToPruneIgnoresForeignNames(t *testing.T) {
 		t.Fatalf("foreign names selected: %v", got)
 	}
 }
+
+// TestBackupRetentionKeepsWeeklyHistoryUnderDailyBackups simulates a daily backup
+// job. Weekly buckets are fixed calendar weeks, so once a set is kept as its
+// week's survivor it stays kept as time passes.
+func TestBackupRetentionKeepsWeeklyHistoryUnderDailyBackups(t *testing.T) {
+	start := time.Date(2026, 1, 1, 3, 0, 0, 0, time.UTC)
+	var sets []string
+	for day := 0; day < 120; day++ {
+		now := start.Add(time.Duration(day) * 24 * time.Hour)
+		sets = append(sets, "beamfall-"+now.Format("20060102T150405.000000000Z"))
+		drop := map[string]bool{}
+		for _, name := range backupSetsToPrune(sets, now) {
+			drop[name] = true
+		}
+		kept := sets[:0:0]
+		for _, name := range sets {
+			if !drop[name] {
+				kept = append(kept, name)
+			}
+		}
+		sets = kept
+		if len(sets) > BackupRetentionCap {
+			t.Fatalf("day %d: kept %d sets, cap is %d", day, len(sets), BackupRetentionCap)
+		}
+	}
+	now := start.Add(119 * 24 * time.Hour)
+	oldest, _ := backupSetTime(sets[0])
+	if age := now.Sub(oldest); age < 28*24*time.Hour {
+		t.Fatalf("oldest kept set is %v old after 120 daily runs; want weekly history past 28 days (7 daily plus weekly sets under the cap) (kept %d)", age, len(sets))
+	}
+}
