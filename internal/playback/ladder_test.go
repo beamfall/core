@@ -141,3 +141,16 @@ func TestRungWidthKeepsAspectAtEvenPixels(t *testing.T) {
 		t.Fatalf("rungWidth with unknown source width = %d, want 0", got)
 	}
 }
+
+func TestRungsForScopeAndUltrawideBoundingBox(t *testing.T) {
+	// 1920x800 (1080p scope) must keep the 1080p tier clamped to 1920x800.
+	scope1080 := rungsFor(1920, 800)
+	if len(scope1080) == 0 || scope1080[0].ID != "1080p" || scope1080[0].Height != 800 || scope1080[0].Width != 1920 {
+		t.Fatalf("rungsFor(1920, 800) = %+v, want top rung 1080p at 1920x800", scope1080)
+	}
+	// 3840x1600 (4K scope) with HEVC must keep 2160p-hevc at 3840x1600.
+	scope4K := rungsForLadder(3840, 1600, ladderCaps{HEVC: true})
+	if len(scope4K) == 0 || scope4K[0].ID != "2160p-hevc" || scope4K[0].Height != 1600 || scope4K[0].Width != 3840 {
+		t.Fatalf("rungsForLadder(3840, 1600, HEVC) = %+v, want top rung 2160p-hevc at 3840x1600", scope4K)
+	}
+}

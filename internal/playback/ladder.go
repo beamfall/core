@@ -22,6 +22,7 @@ type Rung struct {
 	ID        string
 	Codec     string // empty = h264
 	Height    int    // 0 = encode at source size (dimensions unknown)
+	MaxWidth  int    // bounding-box width for landscape/scope aspect ratios; 0 = height-only
 	Width     int    // 0 = unknown; derived from the source aspect when known
 	VideoKbps int
 	Bandwidth int  // peak bits/s for #EXT-X-STREAM-INF BANDWIDTH
@@ -31,16 +32,16 @@ type Rung struct {
 
 // h264LadderRungs is the software-safe rung vocabulary, best first.
 var h264LadderRungs = []Rung{
-	{ID: "1080p", Height: 1080, VideoKbps: 8000},
-	{ID: "720p", Height: 720, VideoKbps: 4000},
-	{ID: "480p", Height: 480, VideoKbps: 1500},
+	{ID: "1080p", Height: 1080, MaxWidth: 1920, VideoKbps: 8000},
+	{ID: "720p", Height: 720, MaxWidth: 1280, VideoKbps: 4000},
+	{ID: "480p", Height: 480, MaxWidth: 854, VideoKbps: 1500},
 }
 
 // hevcLadderRungs is offered only when the client declares HEVC and the server
 // has a verified hardware encoder, so 4K transcodes never fall onto libx265.
 var hevcLadderRungs = []Rung{
-	{ID: "2160p-hevc", Codec: "hevc", Height: 2160, VideoKbps: 25000},
-	{ID: "1440p-hevc", Codec: "hevc", Height: 1440, VideoKbps: 16000},
+	{ID: "2160p-hevc", Codec: "hevc", Height: 2160, MaxWidth: 3840, VideoKbps: 25000},
+	{ID: "1440p-hevc", Codec: "hevc", Height: 1440, MaxWidth: 2560, VideoKbps: 16000},
 }
 
 type ladderCaps struct {
@@ -146,9 +147,11 @@ func rungsForLadder(sourceWidth, sourceHeight int, caps ladderCaps) []Rung {
 				ceiling = caps.ClientMaxHeight
 			}
 		}
-		if rung.Height > ceiling {
+		fitHeight := fittedRungHeight(sourceWidth, sourceHeight, rung, ceiling)
+		if fitHeight <= 0 {
 			continue // never advertise above the source or the client ceiling
 		}
+		rung.Height = fitHeight
 		rung.Width = rungWidth(sourceWidth, sourceHeight, rung.Height)
 		rung.Bandwidth = bandwidthFor(rung.VideoKbps)
 		rungs = append(rungs, rung)
@@ -168,6 +171,41 @@ func rungsForLadder(sourceWidth, sourceHeight int, caps ladderCaps) []Rung {
 		}}
 	}
 	return rungs
+}
+
+// fittedRungHeight returns the even output height for rung within the source
+// and client ceiling. A scope/ultrawide source (e.g. 3840x1600 or 1920x800)
+// qualifies for a tier by MaxWidth as well as Height, with Height clamped so
+// the source is never upscaled and width never exceeds MaxWidth.
+func fittedRungHeight(sourceWidth, sourceHeight int, rung Rung, ceiling int) int {
+	if sourceHeight >= rung.Height {
+		if rung.Height > ceiling {
+			return 0
+		}
+		return rung.Height
+	}
+	if sourceWidth > 0 && rung.MaxWidth > 0 && sourceWidth >= rung.MaxWidth && rung.Height <= ceiling*2 {
+		// Fit inside (rung.MaxWidth, min(rung.Height, ceiling)) without upscaling.
+		h := (sourceHeight*rung.MaxWidth + sourceWidth/2) / sourceWidth
+		if h > sourceHeight {
+			h = sourceHeight
+		}
+		if h > ceiling {
+			h = ceiling
+		}
+		h &^= 1
+		if h <= 0 {
+			return 0
+		}
+		// Only qualify if the client ceiling itself isn't strictly below the tier's
+		// standard height when the source is 16:9; for scope sources, ceiling == sourceHeight
+		// or clientMaxHeight >= rung.Height.
+		if ceiling < sourceHeight && rung.Height > ceiling {
+			return 0
+		}
+		return h
+	}
+	return 0
 }
 
 // unknownDimensionRung is the single rung offered when the source dimensions

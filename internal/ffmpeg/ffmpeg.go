@@ -386,7 +386,11 @@ func (r *Runner) launchRendition(ctx context.Context, rendition Rendition) Rendi
 		return rendition
 	}
 	rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(ctx, rendition))
-	return rendition.withDeviceDecode(selectRenditionDeviceDecode(ctx, rendition))
+	rendition = rendition.withDeviceDecode(selectRenditionDeviceDecode(ctx, rendition))
+	if !rendition.deviceDecode {
+		rendition = rendition.withSDRDeviceDecode(selectRenditionSDRDeviceDecode(ctx, rendition))
+	}
+	return rendition
 }
 
 //io:ignore — in-memory capability check, not an I/O operation (cmd/ioe2e ledger).
@@ -1705,6 +1709,9 @@ type Rendition struct {
 	// (CORE-2156). It is set only after the device-decode probe certified that
 	// chain for hwAccel and this source's transfer class.
 	deviceDecode bool
+	// sdrDeviceDecode keeps 8-bit SDR decode, scale and encode on the GPU
+	// when a synthetic probe verifies the host's hardware decoder and scaler.
+	sdrDeviceDecode bool
 	// useRubberband uses librubberband for formant-preserving pitch shifting
 	// when the resolved FFmpeg build lists the rubberband filter.
 	useRubberband bool
@@ -1923,6 +1930,9 @@ func (r Rendition) usesDeviceDecode() bool {
 // tone-map chain already created one there: a second QSV device would leave
 // the encoder unable to choose and fall back to libmfx's default adapter.
 func (r Rendition) inputArgs() []string {
+	if r.usesSDRDeviceDecode() {
+		return r.sdrDeviceDecodeInputArgs()
+	}
 	chain := r.toneMapChain()
 	if chain.DeviceDecode {
 		// The chain's own devices serve the decoder and the encoder; a second
@@ -2045,6 +2055,21 @@ func (r Rendition) rateControlArgs() []string {
 		}
 	}
 	if r.VideoKbps <= 0 {
+		if hw {
+			switch r.hwAccel {
+			case HWAccelNVENC:
+				return append(out, "-rc", "vbr", "-cq", r.softwareCRF(), "-b:v", "0")
+			case HWAccelQSV:
+				return append(out, "-global_quality", r.softwareCRF())
+			case HWAccelVAAPI:
+				return append(out, "-rc_mode", "CQP", "-qp", r.softwareCRF())
+			case HWAccelAMF:
+				crf := r.softwareCRF()
+				return append(out, "-rc", "cqp", "-qp_i", crf, "-qp_p", crf)
+			case HWAccelVideoToolbox:
+				return append(out, "-q:v", r.vtQuality())
+			}
+		}
 		return out
 	}
 	maxrate := r.VideoKbps
@@ -2066,7 +2091,9 @@ func (r Rendition) rateControlArgs() []string {
 			if target == maxrate {
 				maxrate++
 			}
-			out = append(out, "-b:v", fmt.Sprintf("%dk", target))
+			out = append(out, "-extbrc", "1", "-b:v", fmt.Sprintf("%dk", target))
+		case HWAccelVideoToolbox:
+			out = append(out, "-realtime", "1", "-b:v", fmt.Sprintf("%dk", target))
 		default:
 			out = append(out, "-b:v", fmt.Sprintf("%dk", target))
 		}
@@ -2075,6 +2102,17 @@ func (r Rendition) rateControlArgs() []string {
 		"-maxrate", fmt.Sprintf("%dk", maxrate),
 		"-bufsize", fmt.Sprintf("%dk", 2*r.VideoKbps),
 	)
+}
+
+func (r Rendition) vtQuality() string {
+	switch r.quality {
+	case QualityLow:
+		return "45"
+	case QualityHigh:
+		return "65"
+	default:
+		return "55"
+	}
 }
 
 // pick returns a when cond holds, else b.
@@ -2219,6 +2257,9 @@ func audioBitrateKbps(codec string, channels int) int {
 // encoder-side upload — is composition around the chain and is explicitly NOT
 // what the probe certifies (D8).
 func (r Rendition) videoFilters() []string {
+	if r.usesSDRDeviceDecode() {
+		return r.sdrDeviceDecodeFilters()
+	}
 	chain := r.toneMapChain()
 	if chain.DeviceDecode {
 		// Decode, scale and tone-map all ran on the device, and the frames are
@@ -3087,7 +3128,7 @@ func hlsArgs(src, dir string, rendition Rendition) []string {
 	args = append(args, rendition.videoArgs()...)
 	args = append(args, rendition.selectedStreamMapArgs()...)
 	if !rendition.CopyVideo {
-		args = append(args, "-force_key_frames", "expr:gte(t,n_forced*4)")
+		args = append(args, "-threads", encodeThreads(rendition.hwAccel), "-force_key_frames", "expr:gte(t,n_forced*4)")
 	}
 	args = append(args, rendition.args()...)
 	args = append(args, rendition.audioArgs()...)
@@ -3314,6 +3355,9 @@ func segmentArgs(io segmentIO, startSegment int, seek, outputOffset, hlsTime str
 	if rendition.AudioOnly {
 		args = append(args, "-map", audioOnlyMap(rendition))
 	} else {
+		if !rendition.CopyVideo {
+			args = append(args, "-threads", encodeThreads(rendition.hwAccel))
+		}
 		args = append(args, rendition.videoArgs()...)
 		args = append(args, streamMaps...)
 		args = append(args, videoOutputArgs...)

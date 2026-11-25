@@ -413,6 +413,8 @@ type hlsSession struct {
 	// means the session holds no live process (or the governor is unwired).
 	transcodeLease *governor.TranscodeLease
 	charged        bool
+	watcherMu      sync.Mutex
+	watcher        *sessionWatcher
 	// run is the generation of the current or most recent process (proc).
 	run *encoderRun
 	// lastCrashed records that the most recent process exit was a crash, so
@@ -633,8 +635,9 @@ type Sessions struct {
 	removeDir func(string) error
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
 	revocationPoll time.Duration
-	// charges includes all capacity owners through reap, even detached ones.
-	charges       map[*hlsSession]struct{}
+	// charges includes all capacity owners through reap, even detached ones,
+	// mapped to their weighted transcode slot cost.
+	charges       map[*hlsSession]int
 	revocations   map[*hlsSession]*sessionTeardown
 	continuations map[*hlsSession]struct{}
 	// starting counts ensureRung starts running with mu released.
@@ -730,6 +733,7 @@ func (s *Sessions) joinTeardown(t *sessionTeardown) {
 }
 
 func (s *Sessions) finishTeardown(t *sessionTeardown) {
+	t.session.closeWatcher()
 	p := t.session.scratch
 	if p != nil {
 		<-p.drained
@@ -910,10 +914,15 @@ func (s *Sessions) CanAdmitPriority(key SessionKey, priority Priority) bool {
 	return s.liveCount() <= s.cap && s.preemptableLocked(key, priority, now) != nil
 }
 
-// liveCount counts sessions holding a live FFmpeg process, plus removed
-// sessions whose encoder has not stopped yet. Callers hold mu.
+// liveCount returns the total weighted transcode slot cost across sessions
+// holding a live FFmpeg process, plus removed sessions whose encoder has not
+// stopped yet. Callers hold mu.
 func (s *Sessions) liveCount() int {
-	return len(s.charges)
+	total := 0
+	for _, cost := range s.charges {
+		total += cost
+	}
+	return total
 }
 
 // preemptableLocked picks the session a newcomer at rank priority may evict to
@@ -1320,11 +1329,17 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 			run.resumeIfPaused()
 		}
 		var artifact artifactObservation
-		err := waitForArtifact(ctx, path, run.exitedChan(), session.scratch.cutoff, func(path string) bool {
+		readyFn := func(path string) bool {
 			var ready bool
 			artifact, ready = s.readyArtifact(session, path)
 			return ready
-		})
+		}
+		var err error
+		if session.live != nil {
+			err = waitForLiveSession(ctx, session.live, path, run.exitedChan(), session.scratch.cutoff, readyFn)
+		} else {
+			err = session.sharedWatcher().wait(ctx, path, run.exitedChan(), session.scratch.cutoff, readyFn)
+		}
 		if run != nil {
 			run.waiting.Add(-1)
 		}

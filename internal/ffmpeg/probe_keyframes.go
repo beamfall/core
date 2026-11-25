@@ -36,6 +36,12 @@ func (r *Runner) ProbeKeyframes(ctx context.Context, src string) (KeyframeIndex,
 	if err := checkPath(src); err != nil {
 		return KeyframeIndex{}, err
 	}
+	if ctx.Err() != nil {
+		return KeyframeIndex{}, ctx.Err()
+	}
+	if idx, ok := probeKeyframesFast(src); ok {
+		return idx, nil
+	}
 	ffprobePath, err := r.resolveProbe(ctx)
 	if err != nil {
 		return KeyframeIndex{}, fmt.Errorf("ffprobe is not available: %w", err)

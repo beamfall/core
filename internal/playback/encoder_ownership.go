@@ -34,11 +34,34 @@ func (s *Sessions) activeProfileTranscodes(profile store.ProfileID, key SessionK
 	return s.profileCountLocked(profile, s.sessions[key])
 }
 
+func sessionSlotCost(h *hlsSession) int {
+	if h == nil || len(h.rungs) == 0 {
+		return 1
+	}
+	allLight := true
+	maxHeight := 0
+	for _, r := range h.rungs {
+		if !r.AudioOnly && !r.CopyVideo {
+			allLight = false
+		}
+		if r.Height > maxHeight {
+			maxHeight = r.Height
+		}
+	}
+	if allLight {
+		return 0
+	}
+	if maxHeight >= 2160 {
+		return 2
+	}
+	return 1
+}
+
 func (s *Sessions) reserveEncoderLocked(h *hlsSession) {
 	if s.charges == nil {
-		s.charges = make(map[*hlsSession]struct{})
+		s.charges = make(map[*hlsSession]int)
 	}
-	s.charges[h] = struct{}{}
+	s.charges[h] = sessionSlotCost(h)
 	h.charged = true
 }
 
@@ -69,11 +92,13 @@ func (s *Sessions) admitEncoderLocked(start *encoderStart, now time.Time) (*sess
 	if !s.profileAllowsLocked(start) {
 		return nil, ErrTranscodeCapacity
 	}
-	if s.liveCount() < s.cap {
+	cost := sessionSlotCost(h)
+	live := s.liveCount()
+	if live == 0 || live+cost <= s.cap {
 		s.reserveEncoderLocked(h)
 		return nil, nil
 	}
-	if s.liveCount() <= s.cap || h.degraded {
+	if live <= s.cap || h.degraded {
 		if victim := s.preemptableLocked(h.key, h.priority, now); victim != nil {
 			victim.run.transfer = start
 			return s.transitionLocked(victim, detachSession{cleanupOnRelease: true}).teardown, nil

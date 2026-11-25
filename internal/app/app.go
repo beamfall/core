@@ -497,6 +497,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	ffmpeg.SetGroupSurvivorReporter(func(err error) {
 		logger.Error("ffmpeg process group survived SIGKILL", "error", err)
 	})
+	var startupHW ffmpeg.HardwareEncode
 	if !conformanceMode {
 		var configured ffmpeg.HWAccel
 		if accel, ok := ffmpeg.HWAccelFromString(transcodePolicy.Device); ok {
@@ -514,7 +515,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		}
 		probe := ffmpeg.ProbeHardwareAccel(ctx, ffmpeg.HWAccelOptions{ConfiguredPreference: configured})
 		selected := ffmpeg.SelectHWAccel(probe, configured)
-		ffmpegRunner.SetHardwareEncode(probe.HardwareEncode(selected))
+		startupHW = probe.HardwareEncode(selected)
+		ffmpegRunner.SetHardwareEncode(startupHW)
 		cfg.HardwareAcceleration = hardwareAccelReport(probe)
 		cfg.HardwareAcceleration.RenderNodes = renderNodeReports(renderNodes)
 		cfg.HardwareAcceleration.RenderNode = renderNode.Path
@@ -569,6 +571,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// filesystem confinement. Empty (tests, or an unresolvable executable) leaves
 	// hardening off so a non-server process never re-execs itself.
 	ffmpegRunner.SetHardeningShim(cfg.FFmpegHardeningShimPath)
+	if !conformanceMode {
+		ffmpeg.PrewarmHardwareProbes(ctx, startupHW, graph.TranscodeEncodePolicy(transcodePolicy))
+	}
 	consoleConfig, err := st.ConsoleConfigWithDefaults(ctx, store.ConsoleConfig{
 		BackgroundWorkers:   cfg.GenerationWorkers,
 		EventsRetentionDays: cfg.EventsRetentionDays,

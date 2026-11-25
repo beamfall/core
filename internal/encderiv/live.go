@@ -66,6 +66,9 @@ type LiveSession struct {
 	// then filesMu, then a LiveFile's own mu.
 	filesMu sync.Mutex
 	files   map[*LiveFile]struct{}
+
+	notifyMu sync.Mutex
+	notifyCh chan struct{}
 }
 
 // NewLiveSession draws a fresh session key for the files under dir, which must
@@ -89,7 +92,32 @@ func (s *LiveSession) Dir() string { return s.dir }
 
 // Cutoff refuses subsequent reads and opens without waiting for current
 // readers or uploads. Close disposes of the descriptors and key.
-func (s *LiveSession) Cutoff() { s.cutoff.Store(true) }
+func (s *LiveSession) Cutoff() {
+	s.cutoff.Store(true)
+	s.notify()
+}
+
+// WaitChan returns a channel closed the next time a file is published or the
+// session is cut off. Callers subscribe before checking disk readiness so no
+// rename can be missed between check and wait.
+func (s *LiveSession) WaitChan() <-chan struct{} {
+	s.notifyMu.Lock()
+	defer s.notifyMu.Unlock()
+	if s.notifyCh == nil {
+		s.notifyCh = make(chan struct{})
+	}
+	return s.notifyCh
+}
+
+func (s *LiveSession) notify() {
+	s.notifyMu.Lock()
+	ch := s.notifyCh
+	s.notifyCh = nil
+	s.notifyMu.Unlock()
+	if ch != nil {
+		close(ch)
+	}
+}
 
 // Close zeroes the session key and ends every file open in the session, so a
 // response still streaming one stops at its next read: once the session ends,
@@ -180,7 +208,9 @@ func (s *LiveSession) WriteFile(rel string, data []byte) error {
 	if err == nil {
 		err = os.Rename(tmp, path)
 	}
-	if err != nil {
+	if err == nil {
+		s.notify()
+	} else {
 		_ = os.Remove(tmp)
 	}
 	return err
@@ -221,7 +251,9 @@ func (s *LiveSession) put(rel string, body io.Reader) error {
 	if err == nil {
 		err = os.Rename(part, path)
 	}
-	if err != nil {
+	if err == nil {
+		s.notify()
+	} else {
 		_ = os.Remove(part)
 	}
 	return err
