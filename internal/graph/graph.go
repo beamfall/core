@@ -739,6 +739,9 @@ type Handler struct {
 	// backupKeyEscrow reveals and confirms the backup key (CORE-2032). Nil
 	// means nothing is pending.
 	backupKeyEscrow BackupKeyEscrow
+	// backupOps reads scheduled-backup state and runs restore drills
+	// (CORE-0778). Nil means the build has none.
+	backupOps BackupOps
 
 	// playbackInvalidationMu guards playbackInvalidation and playbackPaused so
 	// periodic playback reports are throttled while pause/finish/end transitions
@@ -4182,6 +4185,12 @@ type BackupHistoryEntry struct {
 	SizeBytes int64  `json:"sizeBytes"`
 	Valid     bool   `json:"valid"`
 	Error     string `json:"error,omitempty"`
+	// KeyFingerprint is the public wrap-key fingerprint the set was sealed to
+	// (empty for a plaintext set). KeyState is "current" when it matches the
+	// data directory's wrap key, "archived" when it names an earlier key, and
+	// empty when either fingerprint is unknown (BKUP-14 key-to-archive map).
+	KeyFingerprint string `json:"keyFingerprint"`
+	KeyState       string `json:"keyState"`
 }
 
 // VerifyBackupInfo is the result of the admin verifyBackup mutation: whether the
@@ -4225,6 +4234,7 @@ func (h *Handler) backupHistory(ctx context.Context, req request) ([]BackupHisto
 	if err != nil {
 		return nil, err
 	}
+	currentKey := h.currentBackupKeyFingerprint()
 	entries := make([]BackupHistoryEntry, 0, len(summaries))
 	for _, summary := range summaries {
 		createdAt := ""
@@ -4237,6 +4247,9 @@ func (h *Handler) backupHistory(ctx context.Context, req request) ([]BackupHisto
 			SizeBytes: summary.SizeBytes,
 			Valid:     summary.Valid,
 			Error:     summary.Error,
+
+			KeyFingerprint: summary.KeyFingerprint,
+			KeyState:       backupKeyState(summary.KeyFingerprint, currentKey),
 		})
 	}
 	return entries, nil
@@ -7119,6 +7132,7 @@ var queryFields = map[string]bool{
 	"diagnosticsbundle":      true, // CORE-2097: runtime diagnostics and text profiles
 	"stagedrestore":          true, // CORE-1720: the restore staged for the next start
 	"backupkeystatus":        true, // CORE-2032: whether the backup key still has to be saved
+	"backupstatus":           true, // CORE-0778: backup banners, update gate and last drill
 	"libraryhealthitems":     true,
 	"libraryduplicategroups": true,
 	"metadataexport":         true,
@@ -7326,6 +7340,9 @@ var mutationFields = map[string]bool{
 	"cancelstagedrestore":                true, // CORE-1720: drop a staged restore
 	"revealbackupkey":                    true, // CORE-2032: reveal the backup key to save
 	"acknowledgebackupkey":               true, // CORE-2032: confirm the backup key is saved
+	"acknowledgebackupbanner":            true, // CORE-0778: dismiss a backup failure banner
+	"setbackupupgradegate":               true, // CORE-0778: soft or hard update gate
+	"verifybackupnow":                    true, // CORE-0778: run the restore drill
 	"scanlibrary":                        true,
 	"refreshlibrarymetadata":             true, // CORE-1136: queue a Library-wide metadata refresh
 	"scanpreview":                        true, // CORE-1054: plan a rescan and mint a single-use token
@@ -7520,6 +7537,11 @@ var adminFields = map[string]bool{
 	"backupkeystatus":      true,
 	"revealbackupkey":      true,
 	"acknowledgebackupkey": true,
+	// Backup operations (CORE-0778): banners, update gate and restore drill.
+	"backupstatus":            true,
+	"acknowledgebackupbanner": true,
+	"setbackupupgradegate":    true,
+	"verifybackupnow":         true,
 	// Authorized native→server import transport (apple ADR-0003 §1/§3,
 	// POWERTOOLS-6B): the Admin Session tier the loopback bearer authenticates as
 	// — only the native Companion authority can register a source token or import.

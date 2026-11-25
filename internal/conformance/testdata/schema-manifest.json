@@ -25,6 +25,11 @@
     "tier": "admin"
   },
   {
+    "field": "acknowledgebackupbanner",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "acknowledgebackupkey",
     "effect": "write",
     "tier": "admin"
@@ -116,6 +121,11 @@
   },
   {
     "field": "backupkeystatus",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "backupstatus",
     "effect": "read",
     "tier": "admin"
   },
@@ -1505,6 +1515,11 @@
     "tier": "admin"
   },
   {
+    "field": "setbackupupgradegate",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "setcapabilityenabled",
     "effect": "write",
     "tier": "admin"
@@ -1996,6 +2011,11 @@
   },
   {
     "field": "verifybackup",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "verifybackupnow",
     "effect": "write",
     "tier": "admin"
   },

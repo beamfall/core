@@ -889,7 +889,14 @@ export interface BackupHistoryEntry {
   sizeBytes: number;
   valid: boolean;
   error?: string;
+  /** Wrap-key fingerprint the set was sealed to; empty for a plaintext set. */
+  keyFingerprint?: string;
+  /** "current" for the data directory's wrap key, "archived" for an earlier one, empty when unknown. */
+  keyState?: BackupKeyState;
 }
+
+/** How a set's wrap key relates to the current one (BKUP-14 key-to-archive map). */
+export type BackupKeyState = "current" | "archived" | "";
 
 /**
  * The result of the verifyBackup mutation (graph.VerifyBackupInfo, MIGREV-1):
@@ -968,6 +975,52 @@ export interface RevealedBackupKeyInfo {
   backupKey: string;
   expiresAt: string;
   daysLeft: number;
+}
+
+/** One scheduled-backup outcome (graph.BackupRunInfo, CORE-0778). */
+export interface BackupRunInfo {
+  at: string;
+  failureClass: string;
+  set: string;
+}
+
+/**
+ * One restore-drill outcome (graph.BackupDrillInfo, CORE-0778 BKUP-15). The
+ * counts are set only on the result of verifyBackupNow.
+ */
+export interface BackupDrillInfo {
+  at: string;
+  verified: boolean;
+  set: string;
+  reason: string;
+  backupCreatedAt?: string;
+  databases?: number;
+  libraries?: number;
+  durationMs?: number;
+}
+
+/** The update-gate policy (ADR-0192 §6): soft by default, hard as an opt-in. */
+export type BackupUpgradeGate = "soft" | "hard";
+
+/** The two distinct backup failure banners (ADR-0192 §6). */
+export type BackupBanner = "backup-failed" | "integrity-failed";
+
+/**
+ * The scheduled-backup state behind the backup banners, recovery evidence and
+ * update gate (graph.BackupStatusInfo, CORE-0778 BKUP-14). No key material.
+ */
+export interface BackupStatusInfo {
+  backupFailedBanner: boolean;
+  integrityFailedBanner: boolean;
+  lastSuccess: BackupRunInfo | null;
+  lastFailure: BackupRunInfo | null;
+  lastIntegrityFailure: BackupRunInfo | null;
+  /** The newest backup whose set passed its integrity check in the same job. */
+  lastIntegrityPass?: BackupRunInfo | null;
+  /** True only when a recorded integrity pass is newer than every failure; acknowledging a banner never sets it. */
+  updateGateClear?: boolean;
+  upgradeGate: BackupUpgradeGate;
+  lastDrill: BackupDrillInfo | null;
 }
 
 /**

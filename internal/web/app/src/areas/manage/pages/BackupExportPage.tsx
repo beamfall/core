@@ -35,6 +35,7 @@ import type {
 import { useT } from "@/lib/i18n";
 import { formatDateTime } from "../lib/schedule";
 import { BackupKeySection } from "./BackupKeySection";
+import { BackupOpsSection } from "./BackupOpsSection";
 
 // Backup panel (MIGREV-3 / ADR-0077 dec. 2-3): the standalone Manage Backup page.
 // It surfaces the MIGREV-1 backend in-app —
@@ -52,7 +53,8 @@ import { BackupKeySection } from "./BackupKeySection";
 //      The offline restore CLI stays documented below it.
 //   5. Metadata export: the reveal-filtered portability export, downloaded JSON.
 // Above them, while the bootstrap backup key is unsaved, BackupKeySection lets
-// the owner reveal and confirm it (CORE-2032).
+// the owner reveal and confirm it (CORE-2032), and BackupOpsSection carries the
+// failure banners, recovery evidence, restore drill and update gate (CORE-0778).
 // The backend backupHistory/verifyBackup return only a sanitized pass/fail and a
 // reason — never a checksum of an arbitrary server file — so this page derives
 // its verify states from `valid` + `error`, not from client-computed hashes.
@@ -117,6 +119,10 @@ export function BackupExportPage() {
   return (
     <div className="space-y-4">
       <BackupKeySection />
+      <BackupOpsSection
+        envelope={selected ? `${selected.directory}/${ENVELOPE_BASENAME}` : ""}
+        setName={selected ? setLabel(selected.directory) : ""}
+      />
       <BackupHistorySection
         dest={dest}
         setDest={setDest}
@@ -280,12 +286,13 @@ function BackupHistorySection({
                   <TableHead>{t("backupColCaptured")}</TableHead>
                   <TableHead className="text-right">{t("backupColSize")}</TableHead>
                   <TableHead>{t("backupColVerify")}</TableHead>
+                  <TableHead>{t("backupColKey")}</TableHead>
                   <TableHead className="text-right">{t("backupVerifyAction")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableSkeletonRows columns={5} />
+                  <TableSkeletonRows columns={6} />
                 ) : (
                   entries.map((entry) => (
                     <TableRow
@@ -305,6 +312,12 @@ function BackupHistorySection({
                       </TableCell>
                       <TableCell>
                         <VerifyState entry={entry} />
+                      </TableCell>
+                      <TableCell
+                        className="manage-cell-num"
+                        data-key-state={entry.keyState || undefined}
+                      >
+                        <KeyLabel entry={entry} />
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -369,6 +382,16 @@ function VerifyState({ entry }: { entry: BackupHistoryEntry }) {
     return <StatusChip tone="red">{t("backupVerifyFailed")}</StatusChip>;
   }
   return <StatusChip tone="neutral">{t("backupVerifyNotRun")}</StatusChip>;
+}
+
+// The History "Key" column (BKUP-14): the wrap key a set was sealed to, marked
+// archived when it is not the data directory's current key.
+function KeyLabel({ entry }: { entry: BackupHistoryEntry }) {
+  const t = useT();
+  const fingerprint = entry.keyFingerprint ?? "";
+  if (!fingerprint) return <>{t("backupKeyNone")}</>;
+  if (entry.keyState === "archived") return <>{t("backupKeyArchived", { fingerprint })}</>;
+  return <>{t("backupKeyCurrent", { fingerprint })}</>;
 }
 
 // ManifestSection: the selected set's manifest path plus the binding ADR-0077

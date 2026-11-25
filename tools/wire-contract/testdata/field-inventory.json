@@ -65,6 +65,22 @@
       ]
     },
     {
+      "field": "acknowledgebackupbanner",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backupFailedBanner",
+        "integrityFailedBanner",
+        "lastDrill",
+        "lastFailure",
+        "lastIntegrityFailure",
+        "lastIntegrityPass",
+        "lastSuccess",
+        "updateGateClear",
+        "upgradeGate"
+      ]
+    },
+    {
       "field": "acknowledgebackupkey",
       "effect": "write",
       "tier": "admin",
@@ -350,6 +366,8 @@
         "createdAt",
         "directory",
         "error",
+        "keyFingerprint",
+        "keyState",
         "sizeBytes",
         "valid"
       ]
@@ -362,6 +380,22 @@
         "daysLeft",
         "expiresAt",
         "pending"
+      ]
+    },
+    {
+      "field": "backupstatus",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "backupFailedBanner",
+        "integrityFailedBanner",
+        "lastDrill",
+        "lastFailure",
+        "lastIntegrityFailure",
+        "lastIntegrityPass",
+        "lastSuccess",
+        "updateGateClear",
+        "upgradeGate"
       ]
     },
     {
@@ -4384,6 +4418,22 @@
       ]
     },
     {
+      "field": "setbackupupgradegate",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backupFailedBanner",
+        "integrityFailedBanner",
+        "lastDrill",
+        "lastFailure",
+        "lastIntegrityFailure",
+        "lastIntegrityPass",
+        "lastSuccess",
+        "updateGateClear",
+        "upgradeGate"
+      ]
+    },
+    {
       "field": "setcapabilityenabled",
       "effect": "write",
       "tier": "admin",
@@ -5850,6 +5900,21 @@
       "children": [
         "error",
         "ok"
+      ]
+    },
+    {
+      "field": "verifybackupnow",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "at",
+        "backupCreatedAt",
+        "databases",
+        "durationMs",
+        "libraries",
+        "reason",
+        "set",
+        "verified"
       ]
     },
     {

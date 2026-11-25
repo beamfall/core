@@ -402,6 +402,11 @@ func writeJSONPrivate(path string, value any) error {
 		return err
 	}
 	dir := filepath.Dir(path)
+	// A fresh data directory may not exist yet; create it owner-only rather
+	// than failing the first status or escrow write.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*")
 	if err != nil {
 		return err

@@ -63,6 +63,10 @@ func TestBackupHistoryListsSetsNewestFirstAndVerifies(t *testing.T) {
 		if entry.CreatedAt.IsZero() {
 			t.Fatalf("set %s missing createdAt", entry.Directory)
 		}
+		// BKUP-14: each encrypted set names the wrap key it was sealed to.
+		if entry.KeyFingerprint == "" || entry.KeyFingerprint != history[0].KeyFingerprint {
+			t.Fatalf("set %s key fingerprint = %q, want the shared wrap key", entry.Directory, entry.KeyFingerprint)
+		}
 	}
 }
 

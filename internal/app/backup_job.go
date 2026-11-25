@@ -11,7 +11,9 @@ import (
 	"syscall"
 	"time"
 
+	backupcore "github.com/beamfall/core/internal/backup"
 	"github.com/beamfall/core/internal/jobs"
+	schedulepkg "github.com/beamfall/core/internal/schedule"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -82,15 +84,35 @@ func backupSpacePrecheck(ctx context.Context, st *store.Store, dest string) erro
 	return nil
 }
 
+// backupJitterWindowMinutes is the span of the seeded backup start time,
+// 02:00-03:29 local: inside ADR-0192 §6's jittered night window and before the
+// 03:30 events compaction, whose pre-compaction state the backup captures.
+const backupJitterWindowMinutes = 90
+
+// backupScheduleTrigger is the default daily trigger for the backup Schedule,
+// jittered so a fleet of installs does not start at the same minute. The
+// schedule catalog seeds it once per install and never rewrites an existing
+// row, so the chosen minute is stable across restarts.
+func backupScheduleTrigger(intn func(int) int) schedulepkg.Trigger {
+	m := intn(backupJitterWindowMinutes)
+	if m < 0 || m >= backupJitterWindowMinutes {
+		m = 0
+	}
+	return schedulepkg.Daily(2+m/60, m%60)
+}
+
 // databaseBackupHandler runs the scheduled backup (BKUP-12): space precheck,
 // backup, Layer-2 integrity verification of the new set (BKUP-11), then policy
 // retention. A failure at any step leaves every prior set untouched: pruning
-// runs only after a verified backup, and a failure is logged with its class.
-func databaseBackupHandler(st *store.Store, dest string, encryptedBackupCipher func() store.EncryptedLibraryDBCipher) jobs.Handler {
+// runs only after a verified backup. Every outcome is logged with its class,
+// recorded in the backup status file under dataDir (the ADR-0192 §6 banners)
+// and appended to the event outbox for webhooks.
+func databaseBackupHandler(st *store.Store, dataDir, dest string, encryptedBackupCipher func() store.EncryptedLibraryDBCipher) jobs.Handler {
 	return func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		fail := func(err error) (jobs.Result, error) {
 			class := classifyBackupError(err)
 			slog.ErrorContext(ctx, "scheduled backup failed", "backup_failure_class", string(class), "dest", dest, "error", err)
+			reportBackupOutcome(ctx, st, dataDir, class, "")
 			var classed *backupClassedError
 			if errors.As(err, &classed) {
 				return jobs.Result{}, err
@@ -122,6 +144,33 @@ func databaseBackupHandler(st *store.Store, dest string, encryptedBackupCipher f
 			slog.WarnContext(ctx, "backup retention prune failed", "dest", dest, "error", pruneErr)
 		}
 		slog.InfoContext(ctx, "scheduled backup completed", "dest", dest, "set", result.Directory, "pruned", pruned)
+		// Reached only after VerifyBackupSet passed on the new set.
+		reportBackupOutcome(ctx, st, dataDir, "", result.Directory)
 		return jobs.Result{}, nil
+	}
+}
+
+// reportBackupOutcome persists the outcome for the console banners and emits
+// the webhook event. Both are best-effort: a reporting failure is logged and
+// never changes the Job's own outcome.
+func reportBackupOutcome(ctx context.Context, st *store.Store, dataDir string, class BackupFailureClass, set string) {
+	now := time.Now().UTC()
+	integrity := class == BackupFailureIntegrity
+	if dataDir != "" {
+		// A success is reported only after the Layer-2 check passed.
+		run := backupcore.RunRecord{At: now, FailureClass: string(class), Set: set, IntegrityVerified: class == ""}
+		if _, err := backupcore.RecordRun(dataDir, run, integrity); err != nil {
+			slog.WarnContext(ctx, "backup status write failed", "error", err)
+		}
+	}
+	kind := store.BackupEventCompleted
+	switch {
+	case integrity:
+		kind = store.BackupEventIntegrityFailed
+	case class != "":
+		kind = store.BackupEventFailed
+	}
+	if err := st.AppendBackupEvent(ctx, kind, store.BackupEventPayload{FailureClass: string(class), Set: set}, now); err != nil {
+		slog.WarnContext(ctx, "backup event append failed", "error", err)
 	}
 }
