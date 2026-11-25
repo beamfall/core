@@ -174,19 +174,20 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 			return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
 		}
 	}
-	// Last, so no later failure can unwind rows already removed from
-	// catalog.db: move legacy plaintext rows this plane now owns out of the
-	// global catalog (CORE-0768). A failure unwinds; catalog.db keeps the rows
-	// and the next unseal retries.
-	if err := s.evacuatePlaintextEncryptedLibraryRowsLocked(ctx, plane); err != nil {
+	// Last, and in two phases so no failure can unwind rows already removed
+	// from catalog.db: every evacuation (CORE-0768 plaintext rows, CORE-0706
+	// identification state) copies onto this plane first, then one shared
+	// transaction deletes them all. A failure in either phase unwinds with
+	// catalog.db still holding every row, and the next unseal retries.
+	plaintext, err := s.copyPlaintextEncryptedLibraryRowsLocked(ctx, plane)
+	if err != nil {
 		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
 	}
-	// Identification rows an earlier build stranded in the shared catalog move
-	// onto this plane before it serves reads (CORE-0706). This is the last
-	// step: an unwind discards the working DB, so no later failure may discard
-	// rows already deleted from the shared catalog. A failure here unwinds
-	// before or without that delete, so the shared copy survives.
-	if err := s.evacuateIdentificationStateLocked(ctx, plane); err != nil {
+	identification, err := s.copyIdentificationStateLocked(ctx, plane)
+	if err != nil {
+		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
+	}
+	if err := s.commitEvacuationPlansLocked(ctx, libraryID, plaintext, identification); err != nil {
 		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
 	}
 	return nil

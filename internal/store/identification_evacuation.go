@@ -5,20 +5,21 @@ import (
 	"database/sql"
 )
 
-// evacuateIdentificationStateLocked moves identification rows that an earlier
+// copyIdentificationStateLocked copies identification rows that an earlier
 // build left in the shared catalog for this Encrypted Library's Media onto the
 // Library's own plane (CORE-0706). Only artwork_candidate and its slot-lock
 // provenance can be stranded there: neither table has a foreign key to media,
 // so an upload for a private Media committed against the shared catalog.
 // media_external_id and unmatched_queue do have one and never held such rows.
 //
-// The copy commits on the private plane before the shared rows are deleted.
-// A crash in between leaves both copies; the private one wins on read and the
-// next unseal repeats both steps, so the move converges.
-func (s *Store) evacuateIdentificationStateLocked(ctx context.Context, plane catalogPlane) error {
+// The copy commits on the private plane before the returned plan deletes the
+// shared rows, in one transaction with the other evacuations. A crash in
+// between leaves both copies; the private one wins on read and the next unseal
+// repeats both steps, so the move converges.
+func (s *Store) copyIdentificationStateLocked(ctx context.Context, plane catalogPlane) (evacuationPlan, error) {
 	stranded, err := strandedIdentificationMediaIDs(ctx, s.catalogR)
 	if err != nil || len(stranded) == 0 {
-		return err
+		return evacuationPlan{}, err
 	}
 	var owned []MediaID
 	for start := 0; start < len(stranded); start += bulkWriteChunkSize {
@@ -26,22 +27,24 @@ func (s *Store) evacuateIdentificationStateLocked(ctx context.Context, plane cat
 		placeholders, args := mediaIDPlaceholders(chunk)
 		found, err := scanMediaIDs(ctx, plane.reader, `SELECT id FROM media WHERE id IN (`+placeholders+`)`, args...)
 		if err != nil {
-			return err
+			return evacuationPlan{}, err
 		}
 		owned = append(owned, found...)
 	}
 	if len(owned) == 0 {
-		return nil
+		return evacuationPlan{}, nil
 	}
 	for start := 0; start < len(owned); start += bulkWriteChunkSize {
 		chunk := owned[start:min(start+bulkWriteChunkSize, len(owned))]
 		if err := copyStrandedIdentificationRows(ctx, s.catalogR, plane.writer, chunk); err != nil {
-			return err
+			return evacuationPlan{}, err
 		}
 	}
-	// One shared transaction: the delete lands whole or not at all, after
-	// every private copy has committed.
-	return deleteStrandedIdentificationRows(ctx, s.catalogW, owned)
+	// The delete runs later, in one transaction shared with the other
+	// evacuations, after every private copy has committed.
+	return evacuationPlan{deleteRows: func(ctx context.Context, tx *sql.Tx) error {
+		return deleteStrandedIdentificationRows(ctx, tx, owned)
+	}, moved: len(owned)}, nil
 }
 
 // strandedIdentificationMediaIDs lists Media IDs that own artwork candidates
@@ -159,12 +162,7 @@ func copyStrandedIdentificationRows(ctx context.Context, shared, private *sql.DB
 	return tx.Commit()
 }
 
-func deleteStrandedIdentificationRows(ctx context.Context, shared *sql.DB, ids []MediaID) error {
-	tx, err := shared.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
+func deleteStrandedIdentificationRows(ctx context.Context, tx *sql.Tx, ids []MediaID) error {
 	for start := 0; start < len(ids); start += bulkWriteChunkSize {
 		placeholders, args := mediaIDPlaceholders(ids[start:min(start+bulkWriteChunkSize, len(ids))])
 		//nolint:gosec // G202: only generated placeholders are interpolated; IDs are bound args.
@@ -179,5 +177,5 @@ func deleteStrandedIdentificationRows(ctx context.Context, shared *sql.DB, ids [
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }

@@ -90,21 +90,22 @@ type evacuationTableRows struct {
 	rows [][]any
 }
 
-// evacuatePlaintextEncryptedLibraryRowsLocked runs at the end of a successful
-// unseal. The protected copy commits first; the catalog delete follows. A
-// failure in either step returns an error so the caller unwinds the unseal:
-// catalog.db still holds the rows and the next unseal retries, and the copy is
-// idempotent (INSERT OR IGNORE). Clearing a group's pending key comes last and
-// only logs a failure: the rows are already out of catalog.db, and a rerun
-// finds nothing left to move.
-func (s *Store) evacuatePlaintextEncryptedLibraryRowsLocked(ctx context.Context, plane catalogPlane) error {
+// copyPlaintextEncryptedLibraryRowsLocked runs at the end of a successful
+// unseal. It only copies: the returned plan deletes the catalog rows later,
+// together with every other evacuation (commitEvacuationPlansLocked). A copy
+// failure returns an error so the caller unwinds the unseal with catalog.db
+// still holding the rows; the next unseal retries, and the copy is idempotent
+// (INSERT OR IGNORE). Clearing a group's pending key comes last and only logs
+// a failure: the rows are already out of catalog.db, and a rerun finds nothing
+// left to move.
+func (s *Store) copyPlaintextEncryptedLibraryRowsLocked(ctx context.Context, plane catalogPlane) (evacuationPlan, error) {
 	var pending []evacuationTableRows
 	var clearKeys []string
 	for _, group := range encryptedLibraryEvacuations {
 		if group.pendingKey != "" {
 			set, err := encryptedLibraryMetadataKeySet(ctx, plane.reader, group.pendingKey)
 			if err != nil {
-				return fmt.Errorf("read %s evacuation state: %w", group.name, err)
+				return evacuationPlan{}, fmt.Errorf("read %s evacuation state: %w", group.name, err)
 			}
 			if !set {
 				continue
@@ -112,7 +113,7 @@ func (s *Store) evacuatePlaintextEncryptedLibraryRowsLocked(ctx context.Context,
 		}
 		rows, err := s.readEvacuationGroupLocked(ctx, plane, group)
 		if err != nil {
-			return err
+			return evacuationPlan{}, err
 		}
 		if rows == nil {
 			continue
@@ -122,23 +123,31 @@ func (s *Store) evacuatePlaintextEncryptedLibraryRowsLocked(ctx context.Context,
 			clearKeys = append(clearKeys, group.pendingKey)
 		}
 	}
+	var plan evacuationPlan
 	if len(pending) > 0 {
 		if err := copyEvacuationRows(ctx, plane.writer, pending); err != nil {
-			return err
+			return evacuationPlan{}, err
 		}
-		if err := s.deletePlaintextEvacuatedRowsLocked(ctx, plane.libraryID, pending); err != nil {
-			return fmt.Errorf("delete evacuated plaintext rows: %w", err)
+		libraryID := plane.libraryID
+		plan.deleteRows = func(ctx context.Context, tx *sql.Tx) error {
+			for i := len(pending) - 1; i >= 0; i-- {
+				spec := pending[i].spec
+				if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE %s`, spec.table, spec.where), libraryID); err != nil {
+					return fmt.Errorf("delete plaintext %s rows: %w", spec.table, err)
+				}
+			}
+			return nil
 		}
-		if s.logger != nil {
-			s.logger.InfoContext(ctx, "evacuated plaintext encrypted-library rows", "libraryID", plane.libraryID, "tables", len(pending))
+		plan.moved = len(pending)
+	}
+	plan.after = func(ctx context.Context) {
+		for _, key := range clearKeys {
+			if _, err := plane.writer.ExecContext(ctx, `DELETE FROM encrypted_library_metadata WHERE key = ?`, key); err != nil && s.logger != nil {
+				s.logger.WarnContext(ctx, "encrypted-library evacuation state not cleared; the next unseal reruns it", "libraryID", plane.libraryID, "key", key, "error", err)
+			}
 		}
 	}
-	for _, key := range clearKeys {
-		if _, err := plane.writer.ExecContext(ctx, `DELETE FROM encrypted_library_metadata WHERE key = ?`, key); err != nil && s.logger != nil {
-			s.logger.WarnContext(ctx, "encrypted-library evacuation state not cleared; the next unseal reruns it", "libraryID", plane.libraryID, "key", key, "error", err)
-		}
-	}
-	return nil
+	return plan, nil
 }
 
 // readEvacuationGroupLocked returns the group's catalog rows for the Library,
@@ -242,10 +251,43 @@ func columnIndex(columns []string, name string) int {
 	panic("store: evacuation column " + name + " not declared")
 }
 
-// deletePlaintextEvacuatedRowsLocked removes the Library's evacuated rows from
-// catalog.db child-first, on one connection with secure_delete so the freed
-// pages are zeroed rather than left holding the plaintext.
-func (s *Store) deletePlaintextEvacuatedRowsLocked(ctx context.Context, libraryID LibraryID, moved []evacuationTableRows) error {
+// evacuationPlan is the delete half of an evacuation whose copy has already
+// committed to the Library plane.
+type evacuationPlan struct {
+	deleteRows func(ctx context.Context, tx *sql.Tx) error
+	after      func(ctx context.Context)
+	moved      int
+}
+
+// commitEvacuationPlansLocked removes every plan's rows from the shared
+// catalog in ONE transaction, only after all plans have copied. A failure
+// leaves every shared row in place, so the unwind that follows loses nothing
+// and the next unseal retries the whole move.
+func (s *Store) commitEvacuationPlansLocked(ctx context.Context, libraryID LibraryID, plans ...evacuationPlan) error {
+	hasDeletes := false
+	for _, p := range plans {
+		hasDeletes = hasDeletes || p.deleteRows != nil
+	}
+	if hasDeletes {
+		if err := s.runEvacuationDeletesLocked(ctx, plans); err != nil {
+			return err
+		}
+		if s.logger != nil {
+			s.logger.InfoContext(ctx, "evacuated encrypted-library rows from the shared catalog", "libraryID", libraryID)
+		}
+	}
+	for _, p := range plans {
+		if p.after != nil {
+			p.after(ctx)
+		}
+	}
+	return nil
+}
+
+// runEvacuationDeletesLocked deletes child-first on one connection with
+// secure_delete so the freed pages are zeroed rather than left holding the
+// plaintext.
+func (s *Store) runEvacuationDeletesLocked(ctx context.Context, plans []evacuationPlan) error {
 	conn, err := s.catalogW.Conn(ctx)
 	if err != nil {
 		return err
@@ -266,10 +308,12 @@ func (s *Store) deletePlaintextEvacuatedRowsLocked(ctx context.Context, libraryI
 		return err
 	}
 	defer tx.Rollback()
-	for i := len(moved) - 1; i >= 0; i-- {
-		spec := moved[i].spec
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE %s`, spec.table, spec.where), libraryID); err != nil {
-			return fmt.Errorf("delete plaintext %s rows: %w", spec.table, err)
+	for _, p := range plans {
+		if p.deleteRows == nil {
+			continue
+		}
+		if err := p.deleteRows(ctx, tx); err != nil {
+			return err
 		}
 	}
 	return tx.Commit()
