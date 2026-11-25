@@ -127,6 +127,13 @@ func TestEncryptedUnmatchedRecordsStayOnPrivatePlane(t *testing.T) {
 	if list, err := st.UnmatchedSuppressions(ctx, ""); err != nil || len(list) != 0 {
 		t.Fatalf("sealed UnmatchedSuppressions = %#v, %v", list, err)
 	}
+	// Suppressing a sealed record is refused, never parked in the catalog.
+	if err := st.SuppressUnmatched(ctx, UnmatchedSuppression{
+		Scope: SuppressionScopeFile, Key: "fingerprint-7c1f-sealed", RecordID: pendingID,
+		SourceHandle: encryptedUnmatchedHandle,
+	}); !errors.Is(err, ErrUnmatchedRecordNotFound) {
+		t.Fatalf("sealed SuppressUnmatched error = %v, want ErrUnmatchedRecordNotFound", err)
+	}
 
 	if err := st.Close(); err != nil {
 		t.Fatalf("Close: %v", err)

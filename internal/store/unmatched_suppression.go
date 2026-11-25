@@ -86,15 +86,17 @@ func (s *Store) SuppressUnmatched(ctx context.Context, suppression UnmatchedSupp
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	// A record-bearing suppression lives beside its record. A record no
+	// readable plane holds is refused rather than written to the shared
+	// catalog: it may sit on a sealed Encrypted Library plane, and its key and
+	// source handle would otherwise reach the global catalog in plaintext.
 	plane := catalogPlane{writer: s.catalogW, reader: s.catalogR}
 	if suppression.RecordID != "" {
 		recordPlane, err := s.unmatchedRecordPlaneLocked(ctx, suppression.RecordID)
-		switch {
-		case err == nil:
-			plane = recordPlane
-		case !errors.Is(err, ErrUnmatchedRecordNotFound):
+		if err != nil {
 			return err
 		}
+		plane = recordPlane
 	}
 	_, err := plane.writer.ExecContext(ctx, `
 		INSERT INTO unmatched_suppression(scope, scope_key, record_id, source_handle, actor_profile_id, created_at_ms)
