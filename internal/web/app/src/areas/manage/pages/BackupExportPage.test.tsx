@@ -204,6 +204,8 @@ describe("BackupExportPage", () => {
         createdAt: "2026-07-03T02:00:00Z",
         sizeBytes: 2_040_109_465,
         valid: true,
+        keyFingerprint: "kA1b2C3d4E5f6G7h",
+        keyState: "current",
       },
       {
         directory: "/backups/beamfall-7e40",
@@ -211,6 +213,8 @@ describe("BackupExportPage", () => {
         sizeBytes: 1_932_735_283,
         valid: false,
         error: "content hash mismatch",
+        keyFingerprint: "zZ9y8X7w6V5u4T3s",
+        keyState: "archived",
       },
     ]);
 
@@ -230,6 +234,10 @@ describe("BackupExportPage", () => {
     expect(screen.getByText("Failed")).toBeVisible();
     // Size is rendered human-readable.
     expect(screen.getByText("1.9 GB")).toBeVisible();
+    // BKUP-14 Key column: the current key, and an earlier key marked archived.
+    expect(screen.getByRole("columnheader", { name: "Key" })).toBeVisible();
+    expect(screen.getByText("Key kA1b2C3d4E5f6G7h")).toBeVisible();
+    expect(screen.getByText("Archived key zZ9y8X7w6V5u4T3s")).toBeVisible();
   });
 
   it("selecting a set shows the manifest path and the Recovery Keys exclusion callout", async () => {

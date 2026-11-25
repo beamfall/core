@@ -144,6 +144,7 @@ func databaseBackupHandler(st *store.Store, dataDir, dest string, encryptedBacku
 			slog.WarnContext(ctx, "backup retention prune failed", "dest", dest, "error", pruneErr)
 		}
 		slog.InfoContext(ctx, "scheduled backup completed", "dest", dest, "set", result.Directory, "pruned", pruned)
+		// Reached only after VerifyBackupSet passed on the new set.
 		reportBackupOutcome(ctx, st, dataDir, "", result.Directory)
 		return jobs.Result{}, nil
 	}
@@ -156,7 +157,9 @@ func reportBackupOutcome(ctx context.Context, st *store.Store, dataDir string, c
 	now := time.Now().UTC()
 	integrity := class == BackupFailureIntegrity
 	if dataDir != "" {
-		if _, err := backupcore.RecordRun(dataDir, backupcore.RunRecord{At: now, FailureClass: string(class), Set: set}, integrity); err != nil {
+		// A success is reported only after the Layer-2 check passed.
+		run := backupcore.RunRecord{At: now, FailureClass: string(class), Set: set, IntegrityVerified: class == ""}
+		if _, err := backupcore.RecordRun(dataDir, run, integrity); err != nil {
 			slog.WarnContext(ctx, "backup status write failed", "error", err)
 		}
 	}

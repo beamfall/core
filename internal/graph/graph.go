@@ -4185,6 +4185,12 @@ type BackupHistoryEntry struct {
 	SizeBytes int64  `json:"sizeBytes"`
 	Valid     bool   `json:"valid"`
 	Error     string `json:"error,omitempty"`
+	// KeyFingerprint is the public wrap-key fingerprint the set was sealed to
+	// (empty for a plaintext set). KeyState is "current" when it matches the
+	// data directory's wrap key, "archived" when it names an earlier key, and
+	// empty when either fingerprint is unknown (BKUP-14 key-to-archive map).
+	KeyFingerprint string `json:"keyFingerprint"`
+	KeyState       string `json:"keyState"`
 }
 
 // VerifyBackupInfo is the result of the admin verifyBackup mutation: whether the
@@ -4228,6 +4234,7 @@ func (h *Handler) backupHistory(ctx context.Context, req request) ([]BackupHisto
 	if err != nil {
 		return nil, err
 	}
+	currentKey := h.currentBackupKeyFingerprint()
 	entries := make([]BackupHistoryEntry, 0, len(summaries))
 	for _, summary := range summaries {
 		createdAt := ""
@@ -4240,6 +4247,9 @@ func (h *Handler) backupHistory(ctx context.Context, req request) ([]BackupHisto
 			SizeBytes: summary.SizeBytes,
 			Valid:     summary.Valid,
 			Error:     summary.Error,
+
+			KeyFingerprint: summary.KeyFingerprint,
+			KeyState:       backupKeyState(summary.KeyFingerprint, currentKey),
 		})
 	}
 	return entries, nil

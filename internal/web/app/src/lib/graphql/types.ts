@@ -889,7 +889,14 @@ export interface BackupHistoryEntry {
   sizeBytes: number;
   valid: boolean;
   error?: string;
+  /** Wrap-key fingerprint the set was sealed to; empty for a plaintext set. */
+  keyFingerprint?: string;
+  /** "current" for the data directory's wrap key, "archived" for an earlier one, empty when unknown. */
+  keyState?: BackupKeyState;
 }
+
+/** How a set's wrap key relates to the current one (BKUP-14 key-to-archive map). */
+export type BackupKeyState = "current" | "archived" | "";
 
 /**
  * The result of the verifyBackup mutation (graph.VerifyBackupInfo, MIGREV-1):
@@ -1008,6 +1015,10 @@ export interface BackupStatusInfo {
   lastSuccess: BackupRunInfo | null;
   lastFailure: BackupRunInfo | null;
   lastIntegrityFailure: BackupRunInfo | null;
+  /** The newest backup whose set passed its integrity check in the same job. */
+  lastIntegrityPass?: BackupRunInfo | null;
+  /** True only when a recorded integrity pass is newer than every failure; acknowledging a banner never sets it. */
+  updateGateClear?: boolean;
   upgradeGate: BackupUpgradeGate;
   lastDrill: BackupDrillInfo | null;
 }

@@ -77,7 +77,9 @@ func TestDrillOnSeededBoxReportsRestoreVerified(t *testing.T) {
 	if !report.Verified || report.Reason != "" {
 		t.Fatalf("report = %+v, want restore-verified", report)
 	}
-	if report.Databases < 2 || report.Libraries == 0 || report.BackupCreatedAt == "" {
+	// Layer-1: every catalog and events table matched the snapshot by row
+	// count and row checksum.
+	if report.Databases < 2 || report.Libraries == 0 || report.BackupCreatedAt == "" || report.Tables == 0 {
 		t.Fatalf("report = %+v, want the seeded catalog read back", report)
 	}
 	if report.Set != filepath.Base(filepath.Dir(f.envelope)) {
@@ -204,6 +206,11 @@ func TestDrillGuardrailOneAtATime(t *testing.T) {
 	if _, err := second.Drill(context.Background(), f.envelope, f.key, DrillGuards{}); !errors.Is(err, ErrDrillRunning) {
 		t.Fatalf("concurrent drill err = %v, want ErrDrillRunning", err)
 	}
+	// The slot is per box: a drill over another data directory still runs.
+	other := newStageFixture(t)
+	if report, err := New(other.dataDir, other.store).Drill(context.Background(), other.envelope, other.key, DrillGuards{}); err != nil || !report.Verified {
+		t.Fatalf("drill on another box while one runs: %+v %v", report, err)
+	}
 	cancel()
 	if err := <-done; err == nil {
 		t.Fatal("cancelled drill reported success")
@@ -211,5 +218,26 @@ func TestDrillGuardrailOneAtATime(t *testing.T) {
 	// Once the first drill ends, a drill may run again.
 	if report, err := second.Drill(context.Background(), f.envelope, f.key, DrillGuards{}); err != nil || !report.Verified {
 		t.Fatalf("drill after the first ended: %+v %v", report, err)
+	}
+}
+
+// A pending staged restore refuses the drill before anything is written: the
+// staged set, the live data and the status file are untouched.
+func TestDrillRefusedWhileStagedRestorePending(t *testing.T) {
+	f := newStageFixture(t)
+	stager := New(f.dataDir, f.store)
+	if _, err := stager.Stage(context.Background(), f.envelope, f.key, false); err != nil {
+		t.Fatalf("stage: %v", err)
+	}
+	before := treeDigest(t, f.dataDir)
+	_, err := stager.Drill(context.Background(), f.envelope, f.key, DrillGuards{})
+	if !errors.Is(err, ErrDrillStaged) {
+		t.Fatalf("drill err = %v, want ErrDrillStaged", err)
+	}
+	if diff := diffDigest(before, treeDigest(t, f.dataDir)); len(diff) != 0 {
+		t.Fatalf("refused drill changed %v", diff)
+	}
+	if _, staged, err := Pending(f.dataDir); err != nil || !staged {
+		t.Fatalf("staged restore after refused drill: %v %v", staged, err)
 	}
 }

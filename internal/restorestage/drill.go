@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	backupcore "github.com/beamfall/core/internal/backup"
@@ -28,6 +28,7 @@ var (
 	ErrDrillBusy    = RefusalError("the server is busy; run the restore drill when it is idle")
 	ErrDrillNoSpace = RefusalError("there is not enough free space in the data directory for a restore drill")
 	ErrDrillTimeout = RefusalError("the restore drill did not finish within its time limit")
+	ErrDrillStaged  = RefusalError("a staged restore is pending; apply or cancel it before running a restore drill")
 )
 
 // DrillGuards are the ADR-0192 §5 L3 guardrails. A zero value applies the
@@ -49,26 +50,58 @@ type DrillReport struct {
 	BackupCreatedAt string
 	Databases       int
 	Libraries       int
-	Duration        time.Duration
+	// Tables is the number of tables whose row count and row checksum matched
+	// the snapshot in the set (Layer-1 suite).
+	Tables   int
+	Duration time.Duration
 	// Reason is a fixed, content-free failure reason when Verified is false.
 	Reason string
 }
 
-// drillRunning enforces one concurrent drill per process.
-var drillRunning atomic.Bool
+// runningDrills enforces one concurrent drill per data directory (per box):
+// two stagers over the same directory share the slot, while separate data
+// directories in one process do not block each other.
+var runningDrills = struct {
+	sync.Mutex
+	dirs map[string]bool
+}{dirs: map[string]bool{}}
+
+func acquireDrill(dataDir string) (release func(), ok bool) {
+	key := filepath.Clean(dataDir)
+	runningDrills.Lock()
+	defer runningDrills.Unlock()
+	if runningDrills.dirs[key] {
+		return nil, false
+	}
+	runningDrills.dirs[key] = true
+	return func() {
+		runningDrills.Lock()
+		delete(runningDrills.dirs, key)
+		runningDrills.Unlock()
+	}, true
+}
 
 // Drill is "Verify my backup now" (ADR-0192 §5 L3): it decrypts the chosen
 // set into scratch inside the data directory, restores it into an ephemeral
 // data directory there, opens that as a store (migrations and the SQLite
 // integrity check), runs a read assertion suite, and removes every scratch
 // file. It never touches the live store, the live data files or a staged
-// restore. A refusal (busy, running, space, key, set) writes nothing; a drill
-// that ran records its outcome in the backup status file.
+// restore. A refusal (running, staged restore pending, busy, space, key, set)
+// writes nothing; a drill that ran records its outcome in the backup status
+// file.
 func (s *Stager) Drill(ctx context.Context, envelope, backupKey string, guards DrillGuards) (DrillReport, error) {
-	if !drillRunning.CompareAndSwap(false, true) {
+	release, ok := acquireDrill(s.dataDir)
+	if !ok {
 		return DrillReport{}, ErrDrillRunning
 	}
-	defer drillRunning.Store(false)
+	defer release()
+	// A pending staged restore is applied at the next start; a drill beside it
+	// would compete for scratch space and could be mistaken for its verdict.
+	if _, pending, err := Pending(s.dataDir); err != nil {
+		return DrillReport{}, err
+	} else if pending {
+		return DrillReport{}, ErrDrillStaged
+	}
 	if guards.Idle != nil && !guards.Idle() {
 		return DrillReport{}, ErrDrillBusy
 	}
@@ -148,7 +181,9 @@ func (s *Stager) drillSpacePrecheck(ctx context.Context, envelope string, freeBy
 }
 
 // runDrillAssertions restores the decrypted set into scratchData, boots it as
-// an ephemeral store and checks it reads back. Every path is inside scratch.
+// an ephemeral store, runs the Layer-1 suite (integrity_check,
+// foreign_key_check, per-table row counts and row checksums against the
+// snapshot) and checks the catalog reads back. Every path is inside scratch.
 func runDrillAssertions(ctx context.Context, manifest, scratchData string, report *DrillReport) error {
 	summary, err := store.InspectBackupManifest(ctx, manifest)
 	if err != nil {
@@ -171,6 +206,11 @@ func runDrillAssertions(ctx context.Context, manifest, scratchData string, repor
 		return err
 	}
 	defer restored.Close()
+	layer1, err := restored.VerifyRestoredAgainstBackup(ctx, manifest)
+	if err != nil {
+		return err
+	}
+	report.Tables = layer1.Tables
 	libraries, err := restored.Libraries(ctx, store.LibraryFilter{AllLibraries: true, Revealed: true})
 	if err != nil {
 		return err

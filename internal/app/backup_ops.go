@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"os"
 	"time"
 
 	backupcore "github.com/beamfall/core/internal/backup"
@@ -39,4 +41,17 @@ func (o backupOps) Drill(ctx context.Context, envelope, backupKey string) (resto
 		FreeBytes: backupFreeBytes,
 		Idle:      o.idle,
 	})
+}
+
+// CurrentKeyFingerprint is the fingerprint of the public wrap key new sets
+// are sealed to; empty before one is provisioned.
+func (o backupOps) CurrentKeyFingerprint() (string, error) {
+	key, err := backupcore.LoadPublicWrapKey(o.dataDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return key.Fingerprint(), nil
 }

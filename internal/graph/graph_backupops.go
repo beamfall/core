@@ -25,6 +25,9 @@ type BackupOps interface {
 	AcknowledgeBanner(banner backupcore.Banner) (backupcore.Status, error)
 	SetUpgradeGate(gate string) (backupcore.Status, error)
 	Drill(ctx context.Context, envelope, backupKey string) (restorestage.DrillReport, error)
+	// CurrentKeyFingerprint is the fingerprint of the wrap key new sets are
+	// sealed to; empty when none is provisioned.
+	CurrentKeyFingerprint() (string, error)
 }
 
 // SetBackupOps wires the scheduled-backup state and drill runner.
@@ -39,13 +42,19 @@ type BackupStatusInfo struct {
 	// BackupFailedBanner and IntegrityFailedBanner say whether each distinct
 	// failure banner is displayed: its failure is neither superseded by a later
 	// verified backup nor acknowledged.
-	BackupFailedBanner    bool             `json:"backupFailedBanner"`
-	IntegrityFailedBanner bool             `json:"integrityFailedBanner"`
-	LastSuccess           *BackupRunInfo   `json:"lastSuccess"`
-	LastFailure           *BackupRunInfo   `json:"lastFailure"`
-	LastIntegrityFailure  *BackupRunInfo   `json:"lastIntegrityFailure"`
-	UpgradeGate           string           `json:"upgradeGate"`
-	LastDrill             *BackupDrillInfo `json:"lastDrill"`
+	BackupFailedBanner    bool           `json:"backupFailedBanner"`
+	IntegrityFailedBanner bool           `json:"integrityFailedBanner"`
+	LastSuccess           *BackupRunInfo `json:"lastSuccess"`
+	LastFailure           *BackupRunInfo `json:"lastFailure"`
+	LastIntegrityFailure  *BackupRunInfo `json:"lastIntegrityFailure"`
+	// LastIntegrityPass is the newest backup whose set passed its Layer-2
+	// integrity check in the same job.
+	LastIntegrityPass *BackupRunInfo `json:"lastIntegrityPass"`
+	// UpdateGateClear says a recorded integrity pass is on record that no later
+	// failure supersedes. Acknowledging a banner never sets it.
+	UpdateGateClear bool             `json:"updateGateClear"`
+	UpgradeGate     string           `json:"upgradeGate"`
+	LastDrill       *BackupDrillInfo `json:"lastDrill"`
 }
 
 // BackupRunInfo is one scheduled-backup outcome.
@@ -159,6 +168,8 @@ func backupStatusInfo(s backupcore.Status) BackupStatusInfo {
 		LastSuccess:           backupRunInfo(s.LastSuccess),
 		LastFailure:           backupRunInfo(s.LastFailure),
 		LastIntegrityFailure:  backupRunInfo(s.LastIntegrityFailure),
+		LastIntegrityPass:     backupRunInfo(s.LastIntegrityPass),
+		UpdateGateClear:       s.UpdateGateClear(),
 		UpgradeGate:           s.EffectiveUpgradeGate(),
 	}
 	if d := s.LastDrill; d != nil {
@@ -172,4 +183,29 @@ func backupRunInfo(r *backupcore.RunRecord) *BackupRunInfo {
 		return nil
 	}
 	return &BackupRunInfo{At: r.At.UTC().Format(time.RFC3339), FailureClass: r.FailureClass, Set: r.Set}
+}
+
+// currentBackupKeyFingerprint is the data directory's wrap-key fingerprint, or
+// empty when it is unknown: then no set is labelled current or archived.
+func (h *Handler) currentBackupKeyFingerprint() string {
+	if h.backupOps == nil {
+		return ""
+	}
+	fingerprint, err := h.backupOps.CurrentKeyFingerprint()
+	if err != nil {
+		return ""
+	}
+	return fingerprint
+}
+
+// backupKeyState maps a set's key fingerprint against the current wrap key.
+func backupKeyState(setKey, currentKey string) string {
+	switch {
+	case setKey == "" || currentKey == "":
+		return ""
+	case setKey == currentKey:
+		return "current"
+	default:
+		return "archived"
+	}
 }

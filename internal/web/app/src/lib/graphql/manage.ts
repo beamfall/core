@@ -636,7 +636,7 @@ export async function runBackup(dest: string): Promise<BackupInfo> {
 }
 
 const BACKUP_HISTORY_QUERY =
-  "query BackupHistory($dest: String!) { backupHistory(dest: $dest) { directory createdAt sizeBytes valid error } }";
+  "query BackupHistory($dest: String!) { backupHistory(dest: $dest) { directory createdAt sizeBytes valid error keyFingerprint keyState } }";
 
 /**
  * BackupHistory — the published backup sets under dest, newest first, each with
@@ -778,7 +778,7 @@ export async function acknowledgeBackupKey(
 }
 
 const BACKUP_STATUS_FIELDS =
-  "backupFailedBanner integrityFailedBanner upgradeGate lastSuccess { at failureClass set } lastFailure { at failureClass set } lastIntegrityFailure { at failureClass set } lastDrill { at verified set reason }";
+  "backupFailedBanner integrityFailedBanner upgradeGate updateGateClear lastIntegrityPass { at failureClass set } lastSuccess { at failureClass set } lastFailure { at failureClass set } lastIntegrityFailure { at failureClass set } lastDrill { at verified set reason }";
 
 const BACKUP_STATUS_QUERY = `query BackupStatus { backupStatus { ${BACKUP_STATUS_FIELDS} } }`;
 

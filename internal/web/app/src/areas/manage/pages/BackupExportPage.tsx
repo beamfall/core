@@ -286,12 +286,13 @@ function BackupHistorySection({
                   <TableHead>{t("backupColCaptured")}</TableHead>
                   <TableHead className="text-right">{t("backupColSize")}</TableHead>
                   <TableHead>{t("backupColVerify")}</TableHead>
+                  <TableHead>{t("backupColKey")}</TableHead>
                   <TableHead className="text-right">{t("backupVerifyAction")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableSkeletonRows columns={5} />
+                  <TableSkeletonRows columns={6} />
                 ) : (
                   entries.map((entry) => (
                     <TableRow
@@ -311,6 +312,12 @@ function BackupHistorySection({
                       </TableCell>
                       <TableCell>
                         <VerifyState entry={entry} />
+                      </TableCell>
+                      <TableCell
+                        className="manage-cell-num"
+                        data-key-state={entry.keyState || undefined}
+                      >
+                        <KeyLabel entry={entry} />
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -375,6 +382,16 @@ function VerifyState({ entry }: { entry: BackupHistoryEntry }) {
     return <StatusChip tone="red">{t("backupVerifyFailed")}</StatusChip>;
   }
   return <StatusChip tone="neutral">{t("backupVerifyNotRun")}</StatusChip>;
+}
+
+// The History "Key" column (BKUP-14): the wrap key a set was sealed to, marked
+// archived when it is not the data directory's current key.
+function KeyLabel({ entry }: { entry: BackupHistoryEntry }) {
+  const t = useT();
+  const fingerprint = entry.keyFingerprint ?? "";
+  if (!fingerprint) return <>{t("backupKeyNone")}</>;
+  if (entry.keyState === "archived") return <>{t("backupKeyArchived", { fingerprint })}</>;
+  return <>{t("backupKeyCurrent", { fingerprint })}</>;
 }
 
 // ManifestSection: the selected set's manifest path plus the binding ADR-0077

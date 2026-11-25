@@ -57,6 +57,8 @@ const NO_BACKUP: BackupStatusInfo = {
 const VERIFIED_BACKUP: BackupStatusInfo = {
   ...NO_BACKUP,
   lastSuccess: { at: "2026-07-03T02:30:00Z", failureClass: "", set: "beamfall-1f9a" },
+  lastIntegrityPass: { at: "2026-07-03T02:30:00Z", failureClass: "", set: "beamfall-1f9a" },
+  updateGateClear: true,
 };
 
 beforeEach(() => {
@@ -281,6 +283,7 @@ describe("update backup gate (CORE-0778)", () => {
       upgradeGate: "hard",
       integrityFailedBanner: true,
       lastIntegrityFailure: { at: "2026-07-04T02:10:00Z", failureClass: "integrity", set: "" },
+      updateGateClear: false,
     });
     renderUpdates();
     const gate = await screen.findByRole("region", { name: "Backup before update" });
@@ -305,7 +308,22 @@ describe("update backup gate (CORE-0778)", () => {
     expect(backupGateState({ ...VERIFIED_BACKUP, upgradeGate: "hard" }).steps.install).toBe(
       "pending",
     );
-    expect(backupGateState({ ...VERIFIED_BACKUP, backupFailedBanner: true }).clear).toBe(false);
+    expect(backupGateState({ ...VERIFIED_BACKUP, updateGateClear: false }).clear).toBe(false);
     expect(backupGateState(null)).toMatchObject({ policy: "soft", clear: false });
+  });
+
+  it("never infers a clear gate from a success with the banners acknowledged", () => {
+    // A failure the admin acknowledged leaves no banner, but the server has
+    // recorded no newer integrity pass, so the gate stays shut.
+    const acknowledged: BackupStatusInfo = {
+      ...NO_BACKUP,
+      lastSuccess: { at: "2026-07-03T02:30:00Z", failureClass: "", set: "beamfall-1f9a" },
+      lastIntegrityFailure: { at: "2026-07-04T02:30:00Z", failureClass: "integrity", set: "" },
+      updateGateClear: false,
+    };
+    const gate = backupGateState(acknowledged);
+    expect(gate.clear).toBe(false);
+    expect(gate.steps.verify).toBe("pending");
+    expect(backupGateState({ ...acknowledged, upgradeGate: "hard" }).steps.install).toBe("blocked");
   });
 });

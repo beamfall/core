@@ -986,13 +986,16 @@ func ensureBackupSchemaWithinBinary(manifest backupSetManifest) error {
 // BackupSetSummary is one entry of a backup destination's history: the published
 // set directory, when it was created, its on-disk size, and whether it passes
 // confined integrity verification. Error carries a sanitized reason when Valid
-// is false — never a computed checksum of an arbitrary file.
+// is false — never a computed checksum of an arbitrary file. KeyFingerprint is
+// the public wrap-key fingerprint from an encrypted set's receipt, empty for a
+// plaintext set.
 type BackupSetSummary struct {
-	Directory string
-	CreatedAt time.Time
-	SizeBytes int64
-	Valid     bool
-	Error     string
+	Directory      string
+	CreatedAt      time.Time
+	SizeBytes      int64
+	Valid          bool
+	Error          string
+	KeyFingerprint string
 }
 
 // BackupHistory lists the published backup sets under destDir (newest first),
@@ -1155,6 +1158,7 @@ func summarizeBackupSet(ctx context.Context, s *Store, setDir string) BackupSetS
 	receipt, receiptErr := readBackupSetReceipt(filepath.Join(setDir, backupReceiptBasename))
 	if receiptErr == nil {
 		summary.CreatedAt, _ = time.Parse(time.RFC3339Nano, receipt.CreatedAt)
+		summary.KeyFingerprint = receipt.KeyFingerprint
 	} else {
 		manifest, err := readManifestFile(filepath.Join(setDir, backupManifestBasename))
 		if err == nil {

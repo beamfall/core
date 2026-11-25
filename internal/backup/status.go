@@ -34,10 +34,14 @@ const (
 // RunRecord is one scheduled-backup outcome.
 type RunRecord struct {
 	At time.Time `json:"at"`
-	// FailureClass is empty for a successful, verified run.
+	// FailureClass is empty for a successful run.
 	FailureClass string `json:"failureClass,omitempty"`
 	// Set is the Backup Set base name, when one was written.
 	Set string `json:"set,omitempty"`
+	// IntegrityVerified records that the set passed the Layer-2 integrity
+	// check (ADR-0192 §5 L2) in the same job. Only such a run is a verified
+	// recovery point.
+	IntegrityVerified bool `json:"integrityVerified,omitempty"`
 }
 
 // DrillRecord is one "Verify my backup now" (Layer-3) drill outcome.
@@ -51,9 +55,12 @@ type DrillRecord struct {
 
 // Status is the persisted scheduled-backup state.
 type Status struct {
-	LastSuccess          *RunRecord   `json:"lastSuccess,omitempty"`
-	LastFailure          *RunRecord   `json:"lastFailure,omitempty"`
-	LastIntegrityFailure *RunRecord   `json:"lastIntegrityFailure,omitempty"`
+	LastSuccess          *RunRecord `json:"lastSuccess,omitempty"`
+	LastFailure          *RunRecord `json:"lastFailure,omitempty"`
+	LastIntegrityFailure *RunRecord `json:"lastIntegrityFailure,omitempty"`
+	// LastIntegrityPass is the newest run whose set passed its integrity
+	// check: the recorded evidence the update gate reads.
+	LastIntegrityPass    *RunRecord   `json:"lastIntegrityPass,omitempty"`
 	BackupFailedAckAt    *time.Time   `json:"backupFailedAckAt,omitempty"`
 	IntegrityFailedAckAt *time.Time   `json:"integrityFailedAckAt,omitempty"`
 	UpgradeGate          string       `json:"upgradeGate,omitempty"`
@@ -82,6 +89,23 @@ func (s Status) BannerActive(b Banner) bool {
 		return false
 	}
 	return ack == nil || ack.Before(failure.At)
+}
+
+// UpdateGateClear reports whether a verified recovery point is on record for
+// the update gate (ADR-0192 §6): a recorded integrity pass that no later
+// backup or integrity failure supersedes. Acknowledging a banner hides it but
+// never clears the gate.
+func (s Status) UpdateGateClear() bool {
+	pass := s.LastIntegrityPass
+	if pass == nil || !pass.IntegrityVerified {
+		return false
+	}
+	for _, failure := range []*RunRecord{s.LastFailure, s.LastIntegrityFailure} {
+		if failure != nil && !pass.At.After(failure.At) {
+			return false
+		}
+	}
+	return true
 }
 
 // statusMu serializes read-modify-write of the status file within a process.
@@ -127,7 +151,8 @@ func UpdateStatus(dataDir string, mutate func(*Status) error) (Status, error) {
 }
 
 // RecordRun records a scheduled-backup outcome. An integrity failure updates
-// only the integrity banner's record; other failures the failed-backup one.
+// only the integrity banner's record; other failures the failed-backup one. A
+// success marked IntegrityVerified is also the latest integrity pass.
 func RecordRun(dataDir string, run RunRecord, integrity bool) (Status, error) {
 	run.At = run.At.UTC()
 	run.Set = filepath.Base(run.Set)
@@ -139,6 +164,10 @@ func RecordRun(dataDir string, run RunRecord, integrity bool) (Status, error) {
 		switch {
 		case run.FailureClass == "":
 			s.LastSuccess = &r
+			if r.IntegrityVerified {
+				pass := r
+				s.LastIntegrityPass = &pass
+			}
 		case integrity:
 			s.LastIntegrityFailure = &r
 		default:

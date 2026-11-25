@@ -62,9 +62,12 @@ export function backupGateState(status: BackupStatusInfo | null): {
   steps: { backup: GateStepState; verify: GateStepState; install: GateStepState };
 } {
   const policy = status?.upgradeGate === "hard" ? "hard" : "soft";
-  const backedUp = Boolean(status?.lastSuccess) && !status?.backupFailedBanner;
-  const verified = backedUp && !status?.integrityFailedBanner;
-  const clear = verified;
+  // The gate clears only on a recorded integrity pass that no later failure
+  // supersedes (backupStatus.updateGateClear); acknowledging a banner hides
+  // it but never clears the gate.
+  const clear = status?.updateGateClear === true;
+  const backedUp = clear || (Boolean(status?.lastSuccess) && !status?.backupFailedBanner);
+  const verified = clear;
   return {
     policy,
     clear,

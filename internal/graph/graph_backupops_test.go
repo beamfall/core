@@ -19,6 +19,7 @@ type fakeBackupOps struct {
 	gotKey  string
 	report  restorestage.DrillReport
 	err     error
+	key     string
 }
 
 func (f *fakeBackupOps) Status() (backupcore.Status, error) { return backupcore.LoadStatus(f.dataDir) }
@@ -35,6 +36,8 @@ func (f *fakeBackupOps) Drill(_ context.Context, _, backupKey string) (restorest
 	f.gotKey = backupKey
 	return f.report, f.err
 }
+
+func (f *fakeBackupOps) CurrentKeyFingerprint() (string, error) { return f.key, nil }
 
 func decodeBackupStatus(t *testing.T, raw json.RawMessage, errs []string) BackupStatusInfo {
 	t.Helper()
@@ -55,6 +58,7 @@ func TestBackupOpsFieldsBannersGateAndDrill(t *testing.T) {
 		status   = `{"query":"query { backupStatus { backupFailedBanner integrityFailedBanner upgradeGate lastFailure { failureClass set } lastIntegrityFailure { failureClass } lastDrill { verified set } } }"}`
 		ack      = `{"query":"mutation($b: String!) { acknowledgeBackupBanner(banner: $b) { backupFailedBanner integrityFailedBanner upgradeGate } }","variables":{"b":"%s"}}`
 		gate     = `{"query":"mutation($g: String!) { setBackupUpgradeGate(gate: $g) { upgradeGate } }","variables":{"g":"%s"}}`
+		gateReq  = `{"query":"query { backupStatus { updateGateClear lastIntegrityPass { set } } }"}`
 		drillReq = `{"query":"mutation($e: String!, $k: String!) { verifyBackupNow(envelope: $e, backupKey: $k) { verified set reason databases libraries } }","variables":{"e":"/backups/set-1/backup.bfenc","k":"placeholder-drill-key"}}`
 	)
 	fill := func(tmpl, v string) string { return strings.Replace(tmpl, "%s", v, 1) }
@@ -113,6 +117,19 @@ func TestBackupOpsFieldsBannersGateAndDrill(t *testing.T) {
 		t.Fatalf("unknown gate errors = %q", errs)
 	}
 
+	// The update gate reads a recorded integrity pass, never the banners.
+	data, errs = postLibraryTrash(t, handler, gateReq)
+	if info := decodeBackupStatus(t, data["backupStatus"], errs); info.UpdateGateClear || info.LastIntegrityPass != nil {
+		t.Fatalf("gate clear with only failures on record: %+v", info)
+	}
+	if _, err := backupcore.RecordRun(dataDir, backupcore.RunRecord{At: time.Now(), Set: "/srv/backups/set-2", IntegrityVerified: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	data, errs = postLibraryTrash(t, handler, gateReq)
+	if info := decodeBackupStatus(t, data["backupStatus"], errs); !info.UpdateGateClear || info.LastIntegrityPass == nil || info.LastIntegrityPass.Set != "set-2" {
+		t.Fatalf("gate after a verified backup: %+v", info)
+	}
+
 	// The drill: a refusal is returned as-is; a verified drill reports its counts.
 	fake.err = restorestage.ErrDrillRunning
 	if _, errs := postLibraryTrash(t, handler, drillReq); len(errs) == 0 || errs[0] != restorestage.ErrDrillRunning.Error() {
@@ -127,5 +144,20 @@ func TestBackupOpsFieldsBannersGateAndDrill(t *testing.T) {
 	}
 	if fake.gotKey != "placeholder-drill-key" || strings.Contains(string(data["verifyBackupNow"]), "placeholder-drill-key") {
 		t.Fatalf("drill key handling: got %q, response %s", fake.gotKey, data["verifyBackupNow"])
+	}
+}
+
+// BKUP-14 key-to-archive mapping: a set sealed to the current wrap key is
+// current, one sealed to an earlier key is archived, unknown stays blank.
+func TestBackupKeyState(t *testing.T) {
+	for _, tc := range []struct{ set, current, want string }{
+		{"fp-a", "fp-a", "current"},
+		{"fp-z", "fp-a", "archived"},
+		{"", "fp-a", ""},
+		{"fp-a", "", ""},
+	} {
+		if got := backupKeyState(tc.set, tc.current); got != tc.want {
+			t.Errorf("backupKeyState(%q, %q) = %q, want %q", tc.set, tc.current, got, tc.want)
+		}
 	}
 }

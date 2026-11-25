@@ -219,4 +219,30 @@ func TestScheduledBackupFiresUnderControlledClock(t *testing.T) {
 			t.Fatalf("at %s: %d database-backup jobs, want %d", step.at.Format(time.TimeOnly), got, step.want)
 		}
 	}
+
+	// The next night's fire while the first backup is still outstanding is
+	// deduped onto it: two backups never queue or run at once.
+	nextDay := due.AddDate(0, 0, 1)
+	if err := service.Tick(ctx, nextDay); err != nil {
+		t.Fatal(err)
+	}
+	if got := backupJobs(); got != 1 {
+		t.Fatalf("next-day re-fire with a backup outstanding: %d database-backup jobs, want 1", got)
+	}
+	// Once the outstanding backup finishes, the following night fires anew.
+	for {
+		job, err := st.ClaimNextJob(ctx, "test-worker", nil, nextDay)
+		if err != nil || job.ID == "" {
+			break
+		}
+		if err := st.CompleteJob(ctx, job.ID, job.LeaseOwner, nextDay); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := service.Tick(ctx, due.AddDate(0, 0, 2)); err != nil {
+		t.Fatal(err)
+	}
+	if got := backupJobs(); got != 2 {
+		t.Fatalf("night after the backup completed: %d database-backup jobs, want 2", got)
+	}
 }
