@@ -178,7 +178,13 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 	// from catalog.db: every evacuation (CORE-0768 plaintext rows, CORE-0706
 	// identification state) copies onto this plane first, then one shared
 	// transaction deletes them all. A failure in either phase unwinds with
-	// catalog.db still holding every row, and the next unseal retries.
+	// catalog.db still holding every row, and the next unseal retries. Profile
+	// footprint erasures owed since the last seal apply first; their markers
+	// clear in that same shared transaction.
+	erasure, err := s.planeErasureEvacuationLocked(ctx, plane)
+	if err != nil {
+		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
+	}
 	plaintext, err := s.copyPlaintextEncryptedLibraryRowsLocked(ctx, plane)
 	if err != nil {
 		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
@@ -187,7 +193,7 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 	if err != nil {
 		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
 	}
-	if err := s.commitEvacuationPlansLocked(ctx, libraryID, plaintext, identification); err != nil {
+	if err := s.commitEvacuationPlansLocked(ctx, libraryID, erasure, plaintext, identification); err != nil {
 		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
 	}
 	return nil
