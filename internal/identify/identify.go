@@ -573,7 +573,47 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 // ApplyFixMatch uses the prospective ordinal for lookup and commits the manual
 // edit with the replacement. No other identification can interleave its
 // lookup or change the remembered candidate while this match is being applied.
+// It commits only the identification; the match pin, queue resolution and
+// fix-match audit belong to ApplyFixMatchRequest.
 func (s *Service) ApplyFixMatch(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, clearLocks []string, ordinal *store.MediaOrdinal, actor store.ProfileID) error {
+	return s.applyFixMatch(ctx, FixMatchRequest{
+		MediaID: mediaID, PluginID: pluginID, ScraperID: scraperID, CandidateID: candidateID,
+		ClearLocks: clearLocks, Ordinal: ordinal, Actor: actor,
+	}, false)
+}
+
+// FixMatchRequest is one operator Fix Match. RequestID makes a retry replay
+// the original commit instead of applying it twice; Filter is the caller's
+// visibility, re-checked inside the commit.
+type FixMatchRequest struct {
+	RequestID                        string
+	MediaID                          store.MediaID
+	PluginID, ScraperID, CandidateID string
+	ClearLocks                       []string
+	Ordinal                          *store.MediaOrdinal
+	Actor                            store.ProfileID
+	Filter                           store.LibraryFilter
+}
+
+// fixMatchCommitter commits the identification, match pin, Unmatched-queue
+// resolution and fix-match audit revision in one transaction.
+type fixMatchCommitter interface {
+	CommitFixMatch(context.Context, store.MediaID, store.FixMatchCommit) (store.IdentificationReceipt, error)
+}
+
+// ApplyFixMatchRequest applies a Fix Match. With a store that commits Fix
+// Match atomically, the metadata, pin, queue resolution and audit revision
+// land together and a replayed RequestID commits nothing new.
+func (s *Service) ApplyFixMatchRequest(ctx context.Context, req FixMatchRequest) error {
+	if _, ok := s.store.(fixMatchCommitter); !ok {
+		return errors.New("identify: Fix Match commit store unavailable")
+	}
+	return s.applyFixMatch(ctx, req, true)
+}
+
+func (s *Service) applyFixMatch(ctx context.Context, req FixMatchRequest, atomic bool) error {
+	mediaID, pluginID, scraperID, candidateID := req.MediaID, req.PluginID, req.ScraperID, req.CandidateID
+	clearLocks, ordinal, actor := req.ClearLocks, req.Ordinal, req.Actor
 	unlock := s.writes.lock(mediaID)
 	defer unlock()
 	clearOrdinal, err := s.shouldClearOrdinal(ctx, mediaID, candidateID, clearLocks, ordinal)
@@ -586,7 +626,11 @@ func (s *Service) ApplyFixMatch(ctx context.Context, mediaID store.MediaID, plug
 	edit := store.MediaMetadata{
 		ClearLocks: locks, OperatorOrdinal: ordinal, OrdinalActor: actor, ClearOrdinal: clearOrdinal,
 	}
-	if err := s.apply(ctx, mediaID, pluginID, scraperID, candidateID, edit); err != nil {
+	var fix *FixMatchRequest
+	if atomic {
+		fix = &req
+	}
+	if err := s.applyCommit(ctx, mediaID, pluginID, scraperID, candidateID, edit, fix); err != nil {
 		return err
 	}
 	disposition := "kept"
@@ -595,7 +639,7 @@ func (s *Service) ApplyFixMatch(ctx context.Context, mediaID store.MediaID, plug
 	} else if clearOrdinal {
 		disposition = "cleared"
 	}
-	slog.Info("identify: fixed match", "media", mediaID, "operatorOrdinal", disposition)
+	slog.Info("identify: fixed match", "operatorOrdinal", disposition)
 	return nil
 }
 
@@ -628,6 +672,10 @@ func (s *Service) ClearMediaOrdinal(ctx context.Context, mediaID store.MediaID) 
 }
 
 func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, edit store.MediaMetadata) error {
+	return s.applyCommit(ctx, mediaID, pluginID, scraperID, candidateID, edit, nil)
+}
+
+func (s *Service) applyCommit(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, edit store.MediaMetadata, fix *FixMatchRequest) error {
 	if mediaID == "" {
 		return errors.New("identify: media ID is required")
 	}
@@ -666,7 +714,17 @@ func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 		return fmt.Errorf("identify: scraper %q hydrates entities but no entity store is wired", spec.ID)
 	}
 	manual := s.effectiveOperatorOrdinal(ctx, mediaID, edit)
-	if err := s.store.ApplyMediaIdentification(ctx, mediaID, metadata, provenance, identifiedMediaFields(bundle, spec, result)); err != nil {
+	fields := identifiedMediaFields(bundle, spec, result)
+	if committer, ok := s.store.(fixMatchCommitter); fix != nil && ok {
+		if _, err := committer.CommitFixMatch(ctx, mediaID, store.FixMatchCommit{
+			IdentificationCommit: store.IdentificationCommit{
+				RequestID: fix.RequestID, Metadata: metadata, Provenance: provenance, Fields: fields,
+			},
+			Filter: fix.Filter,
+		}); err != nil {
+			return err
+		}
+	} else if err := s.store.ApplyMediaIdentification(ctx, mediaID, metadata, provenance, fields); err != nil {
 		return err
 	}
 	if err := s.applyEntities(ctx, mediaID, bundle, spec, result, manual); err != nil {

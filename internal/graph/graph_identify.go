@@ -184,7 +184,12 @@ func (h *Handler) fixMatch(ctx context.Context, scope auth.Scope, req request) (
 	if err != nil {
 		return MediaInfo{}, err
 	}
-	if err := h.identify.ApplyFixMatch(ctx, media.ID, pluginID, scraperID, candidateID, clearLocks, ordinal, scope.ProfileID); err != nil {
+	// The identification, match pin, Unmatched-queue resolution and the
+	// fix-match audit revision commit together on the Media's own plane.
+	if err := h.identify.ApplyFixMatchRequest(ctx, identify.FixMatchRequest{
+		MediaID: media.ID, PluginID: pluginID, ScraperID: scraperID, CandidateID: candidateID,
+		ClearLocks: clearLocks, Ordinal: ordinal, Actor: scope.ProfileID, Filter: filter,
+	}); err != nil {
 		if errors.Is(err, store.ValidationError("unknown lockable field")) {
 			return MediaInfo{}, clientError("unknown lockable field")
 		}
@@ -194,13 +199,6 @@ func (h *Handler) fixMatch(ctx context.Context, scope auth.Scope, req request) (
 		if err := h.logActivity(ctx, scope, store.ActivityMediaFieldLock, "media", mediaID, media.LibraryID); err != nil {
 			return MediaInfo{}, err
 		}
-	}
-	if err := h.store.PinMediaMatch(ctx, media.ID, filter); err != nil {
-		return MediaInfo{}, err
-	}
-	// The item is resolved — drop its Unmatched-queue row if one was parked.
-	if _, err := h.store.ClearUnmatched(ctx, store.MediaID(mediaID)); err != nil {
-		return MediaInfo{}, err
 	}
 	media, err = h.store.Media(ctx, media.ID, filter)
 	if err != nil {
