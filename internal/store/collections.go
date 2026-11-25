@@ -54,11 +54,19 @@ func (s *Store) Collections(ctx context.Context, libraryID LibraryID, includeTra
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if errors.Is(err, ErrEncryptedLibraryDBDisabled) {
+		// A Sealed Library's Collections stay in its sealed plane.
+		return []Collection{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	where := "WHERE c.library_id = ?"
 	if !includeTrashed {
 		where += " AND c.trashed_at_ms IS NULL"
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT c.id, c.library_id, c.parent_id, c.name, c.sort_order, c.trashed_at_ms,
 		       c.created_at_ms, c.updated_at_ms, COUNT(cm.media_id)
 		FROM collection c
@@ -117,8 +125,12 @@ func (s *Store) CreateCollection(ctx context.Context, c Collection, now time.Tim
 	if err := s.guardLocked(); err != nil {
 		return Collection{}, err
 	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, c.LibraryID)
+	if err != nil {
+		return Collection{}, err
+	}
 	if c.ParentID != "" {
-		parent, err := s.collectionByIDLocked(ctx, c.ParentID, false)
+		parent, err := s.collectionInPlaneLocked(ctx, plane, c.ParentID, false)
 		if err != nil {
 			return Collection{}, ErrCollectionNotFound
 		}
@@ -127,20 +139,20 @@ func (s *Store) CreateCollection(ctx context.Context, c Collection, now time.Tim
 		}
 	}
 	if c.SortOrder == 0 {
-		order, err := s.nextCollectionSortOrderLocked(ctx, c.LibraryID, c.ParentID)
+		order, err := nextCollectionSortOrder(ctx, plane.reader, c.LibraryID, c.ParentID)
 		if err != nil {
 			return Collection{}, err
 		}
 		c.SortOrder = order
 	}
-	_, err = s.catalogW.ExecContext(ctx, `
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT INTO collection (id, library_id, parent_id, name, sort_order, created_at_ms, updated_at_ms)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, c.ID, c.LibraryID, nullString(string(c.ParentID)), c.Name, c.SortOrder, c.CreatedAt.UnixMilli(), c.UpdatedAt.UnixMilli())
 	if err != nil {
 		return Collection{}, err
 	}
-	return s.collectionByIDLocked(ctx, c.ID, true)
+	return s.collectionInPlaneLocked(ctx, plane, c.ID, true)
 }
 
 // ImportCollectionSnapshot creates an imported static Collection and fills its
@@ -175,7 +187,13 @@ func (s *Store) ImportCollectionSnapshot(ctx context.Context, c Collection, memb
 	if err := s.guardLocked(); err != nil {
 		return Collection{}, err
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	// An Encrypted Library's Collection and members are written to its own
+	// plane, where its Media live (CORE-0768).
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, c.LibraryID)
+	if err != nil {
+		return Collection{}, err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return Collection{}, err
 	}
@@ -305,7 +323,7 @@ func (s *Store) ImportCollectionSnapshot(ctx context.Context, c Collection, memb
 	if err := tx.Commit(); err != nil {
 		return Collection{}, err
 	}
-	return s.collectionByIDLocked(ctx, c.ID, true)
+	return s.collectionInPlaneLocked(ctx, plane, c.ID, true)
 }
 
 func (s *Store) UpdateCollection(ctx context.Context, id CollectionID, patch CollectionPatch, now time.Time) (Collection, error) {
@@ -317,7 +335,11 @@ func (s *Store) UpdateCollection(ctx context.Context, id CollectionID, patch Col
 	if err := s.guardLocked(); err != nil {
 		return Collection{}, err
 	}
-	current, err := s.collectionByIDLocked(ctx, id, patch.IncludeTrash)
+	plane, err := s.collectionPlaneLocked(ctx, id)
+	if err != nil {
+		return Collection{}, err
+	}
+	current, err := s.collectionInPlaneLocked(ctx, plane, id, patch.IncludeTrash)
 	if err != nil {
 		return Collection{}, err
 	}
@@ -339,14 +361,14 @@ func (s *Store) UpdateCollection(ctx context.Context, id CollectionID, patch Col
 		return Collection{}, ValidationError("collection cannot parent itself")
 	}
 	if parent != "" {
-		parentRow, err := s.collectionByIDLocked(ctx, parent, false)
+		parentRow, err := s.collectionInPlaneLocked(ctx, plane, parent, false)
 		if err != nil {
 			return Collection{}, ErrCollectionNotFound
 		}
 		if parentRow.LibraryID != current.LibraryID {
 			return Collection{}, ValidationError("parent collection must be in the same library")
 		}
-		descendant, err := s.collectionDescendantLocked(ctx, parent, id)
+		descendant, err := collectionDescendant(ctx, plane.reader, parent, id)
 		if err != nil {
 			return Collection{}, err
 		}
@@ -359,7 +381,7 @@ func (s *Store) UpdateCollection(ctx context.Context, id CollectionID, patch Col
 		sortOrder = *patch.SortOrder
 	}
 	updated := now.UTC()
-	_, err = s.catalogW.ExecContext(ctx, `
+	_, err = plane.writer.ExecContext(ctx, `
 		UPDATE collection
 		SET name = ?, parent_id = ?, sort_order = ?, updated_at_ms = ?
 		WHERE id = ?
@@ -367,7 +389,7 @@ func (s *Store) UpdateCollection(ctx context.Context, id CollectionID, patch Col
 	if err != nil {
 		return Collection{}, err
 	}
-	return s.collectionByIDLocked(ctx, id, true)
+	return s.collectionInPlaneLocked(ctx, plane, id, true)
 }
 
 func (s *Store) TrashCollection(ctx context.Context, id CollectionID, now time.Time) (Collection, error) {
@@ -387,7 +409,8 @@ func (s *Store) setCollectionTrash(ctx context.Context, id CollectionID, trashed
 	if err := s.guardLocked(); err != nil {
 		return Collection{}, err
 	}
-	if _, err := s.collectionByIDLocked(ctx, id, true); err != nil {
+	plane, err := s.collectionPlaneLocked(ctx, id)
+	if err != nil {
 		return Collection{}, err
 	}
 	var trashedAt any
@@ -395,13 +418,13 @@ func (s *Store) setCollectionTrash(ctx context.Context, id CollectionID, trashed
 	if trashed {
 		trashedAt = updated.UnixMilli()
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	_, err = plane.writer.ExecContext(ctx, `
 		UPDATE collection SET trashed_at_ms = ?, updated_at_ms = ? WHERE id = ?
 	`, trashedAt, updated.UnixMilli(), id)
 	if err != nil {
 		return Collection{}, err
 	}
-	return s.collectionByIDLocked(ctx, id, true)
+	return s.collectionInPlaneLocked(ctx, plane, id, true)
 }
 
 // ResolveCollectionMembers returns the ordered static membership of a Collection
@@ -423,7 +446,15 @@ func (s *Store) ResolveCollectionMembers(ctx context.Context, collectionID Colle
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	members, err := s.collectionMembersLocked(ctx, collectionID)
+	plane, err := s.collectionPlaneLocked(ctx, collectionID)
+	if errors.Is(err, ErrCollectionNotFound) {
+		// Unknown, purged and Sealed-plane Collections resolve to no members.
+		return []CollectionMember{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	members, err := collectionMembers(ctx, plane.reader, collectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +505,7 @@ func (s *Store) AddCollectionMedia(ctx context.Context, collectionID CollectionI
 	if err := s.guardLocked(); err != nil {
 		return Collection{}, err
 	}
-	c, err := s.collectionByIDVisibleLocked(ctx, collectionID, false, filter)
+	plane, c, err := s.collectionVisibleLocked(ctx, collectionID, false, filter)
 	if err != nil {
 		return Collection{}, err
 	}
@@ -485,14 +516,15 @@ func (s *Store) AddCollectionMedia(ctx context.Context, collectionID CollectionI
 	if len(visible) != len(ids) {
 		return Collection{}, ValidationError("media not found")
 	}
-	next, err := s.nextCollectionMemberSortOrderLocked(ctx, collectionID)
+	next, err := nextCollectionMemberSortOrder(ctx, plane.reader, collectionID)
 	if err != nil {
 		return Collection{}, err
 	}
 	nowMS := now.UTC().UnixMilli()
 	// One transaction for the whole membership change: a mid-loop failure
-	// must not leave the collection partially mutated.
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	// must not leave the collection partially mutated. Membership lives on the
+	// Collection's plane, beside the same-Library Media it references.
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return Collection{}, err
 	}
@@ -527,7 +559,7 @@ func (s *Store) AddCollectionMedia(ctx context.Context, collectionID CollectionI
 	if err := tx.Commit(); err != nil {
 		return Collection{}, err
 	}
-	return s.collectionByIDLocked(ctx, collectionID, true)
+	return s.collectionInPlaneLocked(ctx, plane, collectionID, true)
 }
 
 func (s *Store) RemoveCollectionMedia(ctx context.Context, collectionID CollectionID, ids []MediaID, filter LibraryFilter, now time.Time) (Collection, error) {
@@ -543,12 +575,13 @@ func (s *Store) RemoveCollectionMedia(ctx context.Context, collectionID Collecti
 	if err := s.guardLocked(); err != nil {
 		return Collection{}, err
 	}
-	if _, err := s.collectionByIDVisibleLocked(ctx, collectionID, true, filter); err != nil {
+	plane, _, err := s.collectionVisibleLocked(ctx, collectionID, true, filter)
+	if err != nil {
 		return Collection{}, err
 	}
 	// One transaction for the whole membership change: a mid-loop failure
 	// must not leave the collection partially mutated.
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return Collection{}, err
 	}
@@ -578,7 +611,7 @@ func (s *Store) RemoveCollectionMedia(ctx context.Context, collectionID Collecti
 	if err := tx.Commit(); err != nil {
 		return Collection{}, err
 	}
-	return s.collectionByIDLocked(ctx, collectionID, true)
+	return s.collectionInPlaneLocked(ctx, plane, collectionID, true)
 }
 
 func (s *Store) ReorderCollectionMedia(ctx context.Context, collectionID CollectionID, ids []MediaID, filter LibraryFilter, now time.Time) (Collection, error) {
@@ -594,12 +627,13 @@ func (s *Store) ReorderCollectionMedia(ctx context.Context, collectionID Collect
 	if err := s.guardLocked(); err != nil {
 		return Collection{}, err
 	}
-	if _, err := s.collectionByIDVisibleLocked(ctx, collectionID, false, filter); err != nil {
+	plane, _, err := s.collectionVisibleLocked(ctx, collectionID, false, filter)
+	if err != nil {
 		return Collection{}, err
 	}
 	// One transaction for the whole reorder: failing on member N must not
 	// leave members 1..N-1 with their new sort order committed.
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return Collection{}, err
 	}
@@ -644,10 +678,46 @@ func (s *Store) ReorderCollectionMedia(ctx context.Context, collectionID Collect
 	if err := tx.Commit(); err != nil {
 		return Collection{}, err
 	}
-	return s.collectionByIDLocked(ctx, collectionID, true)
+	return s.collectionInPlaneLocked(ctx, plane, collectionID, true)
+}
+
+// collectionPlaneLocked finds the catalog plane that stores a static
+// Collection: catalog.db for a plaintext Library, or the protected DB of an
+// unsealed Encrypted Library (CORE-0768, ADR-0045). A Collection whose
+// Encrypted Library is Sealed is not found, the same answer as an unknown ID.
+func (s *Store) collectionPlaneLocked(ctx context.Context, id CollectionID) (catalogPlane, error) {
+	var libraryID LibraryID
+	err := s.catalogR.QueryRowContext(ctx, `SELECT library_id FROM collection WHERE id = ?`, id).Scan(&libraryID)
+	if err == nil {
+		return catalogPlane{libraryID: libraryID, writer: s.catalogW, reader: s.catalogR}, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return catalogPlane{}, err
+	}
+	for _, db := range s.encryptedDBs {
+		if db == nil || db.state != "unsealed-registered" || db.reader == nil || db.writer == nil {
+			continue
+		}
+		err = db.reader.QueryRowContext(ctx, `SELECT library_id FROM collection WHERE id = ?`, id).Scan(&libraryID)
+		if err == nil {
+			return catalogPlane{libraryID: libraryID, encrypted: true, writer: db.writer, reader: db.reader}, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return catalogPlane{}, err
+		}
+	}
+	return catalogPlane{}, ErrCollectionNotFound
 }
 
 func (s *Store) collectionByIDLocked(ctx context.Context, id CollectionID, includeTrash bool) (Collection, error) {
+	plane, err := s.collectionPlaneLocked(ctx, id)
+	if err != nil {
+		return Collection{}, err
+	}
+	return s.collectionInPlaneLocked(ctx, plane, id, includeTrash)
+}
+
+func (s *Store) collectionInPlaneLocked(ctx context.Context, plane catalogPlane, id CollectionID, includeTrash bool) (Collection, error) {
 	query := `
 		SELECT c.id, c.library_id, c.parent_id, c.name, c.sort_order, c.trashed_at_ms,
 		       c.created_at_ms, c.updated_at_ms, COUNT(cm.media_id)
@@ -658,26 +728,32 @@ func (s *Store) collectionByIDLocked(ctx context.Context, id CollectionID, inclu
 		query += ` AND c.trashed_at_ms IS NULL`
 	}
 	query += ` GROUP BY c.id`
-	c, err := scanCollection(s.catalogR.QueryRowContext(ctx, query, id))
+	c, err := scanCollection(plane.reader.QueryRowContext(ctx, query, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Collection{}, ErrCollectionNotFound
 	}
 	return c, err
 }
 
-func (s *Store) collectionByIDVisibleLocked(ctx context.Context, id CollectionID, includeTrash bool, filter LibraryFilter) (Collection, error) {
-	c, err := s.collectionByIDLocked(ctx, id, includeTrash)
+// collectionVisibleLocked resolves a Collection and its plane, hiding a
+// Collection whose Library the filter cannot see.
+func (s *Store) collectionVisibleLocked(ctx context.Context, id CollectionID, includeTrash bool, filter LibraryFilter) (catalogPlane, Collection, error) {
+	plane, err := s.collectionPlaneLocked(ctx, id)
 	if err != nil {
-		return Collection{}, err
+		return catalogPlane{}, Collection{}, err
+	}
+	c, err := s.collectionInPlaneLocked(ctx, plane, id, includeTrash)
+	if err != nil {
+		return catalogPlane{}, Collection{}, err
 	}
 	if err := s.libraryVisibleSQL(ctx, c.LibraryID, filter); err != nil {
-		return Collection{}, ErrCollectionNotFound
+		return catalogPlane{}, Collection{}, ErrCollectionNotFound
 	}
-	return c, nil
+	return plane, c, nil
 }
 
-func (s *Store) collectionMembersLocked(ctx context.Context, collectionID CollectionID) ([]CollectionMember, error) {
-	rows, err := s.catalogR.QueryContext(ctx, `
+func collectionMembers(ctx context.Context, reader rowsQueryer, collectionID CollectionID) ([]CollectionMember, error) {
+	rows, err := reader.QueryContext(ctx, `
 		SELECT collection_id, media_id, sort_order, added_at_ms
 		FROM collection_media
 		WHERE collection_id = ?
@@ -703,16 +779,16 @@ func (s *Store) collectionMembersLocked(ctx context.Context, collectionID Collec
 	return out, rows.Err()
 }
 
-func (s *Store) nextCollectionSortOrderLocked(ctx context.Context, libraryID LibraryID, parentID CollectionID) (int, error) {
+func nextCollectionSortOrder(ctx context.Context, reader *sql.DB, libraryID LibraryID, parentID CollectionID) (int, error) {
 	var max sql.NullInt64
 	var err error
 	if parentID == "" {
-		err = s.catalogR.QueryRowContext(ctx, `
+		err = reader.QueryRowContext(ctx, `
 			SELECT MAX(sort_order) FROM collection
 			WHERE library_id = ? AND parent_id IS NULL
 		`, libraryID).Scan(&max)
 	} else {
-		err = s.catalogR.QueryRowContext(ctx, `
+		err = reader.QueryRowContext(ctx, `
 			SELECT MAX(sort_order) FROM collection
 			WHERE library_id = ? AND parent_id = ?
 		`, libraryID, parentID).Scan(&max)
@@ -723,9 +799,9 @@ func (s *Store) nextCollectionSortOrderLocked(ctx context.Context, libraryID Lib
 	return int(max.Int64) + 1, nil
 }
 
-func (s *Store) nextCollectionMemberSortOrderLocked(ctx context.Context, collectionID CollectionID) (int, error) {
+func nextCollectionMemberSortOrder(ctx context.Context, reader *sql.DB, collectionID CollectionID) (int, error) {
 	var max sql.NullInt64
-	if err := s.catalogR.QueryRowContext(ctx, `
+	if err := reader.QueryRowContext(ctx, `
 		SELECT MAX(sort_order) FROM collection_media WHERE collection_id = ?
 	`, collectionID).Scan(&max); err != nil {
 		return 0, err
@@ -733,9 +809,9 @@ func (s *Store) nextCollectionMemberSortOrderLocked(ctx context.Context, collect
 	return int(max.Int64) + 1, nil
 }
 
-func (s *Store) collectionDescendantLocked(ctx context.Context, candidate, ancestor CollectionID) (bool, error) {
+func collectionDescendant(ctx context.Context, reader *sql.DB, candidate, ancestor CollectionID) (bool, error) {
 	var one int
-	err := s.catalogR.QueryRowContext(ctx, `
+	err := reader.QueryRowContext(ctx, `
 		WITH RECURSIVE descendants(id) AS (
 			SELECT id FROM collection WHERE parent_id = ?
 			UNION ALL
@@ -806,13 +882,14 @@ func (s *Store) collectionSourceItemsLocked(ctx context.Context, filter LibraryF
 	if id == "" {
 		return []SourceItem{}, nil
 	}
-	if _, err := s.collectionByIDVisibleLocked(ctx, id, false, filter); err != nil {
+	plane, _, err := s.collectionVisibleLocked(ctx, id, false, filter)
+	if err != nil {
 		if errors.Is(err, ErrCollectionNotFound) {
 			return []SourceItem{}, nil
 		}
 		return nil, err
 	}
-	members, err := s.collectionMembersLocked(ctx, id)
+	members, err := collectionMembers(ctx, plane.reader, id)
 	if err != nil {
 		return nil, err
 	}

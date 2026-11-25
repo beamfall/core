@@ -174,6 +174,13 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 			return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
 		}
 	}
+	// Last, so no later failure can unwind rows already removed from
+	// catalog.db: move legacy plaintext rows this plane now owns out of the
+	// global catalog (CORE-0768). A failure unwinds; catalog.db keeps the rows
+	// and the next unseal retries.
+	if err := s.evacuatePlaintextEncryptedLibraryRowsLocked(ctx, plane); err != nil {
+		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
+	}
 	// Identification rows an earlier build stranded in the shared catalog move
 	// onto this plane before it serves reads (CORE-0706). This is the last
 	// step: an unwind discards the working DB, so no later failure may discard
