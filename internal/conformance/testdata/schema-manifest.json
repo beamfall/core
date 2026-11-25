@@ -545,6 +545,16 @@
     "tier": "session"
   },
   {
+    "field": "homeconfig",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "homefilterschema",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "homelayout",
     "effect": "read",
     "tier": "session"
@@ -1065,6 +1075,11 @@
     "tier": "session"
   },
   {
+    "field": "previewhomeshelf",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "profiles",
     "effect": "read",
     "tier": "session"
@@ -1275,6 +1290,16 @@
     "tier": "session"
   },
   {
+    "field": "resetdefaulthometemplate",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "resethomeconfig",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "resethomelayout",
     "effect": "write",
     "tier": "session"
@@ -1415,8 +1440,18 @@
     "tier": "admin"
   },
   {
+    "field": "savedefaulthometemplate",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "savedfilters",
     "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "savehomeconfig",
+    "effect": "write",
     "tier": "session"
   },
   {

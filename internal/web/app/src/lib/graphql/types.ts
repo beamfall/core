@@ -64,6 +64,8 @@ export interface Layout {
   role?: string;
   /** Binds a detail Layout to one plugin-declared Entity Kind; omitted on browse. */
   entityKind?: string;
+  /** Suppresses client-side fallback Hero synthesis when the Profile disabled the Hero. */
+  suppressAutoHero?: boolean;
 }
 
 /** A compiled client rendering primitive parameterized by data (manifest.Section). */
@@ -2310,4 +2312,125 @@ export interface HomeLayoutSection {
 export interface HomeLayoutInfo {
   customized: boolean;
   sections: HomeLayoutSection[];
+}
+
+// --- Home Studio (composable Home customization) ---
+
+export type HomeShelfStyle = "shelf" | "grid" | "list";
+export type HomeArtworkSlot = "auto" | "poster" | "landscape" | "square";
+export type HomeRandomSeedMode = "" | "session" | "hourly" | "daily";
+export type HomeShelfSourceType =
+  | "builtin"
+  | "rules"
+  | "playlist"
+  | "collection"
+  | "saved-filter"
+  | "library"
+  | "entity";
+
+export interface SmartRuleNode {
+  field?: string;
+  op?: string;
+  value?: unknown;
+  group?: SmartRuleGroup;
+}
+
+export interface SmartRuleGroup {
+  match: "all" | "any" | "none";
+  conditions: SmartRuleNode[];
+}
+
+export interface HomeShelfSort {
+  by: string;
+  desc: boolean;
+  randomSeedMode?: HomeRandomSeedMode;
+}
+
+export interface HomeShelfSource {
+  type: HomeShelfSourceType;
+  builtinKind?: string;
+  libraryIDs?: string[];
+  rules?: SmartRuleGroup;
+  sort?: HomeShelfSort;
+  rollUpContainers?: boolean;
+  playlistID?: string;
+  collectionID?: string;
+  savedFilterID?: string;
+  entityKind?: string;
+  entityID?: string;
+  entityName?: string;
+}
+
+export interface HomeShelfDisplay {
+  style: HomeShelfStyle;
+  artworkSlot: HomeArtworkSlot;
+  limit: number;
+}
+
+export interface HomeShelf {
+  id: string;
+  title: string;
+  hidden: boolean;
+  hideWhenEmpty: boolean;
+  display: HomeShelfDisplay;
+  source: HomeShelfSource;
+}
+
+export interface HomeHeroConfig {
+  enabled: boolean;
+  mode: "auto" | "shelf";
+  source?: HomeShelfSource;
+}
+
+export interface HomeConfigInfo {
+  customized: boolean;
+  hasOwnerTemplate: boolean;
+  canEditTemplate: boolean;
+  hero: HomeHeroConfig;
+  shelves: HomeShelf[];
+}
+
+export interface HomeConfigInput {
+  version?: number;
+  hero: HomeHeroConfig;
+  shelves: HomeShelf[];
+}
+
+export interface HomeSchemaLibrary {
+  id: string;
+  title: string;
+  icon?: string;
+  accent?: string;
+}
+
+export interface HomeFilterField {
+  key: string;
+  label: LocaleString | string;
+  valueType: "text" | "number" | "date" | "boolean" | "entity";
+  group: "general" | "activity" | "metadata" | "entities";
+  operators: string[];
+  suggestions?: string[];
+}
+
+export interface HomePinnableTarget {
+  id: string;
+  name: string;
+  libraryID: string;
+}
+
+export interface HomeSchemaPinnables {
+  collections: HomePinnableTarget[];
+  smartCollections: HomePinnableTarget[];
+  savedFilters: HomePinnableTarget[];
+}
+
+export interface HomeFilterSchemaInfo {
+  libraries: HomeSchemaLibrary[];
+  fields: HomeFilterField[];
+  pinnables: HomeSchemaPinnables;
+}
+
+export interface HomeShelfPreviewInfo {
+  totalCount: number;
+  items: SourceItem[];
 }

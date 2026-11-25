@@ -143,4 +143,5 @@ package store
 // CORE-3311 adds 0137_player_controllers for Player Profile controller lists
 // and display last-seen tracking, off the entity-query hot path.
 // CORE-3313 adds 0138_reveal_generation on auth_session for restricted streams.
-const schemaFreezeCatalogMigrations = 134
+// Home customization adds 0139_home_config for per-Profile and template Home layouts.
+const schemaFreezeCatalogMigrations = 135

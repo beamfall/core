@@ -18,7 +18,12 @@ import type {
   EntityInfo,
   FieldFilters,
   GenericMediaInfo,
+  HomeConfigInfo,
+  HomeConfigInput,
+  HomeFilterSchemaInfo,
   HomeLayoutInfo,
+  HomeShelf,
+  HomeShelfPreviewInfo,
   ItemStateInfo,
   ItemTarget,
   LibraryInfo,
@@ -739,6 +744,159 @@ const RESET_HOME_LAYOUT_MUTATION = `mutation ResetHomeLayout { resetHomeLayout {
 export async function resetHomeLayout(): Promise<HomeLayoutInfo> {
   const data = await graphql<{ resetHomeLayout: HomeLayoutInfo }>(RESET_HOME_LAYOUT_MUTATION, {});
   return data.resetHomeLayout;
+}
+
+// --- Home Studio (composable Home customization) -------------------------
+
+const HOME_CONFIG_FIELDS = `
+  customized
+  hasOwnerTemplate
+  canEditTemplate
+  hero {
+    enabled
+    mode
+    source {
+      type
+      builtinKind
+      libraryIDs
+      rules {
+        match
+        conditions {
+          field
+          op
+          value
+          group {
+            match
+            conditions { field op value }
+          }
+        }
+      }
+      sort { by desc randomSeedMode }
+      rollUpContainers
+      playlistID
+      collectionID
+      savedFilterID
+      entityKind
+      entityID
+      entityName
+    }
+  }
+  shelves {
+    id
+    title
+    hidden
+    hideWhenEmpty
+    display { style artworkSlot limit }
+    source {
+      type
+      builtinKind
+      libraryIDs
+      rules {
+        match
+        conditions {
+          field
+          op
+          value
+          group {
+            match
+            conditions { field op value }
+          }
+        }
+      }
+      sort { by desc randomSeedMode }
+      rollUpContainers
+      playlistID
+      collectionID
+      savedFilterID
+      entityKind
+      entityID
+      entityName
+    }
+  }
+`;
+
+export async function fetchHomeConfig(
+  template = false,
+  signal?: AbortSignal,
+): Promise<HomeConfigInfo> {
+  const data = await graphql<{ homeConfig: HomeConfigInfo }>(
+    `query HomeConfig($template: Boolean) { homeConfig(template: $template) { ${HOME_CONFIG_FIELDS} } }`,
+    { template },
+    signal,
+  );
+  return data.homeConfig;
+}
+
+export async function fetchHomeFilterSchema(
+  libraryIDs?: string[],
+  signal?: AbortSignal,
+): Promise<HomeFilterSchemaInfo> {
+  const data = await graphql<{ homeFilterSchema: HomeFilterSchemaInfo }>(
+    `query HomeFilterSchema($libraryIDs: [String!]) {
+      homeFilterSchema(libraryIDs: $libraryIDs) {
+        libraries { id title icon accent }
+        fields { key label valueType group operators suggestions }
+        pinnables {
+          collections { id name libraryID }
+          smartCollections { id name libraryID }
+          savedFilters { id name libraryID }
+        }
+      }
+    }`,
+    libraryIDs?.length ? { libraryIDs } : {},
+    signal,
+  );
+  return data.homeFilterSchema;
+}
+
+export async function previewHomeShelf(
+  shelf: HomeShelf,
+  limit = 12,
+  signal?: AbortSignal,
+): Promise<HomeShelfPreviewInfo> {
+  const data = await graphql<{ previewHomeShelf: HomeShelfPreviewInfo }>(
+    `query PreviewHomeShelf($shelf: HomeShelfInput!, $limit: Int) {
+      previewHomeShelf(shelf: $shelf, limit: $limit) {
+        totalCount
+        items { id kind title summary artwork { poster } }
+      }
+    }`,
+    { shelf, limit },
+    signal,
+  );
+  return data.previewHomeShelf;
+}
+
+export async function saveHomeConfig(config: HomeConfigInput): Promise<HomeConfigInfo> {
+  const data = await graphql<{ saveHomeConfig: HomeConfigInfo }>(
+    `mutation SaveHomeConfig($config: HomeConfigInput!) { saveHomeConfig(config: $config) { ${HOME_CONFIG_FIELDS} } }`,
+    { config },
+  );
+  return data.saveHomeConfig;
+}
+
+export async function resetHomeConfig(): Promise<HomeConfigInfo> {
+  const data = await graphql<{ resetHomeConfig: HomeConfigInfo }>(
+    `mutation ResetHomeConfig { resetHomeConfig { ${HOME_CONFIG_FIELDS} } }`,
+    {},
+  );
+  return data.resetHomeConfig;
+}
+
+export async function saveDefaultHomeTemplate(config: HomeConfigInput): Promise<HomeConfigInfo> {
+  const data = await graphql<{ saveDefaultHomeTemplate: HomeConfigInfo }>(
+    `mutation SaveDefaultHomeTemplate($config: HomeConfigInput!) { saveDefaultHomeTemplate(config: $config) { ${HOME_CONFIG_FIELDS} } }`,
+    { config },
+  );
+  return data.saveDefaultHomeTemplate;
+}
+
+export async function resetDefaultHomeTemplate(): Promise<HomeConfigInfo> {
+  const data = await graphql<{ resetDefaultHomeTemplate: HomeConfigInfo }>(
+    `mutation ResetDefaultHomeTemplate { resetDefaultHomeTemplate { ${HOME_CONFIG_FIELDS} } }`,
+    {},
+  );
+  return data.resetDefaultHomeTemplate;
 }
 
 // --- Hide (per-Profile Mute) ----------------------------------------------

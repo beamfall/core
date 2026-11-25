@@ -2115,6 +2115,23 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 		}
 	}
 	filter := scope.LibraryFilter()
+	if kind == "home-shelf" {
+		items, err := h.sourceItemsHomeShelf(ctx, scope, trimmedVariable(req, "value"), boundedIntVar(req, "limit", 50, 200), nonNegativeIntVar(req, "offset"))
+		if err != nil {
+			return nil, err
+		}
+		if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+			return nil, err
+		}
+		if err := h.annotateCards(ctx, scope, items); err != nil {
+			return nil, err
+		}
+		resp := make([]SourceItem, len(items))
+		for i, item := range items {
+			resp[i] = h.sourceItem(item, scope.Revealed)
+		}
+		return resp, nil
+	}
 	if kind == "subscription-new" {
 		// New entries reach Profiles across Libraries, so a Sealed Library's
 		// entries must drop out the moment it seals (CORE-2958).
@@ -7069,6 +7086,9 @@ var queryFields = map[string]bool{
 	"accessschedule":         true,
 	"clientprefs":            true,
 	"homelayout":             true, // CORE-1972: the session Profile's Home layout
+	"homeconfig":             true, // Home customization: read effective Home config or owner template
+	"homefilterschema":       true, // Home customization: dynamic filter vocabulary and pinnables
+	"previewhomeshelf":       true, // Home customization: live preview of an unsaved shelf
 	"identifysearch":         true,
 	"identifylookup":         true, // METAPARITY-4 (ADR-0068 §A): paste-an-id direct fetch, read-only
 	"fixmatchcandidates":     true, // METAPARITY-4 (ADR-0068 §A): scored candidate list, read-only
@@ -7241,6 +7261,10 @@ var mutationFields = map[string]bool{
 	"setclientpref":                      true,
 	"sethomelayout":                      true, // CORE-1972: save the session Profile's Home layout
 	"resethomelayout":                    true, // CORE-1972: clear the session Profile's Home layout
+	"savehomeconfig":                     true, // Home customization: save session Profile's Home config
+	"resethomeconfig":                    true, // Home customization: reset session Profile's Home config
+	"savedefaulthometemplate":            true, // Home customization: save server-wide default Home template
+	"resetdefaulthometemplate":           true, // Home customization: clear server-wide default Home template
 	"setfollow":                          true,
 	"setfollownewentryroute":             true, // CORE-2958: per-follow new-entry route (own Profile)
 	"associatesubscriptionentry":         true,

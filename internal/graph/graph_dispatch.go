@@ -508,6 +508,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	157: dispatchFieldBlock157,
 	158: dispatchFieldBlock158,
 	159: dispatchFieldBlock159,
+	160: dispatchFieldBlock160,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -555,6 +556,13 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"homelayout":                         newFieldHandler("homeLayout", "homeLayout", fieldRead, roleSession, 158),
 	"resethomelayout":                    newFieldHandler("resetHomeLayout", "resetHomeLayout", fieldMutation, roleSession, 158),
 	"sethomelayout":                      newFieldHandler("setHomeLayout", "setHomeLayout", fieldMutation, roleSession, 158),
+	"homeconfig":                         newFieldHandler("homeConfig", "homeConfig", fieldRead, roleSession, 160),
+	"homefilterschema":                   newFieldHandler("homeFilterSchema", "homeFilterSchema", fieldRead, roleSession, 160),
+	"previewhomeshelf":                   newFieldHandler("previewHomeShelf", "previewHomeShelf", fieldRead, roleSession, 160),
+	"savehomeconfig":                     newFieldHandler("saveHomeConfig", "saveHomeConfig", fieldMutation, roleSession, 160),
+	"resethomeconfig":                    newFieldHandler("resetHomeConfig", "resetHomeConfig", fieldMutation, roleSession, 160),
+	"savedefaulthometemplate":            newFieldHandler("saveDefaultHomeTemplate", "saveDefaultHomeTemplate", fieldMutation, roleSession|roleManager, 160),
+	"resetdefaulthometemplate":           newFieldHandler("resetDefaultHomeTemplate", "resetDefaultHomeTemplate", fieldMutation, roleSession|roleManager, 160),
 	"collections":                        newFieldHandler("collections", "collections", fieldRead, roleSession, 57),
 	"connectionendpoints":                newFieldHandler("connectionEndpoints", "", fieldRead, roleSession, 104),
 	"consoleconfig":                      newFieldHandler("consoleConfig", "consoleConfig", fieldRead, roleSession|roleAdmin, 66),
@@ -4971,6 +4979,58 @@ func dispatchFieldBlock159(dispatch *fieldDispatchContext) response {
 	if fields["partyscreenlead"] {
 		result, err := h.partyScreenLeadWrite(ctx, scope, req)
 		return resolveField(dispatch, "partyscreenlead", result, err)
+	}
+	return response{}
+}
+
+// dispatchFieldBlock160 resolves Home customization configuration, filter schema, and live preview fields.
+func dispatchFieldBlock160(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["savehomeconfig"] {
+		result, err := h.saveHomeConfig(ctx, scope, req)
+		if resp := resolveField(dispatch, "savehomeconfig", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["resethomeconfig"] {
+		result, err := h.resetHomeConfig(ctx, scope)
+		if resp := resolveField(dispatch, "resethomeconfig", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["savedefaulthometemplate"] {
+		result, err := h.saveDefaultHomeTemplate(ctx, scope, req)
+		if resp := resolveField(dispatch, "savedefaulthometemplate", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["resetdefaulthometemplate"] {
+		result, err := h.resetDefaultHomeTemplate(ctx, scope)
+		if resp := resolveField(dispatch, "resetdefaulthometemplate", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["homeconfig"] {
+		result, err := h.homeConfig(ctx, scope, req)
+		if resp := resolveField(dispatch, "homeconfig", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["homefilterschema"] {
+		result, err := h.homeFilterSchema(ctx, scope, req)
+		if resp := resolveField(dispatch, "homefilterschema", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["previewhomeshelf"] {
+		result, err := h.previewHomeShelf(ctx, scope, req)
+		if resp := resolveField(dispatch, "previewhomeshelf", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
 	}
 	return response{}
 }

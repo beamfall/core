@@ -70,7 +70,9 @@ export async function fetchSectionItems(
       : groupsNewByContainer(section)
         ? NEW_SHELF_FETCH
         : section.kind === "shelf"
-          ? 20
+          ? source.kind === "home-shelf"
+            ? 50
+            : 20
           : SECTION_GRID_CAP;
   return fetchSourceItems(
     {

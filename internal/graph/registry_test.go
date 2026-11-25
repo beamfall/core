@@ -444,6 +444,13 @@ var originalScopedFields = []string{
 	"homelayout",             // CORE-1972: read the calling Profile's Home layout
 	"sethomelayout",          // CORE-1972: save the calling Profile's Home order and hidden shelves
 	"resethomelayout",        // CORE-1972: return the calling Profile's Home to the default
+	"homeconfig",             // Home Studio: read effective Home config or owner template
+	"homefilterschema",       // Home Studio: dynamic filter vocabulary and pinnables
+	"previewhomeshelf",       // Home Studio: live preview of an unsaved shelf
+	"savehomeconfig",         // Home Studio: save session Profile's Home config
+	"resethomeconfig",        // Home Studio: reset session Profile's Home config
+	"savedefaulthometemplate",  // Home Studio: save server-wide default Home template
+	"resetdefaulthometemplate", // Home Studio: clear server-wide default Home template
 }
 
 // TestActionRegistryMatchesDispatch is the self-check for the registry split:

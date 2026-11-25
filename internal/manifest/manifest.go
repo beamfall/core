@@ -73,6 +73,9 @@ type Layout struct {
 	// EntityKind binds a detail Layout to one plugin-declared Entity Kind;
 	// omitted on browse Layouts.
 	EntityKind string `json:"entityKind,omitempty"`
+	// SuppressAutoHero tells clients not to synthesize a fallback Hero banner
+	// when the Profile explicitly disabled the Home Hero.
+	SuppressAutoHero bool `json:"suppressAutoHero,omitempty"`
 }
 
 // Section is a compiled client rendering primitive parameterized by data.
@@ -275,18 +278,47 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 	}
 	navigation = applyNavOverride(navigation, resolveLegacyNodeIDs(override, legacyNodeIDs))
 	layouts = applyLayoutOverride(layouts, override)
-	// The Profile's own Home layout applies last, over the sections the
-	// Profile already receives, so it can only order and hide (CORE-1972).
-	preference, err := s.homePreference(ctx, scope)
+	// The Profile's own Home customization config (or server template) applies when
+	// present; otherwise keep the legacy CORE-1972 nav_override / default path.
+	hasProfileConfig := false
+	if scope.ProfileID != "" {
+		if _, ok, err := s.store.HomeConfig(ctx, store.HomeConfigScopeProfile, string(scope.ProfileID)); err != nil {
+			return Document{}, err
+		} else {
+			hasProfileConfig = ok
+		}
+	}
+	_, hasTemplate, err := s.store.HomeConfig(ctx, store.HomeConfigScopeServerTemplate, "")
 	if err != nil {
 		return Document{}, err
 	}
-	if customized(preference) {
+	if hasProfileConfig || hasTemplate {
+		effHome, err := s.EffectiveHomeConfig(ctx, scope)
+		if err != nil {
+			return Document{}, err
+		}
 		layouts, navigation = splitLibraryHomeLayout(layouts, navigation)
-	}
-	for i := range layouts {
-		if layouts[i].ID == HomeLayoutID {
-			layouts[i] = applyHomePreference(layouts[i], preference)
+		compiledHome, err := s.compileHomeConfigLayout(ctx, scope, effHome.Config)
+		if err != nil {
+			return Document{}, err
+		}
+		for i := range layouts {
+			if layouts[i].ID == HomeLayoutID {
+				layouts[i] = compiledHome
+			}
+		}
+	} else {
+		preference, err := s.homePreference(ctx, scope)
+		if err != nil {
+			return Document{}, err
+		}
+		if customized(preference) {
+			layouts, navigation = splitLibraryHomeLayout(layouts, navigation)
+		}
+		for i := range layouts {
+			if layouts[i].ID == HomeLayoutID {
+				layouts[i] = applyHomePreference(layouts[i], preference)
+			}
 		}
 	}
 

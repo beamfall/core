@@ -1,27 +1,88 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchHomeLayout, resetHomeLayout, setHomeLayout } from "@/lib/graphql/viewer";
+import type { HomeConfigInfo, HomeFilterSchemaInfo } from "@/lib/graphql/types";
+import {
+  fetchHomeConfig,
+  fetchHomeFilterSchema,
+  previewHomeShelf,
+  resetHomeConfig,
+  saveHomeConfig,
+} from "@/lib/graphql/viewer";
 import { I18nProvider } from "@/lib/i18n";
 import { HomeEditor } from "./HomeEditor";
 
 vi.mock("@/lib/graphql/viewer", () => ({
-  fetchHomeLayout: vi.fn(),
-  setHomeLayout: vi.fn(),
-  resetHomeLayout: vi.fn(),
+  fetchHomeConfig: vi.fn(),
+  fetchHomeFilterSchema: vi.fn(),
+  previewHomeShelf: vi.fn(),
+  saveHomeConfig: vi.fn(),
+  resetHomeConfig: vi.fn(),
+  saveDefaultHomeTemplate: vi.fn(),
+  resetDefaultHomeTemplate: vi.fn(),
 }));
 
-const layout = {
+const baseConfig: HomeConfigInfo = {
   customized: false,
-  sections: [
-    { id: "continue", kind: "shelf", title: { en: "Continue" }, hidden: false },
-    { id: "recent", kind: "shelf", title: { en: "Recent" }, hidden: false },
-    { id: "watchlist", kind: "shelf", title: { en: "Watchlist" }, hidden: false },
+  hasOwnerTemplate: false,
+  canEditTemplate: true,
+  hero: { enabled: true, mode: "auto" },
+  shelves: [
+    {
+      id: "continue",
+      title: "Continue",
+      hidden: false,
+      hideWhenEmpty: true,
+      display: { style: "shelf", artworkSlot: "auto", limit: 20 },
+      source: { type: "builtin", builtinKind: "continue-watching" },
+    },
+    {
+      id: "recent",
+      title: "Recent",
+      hidden: false,
+      hideWhenEmpty: true,
+      display: { style: "shelf", artworkSlot: "auto", limit: 20 },
+      source: { type: "builtin", builtinKind: "recently-added" },
+    },
+    {
+      id: "watchlist",
+      title: "Watchlist",
+      hidden: false,
+      hideWhenEmpty: true,
+      display: { style: "shelf", artworkSlot: "auto", limit: 20 },
+      source: { type: "builtin", builtinKind: "watchlist" },
+    },
   ],
 };
 
+const baseSchema: HomeFilterSchemaInfo = {
+  libraries: [
+    { id: "lib-films", title: "Films" },
+    { id: "lib-tv", title: "TV" },
+  ],
+  fields: [
+    {
+      key: "watched",
+      label: "Watched",
+      valueType: "boolean",
+      group: "activity",
+      operators: ["isTrue", "isFalse"],
+    },
+    {
+      key: "rating",
+      label: "Rating",
+      valueType: "number",
+      group: "activity",
+      operators: ["gte", "lte", "between"],
+    },
+  ],
+  pinnables: { collections: [], smartCollections: [], savedFilters: [] },
+};
+
 function renderEditor() {
-  vi.mocked(fetchHomeLayout).mockResolvedValue(layout);
+  vi.mocked(fetchHomeConfig).mockResolvedValue(structuredClone(baseConfig));
+  vi.mocked(fetchHomeFilterSchema).mockResolvedValue(baseSchema);
+  vi.mocked(previewHomeShelf).mockResolvedValue({ totalCount: 0, items: [] });
   const onSaved = vi.fn();
   const onClose = vi.fn();
   render(
@@ -41,10 +102,10 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("HomeEditor (CORE-1972)", () => {
-  it("reorders with buttons and the keyboard, hides a shelf and saves", async () => {
+describe("HomeEditor (Home Studio)", () => {
+  it("reorders with buttons and the keyboard, hides a shelf, toggles hero, and saves", async () => {
     const { onSaved, onClose } = renderEditor();
-    vi.mocked(setHomeLayout).mockResolvedValue({ ...layout, customized: true });
+    vi.mocked(saveHomeConfig).mockResolvedValue({ ...baseConfig, customized: true });
 
     fireEvent.click(await screen.findByRole("button", { name: "Move Recent up" }));
     expect(rowNames()).toEqual(["recent", "continue", "watchlist"]);
@@ -55,10 +116,18 @@ describe("HomeEditor (CORE-1972)", () => {
     expect(rowNames()).toEqual(["recent", "watchlist", "continue"]);
 
     fireEvent.click(within(watchlistRow).getByRole("switch", { name: "Show Watchlist on Home" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Show Hero banner on Home" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(onClose).toHaveBeenCalled());
-    expect(setHomeLayout).toHaveBeenCalledWith(["recent", "watchlist", "continue"], ["watchlist"]);
+    expect(saveHomeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hero: { enabled: false, mode: "auto" },
+        shelves: expect.arrayContaining([
+          expect.objectContaining({ id: "watchlist", hidden: true }),
+        ]),
+      }),
+    );
     expect(onSaved).toHaveBeenCalled();
   });
 
@@ -72,21 +141,59 @@ describe("HomeEditor (CORE-1972)", () => {
     expect(rowNames()).toEqual(["watchlist", "continue", "recent"]);
   });
 
+  it("adds a preset shelf, duplicates, and deletes", async () => {
+    renderEditor();
+    await screen.findByRole("button", { name: "Add shelf" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add shelf" }));
+    fireEvent.click(screen.getByRole("button", { name: "Split Recently Added by Library" }));
+    expect(rowNames()).toHaveLength(5);
+
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate Continue" }));
+    expect(rowNames()).toHaveLength(6);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Continue (Copy)" }));
+    expect(rowNames()).toHaveLength(5);
+  });
+
   it("resets to the default", async () => {
     const { onSaved, onClose } = renderEditor();
-    vi.mocked(resetHomeLayout).mockResolvedValue(layout);
+    vi.mocked(resetHomeConfig).mockResolvedValue(baseConfig);
     fireEvent.click(await screen.findByRole("button", { name: "Reset to default" }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
-    expect(resetHomeLayout).toHaveBeenCalled();
+    expect(resetHomeConfig).toHaveBeenCalled();
     expect(onSaved).toHaveBeenCalled();
-    expect(setHomeLayout).not.toHaveBeenCalled();
+    expect(saveHomeConfig).not.toHaveBeenCalled();
   });
 
   it("keeps editing and says so when saving fails", async () => {
     const { onClose } = renderEditor();
-    vi.mocked(setHomeLayout).mockRejectedValue(new Error("offline"));
+    vi.mocked(saveHomeConfig).mockRejectedValue(new Error("offline"));
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Your Home could not be saved");
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("supports switching hero to a custom source and editing its type", async () => {
+    vi.mocked(previewHomeShelf).mockResolvedValue({
+      totalCount: 1,
+      items: [
+        {
+          id: "m1",
+          kind: "media",
+          title: "Preview Film",
+          artwork: { poster: "/art/m1.jpg" },
+        },
+      ],
+    });
+    renderEditor();
+    const modeSelect = await screen.findByRole("combobox", { name: "Hero mode" });
+    fireEvent.change(modeSelect, { target: { value: "shelf" } });
+    fireEvent.click(screen.getByRole("button", { name: "Edit source" }));
+    const dialog = await screen.findByRole("dialog", { name: "Hero Banner" });
+    fireEvent.change(within(dialog).getByRole("combobox", { name: "Source type" }), {
+      target: { value: "rules" },
+    });
+    expect(await within(dialog).findByText("Match ALL")).toBeInTheDocument();
   });
 });
