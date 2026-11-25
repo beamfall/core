@@ -1315,6 +1315,84 @@ func (s *Store) catalogPlaneForLibraryLocked(ctx context.Context, libraryID Libr
 	return catalogPlane{libraryID: libraryID, encrypted: true, writer: db.writer, reader: db.reader}, nil
 }
 
+// unsealedEncryptedPlanesLocked returns every registered Encrypted Library
+// plane in Library ID order. libraryID is that Library's ID.
+func (s *Store) unsealedEncryptedPlanesLocked() []catalogPlane {
+	planes := make([]catalogPlane, 0, len(s.encryptedDBs))
+	for id, db := range s.encryptedDBs {
+		if db == nil || db.state != "unsealed-registered" || db.writer == nil || db.reader == nil {
+			continue
+		}
+		planes = append(planes, catalogPlane{libraryID: id, encrypted: true, writer: db.writer, reader: db.reader})
+	}
+	slices.SortFunc(planes, func(a, b catalogPlane) int { return strings.Compare(string(a.libraryID), string(b.libraryID)) })
+	return planes
+}
+
+// plaintextLibrarySQL restricts a catalog.db query on table rows with a
+// library_id column to plaintext Libraries. Rows an Encrypted Library left in
+// catalog.db before its plane owned them stay hidden until unseal moves them.
+const plaintextLibrarySQL = `library_id NOT IN (SELECT id FROM library WHERE encrypted != 0)`
+
+// expressionPlaneLocked finds the plane holding row id of a saved filter,
+// smart Collection, saved Station or Channel table (CORE-0769, ADR-0045):
+// catalog.db for a plaintext Library, or an unsealed Encrypted Library's
+// protected DB. A row of a Sealed Library reads as notFound, the same answer
+// as an unknown ID. table is a closed literal from the callers.
+func (s *Store) expressionPlaneLocked(ctx context.Context, table, id string, notFound error) (catalogPlane, error) {
+	var libraryID LibraryID
+	// #nosec G202 -- table is a closed literal from the callers.
+	err := s.catalogR.QueryRowContext(ctx, `SELECT library_id FROM `+table+` WHERE id = ? AND `+plaintextLibrarySQL, id).Scan(&libraryID)
+	if err == nil {
+		return catalogPlane{libraryID: libraryID, writer: s.catalogW, reader: s.catalogR}, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return catalogPlane{}, err
+	}
+	for _, plane := range s.unsealedEncryptedPlanesLocked() {
+		// #nosec G202 -- table is a closed literal from the callers.
+		err := plane.reader.QueryRowContext(ctx, `SELECT library_id FROM `+table+` WHERE id = ?`, id).Scan(&libraryID)
+		if err == nil {
+			plane.libraryID = libraryID
+			return plane, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return catalogPlane{}, err
+		}
+	}
+	return catalogPlane{}, notFound
+}
+
+// expressionReadPlanesLocked returns catalog.db, restricted by
+// plaintextLibrarySQL, and then every unsealed Encrypted Library plane, for
+// reads that span Libraries (My Data, export, Source resolution).
+func (s *Store) expressionReadPlanesLocked() []catalogPlane {
+	return append([]catalogPlane{{writer: s.catalogW, reader: s.catalogR}}, s.unsealedEncryptedPlanesLocked()...)
+}
+
+// planeFilterSQL returns plaintextLibrarySQL for catalog.db and an always-true
+// condition for a protected plane, which holds only its own Library's rows.
+func (p catalogPlane) planeFilterSQL() string {
+	if p.encrypted {
+		return "1 = 1"
+	}
+	return plaintextLibrarySQL
+}
+
+// requireProfileLocked stands in for the profile foreign key that catalog.db
+// enforces but a protected plane cannot, since the profile table stays in
+// catalog.db.
+func (s *Store) requireProfileLocked(ctx context.Context, id ProfileID) error {
+	ok, err := s.profileExistsSQL(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ValidationError("profile not found")
+	}
+	return nil
+}
+
 // MediaDerivativeKey is one Encrypted-Library Media's full derivative-address
 // footprint, handed to the reconciler at the unseal→register flip. MediaID keys
 // the per-Media derivative classes (artwork under {dataDir}/artwork/<mediaID>/,
@@ -3993,12 +4071,9 @@ func (s *Store) smartCollectionSourceItemsLocked(ctx context.Context, filter Lib
 	if id == "" {
 		return []SourceItem{}, nil
 	}
-	var collection SmartCollection
-	var createdAtMS int64
-	err := s.catalogR.QueryRowContext(ctx, `
-		SELECT id, library_id, name, source_expr, sort_expr, created_at_ms
-		FROM smart_collection WHERE id = ?
-	`, id).Scan(&collection.ID, &collection.LibraryID, &collection.Name, &collection.SourceExpr, &collection.SortExpr, &createdAtMS)
+	// An Encrypted Library's smart Collection resolves only while its protected
+	// plane is unsealed; a Sealed one reads as empty, like a missing id.
+	_, collection, err := s.smartCollectionLocked(ctx, id)
 	if err != nil {
 		return []SourceItem{}, nil
 	}

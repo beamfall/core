@@ -19,73 +19,173 @@ type encryptedLibraryEvacuation struct {
 	// binds the Library ID.
 	where string
 	// mediaColumn names a column holding a Media ID that must already live in
-	// the protected plane for the Library's rows to move.
+	// the protected plane for the group's rows to move.
 	mediaColumn string
 }
 
-// encryptedLibraryEvacuations lists tables in parent-first order; deletes run
-// in reverse. A Library's rows move all together or not at all: when any row
-// names Media still held in catalog.db (legacy rows written before the plane
-// owned that Media), every row stays there, as private as that Media already
-// is, and nothing is dropped.
-var encryptedLibraryEvacuations = []encryptedLibraryEvacuation{
+// encryptedLibraryEvacuationGroup is a set of tables whose rows move together
+// or not at all. Tables are listed parent-first; deletes run in reverse.
+type encryptedLibraryEvacuationGroup struct {
+	name   string
+	tables []encryptedLibraryEvacuation
+	// pendingKey, when set, is an encrypted_library_metadata key the plane
+	// migration that created the tables sets. The group runs only while the
+	// key is present, and the key is cleared once catalog.db no longer holds
+	// the rows, so the move happens once per plane.
+	pendingKey string
+}
+
+// encryptedLibraryEvacuations lists the groups. A Collection group whose rows
+// name Media still held in catalog.db (legacy rows written before the plane
+// owned that Media) stays there whole, as private as that Media already is,
+// and nothing is dropped.
+var encryptedLibraryEvacuations = []encryptedLibraryEvacuationGroup{
 	{
-		table:   "collection",
-		columns: []string{"id", "library_id", "parent_id", "name", "sort_order", "trashed_at_ms", "created_at_ms", "updated_at_ms"},
-		where:   "library_id = ?",
+		name: "collections",
+		tables: []encryptedLibraryEvacuation{
+			{
+				table:   "collection",
+				columns: []string{"id", "library_id", "parent_id", "name", "sort_order", "trashed_at_ms", "created_at_ms", "updated_at_ms"},
+				where:   "library_id = ?",
+			},
+			{
+				table:       "collection_media",
+				columns:     []string{"collection_id", "media_id", "sort_order", "added_at_ms"},
+				where:       "collection_id IN (SELECT id FROM collection WHERE library_id = ?)",
+				mediaColumn: "media_id",
+			},
+		},
 	},
 	{
-		table:       "collection_media",
-		columns:     []string{"collection_id", "media_id", "sort_order", "added_at_ms"},
-		where:       "collection_id IN (SELECT id FROM collection WHERE library_id = ?)",
-		mediaColumn: "media_id",
+		// CORE-0769: names and filter, Source, seed and rules expressions.
+		name:       "expressions",
+		pendingKey: "legacy_expression_evacuation",
+		tables: []encryptedLibraryEvacuation{
+			{
+				table:   "saved_filter",
+				columns: []string{"id", "profile_id", "library_id", "name", "filter_json", "pinned", "created_at_ms"},
+				where:   "library_id = ?",
+			},
+			{
+				table:   "smart_collection",
+				columns: []string{"id", "library_id", "name", "source_expr", "created_at_ms", "created_by_profile_id", "sort_expr"},
+				where:   "library_id = ?",
+			},
+			{
+				table:   "saved_station",
+				columns: []string{"id", "profile_id", "library_id", "name", "seed_json", "rules_json", "tuning_json", "created_at_ms"},
+				where:   "library_id = ?",
+			},
+			{
+				table:   "channel",
+				columns: []string{"id", "library_id", "profile_id", "name", "source_expr", "ordering_policy", "repeat_policy", "created_at_ms"},
+				where:   "library_id = ?",
+			},
+		},
 	},
+}
+
+type evacuationTableRows struct {
+	spec encryptedLibraryEvacuation
+	rows [][]any
 }
 
 // evacuatePlaintextEncryptedLibraryRowsLocked runs at the end of a successful
 // unseal. The protected copy commits first; the catalog delete follows. A
 // failure in either step returns an error so the caller unwinds the unseal:
 // catalog.db still holds the rows and the next unseal retries, and the copy is
-// idempotent (INSERT OR IGNORE).
+// idempotent (INSERT OR IGNORE). Clearing a group's pending key comes last and
+// only logs a failure: the rows are already out of catalog.db, and a rerun
+// finds nothing left to move.
 func (s *Store) evacuatePlaintextEncryptedLibraryRowsLocked(ctx context.Context, plane catalogPlane) error {
-	type tableRows struct {
-		spec encryptedLibraryEvacuation
-		rows [][]any
-	}
-	var pending []tableRows
-	for _, spec := range encryptedLibraryEvacuations {
-		rows, err := readEvacuationRows(ctx, s.catalogR, spec, plane.libraryID)
+	var pending []evacuationTableRows
+	var clearKeys []string
+	for _, group := range encryptedLibraryEvacuations {
+		if group.pendingKey != "" {
+			set, err := encryptedLibraryMetadataKeySet(ctx, plane.reader, group.pendingKey)
+			if err != nil {
+				return fmt.Errorf("read %s evacuation state: %w", group.name, err)
+			}
+			if !set {
+				continue
+			}
+		}
+		rows, err := s.readEvacuationGroupLocked(ctx, plane, group)
 		if err != nil {
-			return fmt.Errorf("read plaintext %s rows: %w", spec.table, err)
+			return err
 		}
-		if len(rows) > 0 {
-			pending = append(pending, tableRows{spec: spec, rows: rows})
-		}
-	}
-	if len(pending) == 0 {
-		return nil
-	}
-	for _, p := range pending {
-		if p.spec.mediaColumn == "" {
+		if rows == nil {
 			continue
 		}
-		column := columnIndex(p.spec.columns, p.spec.mediaColumn)
-		for _, row := range p.rows {
-			var one int
-			err := plane.reader.QueryRowContext(ctx, `SELECT 1 FROM media WHERE id = ?`, row[column]).Scan(&one)
-			if errors.Is(err, sql.ErrNoRows) {
-				if s.logger != nil {
-					s.logger.WarnContext(ctx, "plaintext encrypted-library rows kept in catalog: they name media outside the protected plane", "libraryID", plane.libraryID, "table", p.spec.table)
-				}
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("check %s media in protected plane: %w", p.spec.table, err)
-			}
+		pending = append(pending, rows...)
+		if group.pendingKey != "" {
+			clearKeys = append(clearKeys, group.pendingKey)
 		}
 	}
+	if len(pending) > 0 {
+		if err := copyEvacuationRows(ctx, plane.writer, pending); err != nil {
+			return err
+		}
+		if err := s.deletePlaintextEvacuatedRowsLocked(ctx, plane.libraryID, pending); err != nil {
+			return fmt.Errorf("delete evacuated plaintext rows: %w", err)
+		}
+		if s.logger != nil {
+			s.logger.InfoContext(ctx, "evacuated plaintext encrypted-library rows", "libraryID", plane.libraryID, "tables", len(pending))
+		}
+	}
+	for _, key := range clearKeys {
+		if _, err := plane.writer.ExecContext(ctx, `DELETE FROM encrypted_library_metadata WHERE key = ?`, key); err != nil && s.logger != nil {
+			s.logger.WarnContext(ctx, "encrypted-library evacuation state not cleared; the next unseal reruns it", "libraryID", plane.libraryID, "key", key, "error", err)
+		}
+	}
+	return nil
+}
 
-	tx, err := plane.writer.BeginTx(ctx, nil)
+// readEvacuationGroupLocked returns the group's catalog rows for the Library,
+// or nil when the group must stay in catalog.db. A group with no rows returns
+// an empty, non-nil slice so its pending key is still cleared.
+func (s *Store) readEvacuationGroupLocked(ctx context.Context, plane catalogPlane, group encryptedLibraryEvacuationGroup) ([]evacuationTableRows, error) {
+	out := []evacuationTableRows{}
+	for _, spec := range group.tables {
+		rows, err := readEvacuationRows(ctx, s.catalogR, spec, plane.libraryID)
+		if err != nil {
+			return nil, fmt.Errorf("read plaintext %s rows: %w", spec.table, err)
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		if spec.mediaColumn != "" {
+			column := columnIndex(spec.columns, spec.mediaColumn)
+			for _, row := range rows {
+				var one int
+				err := plane.reader.QueryRowContext(ctx, `SELECT 1 FROM media WHERE id = ?`, row[column]).Scan(&one)
+				if errors.Is(err, sql.ErrNoRows) {
+					if s.logger != nil {
+						s.logger.WarnContext(ctx, "plaintext encrypted-library rows kept in catalog: they name media outside the protected plane", "libraryID", plane.libraryID, "group", group.name, "table", spec.table)
+					}
+					return nil, nil
+				}
+				if err != nil {
+					return nil, fmt.Errorf("check %s media in protected plane: %w", spec.table, err)
+				}
+			}
+		}
+		out = append(out, evacuationTableRows{spec: spec, rows: rows})
+	}
+	return out, nil
+}
+
+func encryptedLibraryMetadataKeySet(ctx context.Context, reader *sql.DB, key string) (bool, error) {
+	var one int
+	err := reader.QueryRowContext(ctx, `SELECT 1 FROM encrypted_library_metadata WHERE key = ?`, key).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func copyEvacuationRows(ctx context.Context, writer *sql.DB, pending []evacuationTableRows) error {
+	tx, err := writer.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -102,17 +202,7 @@ func (s *Store) evacuatePlaintextEncryptedLibraryRowsLocked(ctx context.Context,
 			}
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
-	if err := s.deletePlaintextEvacuatedRowsLocked(ctx, plane.libraryID); err != nil {
-		return fmt.Errorf("delete evacuated plaintext rows: %w", err)
-	}
-	if s.logger != nil {
-		s.logger.InfoContext(ctx, "evacuated plaintext encrypted-library rows", "libraryID", plane.libraryID, "tables", len(pending))
-	}
-	return nil
+	return tx.Commit()
 }
 
 func readEvacuationRows(ctx context.Context, reader *sql.DB, spec encryptedLibraryEvacuation, libraryID LibraryID) ([][]any, error) {
@@ -155,7 +245,7 @@ func columnIndex(columns []string, name string) int {
 // deletePlaintextEvacuatedRowsLocked removes the Library's evacuated rows from
 // catalog.db child-first, on one connection with secure_delete so the freed
 // pages are zeroed rather than left holding the plaintext.
-func (s *Store) deletePlaintextEvacuatedRowsLocked(ctx context.Context, libraryID LibraryID) error {
+func (s *Store) deletePlaintextEvacuatedRowsLocked(ctx context.Context, libraryID LibraryID, moved []evacuationTableRows) error {
 	conn, err := s.catalogW.Conn(ctx)
 	if err != nil {
 		return err
@@ -176,8 +266,8 @@ func (s *Store) deletePlaintextEvacuatedRowsLocked(ctx context.Context, libraryI
 		return err
 	}
 	defer tx.Rollback()
-	for i := len(encryptedLibraryEvacuations) - 1; i >= 0; i-- {
-		spec := encryptedLibraryEvacuations[i]
+	for i := len(moved) - 1; i >= 0; i-- {
+		spec := moved[i].spec
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE %s`, spec.table, spec.where), libraryID); err != nil {
 			return fmt.Errorf("delete plaintext %s rows: %w", spec.table, err)
 		}

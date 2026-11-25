@@ -317,32 +317,52 @@ func (s *Store) ExportCatalog(ctx context.Context, filter LibraryFilter) (Catalo
 	}
 	mediaRelRows.Close()
 
-	// Smart Collections in visible Libraries.
-	collectionRows, err := s.catalogR.QueryContext(ctx, `
-		SELECT id, library_id, name, source_expr, created_at_ms
-		FROM smart_collection
-		WHERE library_id IN `+inList+`
-		ORDER BY library_id, created_at_ms, id`, libArgs...)
-	if err != nil {
-		return CatalogExport{}, err
-	}
-	for collectionRows.Next() {
-		var c SmartCollection
-		var createdAtMS int64
-		if err := collectionRows.Scan(&c.ID, &c.LibraryID, &c.Name, &c.SourceExpr, &createdAtMS); err != nil {
-			collectionRows.Close()
+	// Smart Collections in visible Libraries: plaintext Libraries' from
+	// catalog.db, Encrypted Libraries' from their unsealed protected planes. A
+	// Sealed Library's smart Collections are not exported.
+	for _, plane := range s.expressionReadPlanesLocked() {
+		collections, err := exportSmartCollections(ctx, plane, inList, libArgs)
+		if err != nil {
 			return CatalogExport{}, err
 		}
-		c.CreatedAt = millisToTime(createdAtMS)
-		export.Collections = append(export.Collections, c)
+		export.Collections = append(export.Collections, collections...)
 	}
-	if err := collectionRows.Err(); err != nil {
-		collectionRows.Close()
-		return CatalogExport{}, err
-	}
-	collectionRows.Close()
+	sort.SliceStable(export.Collections, func(i, j int) bool {
+		a, b := export.Collections[i], export.Collections[j]
+		if a.LibraryID != b.LibraryID {
+			return a.LibraryID < b.LibraryID
+		}
+		if !a.CreatedAt.Equal(b.CreatedAt) {
+			return a.CreatedAt.Before(b.CreatedAt)
+		}
+		return a.ID < b.ID
+	})
 
 	return export, nil
+}
+
+func exportSmartCollections(ctx context.Context, plane catalogPlane, inList string, libArgs []any) ([]SmartCollection, error) {
+	//nolint:gosec // G202: inList is joined "?" placeholders and planeFilterSQL a package constant; all values bound via libArgs.
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT id, library_id, name, source_expr, created_at_ms
+		FROM smart_collection
+		WHERE library_id IN `+inList+` AND `+plane.planeFilterSQL()+`
+		ORDER BY library_id, created_at_ms, id`, libArgs...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SmartCollection
+	for rows.Next() {
+		var c SmartCollection
+		var createdAtMS int64
+		if err := rows.Scan(&c.ID, &c.LibraryID, &c.Name, &c.SourceExpr, &createdAtMS); err != nil {
+			return nil, err
+		}
+		c.CreatedAt = millisToTime(createdAtMS)
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 // Catalog export curation loads use the same 500-ID chunk size as the other

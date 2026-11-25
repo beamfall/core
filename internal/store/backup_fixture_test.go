@@ -429,6 +429,9 @@ func verifyMigratedFixture(ctx context.Context, databases map[string]*sql.DB, ex
 		}
 	}
 	if expected.columns != nil {
+		if err := relocateEvacuatedFixtureRows(ctx, databases, expected.columns, actual.Tables, unchanged); err != nil {
+			return err
+		}
 		if err := narrowAdditiveFixtureMigration(ctx, databases, expected.columns, actual.Tables, unchanged); err != nil {
 			return err
 		}
@@ -440,6 +443,45 @@ func verifyMigratedFixture(ctx context.Context, databases map[string]*sql.DB, ex
 		if err := assertFixtureDatabaseIntegrity(ctx, db); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// relocateEvacuatedFixtureRows lets the drill follow rows that unseal moved
+// from catalog.db into an Encrypted Library's protected plane (ADR-0045,
+// CORE-0769). A plane table the migration created may hold rows only when the
+// catalog table of the same name is now empty and the plane rows, hashed over
+// the catalog table's historical columns, match its historical checksum
+// exactly. The plane table then stands in for the catalog table in the diff.
+func relocateEvacuatedFixtureRows(ctx context.Context, databases map[string]*sql.DB, before map[string][]fixtureSelectedColumn, actual, unchanged map[string]fixtureTableExpectation) error {
+	for key, got := range actual {
+		if !strings.HasPrefix(key, "encrypted:") || got.Rows == 0 {
+			continue
+		}
+		if _, existed := before[key]; existed {
+			continue
+		}
+		cut := strings.LastIndex(key, ".")
+		table := key[cut+1:]
+		source := "catalog." + table
+		want, tracked := unchanged[source]
+		old, hadColumns := before[source]
+		if !tracked || !hadColumns || actual[source].Rows != 0 {
+			continue
+		}
+		names := make([]string, len(old))
+		for index, column := range old {
+			names[index] = column.name
+		}
+		moved, err := fixtureTableChecksum(ctx, databases[key[:cut]], table, quoteFixtureIdentifiers(names), names)
+		if err != nil {
+			return err
+		}
+		if moved != want {
+			return fmt.Errorf("%s does not hold %s's historical rows: got %+v, want %+v", key, source, moved, want)
+		}
+		actual[source] = want
+		delete(actual, key)
 	}
 	return nil
 }

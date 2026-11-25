@@ -144,6 +144,10 @@ package store
 // Encrypted-library 0014 (CORE-0768) mirrors catalog 0078's collection and
 // collection_media in the owning Library plane, read only by Collection reads
 // and the collection Source, off the entity-query hot path.
+// Encrypted-library 0015 (CORE-0769) mirrors the catalog saved_filter,
+// smart_collection, saved_station and channel tables in the owning Library
+// plane, read by their own by-ID and per-Library list reads, export and My
+// Data, off the entity-query hot path.
 const (
 	schemaFreezeEventsMigrations           = 34
 	schemaFreezeEncryptedLibraryMigrations = 15

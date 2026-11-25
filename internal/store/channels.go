@@ -98,8 +98,16 @@ func (s *Store) Channels(ctx context.Context, profileID ProfileID, libraryID Lib
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT id, library_id, profile_id, name, source_expr, ordering_policy, repeat_policy, created_at_ms
+	channels := []Channel{}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if errors.Is(err, ErrEncryptedLibraryDBDisabled) {
+		return channels, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT `+channelColumns+`
 		FROM channel
 		WHERE library_id = ? AND (profile_id = ? OR profile_id IS NULL)
 		ORDER BY created_at_ms DESC
@@ -108,7 +116,6 @@ func (s *Store) Channels(ctx context.Context, profileID ProfileID, libraryID Lib
 		return nil, err
 	}
 	defer rows.Close()
-	var channels []Channel
 	for rows.Next() {
 		c, err := scanChannel(rows)
 		if err != nil {
@@ -116,16 +123,15 @@ func (s *Store) Channels(ctx context.Context, profileID ProfileID, libraryID Lib
 		}
 		channels = append(channels, c)
 	}
-	if channels == nil {
-		channels = []Channel{}
-	}
 	return channels, rows.Err()
 }
 
-// CreateChannel inserts a new Channel. The Library must exist (FK). Name is
+// CreateChannel inserts a new Channel. The Library must exist. Name is
 // trimmed; empty name is rejected. Empty SourceExpr defaults to "{}" so the
 // column is always valid JSON. Ordering/Repeat default to shuffle/off. An empty
-// ProfileID stores a server-shared Channel.
+// ProfileID stores a server-shared Channel. An Encrypted Library's Channel is
+// written to its protected plane, and creating one while the Library is Sealed
+// fails with ErrEncryptedLibraryDBDisabled.
 func (s *Store) CreateChannel(ctx context.Context, c Channel, now time.Time) (Channel, error) {
 	c.Name = strings.TrimSpace(c.Name)
 	if c.LibraryID == "" {
@@ -157,7 +163,16 @@ func (s *Store) CreateChannel(ctx context.Context, c Channel, now time.Time) (Ch
 	if err := s.guardLocked(); err != nil {
 		return Channel{}, err
 	}
-	_, err = s.catalogW.ExecContext(ctx, `
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, c.LibraryID)
+	if err != nil {
+		return Channel{}, err
+	}
+	if plane.encrypted && c.ProfileID != "" {
+		if err := s.requireProfileLocked(ctx, c.ProfileID); err != nil {
+			return Channel{}, err
+		}
+	}
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT INTO channel (id, library_id, profile_id, name, source_expr, ordering_policy, repeat_policy, created_at_ms)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, c.ID, c.LibraryID, nullString(string(c.ProfileID)), c.Name, c.SourceExpr, string(c.Ordering), string(c.Repeat), createdAtMS)
@@ -178,14 +193,20 @@ func (s *Store) ChannelByID(ctx context.Context, id ChannelID) (Channel, error) 
 	if err := s.guardLocked(); err != nil {
 		return Channel{}, err
 	}
-	c, err := scanChannel(s.catalogR.QueryRowContext(ctx, `
-		SELECT id, library_id, profile_id, name, source_expr, ordering_policy, repeat_policy, created_at_ms
-		FROM channel WHERE id = ?
-	`, id))
+	_, c, err := s.channelLocked(ctx, id)
+	return c, err
+}
+
+func (s *Store) channelLocked(ctx context.Context, id ChannelID) (catalogPlane, Channel, error) {
+	plane, err := s.expressionPlaneLocked(ctx, "channel", string(id), ErrChannelNotFound)
 	if err != nil {
-		return Channel{}, ErrChannelNotFound
+		return catalogPlane{}, Channel{}, err
 	}
-	return c, nil
+	c, err := scanChannel(plane.reader.QueryRowContext(ctx, `SELECT `+channelColumns+` FROM channel WHERE id = ?`, id))
+	if err != nil {
+		return catalogPlane{}, Channel{}, ErrChannelNotFound
+	}
+	return plane, c, nil
 }
 
 // UpdateChannel updates a Channel's editable metadata, source expression, and
@@ -196,7 +217,12 @@ func (s *Store) UpdateChannel(ctx context.Context, c Channel) (Channel, error) {
 	if c.ID == "" {
 		return Channel{}, ValidationError("id is required")
 	}
-	existing, err := s.ChannelByID(ctx, c.ID)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return Channel{}, err
+	}
+	plane, existing, err := s.channelLocked(ctx, c.ID)
 	if err != nil {
 		return Channel{}, err
 	}
@@ -222,12 +248,7 @@ func (s *Store) UpdateChannel(ctx context.Context, c Channel) (Channel, error) {
 			return Channel{}, err
 		}
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return Channel{}, err
-	}
-	if _, err := s.catalogW.ExecContext(ctx, `
+	if _, err := plane.writer.ExecContext(ctx, `
 		UPDATE channel SET name = ?, source_expr = ?, ordering_policy = ?, repeat_policy = ? WHERE id = ?
 	`, name, sourceExpr, string(ordering), string(repeat), c.ID); err != nil {
 		return Channel{}, err
@@ -249,18 +270,19 @@ func (s *Store) DeleteChannel(ctx context.Context, id ChannelID) (Channel, error
 	if err := s.guardLocked(); err != nil {
 		return Channel{}, err
 	}
-	c, err := scanChannel(s.catalogR.QueryRowContext(ctx, `
-		SELECT id, library_id, profile_id, name, source_expr, ordering_policy, repeat_policy, created_at_ms
-		FROM channel WHERE id = ?
-	`, id))
+	plane, c, err := s.channelLocked(ctx, id)
 	if err != nil {
-		return Channel{}, ErrChannelNotFound
+		return Channel{}, err
 	}
-	if _, err := s.catalogW.ExecContext(ctx, `DELETE FROM channel WHERE id = ?`, id); err != nil {
+	if _, err := plane.writer.ExecContext(ctx, `DELETE FROM channel WHERE id = ?`, id); err != nil {
 		return Channel{}, err
 	}
 	return c, nil
 }
+
+// channelColumns is the read shape shared by catalog.db and an Encrypted
+// Library's protected plane (CORE-0769).
+const channelColumns = `id, library_id, profile_id, name, source_expr, ordering_policy, repeat_policy, created_at_ms`
 
 func scanChannel(scanner rowScanner) (Channel, error) {
 	var c Channel

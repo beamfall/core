@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -540,33 +541,73 @@ func (s *Store) myPluginProfileLinksLocked(ctx context.Context, profileID Profil
 	return connections, rows.Err()
 }
 
+// myPlaneRow is one My Data row read from catalog.db or an unsealed protected
+// plane, with the keys that restore the single-database newest-first order
+// once the planes are merged.
+type myPlaneRow[T any] struct {
+	item      T
+	createdMS int64
+	id        string
+}
+
+// queryMyPlanesLocked runs query on catalog.db, limited to plaintext Libraries,
+// and on every unsealed Encrypted Library's protected plane (CORE-0769). The
+// query's %s is replaced with the plane's Library filter. A Sealed Library's
+// rows are not read. Rows come back newest first, ties broken by ID.
+func queryMyPlanesLocked[T any](ctx context.Context, s *Store, query string, scan func(*sql.Rows) (myPlaneRow[T], error), args ...any) ([]myPlaneRow[T], error) {
+	var out []myPlaneRow[T]
+	for _, plane := range s.expressionReadPlanesLocked() {
+		rows, err := plane.reader.QueryContext(ctx, fmt.Sprintf(query, plane.planeFilterSQL()), args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			row, err := scan(rows)
+			if err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			out = append(out, row)
+		}
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].createdMS != out[j].createdMS {
+			return out[i].createdMS > out[j].createdMS
+		}
+		return out[i].id < out[j].id
+	})
+	return out, nil
+}
+
 // mySavedFilters returns the caller's Saved Filters, reveal-filtered: a filter
 // bound to a currently-hidden Library is dropped, like every read.
 func (s *Store) mySavedFilters(ctx context.Context, profileID ProfileID, filter LibraryFilter) ([]MySavedFilter, error) {
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT name, library_id, filter_json, created_at_ms
+	rows, err := queryMyPlanesLocked(ctx, s, `
+		SELECT id, name, library_id, filter_json, created_at_ms
 		FROM saved_filter
-		WHERE profile_id = ?
-		ORDER BY created_at_ms DESC, id
-	`, profileID)
+		WHERE profile_id = ? AND %s
+	`, func(rows *sql.Rows) (myPlaneRow[MySavedFilter], error) {
+		var r myPlaneRow[MySavedFilter]
+		err := rows.Scan(&r.id, &r.item.Name, &r.item.LibraryID, &r.item.FilterJSON, &r.createdMS)
+		r.item.CreatedAt = millisToTime(r.createdMS)
+		return r, err
+	}, profileID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := []MySavedFilter{}
-	for rows.Next() {
-		var f MySavedFilter
-		var createdMS int64
-		if err := rows.Scan(&f.Name, &f.LibraryID, &f.FilterJSON, &createdMS); err != nil {
-			return nil, err
-		}
-		f.CreatedAt = millisToTime(createdMS)
-		if err := s.libraryVisibleSQL(ctx, f.LibraryID, filter); err != nil {
+	for _, r := range rows {
+		if err := s.libraryVisibleSQL(ctx, r.item.LibraryID, filter); err != nil {
 			continue
 		}
-		out = append(out, f)
+		out = append(out, r.item)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // mySavedStations returns the caller's saved Stations, reveal-filtered: a
@@ -574,30 +615,27 @@ func (s *Store) mySavedFilters(ctx context.Context, profileID ProfileID, filter 
 // the generation inputs are exported (seed/rules/tuning) — never a generated
 // track order, which a Station never persists (ADR-0098 area 5).
 func (s *Store) mySavedStations(ctx context.Context, profileID ProfileID, filter LibraryFilter) ([]MySavedStation, error) {
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT name, library_id, seed_json, rules_json, tuning_json, created_at_ms
+	rows, err := queryMyPlanesLocked(ctx, s, `
+		SELECT id, name, library_id, seed_json, rules_json, tuning_json, created_at_ms
 		FROM saved_station
-		WHERE profile_id = ?
-		ORDER BY created_at_ms DESC, id
-	`, profileID)
+		WHERE profile_id = ? AND %s
+	`, func(rows *sql.Rows) (myPlaneRow[MySavedStation], error) {
+		var r myPlaneRow[MySavedStation]
+		err := rows.Scan(&r.id, &r.item.Name, &r.item.LibraryID, &r.item.SeedJSON, &r.item.RulesJSON, &r.item.TuningJSON, &r.createdMS)
+		r.item.CreatedAt = millisToTime(r.createdMS)
+		return r, err
+	}, profileID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := []MySavedStation{}
-	for rows.Next() {
-		var st MySavedStation
-		var createdMS int64
-		if err := rows.Scan(&st.Name, &st.LibraryID, &st.SeedJSON, &st.RulesJSON, &st.TuningJSON, &createdMS); err != nil {
-			return nil, err
-		}
-		st.CreatedAt = millisToTime(createdMS)
-		if err := s.libraryVisibleSQL(ctx, st.LibraryID, filter); err != nil {
+	for _, r := range rows {
+		if err := s.libraryVisibleSQL(ctx, r.item.LibraryID, filter); err != nil {
 			continue
 		}
-		out = append(out, st)
+		out = append(out, r.item)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // myCollections returns the Collections the caller authored, reveal-filtered by
@@ -605,30 +643,27 @@ func (s *Store) mySavedStations(ctx context.Context, profileID ProfileID, filter
 // per-Profile Collection; operator-created collections have a
 // NULL author and are not the caller's to export.
 func (s *Store) myCollections(ctx context.Context, profileID ProfileID, filter LibraryFilter) ([]MyCollection, error) {
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT name, library_id, source_expr, created_at_ms
+	rows, err := queryMyPlanesLocked(ctx, s, `
+		SELECT id, name, library_id, source_expr, created_at_ms
 		FROM smart_collection
-		WHERE created_by_profile_id = ?
-		ORDER BY created_at_ms DESC, id
-	`, profileID)
+		WHERE created_by_profile_id = ? AND %s
+	`, func(rows *sql.Rows) (myPlaneRow[MyCollection], error) {
+		var r myPlaneRow[MyCollection]
+		err := rows.Scan(&r.id, &r.item.Name, &r.item.LibraryID, &r.item.SourceExpr, &r.createdMS)
+		r.item.CreatedAt = millisToTime(r.createdMS)
+		return r, err
+	}, profileID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := []MyCollection{}
-	for rows.Next() {
-		var c MyCollection
-		var createdMS int64
-		if err := rows.Scan(&c.Name, &c.LibraryID, &c.SourceExpr, &createdMS); err != nil {
-			return nil, err
-		}
-		c.CreatedAt = millisToTime(createdMS)
-		if err := s.libraryVisibleSQL(ctx, c.LibraryID, filter); err != nil {
+	for _, r := range rows {
+		if err := s.libraryVisibleSQL(ctx, r.item.LibraryID, filter); err != nil {
 			continue
 		}
-		out = append(out, c)
+		out = append(out, r.item)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // myMarkers returns the Markers the caller authored, reveal-filtered by the
