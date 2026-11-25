@@ -375,7 +375,7 @@ func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rend
 	args = append(args, "-i", audioSrc,
 		"-map", "0:v:0", "-map", audioMap,
 		"-vf", strings.Join(filters, ","),
-		"-c:v", "libx264", "-preset", "veryfast", "-tune", "animation", "-crf", rendition.softwareCRF(), "-sc_threshold", "0", "-pix_fmt", "yuv420p",
+		"-c:v", "libx264", "-threads", "4", "-preset", "veryfast", "-crf", rendition.softwareCRF(), "-sc_threshold", "0", "-pix_fmt", "yuv420p",
 		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds),
 	)
 	if rendition.VideoKbps > 0 {
