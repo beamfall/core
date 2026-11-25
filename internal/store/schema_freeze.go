@@ -119,7 +119,7 @@ package store
 // Encrypted-library 0012 (CORE-3152) adds the entity_relation writer column.
 // Encrypted-library 0013 (CORE-3131) keeps relation locks and recovery rows
 // in the owning Library plane.
-// Encrypted-library 0014 (CORE-0706) adds media_external_id,
+// Encrypted-library 0015 (CORE-0706) adds media_external_id,
 // artwork_candidate and unmatched_queue to the owning Library plane, off the
 // entity-query hot path.
 // Events 0029 (CORE-2958) adds the per-follow new-entry route, read by the
@@ -146,5 +146,5 @@ package store
 // and the collection Source, off the entity-query hot path.
 const (
 	schemaFreezeEventsMigrations           = 34
-	schemaFreezeEncryptedLibraryMigrations = 14
+	schemaFreezeEncryptedLibraryMigrations = 15
 )
