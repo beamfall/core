@@ -5,18 +5,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdminEpochSignal } from "@/areas/console/adminEpoch";
 import { ApiError } from "@/lib/api";
 import {
+  acknowledgeBackupBanner,
   cancelStagedRestore,
   fetchBackupHistory,
   fetchBackupKeyStatus,
+  fetchBackupStatus,
   fetchMetadataExport,
   fetchStagedRestore,
   inspectBackup,
+  setBackupUpgradeGate,
   stageRestore,
   verifyBackup,
+  verifyBackupNow,
 } from "@/lib/graphql";
 import type {
   BackupContentsInfo,
   BackupHistoryEntry,
+  BackupStatusInfo,
   MetadataExportInfo,
   StagedRestoreInfo,
 } from "@/lib/graphql/types";
@@ -27,6 +32,14 @@ import { BackupExportPage } from "./BackupExportPage";
 // is wrapped (behavior-preserving, stable identity via useRef) so the unmount
 // test can count state writes and prove none land after the tree is gone.
 const setterLog = vi.hoisted(() => ({ writes: 0 }));
+
+// jsdom has no ResizeObserver; the Radix Switch (the update-gate toggle) needs one.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
 
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
@@ -58,6 +71,11 @@ vi.mock("@/lib/graphql", () => ({
   revealBackupKey: vi.fn(),
   acknowledgeBackupKey: vi.fn(),
   fetchAdminSession: vi.fn(),
+  // BackupOpsSection (CORE-0778) reads the backup status on mount.
+  fetchBackupStatus: vi.fn(),
+  acknowledgeBackupBanner: vi.fn(),
+  setBackupUpgradeGate: vi.fn(),
+  verifyBackupNow: vi.fn(),
   // PathPickerField (used by the destination field) pulls these from the module.
   fetchPathPicker: vi.fn(),
   addPathPickerRoot: vi.fn(),
@@ -71,6 +89,32 @@ const mockInspect = vi.mocked(inspectBackup);
 const mockStage = vi.mocked(stageRestore);
 const mockCancel = vi.mocked(cancelStagedRestore);
 const mockKeyStatus = vi.mocked(fetchBackupKeyStatus);
+const mockBackupStatus = vi.mocked(fetchBackupStatus);
+const mockAckBanner = vi.mocked(acknowledgeBackupBanner);
+const mockSetGate = vi.mocked(setBackupUpgradeGate);
+const mockDrill = vi.mocked(verifyBackupNow);
+
+// The server's backup status with no run on record: the soft gate, no banners.
+const QUIET_STATUS: BackupStatusInfo = {
+  backupFailedBanner: false,
+  integrityFailedBanner: false,
+  lastSuccess: null,
+  lastFailure: null,
+  lastIntegrityFailure: null,
+  upgradeGate: "soft",
+  lastDrill: null,
+};
+
+// Seeded failure fixtures (ADR-0192 §6): a scheduled run that hit a full
+// destination and a Backup Set that failed its integrity check.
+const FAILED_STATUS: BackupStatusInfo = {
+  ...QUIET_STATUS,
+  backupFailedBanner: true,
+  integrityFailedBanner: true,
+  lastSuccess: { at: "2026-07-01T02:30:00Z", failureClass: "", set: "beamfall-0e11" },
+  lastFailure: { at: "2026-07-03T02:41:00Z", failureClass: "destination-full", set: "" },
+  lastIntegrityFailure: { at: "2026-07-02T02:12:00Z", failureClass: "integrity", set: "" },
+};
 
 const NOTHING_STAGED: StagedRestoreInfo = {
   staged: false,
@@ -84,6 +128,7 @@ const NOTHING_STAGED: StagedRestoreInfo = {
 beforeEach(() => {
   mockStaged.mockResolvedValue(NOTHING_STAGED);
   mockKeyStatus.mockResolvedValue({ pending: false, expiresAt: "", daysLeft: 0 });
+  mockBackupStatus.mockResolvedValue(QUIET_STATUS);
 });
 
 afterEach(() => {
@@ -484,6 +529,82 @@ describe("BackupExportPage", () => {
           /could not restore the staged backup and kept the original data: restore copy failed/,
         ),
       ).toBeVisible();
+    });
+  });
+
+  describe("backup health (CORE-0778)", () => {
+    it("keeps the update gate soft by default", async () => {
+      renderPage();
+      expect(await screen.findByText("No open backup incidents.")).toBeVisible();
+      const toggle = screen.getByRole("switch", { name: "Hard block" });
+      expect(toggle).toHaveAttribute("aria-checked", "false");
+      expect(toggle).toHaveAttribute("data-upgrade-gate", "soft");
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText("Never run")).toBeVisible();
+      expect(screen.getByText("None yet")).toBeVisible();
+    });
+
+    it("raises distinct job and integrity banners from seeded failures, each acknowledged alone", async () => {
+      const user = userEvent.setup();
+      mockBackupStatus.mockResolvedValue(FAILED_STATUS);
+      mockAckBanner.mockResolvedValue({ ...FAILED_STATUS, backupFailedBanner: false });
+      const { container } = renderPage();
+
+      expect(await screen.findByText("Job failed")).toBeVisible();
+      expect(screen.getByText("Integrity failed")).toBeVisible();
+      const job = container.querySelector('[data-banner="backup-failed"]') as HTMLElement;
+      const integrity = container.querySelector('[data-banner="integrity-failed"]') as HTMLElement;
+      expect(job).toHaveTextContent("(destination-full)");
+      expect(integrity).toHaveTextContent("failed its integrity check");
+      expect(screen.getByText("beamfall-0e11")).toBeVisible();
+
+      await user.click(within(job).getByRole("button", { name: "Acknowledge" }));
+      expect(mockAckBanner).toHaveBeenCalledWith("backup-failed");
+      await waitFor(() => expect(screen.queryByText("Job failed")).not.toBeInTheDocument());
+      expect(screen.getByText("Integrity failed")).toBeVisible();
+    });
+
+    it("opts in to the hard block only on an explicit toggle", async () => {
+      const user = userEvent.setup();
+      mockSetGate.mockResolvedValue({ ...QUIET_STATUS, upgradeGate: "hard" });
+      renderPage();
+      const toggle = await screen.findByRole("switch", { name: "Hard block" });
+      await waitFor(() => expect(toggle).toBeEnabled());
+      await user.click(toggle);
+      expect(mockSetGate).toHaveBeenCalledWith("hard");
+      await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+    });
+
+    it("runs the restore drill on the selected set and clears the key", async () => {
+      const user = userEvent.setup();
+      mockHistory.mockResolvedValue([HISTORY_ROW]);
+      mockDrill.mockResolvedValue({
+        at: "2026-07-03T10:00:00Z",
+        verified: true,
+        set: "beamfall-1f9a",
+        reason: "",
+        databases: 2,
+        libraries: 3,
+        durationMs: 900,
+      });
+      renderPage();
+      expect(screen.getByText("Select a Backup Set in the history to verify it.")).toBeVisible();
+
+      await user.type(screen.getByLabelText("Destination"), "/backups");
+      await user.click(screen.getByRole("button", { name: "Load history" }));
+      await user.click(await screen.findByText("beamfall-1f9a"));
+      const key = screen.getByLabelText("Backup key for the drill");
+      await user.type(key, "drill-key-words");
+      await user.click(screen.getByRole("button", { name: "Verify my backup now" }));
+
+      expect(mockDrill).toHaveBeenCalledWith("/backups/beamfall-1f9a/set.bbk", "drill-key-words");
+      expect(
+        await screen.findByText(
+          "Restore verified: 2 databases and 3 Libraries read back from beamfall-1f9a.",
+        ),
+      ).toBeVisible();
+      expect(key).toHaveValue("");
+      expect(screen.getByText("Pass")).toBeVisible();
     });
   });
 });

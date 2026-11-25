@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
+  fetchBackupStatus,
   fetchConsoleConfig,
   fetchUpdateStatus,
   setConsoleConfig,
   type UpdateCheckState,
 } from "@/lib/graphql";
+import type { BackupStatusInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 import { Section } from "../Section";
@@ -43,6 +45,80 @@ const UPDATE_STATE_DISPLAY: Record<UpdateCheckState, { tone: StatusTone; label: 
  */
 function updateStateDisplay(state: string | undefined) {
   return UPDATE_STATE_DISPLAY[state as UpdateCheckState] ?? UPDATE_STATE_DISPLAY.unavailable;
+}
+
+type GateStepState = "done" | "pending" | "blocked";
+
+/**
+ * The backup gate a Core update passes (CORE-0778 BKUP-14, ADR-0192 §6), to
+ * the approved console-ops-pack mockup update-backup-gate.html. A verified
+ * Backup Set with no open failure banner clears it. Otherwise the soft policy
+ * (the default) warns and permits; the opt-in hard policy blocks the install
+ * step. A status that cannot be read is treated as not clear.
+ */
+export function backupGateState(status: BackupStatusInfo | null): {
+  policy: "soft" | "hard";
+  clear: boolean;
+  steps: { backup: GateStepState; verify: GateStepState; install: GateStepState };
+} {
+  const policy = status?.upgradeGate === "hard" ? "hard" : "soft";
+  const backedUp = Boolean(status?.lastSuccess) && !status?.backupFailedBanner;
+  const verified = backedUp && !status?.integrityFailedBanner;
+  const clear = verified;
+  return {
+    policy,
+    clear,
+    steps: {
+      backup: backedUp ? "done" : "pending",
+      verify: verified ? "done" : "pending",
+      install: !clear && policy === "hard" ? "blocked" : "pending",
+    },
+  };
+}
+
+function BackupUpdateGate() {
+  const t = useT();
+  const backup = useAsync(fetchBackupStatus);
+  if (backup.loading && !backup.data) return null;
+  const gate = backupGateState(backup.data);
+  const steps: [string, StringKey, GateStepState][] = [
+    ["boundary", "updateBackupGateStepBoundary", "done"],
+    ["backup", "updateBackupGateStepBackup", gate.steps.backup],
+    ["verify", "updateBackupGateStepVerify", gate.steps.verify],
+    ["install", "updateBackupGateStepInstall", gate.steps.install],
+  ];
+  const tone: StatusTone = gate.clear ? "green" : gate.policy === "hard" ? "red" : "amber";
+  return (
+    <section
+      aria-label={t("updateBackupGateHeading")}
+      data-backup-gate={gate.policy}
+      data-backup-gate-clear={gate.clear}
+      className="space-y-2 rounded-md border px-3 py-3 text-sm"
+    >
+      <p className="m-0 font-semibold">{t("updateBackupGateHeading")}</p>
+      <ol className="m-0 space-y-1 pl-5">
+        {steps.map(([id, label, state]) => (
+          <li key={id} data-gate-step={id} data-gate-step-state={state}>
+            {t(label)}
+          </li>
+        ))}
+      </ol>
+      <p className="m-0">
+        <StatusChip tone={tone}>
+          {gate.clear
+            ? t("updateBackupGateClear", {
+                time: new Date(backup.data?.lastSuccess?.at ?? "").toLocaleString(),
+              })
+            : gate.policy === "hard"
+              ? t("updateBackupGateBlocked")
+              : t("updateBackupGateWarn")}
+        </StatusChip>
+      </p>
+      <p className="m-0 text-muted-foreground">
+        {gate.policy === "hard" ? t("updateBackupGateHard") : t("updateBackupGateSoft")}
+      </p>
+    </section>
+  );
 }
 
 function UpdateAvailableGuidance({
@@ -251,6 +327,7 @@ export function UpdateAwareness() {
                   currentVersion={availableUpdate.currentVersion}
                   latestVersion={availableUpdate.latestVersion}
                 />
+                <BackupUpdateGate />
               </>
             )}
             {checkFailed && (

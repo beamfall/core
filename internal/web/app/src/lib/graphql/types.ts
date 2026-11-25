@@ -970,6 +970,48 @@ export interface RevealedBackupKeyInfo {
   daysLeft: number;
 }
 
+/** One scheduled-backup outcome (graph.BackupRunInfo, CORE-0778). */
+export interface BackupRunInfo {
+  at: string;
+  failureClass: string;
+  set: string;
+}
+
+/**
+ * One restore-drill outcome (graph.BackupDrillInfo, CORE-0778 BKUP-15). The
+ * counts are set only on the result of verifyBackupNow.
+ */
+export interface BackupDrillInfo {
+  at: string;
+  verified: boolean;
+  set: string;
+  reason: string;
+  backupCreatedAt?: string;
+  databases?: number;
+  libraries?: number;
+  durationMs?: number;
+}
+
+/** The update-gate policy (ADR-0192 §6): soft by default, hard as an opt-in. */
+export type BackupUpgradeGate = "soft" | "hard";
+
+/** The two distinct backup failure banners (ADR-0192 §6). */
+export type BackupBanner = "backup-failed" | "integrity-failed";
+
+/**
+ * The scheduled-backup state behind the backup banners, recovery evidence and
+ * update gate (graph.BackupStatusInfo, CORE-0778 BKUP-14). No key material.
+ */
+export interface BackupStatusInfo {
+  backupFailedBanner: boolean;
+  integrityFailedBanner: boolean;
+  lastSuccess: BackupRunInfo | null;
+  lastFailure: BackupRunInfo | null;
+  lastIntegrityFailure: BackupRunInfo | null;
+  upgradeGate: BackupUpgradeGate;
+  lastDrill: BackupDrillInfo | null;
+}
+
 /**
  * The full metadata export (graph.MetadataExportInfo, ADR-0005 §5). The lists
  * are left untyped here because the UI only summarizes counts and downloads the

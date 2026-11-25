@@ -9,10 +9,14 @@
 import { type GraphQLOptions, graphql } from "@/lib/api";
 import type {
   ArtworkCandidate,
+  BackupBanner,
   BackupContentsInfo,
+  BackupDrillInfo,
   BackupHistoryEntry,
   BackupInfo,
   BackupKeyStatusInfo,
+  BackupStatusInfo,
+  BackupUpgradeGate,
   BatchResultInfo,
   BulkEditChangeInfo,
   BulkOpResult,
@@ -771,6 +775,67 @@ export async function acknowledgeBackupKey(
     signal,
   );
   return data.acknowledgeBackupKey;
+}
+
+const BACKUP_STATUS_FIELDS =
+  "backupFailedBanner integrityFailedBanner upgradeGate lastSuccess { at failureClass set } lastFailure { at failureClass set } lastIntegrityFailure { at failureClass set } lastDrill { at verified set reason }";
+
+const BACKUP_STATUS_QUERY = `query BackupStatus { backupStatus { ${BACKUP_STATUS_FIELDS} } }`;
+
+/** BackupStatus — the backup banners, recovery evidence and update gate (CORE-0778). */
+export async function fetchBackupStatus(signal?: AbortSignal): Promise<BackupStatusInfo> {
+  const data = await graphql<{ backupStatus: BackupStatusInfo }>(BACKUP_STATUS_QUERY, {}, signal);
+  return data.backupStatus;
+}
+
+const ACKNOWLEDGE_BACKUP_BANNER_MUTATION = `mutation AcknowledgeBackupBanner($banner: String!) { acknowledgeBackupBanner(banner: $banner) { ${BACKUP_STATUS_FIELDS} } }`;
+
+/** AcknowledgeBackupBanner — dismiss one failure banner until the next failure. */
+export async function acknowledgeBackupBanner(
+  banner: BackupBanner,
+  signal?: AbortSignal,
+): Promise<BackupStatusInfo> {
+  const data = await graphql<{ acknowledgeBackupBanner: BackupStatusInfo }>(
+    ACKNOWLEDGE_BACKUP_BANNER_MUTATION,
+    { banner },
+    signal,
+  );
+  return data.acknowledgeBackupBanner;
+}
+
+const SET_BACKUP_UPGRADE_GATE_MUTATION = `mutation SetBackupUpgradeGate($gate: String!) { setBackupUpgradeGate(gate: $gate) { ${BACKUP_STATUS_FIELDS} } }`;
+
+/** SetBackupUpgradeGate — choose the soft warning or the opt-in hard block. */
+export async function setBackupUpgradeGate(
+  gate: BackupUpgradeGate,
+  signal?: AbortSignal,
+): Promise<BackupStatusInfo> {
+  const data = await graphql<{ setBackupUpgradeGate: BackupStatusInfo }>(
+    SET_BACKUP_UPGRADE_GATE_MUTATION,
+    { gate },
+    signal,
+  );
+  return data.setBackupUpgradeGate;
+}
+
+const VERIFY_BACKUP_NOW_MUTATION =
+  "mutation VerifyBackupNow($envelope: String!, $backupKey: String!) { verifyBackupNow(envelope: $envelope, backupKey: $backupKey) { at verified set reason backupCreatedAt databases libraries durationMs } }";
+
+/**
+ * VerifyBackupNow — the restore drill (ADR-0192 §5 L3). The key travels only in
+ * this request; the response never carries it.
+ */
+export async function verifyBackupNow(
+  envelope: string,
+  backupKey: string,
+  signal?: AbortSignal,
+): Promise<BackupDrillInfo> {
+  const data = await graphql<{ verifyBackupNow: BackupDrillInfo }>(
+    VERIFY_BACKUP_NOW_MUTATION,
+    { envelope, backupKey },
+    signal,
+  );
+  return data.verifyBackupNow;
 }
 
 const METADATA_EXPORT_QUERY =
