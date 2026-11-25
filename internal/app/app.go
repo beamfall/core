@@ -736,7 +736,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// old rows whose fingerprint is no longer reachable.
 	jobRegistry.Register(jobs.SubtitleOffsetPruneJobKind, jobs.SubtitleOffsetPruneHandler(st, subtitleSidecarGuard{}, time.Now))
 	jobRegistry.Register(eventsCompactionJobKind, eventsCompactionHandler(st, logger))
-	jobRegistry.Register(databaseBackupJobKind, databaseBackupHandler(st, filepath.Join(cfg.DataDir, "backups"), func() store.EncryptedLibraryDBCipher {
+	jobRegistry.Register(databaseBackupJobKind, databaseBackupHandler(st, cfg.DataDir, filepath.Join(cfg.DataDir, "backups"), func() store.EncryptedLibraryDBCipher {
 		if encryptedBackupCipher == nil {
 			return nil
 		}
@@ -4278,7 +4278,7 @@ func enqueueAssetCatchUp(ctx context.Context, st *store.Store, logger *slog.Logg
 
 func registerBuiltInSchedules(ctx context.Context, st *store.Store, service *schedulepkg.Service, precomputeCacheRoot string, precomputeBudgetBytes int64, composesPictures bool) {
 	service.Register(singleJobSchedule(retentionSweepJobKind, schedulepkg.Daily(4, 0)))
-	service.Register(singleJobSchedule(databaseBackupJobKind, schedulepkg.Daily(3, 0)))
+	service.Register(singleJobSchedule(databaseBackupJobKind, backupScheduleTrigger(rand.Intn)))
 	// CORE-2570: trickplay runs off-peak, one item at a time, never on the scan path.
 	service.Register(singleJobSchedule(genassets.SweepJobKind, schedulepkg.Daily(3, 0)))
 	// Events.db retention compaction: 03:30 daily, just after
