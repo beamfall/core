@@ -159,63 +159,37 @@ func TestLatestLimitsFirstCatalogueAfterPreviousPoll(t *testing.T) {
 	}
 }
 
-func TestEncryptedFeedPollRespectsDownloadPolicies(t *testing.T) {
-	for _, tc := range []struct {
-		policy        store.DownloadPolicy
-		first, second int
-	}{
-		{store.DownloadPolicyStreamOnly, 0, 0},
-		{store.DownloadPolicyNewOnly, 0, 1},
-		{store.DownloadPolicyLatest, 1, 1},
-		{store.DownloadPolicyEverything, 2, 1},
+func TestEncryptedFeedPollIsRefusedBeforeFetch(t *testing.T) {
+	// CORE-0706: an Encrypted Library's feed GUIDs, paths and title would land
+	// in the shared catalog, so its poll is refused before the feed is fetched
+	// or any enclosure is downloaded, under every download policy.
+	for _, policy := range []store.DownloadPolicy{
+		store.DownloadPolicyStreamOnly, store.DownloadPolicyNewOnly,
+		store.DownloadPolicyLatest, store.DownloadPolicyEverything,
 	} {
-		t.Run(string(tc.policy), func(t *testing.T) {
+		t.Run(string(policy), func(t *testing.T) {
 			fs := newFeedServer(t)
 			st, sub, poller := healthFixture(t, fs.server.URL+"/feed.xml")
 			ctx := t.Context()
+			if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, store.SubscriptionPolicy{Policy: policy, LatestN: 1}); err != nil {
+				t.Fatal(err)
+			}
 			if err := st.SetLibraryBacking(ctx, sub.LibraryID, true, true); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := st.UpsertSubscriptionCatalog(ctx, sub.ID, nil, sub.AddedAt); !errors.Is(err, store.ErrSubscriptionCatalogUnsupported) {
-				t.Fatalf("encrypted catalogue precondition: %v", err)
+			fs.enclosures["one.mp3"] = []byte("one.mp3")
+			fs.setFeed(fs.item("g1", "One", "one.mp3"))
+			if count, err := poller.pollSubscription(ctx, sub); !errors.Is(err, store.ErrEncryptedLibrarySubscription) || count != 0 {
+				t.Fatalf("encrypted poll = %d, %v; want 0, ErrEncryptedLibrarySubscription", count, err)
 			}
-			if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, store.SubscriptionPolicy{Policy: tc.policy, LatestN: 1}); err != nil {
-				t.Fatal(err)
+			fs.mu.Lock()
+			feedHits := fs.feedHits
+			fs.mu.Unlock()
+			if feedHits != 0 || fs.hits("one.mp3") != 0 {
+				t.Fatalf("feed hits = %d, enclosure hits = %d; want no network", feedHits, fs.hits("one.mp3"))
 			}
-			for _, name := range []string{"one.mp3", "two.mp3", "three.mp3"} {
-				fs.enclosures[name] = []byte(name)
-			}
-			initial := fs.item("g1", "One", "one.mp3") + fs.item("g2", "Two", "two.mp3")
-			fs.setFeed(initial)
-			if tc.policy == store.DownloadPolicyLatest {
-				document, err := scrape.ParseFeed([]byte(fs.feed))
-				if err != nil {
-					t.Fatal(err)
-				}
-				selected, catalogued, err := poller.catalogue(ctx, sub, document, poller.now())
-				if err != nil || catalogued || len(selected) != 1 || !selected["g1"] {
-					t.Fatalf("initial selection = %v, catalogued = %v, err = %v", selected, catalogued, err)
-				}
-				fs.setFeed(fs.item("g2", "Two", "two.mp3") + fs.item("g1", "One", "one.mp3"))
-				sub, err = st.Subscription(ctx, sub.ID)
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			if count, err := poller.pollSubscription(ctx, sub); err != nil || count != tc.first {
-				t.Fatalf("first poll count = %d, %v; want %d", count, err, tc.first)
-			}
-			fs.setFeed(initial + fs.item("g3", "Three", "three.mp3"))
-			advancePollClock(poller)
-			sub, err := st.Subscription(ctx, sub.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if count, err := poller.pollSubscription(ctx, sub); err != nil || count != tc.second {
-				t.Fatalf("second poll count = %d, %v; want %d", count, err, tc.second)
-			}
-			if tc.policy == store.DownloadPolicyLatest && (fs.hits("one.mp3") != 1 || fs.hits("two.mp3") != 0 || fs.hits("three.mp3") != 1) {
-				t.Fatal("latest downloaded an entry outside its initial limit")
+			if seen, err := st.SubscriptionSeenGUIDs(ctx, sub.ID); err != nil || len(seen) != 0 {
+				t.Fatalf("seen GUIDs = %v, %v; want none recorded", seen, err)
 			}
 		})
 	}
