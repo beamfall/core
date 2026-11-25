@@ -111,6 +111,7 @@ func TestAudioAdFeaturesUsesHardenedReadOnlyCommand(t *testing.T) {
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	runner := New()
+	pinSpawnPlatform(t, "linux")
 	runner.SetHardeningShim(shimPath)
 	got, err := runner.AudioAdFeatures(context.Background(), src, 1)
 	if err != nil {

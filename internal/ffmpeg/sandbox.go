@@ -62,6 +62,12 @@ func sandboxProfileNet(roPaths, rwPaths []string, port int) string {
 	if port > 0 && port <= 65535 {
 		fmt.Fprintf(&b, "(allow network-outbound (remote ip \"localhost:%d\"))\n", port)
 	}
+	// VideoToolbox: the IOSurface, GPU and media-engine user clients a hardware
+	// encode or decode opens. Without them a VideoToolbox job fails under the
+	// profile (encode exit 187, decode exit 69, which the decode verdict would
+	// read as broken media). These are device clients, not filesystem or
+	// network reach.
+	b.WriteString(sandboxVideoToolboxRule)
 	// Read-only system trees where ffmpeg and its dylibs may live outside the
 	// dyld shared cache (Homebrew prefixes); read-only, never writable.
 	for _, p := range sandboxSystemReadRoots() {
@@ -75,6 +81,22 @@ func sandboxProfileNet(roPaths, rwPaths []string, port int) string {
 	for _, p := range sandboxResolvePaths(rwPaths) {
 		b.WriteString(sandboxRule("file-read*", p))
 		b.WriteString(sandboxRule("file-write*", p))
+	}
+	return b.String()
+}
+
+// sandboxVideoToolboxRule grants the IOKit user clients VideoToolbox opens.
+const sandboxVideoToolboxRule = `(allow iokit-open (iokit-user-client-class "IOSurfaceRootUserClient" "AGXDeviceUserClient" "AppleAVE2UserClient" "AppleAVDUserClient" "IOSurfaceAcceleratorClient"))` + "\n"
+
+// sandboxProfileFor is the profile the spawn seam runs one confined job under
+// on macOS: the job's own paths and loopback port, plus read access to the
+// shim binary itself and to the tool's directory, so the shim can load and
+// exec FFmpeg wherever it is installed.
+func sandboxProfileFor(conf confinement, shimPath, binPath string) string {
+	var b strings.Builder
+	b.WriteString(sandboxProfileNet(append(append([]string(nil), conf.ReadOnly...), filepath.Dir(binPath)), conf.ReadWrite, conf.LoopbackPort))
+	for _, p := range sandboxResolvePaths([]string{shimPath}) {
+		fmt.Fprintf(&b, "(allow file-read* (literal %s))\n", sandboxQuote(p))
 	}
 	return b.String()
 }

@@ -465,8 +465,15 @@ func (r *Runner) niceWrap(ffmpegPath string, args []string) (string, []string) {
 // the SEC-2 shim already enforces seccomp+landlock, so sandboxWrap is a
 // pass-through and this is identical to generationCommand. The "--" terminator
 // is NOT used: sandbox-exec takes `-p <profile>` then the command verbatim.
+//
+// With the shim configured the spawn seam already applies that profile (and
+// refuses a host without sandbox-exec), so the command is not wrapped twice;
+// the extra wrap remains only for a shim-less Runner on macOS.
 func (r *Runner) convertCommand(ctx context.Context, conf confinement, ffmpegPath string, args ...string) *exec.Cmd {
 	inner := r.generationCommand(ctx, conf, ffmpegPath, args...)
+	if r.shimPath != "" {
+		return inner
+	}
 	binPath, binArgs, wrapped := sandboxWrap(conf.ReadOnly, conf.ReadWrite, inner.Path, inner.Args[1:])
 	if !wrapped {
 		return inner

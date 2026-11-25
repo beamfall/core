@@ -76,19 +76,6 @@ func (r *Runner) confinedCommand(ctx context.Context, binPath string, conf confi
 	return shimCommand(ctx, r.shimPath, binPath, conf, args)
 }
 
-// shimCommand wraps binPath in the shim at shimPath under conf, or execs it
-// directly when shimPath is empty. Transcodes take shimPath from their Runner
-// and hardware probes from SetProbeHardeningShim, so a probe runs under the
-// same wrapping as the job it certifies.
-func shimCommand(ctx context.Context, shimPath, binPath string, conf confinement, args []string) *exec.Cmd {
-	if shimPath == "" {
-		return exec.CommandContext(ctx, binPath, args...)
-	}
-	// #nosec G204 -- shimPath is this server binary and the argv is built as a
-	// []string by buildShimArgs, never a shell string.
-	return exec.CommandContext(ctx, shimPath, buildShimArgs(conf, binPath, args)...)
-}
-
 // buildShimArgs assembles the argv for the ffmpeg-shim subcommand:
 //
 //	ffmpeg-shim [--dri] [--nvidia] --ro <dir> [--ro <dir>...] --rw <dir> [--rw <dir>...] -- <ffmpeg> <args...>
@@ -170,8 +157,9 @@ const ShimEnvVar = "BEAMFALL_FFMPEG_SHIM"
 
 // DefaultShimPath resolves the beamfall binary to re-exec as the hardening shim:
 // the BEAMFALL_FFMPEG_SHIM override if set, else os.Executable.
-// It returns "" when the path cannot be resolved, in which case SetHardeningShim
-// leaves hardening off (un-hardened direct exec — never a boot failure). The
+// When the path cannot be resolved it returns a sentinel the spawn seam
+// refuses, so the server boots but every media spawn fails with
+// ErrConfinementUnavailable instead of running unconfined (CORE-0700). The
 // server entrypoint calls SetHardeningShim(DefaultShimPath()) at startup; the
 // split lets a caller substitute a known binary in a test.
 func DefaultShimPath() string {
@@ -179,17 +167,17 @@ func DefaultShimPath() string {
 		return override
 	}
 	exe, err := os.Executable()
-	if err != nil {
-		return ""
+	if err != nil || exe == "" {
+		return unresolvedShimPath
 	}
 	return exe
 }
 
 // confinement names the filesystem paths a single ffmpeg job is allowed to
 // touch: the input file's directory read-only, and the output
-// directory read-write. The landlock shim (Linux) enforces exactly this set;
-// on other platforms it is advisory (rlimits still apply, filesystem reach is
-// not confined). Directories — not files — are granted: ffmpeg opens sidecars,
+// directory read-write. The spawn seam enforces exactly this set: landlock
+// through the shim on Linux, a Seatbelt profile on macOS, and a refusal
+// everywhere else (spawn_confinement.go). Directories — not files — are granted: ffmpeg opens sidecars,
 // temp files, and segment files alongside the named paths, and a directory
 // grant is the minimal set that keeps a legitimate job working.
 //
@@ -197,11 +185,16 @@ func DefaultShimPath() string {
 // or tone-maps on QSV or VA-API (CORE-2158), and NVIDIA the NVIDIA device nodes
 // and driver paths for one on NVENC/CUDA (CORE-2182); every other job leaves
 // both false.
+//
+// LoopbackPort, when non-zero, is the one loopback TCP port the macOS profile
+// lets the child reach (the encrypted-library pipe). Landlock does not fence
+// TCP at the ABI the shim requires, so Linux ignores it.
 type confinement struct {
-	ReadOnly  []string
-	ReadWrite []string
-	DRI       bool
-	NVIDIA    bool
+	ReadOnly     []string
+	ReadWrite    []string
+	DRI          bool
+	NVIDIA       bool
+	LoopbackPort int
 }
 
 // withGPU returns a copy carrying the GPU grants a job whose encode or

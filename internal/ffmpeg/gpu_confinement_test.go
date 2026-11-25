@@ -78,8 +78,12 @@ func parseRecordedShim(t *testing.T, args []string) shimFlags {
 		t.Fatalf("not a shim invocation: %q", args)
 	}
 	var flags shimFlags
+	// Every spawn on the (pinned) Linux seam must make landlock mandatory.
+	requireLandlock := false
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
+		case "--require-landlock":
+			requireLandlock = true
 		case "--dri":
 			flags.dri = true
 		case "--nvidia":
@@ -91,6 +95,9 @@ func parseRecordedShim(t *testing.T, args []string) shimFlags {
 			i++
 			flags.rw = append(flags.rw, args[i])
 		case "--":
+			if !requireLandlock {
+				t.Fatalf("shim invocation without --require-landlock: %q", args)
+			}
 			flags.target = args[i+1:]
 			return flags
 		default:
@@ -136,6 +143,7 @@ func TestHLSShimGetsOnlyItsAcceleratorsGPUGrant(t *testing.T) {
 	for _, tc := range cases {
 		selectRenditionToneMapBackend = func(context.Context, Rendition) HWAccel { return tc.toneMap }
 		runner := New()
+		pinSpawnPlatform(t, "linux")
 		runner.SetHardeningShim(shim)
 		runner.SetHardwareEncode(tc.encode)
 		rendition := Rendition{Height: 720}
@@ -169,6 +177,7 @@ func TestHLSShimGetsOnlyItsAcceleratorsGPUGrant(t *testing.T) {
 func TestEncoderAndToneMapProbesRunThroughTheShim(t *testing.T) {
 	shim, invocations := fakeShim(t)
 	ffmpegPath := fakeFFmpegOnPath(t)
+	pinSpawnPlatform(t, "linux")
 	SetProbeHardeningShim(shim)
 	t.Cleanup(func() { SetProbeHardeningShim("") })
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -243,6 +252,7 @@ func TestToneMapProbeRendersCarryItsBackend(t *testing.T) {
 func TestDeviceDecodeProbeIsConfinedToItsSample(t *testing.T) {
 	shim, invocations := fakeShim(t)
 	fakeFFmpegOnPath(t)
+	pinSpawnPlatform(t, "linux")
 	SetProbeHardeningShim(shim)
 	t.Cleanup(func() { SetProbeHardeningShim("") })
 

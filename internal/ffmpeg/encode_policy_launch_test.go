@@ -71,6 +71,7 @@ func TestSoftwareOnlyPolicyKeepsHDRToneMapOffTheDevice(t *testing.T) {
 		{"hardware off", EncodePolicy{SoftwareOnly: true}, false},
 	} {
 		runner := New()
+		pinSpawnPlatform(t, "linux")
 		runner.SetHardeningShim(shim)
 		runner.SetHardwareEncode(HardwareEncode{Accel: HWAccelNVENC})
 		runner.SetEncodePolicy(tc.policy)
@@ -156,6 +157,7 @@ func TestQualityReachesEncryptedAndComposedEncodes(t *testing.T) {
 		{QualityLow, &EncodePolicy{Quality: QualityHigh}, "20"},
 	} {
 		runner := New()
+		pinSpawnPlatform(t, "linux")
 		runner.SetHardeningShim(shim)
 		runner.SetHardwareEncode(HardwareEncode{Accel: HWAccelNVENC})
 		runner.SetEncodePolicy(EncodePolicy{Quality: tc.quality})

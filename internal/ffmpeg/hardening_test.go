@@ -89,6 +89,7 @@ func TestConfinementWithGPU(t *testing.T) {
 // child" — is verified on darwin, where landlock cannot run: the child is the
 // shim, and the shim is what applies the limits.
 func TestHardenedCommandWrapsWithShim(t *testing.T) {
+	pinSpawnPlatform(t, "linux")
 	r := New()
 	r.SetHardeningShim("/opt/beamfall")
 	cmd := r.hardenedCommand(context.Background(),
@@ -101,7 +102,7 @@ func TestHardenedCommandWrapsWithShim(t *testing.T) {
 		t.Fatalf("expected shim binary /opt/beamfall, got %q", cmd.Path)
 	}
 	want := []string{
-		"/opt/beamfall", shimSubcommand,
+		"/opt/beamfall", shimSubcommand, "--require-landlock",
 		"--ro", "/media/in",
 		"--rw", "/var/out",
 		"--",
