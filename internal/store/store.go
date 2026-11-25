@@ -1432,7 +1432,35 @@ func (s *Store) catalogPlaneForMediaLocked(ctx context.Context, id MediaID) (cat
 			return catalogPlane{}, err
 		}
 	}
-	return catalogPlane{}, ValidationError("media not found")
+	return catalogPlane{}, errPlaneMediaNotFound
+}
+
+// errPlaneMediaNotFound is what catalogPlaneForMediaLocked reports for a
+// Media that is absent, purged, or held by a sealed Encrypted Library.
+const errPlaneMediaNotFound = ValidationError("media not found")
+
+// registeredEncryptedPlanesLocked lists every open Encrypted Library plane in
+// stable Library order. Callers hold s.mu.
+func (s *Store) registeredEncryptedPlanesLocked() []catalogPlane {
+	ids := make([]LibraryID, 0, len(s.encryptedDBs))
+	for id, db := range s.encryptedDBs {
+		if db != nil && db.state == "unsealed-registered" && db.reader != nil && db.writer != nil {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	planes := make([]catalogPlane, 0, len(ids))
+	for _, id := range ids {
+		db := s.encryptedDBs[id]
+		planes = append(planes, catalogPlane{libraryID: id, encrypted: true, writer: db.writer, reader: db.reader})
+	}
+	return planes
+}
+
+// allCatalogPlanesLocked is the shared catalog followed by every open
+// Encrypted Library plane.
+func (s *Store) allCatalogPlanesLocked() []catalogPlane {
+	return append([]catalogPlane{{writer: s.catalogW, reader: s.catalogR}}, s.registeredEncryptedPlanesLocked()...)
 }
 
 func (s *Store) catalogPlaneForEntityLocked(ctx context.Context, id EntityID) (catalogPlane, error) {
