@@ -17,6 +17,13 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
+// EXPERIMENTAL (CORE-0700): image enrichment is not a production capability.
+// The production generation sweep does not run GenerateImageEnrich and
+// AssetPath refuses to serve ImageEnrichName, so no client can observe the
+// stand-in analysis below as Enrichment Plugin output. It stays callable for
+// tests and future backend work; publish it again only behind the real
+// Enrichment Plugin backend.
+//
 // Image-enrichment spec: the optional depth map,
 // salient region, and palette Generated Assets the image-capable photo Visuals
 // consume. Like the beat grid it is the optional, enrichment-produced sibling of
@@ -52,9 +59,9 @@ import (
 // *** the Enrichment Plugin MDE + saliency backend when it lands.
 const imageEnrichVersion = 1
 
-// ImageEnrichName is the wire vocabulary asset name for the bundled
-// depth/saliency/palette enrichment — added to the closed validAssetName set and
-// served by the .json content-type branch exactly like the beat grid.
+// ImageEnrichName is the asset name for the bundled depth/saliency/palette
+// enrichment. It is in the closed validAssetName set so purges reach it, but
+// AssetPath does not serve it while the analyzer is the experimental stand-in.
 const ImageEnrichName = "image-enrich.json"
 
 // Analysis grid / palette sizes. The depth grid is deliberately coarse: it is a
@@ -115,16 +122,6 @@ type ImageEnrich struct {
 // (whether or not it exists yet).
 func (s *Service) ImageEnrichPath(fingerprint string) string {
 	return filepath.Join(s.assetDir(fingerprint), ImageEnrichName)
-}
-
-// ImageEnrichAsset reports the image-enrichment name when one exists for the
-// fingerprint (the enhanced-photo-Visual availability seam — optional,
-// ADR-0047 §6).
-func (s *Service) ImageEnrichAsset(fingerprint string) (string, bool) {
-	if fingerprint == "" || !regularFileExists(s.ImageEnrichPath(fingerprint)) {
-		return "", false
-	}
-	return ImageEnrichName, true
 }
 
 // imageSource loads the Media row and primary file when the item is image-class

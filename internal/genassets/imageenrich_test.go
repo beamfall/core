@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -71,7 +72,7 @@ func structuredImage(w, h int) image.Image {
 	return img
 }
 
-func TestGenerateImageEnrichProducesStructuredAssetAndIsServable(t *testing.T) {
+func TestGenerateImageEnrichProducesStructuredAssetButIsNotServed(t *testing.T) {
 	// feature:image-enrich feature:generated-assets feature:visuals-photo
 	svc, st, _ := newTestService(t, &fakeGen{})
 	path := writePNG(t, t.TempDir(), "still.png", structuredImage(64, 64))
@@ -132,12 +133,24 @@ func TestGenerateImageEnrichProducesStructuredAssetAndIsServable(t *testing.T) {
 		t.Fatalf("center depth %v not greater than corner %v (subject should read nearer)", center, corner)
 	}
 
-	// Servable through the same fingerprint-keyed route as every other asset.
-	if name, ok := svc.ImageEnrichAsset(fingerprint); !ok || name != ImageEnrichName {
-		t.Fatalf("ImageEnrichAsset = (%q, %v), want (%q, true)", name, ok, ImageEnrichName)
+	// The stand-in is experimental (CORE-0700): even when the file exists it is
+	// not served through the fingerprint-keyed asset route.
+	if _, err := svc.AssetPath(fingerprint, ImageEnrichName); !errors.Is(err, ErrUnknownAsset) {
+		t.Fatalf("AssetPath(image enrichment) error = %v, want ErrUnknownAsset", err)
 	}
-	if _, err := svc.AssetPath(fingerprint, ImageEnrichName); err != nil {
-		t.Fatalf("image enrichment not servable: %v", err)
+}
+
+// TestProductionSweepDoesNotGenerateImageEnrich verifies the experimental
+// stand-in never runs in the production generation recipe, so it cannot be
+// observed as an enrichment capability (CORE-0700).
+func TestProductionSweepDoesNotGenerateImageEnrich(t *testing.T) {
+	svc, st, _ := newTestService(t, &fakeGen{})
+	path := writePNG(t, t.TempDir(), "still.png", structuredImage(64, 64))
+	media, fingerprint := seedImageMedia(t, st, path, "Photo Sweep")
+
+	generateMediaAssets(context.Background(), svc, media.ID)
+	if regularFileExists(svc.ImageEnrichPath(fingerprint)) {
+		t.Fatal("production sweep generated the experimental image enrichment")
 	}
 }
 
@@ -279,9 +292,6 @@ func TestGenerateImageEnrichSkipsSealedLibrary(t *testing.T) {
 	if regularFileExists(svc.ImageEnrichPath(fingerprint)) {
 		t.Fatal("sealed-Library media got a plaintext image-enrichment derivative")
 	}
-	if _, ok := svc.ImageEnrichAsset(fingerprint); ok {
-		t.Fatal("sealed-Library media got an image-enrichment existence marker")
-	}
 }
 
 func TestGenerateImageEnrichSkipsEncryptedUnsealedLibrary(t *testing.T) {
@@ -299,9 +309,6 @@ func TestGenerateImageEnrichSkipsEncryptedUnsealedLibrary(t *testing.T) {
 	}
 	if regularFileExists(svc.ImageEnrichPath(fingerprint)) {
 		t.Fatal("Unsealed encrypted-Library media got a plaintext image-enrichment derivative")
-	}
-	if _, ok := svc.ImageEnrichAsset(fingerprint); ok {
-		t.Fatal("Unsealed encrypted-Library media got an image-enrichment existence marker")
 	}
 }
 

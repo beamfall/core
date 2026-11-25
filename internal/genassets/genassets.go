@@ -475,8 +475,11 @@ func validAssetName(name string) bool {
 var ErrUnknownAsset = errors.New("unknown asset")
 
 // AssetPath resolves a requested asset name within a fingerprint's directory.
+// The experimental image enrichment stays in validAssetName, so purge and
+// rewrap sweeps still clean up files an earlier server wrote, but it is never
+// served (CORE-0700).
 func (s *Service) AssetPath(fingerprint, name string) (string, error) {
-	if fingerprint == "" || !validAssetName(name) {
+	if fingerprint == "" || !validAssetName(name) || name == ImageEnrichName {
 		return "", ErrUnknownAsset
 	}
 	path := filepath.Join(s.assetDir(fingerprint), name)
