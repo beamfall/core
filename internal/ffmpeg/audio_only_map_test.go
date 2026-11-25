@@ -87,7 +87,7 @@ func TestAudioOnlyRenditionRealEncodeWithSelectedTrack(t *testing.T) {
 					playlist = "index.m3u8"
 				}
 				probe := probeHLS(t, filepath.Join(dir, playlist))
-				if strings.Contains(probe, "codec_type=video") || strings.Count(probe, "\nstream|") != 1 || !strings.Contains(probe, "codec_name=aac|codec_type=audio") {
+				if strings.Contains(probe, "codec_type=video") || strings.Count("\n"+probe, "\nstream|") != 1 || !strings.Contains(probe, "codec_name=aac|codec_type=audio") {
 					t.Fatalf("want one AAC audio stream and no video:\n%s", probe)
 				}
 				_, durationText, _ := strings.Cut(probe, "duration=")
