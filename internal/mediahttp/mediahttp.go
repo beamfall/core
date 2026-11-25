@@ -1251,6 +1251,14 @@ func (h *Handler) servePrecomputedHLS(w http.ResponseWriter, r *http.Request, gr
 		http.Error(w, "stream unavailable", http.StatusNotFound)
 		return
 	}
+	// The rendition must still be cut from the file the grant negotiated, as
+	// the live path requires (CORE-0747): a rendition of another Version of
+	// this Media, or of a file that is no longer live, is refused.
+	file, err := h.grantFile(r.Context(), grant.MediaID, grant.FileFingerprint, scope.PlaybackFilter())
+	if err != nil || file.ContentFingerprint == "" || rendition.ContentFingerprint != file.ContentFingerprint {
+		http.Error(w, "stream unavailable", http.StatusNotFound)
+		return
+	}
 	member, ok := precomputedHLSPath(rendition.Path, name)
 	if !ok {
 		http.Error(w, "stream unavailable", http.StatusNotFound)
