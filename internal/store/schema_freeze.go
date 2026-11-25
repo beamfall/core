@@ -138,7 +138,10 @@ package store
 // Events 0034 (CORE-3379) adds party_screen.qr_corner and muted, the host's
 // per-screen join-QR corner and sound setting, read only by party reads, off
 // the entity-query hot path.
+// Encrypted-library 0014 (CORE-0768) mirrors catalog 0078's collection and
+// collection_media in the owning Library plane, read only by Collection reads
+// and the collection Source, off the entity-query hot path.
 const (
 	schemaFreezeEventsMigrations           = 34
-	schemaFreezeEncryptedLibraryMigrations = 13
+	schemaFreezeEncryptedLibraryMigrations = 14
 )
