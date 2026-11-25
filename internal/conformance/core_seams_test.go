@@ -45,9 +45,10 @@ var coreNoGoSeams = []coreNoGoSeam{
 		files:      []string{"internal/backup/service.go", "internal/store/backup.go", "internal/store/backup_ingest.go"},
 		appImports: []string{"store"},
 		needles: map[string][]string{
-			"internal/app/app.go":       {"databaseBackupHandler", "BackupWithOptions", "SetBackupIngestEncryptor"},
-			"internal/server/v1.go":     {"BackupIngest", "BackupIngestStatus"},
-			"internal/server/server.go": {"SetBackupIngestEncryptor"},
+			"internal/app/app.go":        {"databaseBackupHandler", "SetBackupIngestEncryptor"},
+			"internal/app/backup_job.go": {"BackupWithOptions"},
+			"internal/server/v1.go":      {"BackupIngest", "BackupIngestStatus"},
+			"internal/server/server.go":  {"SetBackupIngestEncryptor"},
 		},
 	},
 	{

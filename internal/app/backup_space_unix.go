@@ -10,5 +10,6 @@ func freeBytesOnFS(dir string) (uint64, bool, error) {
 	if err := unix.Statfs(dir, &st); err != nil {
 		return 0, false, err
 	}
+	//nolint:gosec // G115: Bsize is a positive filesystem block size; the product is a byte count.
 	return st.Bavail * uint64(st.Bsize), true, nil
 }
