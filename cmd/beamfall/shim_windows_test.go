@@ -11,6 +11,9 @@ import (
 func TestWindowsShimsFailClosed(t *testing.T) {
 	tests := map[string]func() error{
 		"ffmpeg": func() error {
+			prev := shimFailureExit
+			shimFailureExit = func(int) {}
+			defer func() { shimFailureExit = prev }()
 			return ffmpegShim(context.Background(), []string{"--ro", `C:\media`, "--", `C:\missing\ffmpeg.exe`})
 		},
 		"local-inference": func() error {

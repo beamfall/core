@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+
+	"github.com/beamfall/core/internal/ffmpeg"
 )
 
 // ffmpegShim is the hardening re-exec target for every ffmpeg/ffprobe spawn.
@@ -20,13 +23,25 @@ import (
 // text. It writes nothing to stdout/stderr on the happy path — it execs and is
 // gone — so it is transparent to the caller's CombinedOutput()/Output() capture
 // of the real binary's streams.
+//
+// A shim that fails before exec exits with ffmpeg.ShimFailureExitCode rather
+// than the server's generic status 1, so the parent never reads a refused
+// confinement or a bad argv as FFmpeg's own verdict on the media (CORE-0700).
 func ffmpegShim(_ context.Context, args []string) error {
 	req, err := parseShimArgs(args)
-	if err != nil {
-		return err
+	if err == nil {
+		err = runFFmpegShim(req)
 	}
-	return runFFmpegShim(req)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		shimFailureExit(ffmpeg.ShimFailureExitCode)
+	}
+	return err
 }
+
+// shimFailureExit ends a failed shim with the given status; a test seam, since
+// a test that drives ffmpegShim in-process must not exit the test binary.
+var shimFailureExit = os.Exit
 
 // ffmpegShimRequest is one parsed shim invocation.
 type ffmpegShimRequest struct {

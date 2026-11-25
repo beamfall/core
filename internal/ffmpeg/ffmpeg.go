@@ -1455,10 +1455,10 @@ const decodeVerifySampleSeconds = 15
 // A genuine inability to RUN ffmpeg (binary missing, bad path) is returned as an
 // error, never reported as broken — only the decoder's own verdict on bytes it
 // successfully opened sets broken, so a misconfigured host can never mass-flag a
-// healthy library. The error-level log is captured to surface the decoder's
-// reason in the returned bool's caller logging, not parsed for specific tokens:
-// any non-zero decode exit over real input is "broken", which keeps the verdict
-// robust across FFmpeg versions and codecs.
+// healthy library. The verdict is read from the exit status alone, never from
+// log tokens: only a decoder data status (decodeVerdict) is "broken", while a
+// signal death, a shim refusal, a resource or system errno, a timeout or a
+// cancellation is an error (CORE-0700).
 func (r *Runner) DecodeVerify(ctx context.Context, src string, durationSeconds int) (broken bool, err error) {
 	if err := checkPath(src); err != nil {
 		return false, err
@@ -1498,26 +1498,30 @@ func (r *Runner) DecodeVerify(ctx context.Context, src string, durationSeconds i
 			"-f", "null",
 			"--", os.DevNull,
 		)
-		// Read-only job, exactly like the waveform/silence passes: the null muxer
-		// writes no media bytes, so only the source's directory needs to be
-		// reachable. The shim always permits /dev/null writes. The decode itself
-		// produces no output to capture, so it runs under the supervisor (tree kill
-		// + reap on cancel/timeout) writing both streams to io.Discard.
-		cmd := r.generationCommand(ctx, readConfinement(src), ffmpegPath, args...)
-		if cmdErr := r.runWith(ctx, cmd, io.Discard, io.Discard); cmdErr != nil {
-			var exitErr *exec.ExitError
-			if errors.As(cmdErr, &exitErr) {
-				// FFmpeg ran and the decoder rejected the bytes — a real "broken"
-				// verdict, not an infrastructure failure.
-				return true, nil
-			}
-			// Could not run ffmpeg at all (e.g. context canceled, spawn failure):
-			// surface as an error so the caller never mistakes it for a corrupt
-			// file and flags a healthy library.
-			return false, fmt.Errorf("ffmpeg decode-verify: %w", cmdErr)
+		if broken, err := r.decodeVerifyWindow(ctx, src, ffmpegPath, args); broken || err != nil {
+			return broken, err
 		}
 	}
 	return false, nil
+}
+
+// decodeVerifyWindow runs one decode-verify sample window and classifies its
+// outcome with decodeVerdict. It is a read-only job, exactly like the
+// waveform/silence passes: the null muxer writes no media bytes, so only the
+// source's directory needs to be reachable, and the shim always permits
+// /dev/null writes. It runs under the supervisor (tree kill + reap on
+// cancel/timeout) with a wall-clock bound of decodeVerifyWindowTimeout,
+// discarding stdout and keeping a bounded stderr tail for the diagnostic.
+func (r *Runner) decodeVerifyWindow(ctx context.Context, src, ffmpegPath string, args []string) (bool, error) {
+	windowCtx, cancel := context.WithTimeout(ctx, decodeVerifyWindowTimeout)
+	defer cancel()
+	cmd := r.generationCommand(windowCtx, readConfinement(src), ffmpegPath, args...)
+	stderr := &lockedTail{tail: tailBuffer{limit: decodeVerifyStderrTailBytes}}
+	runErr := r.runWith(windowCtx, cmd, io.Discard, stderr)
+	if runErr != nil && ctx.Err() == nil && errors.Is(windowCtx.Err(), context.DeadlineExceeded) {
+		runErr = fmt.Errorf("sample window exceeded %s: %w", decodeVerifyWindowTimeout, runErr)
+	}
+	return decodeVerdict(runErr, stderr.String())
 }
 
 // SubtitleDelivery names how a subtitle stream reaches a given engine.

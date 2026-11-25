@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"reflect"
@@ -232,9 +233,46 @@ func TestFFmpegShimAppliesRlimits(t *testing.T) {
 // TestFFmpegShimRejectsBadArgs proves the shim surfaces a parse error rather
 // than exec'ing something unexpected.
 func TestFFmpegShimRejectsBadArgs(t *testing.T) {
+	status := stubShimFailureExit(t)
 	if err := ffmpegShim(context.Background(), []string{"--ro", "/x"}); err == nil {
 		t.Fatal("ffmpegShim accepted args with no command")
 	}
+	if *status != ffmpeg.ShimFailureExitCode {
+		t.Fatalf("shim failure exit = %d, want ffmpeg.ShimFailureExitCode (%d)", *status, ffmpeg.ShimFailureExitCode)
+	}
+}
+
+// TestFFmpegShimFailureExitStatusIsDistinct runs the real shim as a child with
+// an argv it must refuse and proves the parent sees ShimFailureExitCode, not
+// the generic status 1 FFmpeg also uses for a failed decode (CORE-0700).
+func TestFFmpegShimFailureExitStatusIsDistinct(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Skipf("os.Executable: %v", err)
+	}
+	cmd := exec.Command(exe, "ffmpeg-shim", "--ro", t.TempDir()) // #nosec G204 -- the test binary itself; no "--" command, so the shim refuses before exec
+	out, err := cmd.CombinedOutput()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("shim child error = %v, want an exit status (output %q)", err, out)
+	}
+	if got := exitErr.ExitCode(); got != ffmpeg.ShimFailureExitCode {
+		t.Fatalf("shim child exit = %d, want %d (output %q)", got, ffmpeg.ShimFailureExitCode, out)
+	}
+	if !strings.Contains(string(out), "ffmpeg-shim:") {
+		t.Fatalf("shim child output %q lacks its diagnostic", out)
+	}
+}
+
+// stubShimFailureExit replaces the shim's process exit for one in-process test
+// and returns where the requested status is recorded (-1 when never called).
+func stubShimFailureExit(t *testing.T) *int {
+	t.Helper()
+	status := -1
+	prev := shimFailureExit
+	shimFailureExit = func(code int) { status = code }
+	t.Cleanup(func() { shimFailureExit = prev })
+	return &status
 }
 
 func lastJSONLine(out string) string {
