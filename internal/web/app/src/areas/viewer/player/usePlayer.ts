@@ -645,12 +645,27 @@ export function usePlayer(
   // Song seconds per stream second of the stream playing now: the tempo the
   // server applied. Progress reports and the resume point stay in song time.
   const songScaleRef = useRef(1);
-  // Restarts the stream with a new key or tempo at the same song position.
+  const adjustTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (adjustTimerRef.current !== null) {
+        window.clearTimeout(adjustTimerRef.current);
+      }
+    };
+  }, []);
+  // Restarts the stream with a new key or tempo at the same song position,
+  // debounced so rapid +/- taps coalesce into one transcode restart.
   const adjust = useCallback(
     (next: PlaybackAdjustment) => {
       retryFromRef.current = { mediaID, position: lastPositionRef.current };
       setRequested({ mediaID, adjustment: next });
-      setRetryKey((key) => key + 1);
+      if (adjustTimerRef.current !== null) {
+        window.clearTimeout(adjustTimerRef.current);
+      }
+      adjustTimerRef.current = window.setTimeout(() => {
+        adjustTimerRef.current = null;
+        setRetryKey((key) => key + 1);
+      }, 300);
     },
     [mediaID],
   );
