@@ -10,6 +10,10 @@
       "effect": "read"
     },
     {
+      "field": "acknowledgebackupbanner",
+      "effect": "write"
+    },
+    {
       "field": "acknowledgebackupkey",
       "effect": "write"
     },
@@ -35,6 +39,10 @@
     },
     {
       "field": "backupkeystatus",
+      "effect": "read"
+    },
+    {
+      "field": "backupstatus",
       "effect": "read"
     },
     {
@@ -382,6 +390,10 @@
       "effect": "write"
     },
     {
+      "field": "setbackupupgradegate",
+      "effect": "write"
+    },
+    {
       "field": "setcertificationceiling",
       "effect": "write"
     },
@@ -551,6 +563,10 @@
     },
     {
       "field": "verifybackup",
+      "effect": "write"
+    },
+    {
+      "field": "verifybackupnow",
       "effect": "write"
     },
     {

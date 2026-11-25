@@ -1,12 +1,12 @@
 package backup
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
-
-	"github.com/beamfall/core/internal/jsonstate"
 )
 
 // statusFileName holds the ADR-0192 §6 operator state for scheduled backups:
@@ -68,7 +68,7 @@ func (s Status) EffectiveUpgradeGate() string {
 	return UpgradeGateSoft
 }
 
-// BannerActive reports whether a failure banner shows: its failure exists and
+// BannerActive reports whether a failure banner is displayed: its failure exists and
 // is neither superseded by a later verified backup nor acknowledged.
 func (s Status) BannerActive(b Banner) bool {
 	failure, ack := s.LastFailure, s.BackupFailedAckAt
@@ -93,23 +93,34 @@ func statusPath(dataDir string) string { return filepath.Join(dataDir, statusFil
 func LoadStatus(dataDir string) (Status, error) {
 	statusMu.Lock()
 	defer statusMu.Unlock()
+	return loadStatusLocked(dataDir)
+}
+
+// loadStatusLocked reads the status file; a missing file is a fresh Status.
+func loadStatusLocked(dataDir string) (Status, error) {
 	var s Status
-	_, err := jsonstate.Load(statusPath(dataDir), &s)
-	return s, err
+	raw, err := os.ReadFile(statusPath(dataDir))
+	if errors.Is(err, os.ErrNotExist) {
+		return s, nil
+	}
+	if err != nil {
+		return s, err
+	}
+	return s, json.Unmarshal(raw, &s)
 }
 
 // UpdateStatus applies mutate to the persisted status atomically.
 func UpdateStatus(dataDir string, mutate func(*Status) error) (Status, error) {
 	statusMu.Lock()
 	defer statusMu.Unlock()
-	var s Status
-	if _, err := jsonstate.Load(statusPath(dataDir), &s); err != nil {
+	s, err := loadStatusLocked(dataDir)
+	if err != nil {
 		return Status{}, err
 	}
 	if err := mutate(&s); err != nil {
 		return Status{}, err
 	}
-	if err := jsonstate.Save(statusPath(dataDir), s); err != nil {
+	if err := writeJSONPrivate(statusPath(dataDir), s); err != nil {
 		return Status{}, err
 	}
 	return s, nil

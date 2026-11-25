@@ -175,6 +175,120 @@
     ]
   },
   {
+    "field": "acknowledgebackupbanner",
+    "kind": "object",
+    "children": [
+      {
+        "name": "backupFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "integrityFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastDrill",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "backupCreatedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "databases",
+            "kind": "scalar"
+          },
+          {
+            "name": "durationMs",
+            "kind": "scalar"
+          },
+          {
+            "name": "libraries",
+            "kind": "scalar"
+          },
+          {
+            "name": "reason",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          },
+          {
+            "name": "verified",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastIntegrityFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastSuccess",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "upgradeGate",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "acknowledgebackupkey",
     "kind": "object",
     "children": [
@@ -2053,6 +2167,120 @@
       },
       {
         "name": "pending",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "backupstatus",
+    "kind": "object",
+    "children": [
+      {
+        "name": "backupFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "integrityFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastDrill",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "backupCreatedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "databases",
+            "kind": "scalar"
+          },
+          {
+            "name": "durationMs",
+            "kind": "scalar"
+          },
+          {
+            "name": "libraries",
+            "kind": "scalar"
+          },
+          {
+            "name": "reason",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          },
+          {
+            "name": "verified",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastIntegrityFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastSuccess",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "upgradeGate",
         "kind": "scalar"
       }
     ]
@@ -48721,6 +48949,120 @@
     ]
   },
   {
+    "field": "setbackupupgradegate",
+    "kind": "object",
+    "children": [
+      {
+        "name": "backupFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "integrityFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastDrill",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "backupCreatedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "databases",
+            "kind": "scalar"
+          },
+          {
+            "name": "durationMs",
+            "kind": "scalar"
+          },
+          {
+            "name": "libraries",
+            "kind": "scalar"
+          },
+          {
+            "name": "reason",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          },
+          {
+            "name": "verified",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastIntegrityFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastSuccess",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "upgradeGate",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "setcapabilityenabled",
     "kind": "list",
     "elem": {
@@ -62228,6 +62570,44 @@
       },
       {
         "name": "ok",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "verifybackupnow",
+    "kind": "object",
+    "children": [
+      {
+        "name": "at",
+        "kind": "scalar"
+      },
+      {
+        "name": "backupCreatedAt",
+        "kind": "scalar"
+      },
+      {
+        "name": "databases",
+        "kind": "scalar"
+      },
+      {
+        "name": "durationMs",
+        "kind": "scalar"
+      },
+      {
+        "name": "libraries",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "kind": "scalar"
+      },
+      {
+        "name": "set",
+        "kind": "scalar"
+      },
+      {
+        "name": "verified",
         "kind": "scalar"
       }
     ]

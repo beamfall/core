@@ -65,6 +65,20 @@
       ]
     },
     {
+      "field": "acknowledgebackupbanner",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backupFailedBanner",
+        "integrityFailedBanner",
+        "lastDrill",
+        "lastFailure",
+        "lastIntegrityFailure",
+        "lastSuccess",
+        "upgradeGate"
+      ]
+    },
+    {
       "field": "acknowledgebackupkey",
       "effect": "write",
       "tier": "admin",
@@ -362,6 +376,20 @@
         "daysLeft",
         "expiresAt",
         "pending"
+      ]
+    },
+    {
+      "field": "backupstatus",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "backupFailedBanner",
+        "integrityFailedBanner",
+        "lastDrill",
+        "lastFailure",
+        "lastIntegrityFailure",
+        "lastSuccess",
+        "upgradeGate"
       ]
     },
     {
@@ -4384,6 +4412,20 @@
       ]
     },
     {
+      "field": "setbackupupgradegate",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backupFailedBanner",
+        "integrityFailedBanner",
+        "lastDrill",
+        "lastFailure",
+        "lastIntegrityFailure",
+        "lastSuccess",
+        "upgradeGate"
+      ]
+    },
+    {
       "field": "setcapabilityenabled",
       "effect": "write",
       "tier": "admin",
@@ -5850,6 +5892,21 @@
       "children": [
         "error",
         "ok"
+      ]
+    },
+    {
+      "field": "verifybackupnow",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "at",
+        "backupCreatedAt",
+        "databases",
+        "durationMs",
+        "libraries",
+        "reason",
+        "set",
+        "verified"
       ]
     },
     {

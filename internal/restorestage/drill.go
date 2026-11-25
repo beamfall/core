@@ -22,7 +22,7 @@ const DefaultDrillTimeout = 15 * time.Minute
 // restore's own staging copy all live in scratch at once.
 const drillSpaceFactor = 3
 
-// Drill refusals. Each is safe to show the admin.
+// Drill refusals. Each is safe to display to the admin.
 var (
 	ErrDrillRunning = RefusalError("a restore drill is already running")
 	ErrDrillBusy    = RefusalError("the server is busy; run the restore drill when it is idle")

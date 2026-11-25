@@ -31,7 +31,7 @@ func treeDigest(t *testing.T, dir string) map[string]string {
 			out[rel+"/"] = "dir"
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) // #nosec G304 G122 -- test-owned temp dir
 		if err != nil {
 			return err
 		}
