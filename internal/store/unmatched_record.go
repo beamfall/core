@@ -1,12 +1,14 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"time"
 )
 
@@ -68,6 +70,52 @@ type UnmatchedRecord struct {
 // Resolved reports whether the record has been resolved (associate-or-create).
 func (r UnmatchedRecord) Resolved() bool { return !r.ResolvedAt.IsZero() }
 
+// unmatchedCatalogSQL restricts catalog.db unmatched_record rows to records
+// with no Library yet or of a plaintext Library. An Encrypted Library's records
+// live on its own plane (CORE-0706); legacy rows it left in catalog.db stay
+// hidden until unseal moves them.
+const unmatchedCatalogSQL = `(library_id IS NULL OR ` + plaintextLibrarySQL + `)`
+
+// unmatchedPlaneFilterSQL is unmatchedCatalogSQL for catalog.db and an
+// always-true condition for a protected plane, which holds only its own
+// Library's records.
+func unmatchedPlaneFilterSQL(plane catalogPlane) string {
+	if plane.encrypted {
+		return "1 = 1"
+	}
+	return unmatchedCatalogSQL
+}
+
+// unmatchedWritePlaneLocked returns the plane a new record for libraryID is
+// written to: catalog.db for a Library-less or plaintext record, the unsealed
+// plane for an Encrypted Library. A Sealed Library is refused with
+// ErrEncryptedLibraryDBDisabled rather than written to catalog.db.
+func (s *Store) unmatchedWritePlaneLocked(ctx context.Context, libraryID LibraryID) (catalogPlane, error) {
+	if libraryID == "" {
+		return catalogPlane{writer: s.catalogW, reader: s.catalogR}, nil
+	}
+	return s.catalogPlaneForLibraryLocked(ctx, libraryID)
+}
+
+// unmatchedRecordPlaneLocked finds the plane holding record id. A record of a
+// Sealed Library reads as ErrUnmatchedRecordNotFound, the same answer as an
+// unknown ID.
+func (s *Store) unmatchedRecordPlaneLocked(ctx context.Context, id string) (catalogPlane, error) {
+	for _, plane := range s.expressionReadPlanesLocked() {
+		var one int
+		// #nosec G202 -- unmatchedPlaneFilterSQL returns one of two closed literals.
+		err := plane.reader.QueryRowContext(ctx,
+			`SELECT 1 FROM unmatched_record WHERE id = ? AND `+unmatchedPlaneFilterSQL(plane), id).Scan(&one)
+		if err == nil {
+			return plane, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return catalogPlane{}, err
+		}
+	}
+	return catalogPlane{}, ErrUnmatchedRecordNotFound
+}
+
 func randomUnmatchedRecordID() (string, error) {
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -83,7 +131,9 @@ func randomUnmatchedRecordID() (string, error) {
 // (Media-keyed current-state UPSERT), each call is a fresh append — a distinct
 // source record is a distinct row, so an import run's unmatched items accumulate
 // as an audit trail rather than collapsing onto one Media key. Server-internal
-// write — visibility gating belongs to the read side.
+// write — visibility gating belongs to the read side. A record of an
+// Encrypted Library is written to that Library's plane, and refused while the
+// Library is sealed.
 func (s *Store) QueueUnmatchedRecord(ctx context.Context, rec UnmatchedRecord) (string, error) {
 	if rec.Origin == "" {
 		return "", errors.New("origin is required")
@@ -105,7 +155,11 @@ func (s *Store) QueueUnmatchedRecord(ctx context.Context, rec UnmatchedRecord) (
 	if err := s.guardLocked(); err != nil {
 		return "", err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	plane, err := s.unmatchedWritePlaneLocked(ctx, rec.LibraryID)
+	if err != nil {
+		return "", err
+	}
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT INTO unmatched_record(
 			id, origin, library_id, media_id, import_run_id, import_importer_id,
 			source_handle, candidate_id, candidate_title, confidence,
@@ -136,8 +190,12 @@ func (s *Store) QueueUnmatchedRecordOnce(ctx context.Context, rec UnmatchedRecor
 	if guardErr := s.guardLocked(); guardErr != nil {
 		return "", err
 	}
+	plane, planeErr := s.unmatchedWritePlaneLocked(ctx, rec.LibraryID)
+	if planeErr != nil {
+		return "", err
+	}
 	var one int
-	lookupErr := s.catalogR.QueryRowContext(ctx,
+	lookupErr := plane.reader.QueryRowContext(ctx,
 		"SELECT 1 FROM unmatched_record WHERE id = ?", rec.ID).Scan(&one)
 	if lookupErr == nil {
 		return rec.ID, nil
@@ -153,8 +211,15 @@ func (s *Store) UnmatchedRecordPending(ctx context.Context, id string) (bool, er
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	plane, err := s.unmatchedRecordPlaneLocked(ctx, id)
+	if errors.Is(err, ErrUnmatchedRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	var resolvedAt sql.NullInt64
-	err := s.catalogR.QueryRowContext(ctx,
+	err = plane.reader.QueryRowContext(ctx,
 		"SELECT resolved_at_ms FROM unmatched_record WHERE id = ?", id).Scan(&resolvedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -183,9 +248,16 @@ func (s *Store) ResolveUnmatchedRecord(ctx context.Context, id string, resolvedM
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	plane, err := s.unmatchedRecordPlaneLocked(ctx, id)
+	if errors.Is(err, ErrUnmatchedRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	// Only stamp still-pending rows so the audit records the first resolution;
 	// a repeated call finds nothing to update yet still reports the record exists.
-	result, err := s.catalogW.ExecContext(ctx, `
+	result, err := plane.writer.ExecContext(ctx, `
 		UPDATE unmatched_record
 		SET resolved_at_ms = ?, resolved_media_id = ?
 		WHERE id = ? AND resolved_at_ms IS NULL
@@ -207,7 +279,7 @@ func (s *Store) ResolveUnmatchedRecord(ctx context.Context, id string, resolvedM
 		resolvedAt      sql.NullInt64
 		associatedMedia sql.NullString
 	)
-	err = s.catalogR.QueryRowContext(ctx,
+	err = plane.reader.QueryRowContext(ctx,
 		"SELECT resolved_at_ms, resolved_media_id FROM unmatched_record WHERE id = ?",
 		id,
 	).Scan(&resolvedAt, &associatedMedia)
@@ -240,7 +312,11 @@ func (s *Store) UnmatchedRecordByID(ctx context.Context, id string, filter Libra
 		resolvedMediaID sql.NullString
 		queuedAtMS      int64
 	)
-	err := s.catalogR.QueryRowContext(ctx, `
+	plane, err := s.unmatchedRecordPlaneLocked(ctx, id)
+	if err != nil {
+		return UnmatchedRecord{}, err
+	}
+	err = plane.reader.QueryRowContext(ctx, `
 		SELECT id, origin, library_id, media_id, import_run_id, import_importer_id,
 		       source_handle, candidate_id, candidate_title, confidence,
 		       failure_reason, queued_at_ms, resolved_at_ms, resolved_media_id
@@ -308,7 +384,14 @@ func (s *Store) AssociateImportUnmatchedRecord(ctx context.Context, id, importRu
 		resolved   sql.NullInt64
 		associated sql.NullString
 	)
-	err := s.catalogR.QueryRowContext(ctx, `
+	plane, err := s.unmatchedRecordPlaneLocked(ctx, id)
+	if errors.Is(err, ErrUnmatchedRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	err = plane.reader.QueryRowContext(ctx, `
 		SELECT library_id, resolved_at_ms, resolved_media_id
 		FROM unmatched_record
 		WHERE id = ? AND origin = ? AND import_run_id = ?
@@ -340,7 +423,7 @@ func (s *Store) AssociateImportUnmatchedRecord(ctx context.Context, id, importRu
 	if resolved.Valid {
 		return associated.Valid && MediaID(associated.String) == resolvedMediaID, nil
 	}
-	result, err := s.catalogW.ExecContext(ctx, `
+	result, err := plane.writer.ExecContext(ctx, `
 		UPDATE unmatched_record
 		SET resolved_at_ms = ?, resolved_media_id = ?
 		WHERE id = ? AND origin = ? AND import_run_id = ? AND resolved_at_ms IS NULL
@@ -355,7 +438,7 @@ func (s *Store) AssociateImportUnmatchedRecord(ctx context.Context, id, importRu
 	if affected > 0 {
 		return true, nil
 	}
-	err = s.catalogR.QueryRowContext(ctx, `
+	err = plane.reader.QueryRowContext(ctx, `
 		SELECT resolved_media_id
 		FROM unmatched_record
 		WHERE id = ? AND origin = ? AND import_run_id = ?
@@ -396,7 +479,8 @@ func (s *Store) UnmatchedRecordsForImportRun(ctx context.Context, importRunID st
 // to no Library yet — carries source handles and provenance that are not scoped
 // to any grant, so it is fail-closed: shown ONLY to an all-Libraries (ops/admin)
 // scope, never to a partial-grant Manager session. Resolved records are excluded
-// — this is the pending review inbox.
+// — this is the pending review inbox. It spans catalog.db and every unsealed
+// Encrypted Library plane; a Sealed Library's records are not listed.
 func (s *Store) UnmatchedRecords(ctx context.Context, filter LibraryFilter) ([]UnmatchedRecord, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -413,19 +497,41 @@ func (s *Store) UnmatchedRecords(ctx context.Context, filter LibraryFilter) ([]U
 			visible[library.ID] = true
 		}
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	out := []UnmatchedRecord{}
+	for _, plane := range s.expressionReadPlanesLocked() {
+		records, err := pendingUnmatchedRecords(ctx, plane, visible, filter)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, records...)
+	}
+	// Each plane is already newest-first; merge them into one order.
+	slices.SortStableFunc(out, func(a, b UnmatchedRecord) int {
+		if c := b.QueuedAt.Compare(a.QueuedAt); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+	return out, nil
+}
+
+// pendingUnmatchedRecords reads one plane's pending records that the filter
+// lets the session see.
+func pendingUnmatchedRecords(ctx context.Context, plane catalogPlane, visible map[LibraryID]bool, filter LibraryFilter) ([]UnmatchedRecord, error) {
+	// #nosec G202 -- unmatchedPlaneFilterSQL returns one of two closed literals.
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT id, origin, library_id, media_id, import_run_id, import_importer_id,
 		       source_handle, candidate_id, candidate_title, confidence,
 		       failure_reason, queued_at_ms
 		FROM unmatched_record
-		WHERE resolved_at_ms IS NULL
+		WHERE resolved_at_ms IS NULL AND `+unmatchedPlaneFilterSQL(plane)+`
 		ORDER BY queued_at_ms DESC, id
 	`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []UnmatchedRecord{}
+	var out []UnmatchedRecord
 	for rows.Next() {
 		var (
 			rec       UnmatchedRecord

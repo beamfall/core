@@ -1,9 +1,11 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 )
@@ -64,7 +66,10 @@ func validSuppressionScope(scope string) bool {
 // than creating a second row, so a retry after a transport error can never leave
 // a partial or duplicated suppression. Suppressing one scope leaves both sibling
 // scopes untouched — they are separate rows by construction. Server-internal
-// write; the calling surface resolves visibility and authorization.
+// write; the calling surface resolves visibility and authorization. A
+// suppression naming a record is stored on that record's plane, so the
+// provenance of an Encrypted Library's record never reaches catalog.db; one
+// naming no record, or a record no unsealed plane holds, stays in catalog.db.
 func (s *Store) SuppressUnmatched(ctx context.Context, suppression UnmatchedSuppression) error {
 	if !validSuppressionScope(suppression.Scope) {
 		return ValidationError("scope must be source-record, file, or candidate")
@@ -81,7 +86,17 @@ func (s *Store) SuppressUnmatched(ctx context.Context, suppression UnmatchedSupp
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	plane := catalogPlane{writer: s.catalogW, reader: s.catalogR}
+	if suppression.RecordID != "" {
+		recordPlane, err := s.unmatchedRecordPlaneLocked(ctx, suppression.RecordID)
+		switch {
+		case err == nil:
+			plane = recordPlane
+		case !errors.Is(err, ErrUnmatchedRecordNotFound):
+			return err
+		}
+	}
+	_, err := plane.writer.ExecContext(ctx, `
 		INSERT INTO unmatched_suppression(scope, scope_key, record_id, source_handle, actor_profile_id, created_at_ms)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(scope, scope_key) DO UPDATE SET
@@ -112,16 +127,20 @@ func (s *Store) ResetUnmatchedSuppression(ctx context.Context, scope, key string
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	result, err := s.catalogW.ExecContext(ctx,
-		"DELETE FROM unmatched_suppression WHERE scope = ? AND scope_key = ?", scope, key)
-	if err != nil {
-		return false, err
+	removed := false
+	for _, plane := range s.expressionReadPlanesLocked() {
+		result, err := plane.writer.ExecContext(ctx,
+			"DELETE FROM unmatched_suppression WHERE scope = ? AND scope_key = ?", scope, key)
+		if err != nil {
+			return false, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return false, err
+		}
+		removed = removed || affected > 0
 	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	return affected > 0, nil
+	return removed, nil
 }
 
 // UnmatchedSuppressed is the eligibility predicate the re-import and re-scan
@@ -135,28 +154,52 @@ func (s *Store) UnmatchedSuppressed(ctx context.Context, scope, key string) (boo
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	var one int
-	err := s.catalogR.QueryRowContext(ctx,
-		"SELECT 1 FROM unmatched_suppression WHERE scope = ? AND scope_key = ?", scope, key).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+	for _, plane := range s.expressionReadPlanesLocked() {
+		var one int
+		err := plane.reader.QueryRowContext(ctx,
+			"SELECT 1 FROM unmatched_suppression WHERE scope = ? AND scope_key = ?", scope, key).Scan(&one)
+		if err == nil {
+			return true, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return false, err
+		}
 	}
-	if err != nil {
-		return false, err
-	}
-	return true, nil
+	return false, nil
 }
 
 // UnmatchedSuppressions lists the active suppressions, newest first. With a
 // recordID it returns that record's own suppressions (its record scope plus any
 // candidate scopes); with "" it returns every active suppression — the operator
 // surface that shows what is currently being skipped and offers each reset.
+// It spans catalog.db and every unsealed Encrypted Library plane.
 func (s *Store) UnmatchedSuppressions(ctx context.Context, recordID string) ([]UnmatchedSuppression, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
+	out := []UnmatchedSuppression{}
+	for _, plane := range s.expressionReadPlanesLocked() {
+		suppressions, err := planeUnmatchedSuppressions(ctx, plane, recordID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, suppressions...)
+	}
+	slices.SortStableFunc(out, func(a, b UnmatchedSuppression) int {
+		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Scope, b.Scope); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Key, b.Key)
+	})
+	return out, nil
+}
+
+func planeUnmatchedSuppressions(ctx context.Context, plane catalogPlane, recordID string) ([]UnmatchedSuppression, error) {
 	query := `
 		SELECT scope, scope_key, record_id, source_handle, actor_profile_id, created_at_ms
 		FROM unmatched_suppression
@@ -167,12 +210,12 @@ func (s *Store) UnmatchedSuppressions(ctx context.Context, recordID string) ([]U
 		args = append(args, recordID)
 	}
 	query += " ORDER BY created_at_ms DESC, scope, scope_key"
-	rows, err := s.catalogR.QueryContext(ctx, query, args...)
+	rows, err := plane.reader.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []UnmatchedSuppression{}
+	var out []UnmatchedSuppression
 	for rows.Next() {
 		var (
 			suppression UnmatchedSuppression
