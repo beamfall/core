@@ -135,3 +135,31 @@ func mustScope(t *testing.T, authz *auth.Service, sessionID store.SessionID, dev
 	}
 	return scope
 }
+
+func TestOfferClaimPreservesPlaybackAndKaraokeState(t *testing.T) {
+	_, authz, service, _ := newTestService(t)
+	ctx := context.Background()
+	scope := mustScope(t, authz, "session-default", "device-tv", "dev-tv-secret")
+	audioIdx, subIdx := 2, 1
+	offer, err := service.CreateOffer(ctx, scope, OfferRequest{
+		MediaID:             "media-alpha",
+		PositionSeconds:     42,
+		AudioStreamIndex:    &audioIdx,
+		SubtitleIndex:       &subIdx,
+		PitchShiftSemitones: -3,
+		Tempo:               1.1,
+		Paused:              true,
+	})
+	if err != nil {
+		t.Fatalf("CreateOffer: %v", err)
+	}
+	claim, err := service.ClaimOffer(ctx, scope, ClaimRequest{HandoffToken: offer.HandoffToken})
+	if err != nil {
+		t.Fatalf("ClaimOffer: %v", err)
+	}
+	if claim.AudioStreamIndex == nil || *claim.AudioStreamIndex != 2 ||
+		claim.SubtitleIndex == nil || *claim.SubtitleIndex != 1 ||
+		claim.PitchShiftSemitones != -3 || claim.Tempo != 1.1 || !claim.Paused {
+		t.Fatalf("claimed state mismatch: %+v", claim)
+	}
+}

@@ -550,6 +550,8 @@ export function usePlayer(
   startID?: string,
   /** Restore the lead's shared playback when returning to the player. */
   restorePartyPlayback = false,
+  /** Initial key/tempo adjustment to apply on the first load without a double-start. */
+  initialAdjustment?: PlaybackAdjustment,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -636,7 +638,7 @@ export function usePlayer(
   const [requested, setRequested] = useState<{
     mediaID: string;
     adjustment: PlaybackAdjustment;
-  } | null>(null);
+  } | null>(() => (initialAdjustment ? { mediaID, adjustment: initialAdjustment } : null));
   const adjustment = requested?.mediaID === mediaID ? requested.adjustment : DEFAULT_ADJUSTMENT;
   const adjustmentRef = useRef(adjustment);
   adjustmentRef.current = adjustment;

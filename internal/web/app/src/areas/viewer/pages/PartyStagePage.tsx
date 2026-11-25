@@ -351,6 +351,9 @@ function StagePlayer({
   const [startAtSeconds] = useState(() =>
     anchor ? anchorTargetMS(anchor, serverNow()) / 1000 : 0,
   );
+  const tempo = anchor?.tempo ?? 1;
+  const pitch = anchor?.pitchSemitones ?? 0;
+  const [initialAdjustment] = useState(() => ({ pitchShiftSemitones: pitch, tempo }));
   const { videoRef, state, retry, adjustment, adjust } = usePlayer(
     entry.mediaID,
     {
@@ -371,6 +374,12 @@ function StagePlayer({
       sourceEndsEarly: t("playbackSourceEndsEarly"),
     },
     startAtSeconds,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    initialAdjustment,
   );
   const [needsGesture, setNeedsGesture] = useState(false);
   const advancedRef = useRef(false);
@@ -391,8 +400,6 @@ function StagePlayer({
     if (video) video.muted = muted;
   }, [muted, videoRef]);
 
-  const tempo = anchor?.tempo ?? 1;
-  const pitch = anchor?.pitchSemitones ?? 0;
   useEffect(() => {
     if (state.phase !== "playing") return;
     const want = { pitchShiftSemitones: pitch, tempo };
@@ -443,7 +450,7 @@ function StagePlayer({
   }, [entry.mediaID, serverNow, videoRef, driftRef]);
 
   const onEnded = () => {
-    if (advancedRef.current) return;
+    if (!stage.lead || advancedRef.current) return;
     advancedRef.current = true;
     void partyAdvance(entry.id).catch(() => {
       advancedRef.current = false;

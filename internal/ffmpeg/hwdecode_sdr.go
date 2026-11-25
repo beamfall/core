@@ -29,6 +29,9 @@ func (r Rendition) sdrDeviceDecodeEligible() bool {
 	if r.CopyVideo || r.AudioOnly || r.needsToneMap() {
 		return false
 	}
+	if !r.adjust.IsZero() && r.adjust.Tempo != 0 && r.adjust.Tempo != 1 {
+		return false
+	}
 	if r.burnSubtitleIndex != 0 || interlacedFieldOrder(r.FieldOrder) || nonSquareSampleAspect(r.SampleAspectRatio) {
 		return false
 	}

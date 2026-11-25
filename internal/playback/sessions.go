@@ -415,6 +415,8 @@ type hlsSession struct {
 	charged        bool
 	watcherMu      sync.Mutex
 	watcher        *sessionWatcher
+	sharedGroup    *sharedGroup
+	sharedDir      string
 	// run is the generation of the current or most recent process (proc).
 	run *encoderRun
 	// lastCrashed records that the most recent process exit was a crash, so
@@ -638,6 +640,8 @@ type Sessions struct {
 	// charges includes all capacity owners through reap, even detached ones,
 	// mapped to their weighted transcode slot cost.
 	charges       map[*hlsSession]int
+	sharedGroups  map[sharedEncoderKey]*sharedGroup
+	roster        PartyRoster
 	revocations   map[*hlsSession]*sessionTeardown
 	continuations map[*hlsSession]struct{}
 	// starting counts ensureRung starts running with mu released.
@@ -1037,6 +1041,7 @@ func (s *Sessions) detach(matches func(SessionKey) bool) (int, func()) {
 			if session.admitted || session.state == sessionRunning {
 				revoked++
 			}
+			s.detachFromSharedGroupLocked(session)
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{cleanupOnRelease: true}).teardown)
 		}
 	}
@@ -1045,6 +1050,7 @@ func (s *Sessions) detach(matches func(SessionKey) bool) (int, func()) {
 			if session.admitted {
 				revoked++
 			}
+			s.detachFromSharedGroupLocked(session)
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{cleanupOnRelease: true}).teardown)
 		}
 	}
@@ -1200,7 +1206,7 @@ func (b *LiveBinding) prepare(ctx context.Context, src string, durationSeconds, 
 func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, session *hlsSession, name string, budget time.Duration) (artifactObservation, error) {
 	var err error
 	if name == masterPlaylistName {
-		return artifactObservation{path: filepath.Join(session.dir, masterPlaylistName)}, nil
+		return artifactObservation{path: filepath.Join(session.mediaDir(), masterPlaylistName)}, nil
 	}
 	rungID, file, ok := strings.Cut(name, "/")
 	if !ok || !rungFileName.MatchString(file) {
@@ -1210,9 +1216,18 @@ func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, sess
 	if !ok {
 		return artifactObservation{}, ErrUnknownStreamFile
 	}
-	path := filepath.Join(session.dir, rungID, file)
-
 	segment := 0
+	if match := segmentName.FindStringSubmatch(file); match != nil {
+		segment, _ = strconv.Atoi(match[1])
+	} else if file == initSegmentName {
+		segment = initRequest
+	}
+	s.mu.Lock()
+	leader := s.attachSharedGroupLocked(session, rung, segment)
+	mediaDir := session.mediaDir()
+	s.mu.Unlock()
+	path := filepath.Join(mediaDir, rungID, file)
+
 	var run *encoderRun
 	switch {
 	case file == "index.m3u8":
@@ -1220,17 +1235,22 @@ func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, sess
 			return artifactObservation{path: path}, nil // synthesized at session creation
 		}
 		// Linear mode: ffmpeg owns the variant playlist, so it must run.
-		if run, err = s.ensureRung(ctx, key, session, rung, 0, path, false); err != nil {
+		if leader != nil && leader != session {
+			s.mu.Lock()
+			run = leader.run
+			s.mu.Unlock()
+		} else if run, err = s.ensureRung(ctx, key, session, rung, 0, path, false); err != nil {
 			return artifactObservation{}, err
 		}
 	case file == initSegmentName:
-		segment = initRequest
-		if run, err = s.ensureRung(ctx, key, session, rung, segment, path, false); err != nil {
+		if leader != nil && leader != session {
+			s.mu.Lock()
+			run = leader.run
+			s.mu.Unlock()
+		} else if run, err = s.ensureRung(ctx, key, session, rung, segment, path, false); err != nil {
 			return artifactObservation{}, err
 		}
 	default:
-		match := segmentName.FindStringSubmatch(file)
-		segment, _ = strconv.Atoi(match[1])
 		if session.durationSeconds > 0 && segment >= session.playlistSegmentCount(rung) {
 			return artifactObservation{}, ErrUnknownStreamFile
 		}
@@ -1283,13 +1303,23 @@ func (s *Sessions) playlistSegment(ctx context.Context, key SessionKey, session 
 // encoderSegment waits for encoder segment file segment of rung, starting or
 // moving the encoder when the running one will not reach it.
 func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, budget time.Duration) (artifactObservation, error) {
-	path := filepath.Join(session.dir, rung.ID, fmt.Sprintf("seg%05d.m4s", segment))
 	if s.beyondSourceEnd(session, rung, segment) {
 		return artifactObservation{}, ErrSourceEnded
 	}
-	run, err := s.ensureRung(ctx, key, session, rung, segment, path, false)
-	if err != nil {
-		return artifactObservation{}, err
+	s.mu.Lock()
+	leader := s.attachSharedGroupLocked(session, rung, segment)
+	path := filepath.Join(session.mediaDir(), rung.ID, fmt.Sprintf("seg%05d.m4s", segment))
+	var run *encoderRun
+	if leader != nil && leader != session {
+		run = leader.run
+	}
+	s.mu.Unlock()
+	if leader == nil || leader == session {
+		var err error
+		run, err = s.ensureRung(ctx, key, session, rung, segment, path, false)
+		if err != nil {
+			return artifactObservation{}, err
+		}
 	}
 	artifact, err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, true, path, run, budget)
 	if err != nil {
@@ -1338,7 +1368,7 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 		if session.live != nil {
 			err = waitForLiveSession(ctx, session.live, path, run.exitedChan(), session.scratch.cutoff, readyFn)
 		} else {
-			err = session.sharedWatcher().wait(ctx, path, run.exitedChan(), session.scratch.cutoff, readyFn)
+			err = s.watcherForSession(session).wait(ctx, path, run.exitedChan(), session.scratch.cutoff, readyFn)
 		}
 		if run != nil {
 			run.waiting.Add(-1)
@@ -1629,8 +1659,11 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 			return nil, err
 		}
 		requestedRungs = []Rung{rung}
-	} else if audioOnly || !adjust.IsZero() {
+	} else if audioOnly || (!adjust.IsZero() && videoWidth == 0 && videoHeight == 0) {
 		requestedRungs = []Rung{audioOnlyRung(audioOnlyPeak)}
+	} else if !adjust.IsZero() {
+		// Video-class karaoke adjustment re-encodes video so tempo/pitch stay in sync.
+		requestedRungs = rungsForSession(videoWidth, videoHeight, false, degraded, caps)
 	}
 	sourceDuration := durationSeconds
 	durationSeconds = adjust.OutputSeconds(sourceDuration)
@@ -2291,9 +2324,14 @@ func (h *hlsSession) scanFrontier(rung string, base int) (int, bool) {
 	return frontier, true
 }
 
+const composedSegmentSeconds = 2
+
 func rungSegmentSeconds(rung Rung) int {
 	if rung.CopyVideo {
 		return audioCopySegmentSeconds
+	}
+	if rung.ID == "composed" {
+		return composedSegmentSeconds
 	}
 	return segmentSeconds
 }

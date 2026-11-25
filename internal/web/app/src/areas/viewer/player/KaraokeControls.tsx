@@ -1,4 +1,5 @@
 import { Minus, Plus, RotateCcw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { PlaybackAdjustmentRanges } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
@@ -46,14 +47,41 @@ export function KaraokeControls({
   const t = useT();
   const keyMin = Math.ceil(ranges.pitchShiftSemitonesMin);
   const keyMax = Math.floor(ranges.pitchShiftSemitonesMax);
-  const key = clamp(Math.round(adjustment.pitchShiftSemitones ?? 0), keyMin, keyMax);
-  const tempo = clamp(roundTempo(adjustment.tempo || 1), ranges.tempoMin, ranges.tempoMax);
+  const propKey = clamp(Math.round(adjustment.pitchShiftSemitones ?? 0), keyMin, keyMax);
+  const propTempo = clamp(roundTempo(adjustment.tempo || 1), ranges.tempoMin, ranges.tempoMax);
+  const [draft, setDraft] = useState<{ key: number; tempo: number }>({
+    key: propKey,
+    tempo: propTempo,
+  });
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setDraft({ key: propKey, tempo: propTempo });
+  }, [propKey, propTempo]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
+
+  const key = draft.key;
+  const tempo = draft.tempo;
 
   const change = (next: { key?: number; tempo?: number }) => {
     const pitchShiftSemitones = clamp(next.key ?? key, keyMin, keyMax);
     const nextTempo = clamp(roundTempo(next.tempo ?? tempo), ranges.tempoMin, ranges.tempoMax);
     if (pitchShiftSemitones === key && nextTempo === tempo) return;
-    onChange({ pitchShiftSemitones, tempo: nextTempo });
+    setDraft({ key: pitchShiftSemitones, tempo: nextTempo });
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+    }
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      onChange({ pitchShiftSemitones, tempo: nextTempo });
+    }, 300);
   };
 
   const keyText = t("karaokeKeyValue", { key: formatSemitones(key) });

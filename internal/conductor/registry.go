@@ -28,6 +28,7 @@ type Registry struct {
 	// presence tracks open event streams per session for Watch Party expiry
 	// (CORE-1763). It has its own lock and nests under neither lock above.
 	presence presence
+	syncHub  *GroupSyncHub
 
 	// Test-only synchronization hooks keep the lock-order regression deterministic.
 	acceptMapLocked          func()
@@ -50,7 +51,21 @@ func NewRegistry() *Registry {
 
 // NewRegistryWithClock returns an empty Registry driven by the supplied clock.
 func NewRegistryWithClock(now func() time.Time) *Registry {
-	return &Registry{now: now, groups: map[string]*Group{}, formedAt: map[string]time.Time{}}
+	return &Registry{
+		now:      now,
+		groups:   map[string]*Group{},
+		formedAt: map[string]time.Time{},
+		syncHub:  NewGroupSyncHub(),
+	}
+}
+
+// SyncHub returns the in-memory pub/sub hub for ephemeral group.sync SSE
+// delivery.
+func (r *Registry) SyncHub() *GroupSyncHub {
+	if r == nil {
+		return nil
+	}
+	return r.syncHub
 }
 
 // newGroupID mints an ephemeral 128-bit group id. It is not a durable key — the

@@ -106,11 +106,11 @@ func TestInfoAdjustmentThatCannotApplyPlaysUnadjusted(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if resp.Adjustment != nil || resp.Reason == "playback-adjustment" || len(resp.Streams) == 0 {
-			t.Fatalf("decision %q/%q adjustment %+v, want the unadjusted ladder", resp.Decision, resp.Reason, resp.Adjustment)
+		if resp.Adjustment == nil || resp.Decision != "transcode" || len(resp.Streams) == 0 {
+			t.Fatalf("decision %q/%q adjustment %+v, want adjusted transcode on video Media", resp.Decision, resp.Reason, resp.Adjustment)
 		}
-		if grant := hlsGrant(t, resp.Streams[0].Token); grant.PitchShiftSemitones != 0 || grant.Tempo != 0 {
-			t.Fatalf("grant = %+v, want no adjustment on video", grant)
+		if grant := hlsGrant(t, resp.Streams[0].Token); grant.PitchShiftSemitones != 3 {
+			t.Fatalf("grant = %+v, want PitchShiftSemitones=3 on video", grant)
 		}
 	})
 	t.Run("transcode refused", func(t *testing.T) {

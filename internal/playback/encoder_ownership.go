@@ -149,6 +149,7 @@ func (s *Sessions) handoffEncoder(key SessionKey, start *encoderStart, proc *ffm
 		h.baseSegment, h.frontier = segment, segment-1
 		h.started = true
 		h.resumeSeconds = 0
+		s.registerSharedLeaderLocked(h, rung)
 	} else {
 		run.acceptReasonLocked(exitStopped)
 		if teardown := h.teardown; teardown != nil {

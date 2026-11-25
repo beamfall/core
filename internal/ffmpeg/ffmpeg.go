@@ -2267,6 +2267,9 @@ func (r Rendition) videoFilters() []string {
 		return slices.Clone(chain.Filters)
 	}
 	filters := append([]string(nil), chain.Filters...)
+	if !r.adjust.IsZero() && r.adjust.Tempo != 0 && r.adjust.Tempo != 1 {
+		filters = append(filters, fmt.Sprintf("setpts=(PTS-STARTPTS)/%s", strconv.FormatFloat(r.adjust.Tempo, 'f', -1, 64)))
+	}
 	if interlacedFieldOrder(r.FieldOrder) {
 		filters = append(filters, "yadif=deint=interlaced")
 	}
@@ -3244,9 +3247,6 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 	}
 	if reason := rendition.toneMapRefusal(ctx); reason != "" {
 		return nil, errors.New("ffmpeg: " + reason)
-	}
-	if !rendition.adjust.IsZero() && !rendition.AudioOnly {
-		return nil, errors.New("ffmpeg: an adjusted encode must be audio-only or a composed picture")
 	}
 	if !rendition.AudioOnly {
 		rendition = r.launchRendition(ctx, rendition)

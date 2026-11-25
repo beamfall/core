@@ -14,6 +14,7 @@ import (
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -612,8 +613,8 @@ func (h *Handler) partyPlaybackWrite(ctx context.Context, scope auth.Scope, req 
 		}
 		input.PositionMS = int64(positionMS)
 		if hasPitch {
-			if pitch != math.Trunc(pitch) || pitch < -12 || pitch > 12 {
-				return clientError("pitchSemitones must be an integer from -12 to 12")
+			if pitch != math.Trunc(pitch) || pitch < ffmpeg.MinPitchShiftSemitones || pitch > ffmpeg.MaxPitchShiftSemitones {
+				return clientError("pitchSemitones must be an integer from -6 to 6")
 			}
 			semitones := int(pitch)
 			input.PitchSemitones = &semitones

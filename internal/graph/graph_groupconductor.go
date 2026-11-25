@@ -289,7 +289,7 @@ func (h *Handler) reportDrift(ctx context.Context, scope auth.Scope, req request
 	case conductor.DriftNudge:
 		// Per-member micro-correction: publish a rate nudge addressed to the
 		// reporting session over the SSE channel.
-		if err := h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{
+		if err := h.publishGroupSync(ctx, store.GroupSyncPayload{
 			GroupID:   groupID,
 			ProfileID: scope.ProfileID,
 			Signal:    store.GroupSignalNudge,
@@ -316,7 +316,7 @@ func (h *Handler) reportPartyDrift(ctx context.Context, scope auth.Scope, partyI
 	case conductor.DriftResync:
 		return ReportDriftResult{GroupID: partyID, Action: "resync"}, nil
 	case conductor.DriftNudge:
-		if err := h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{
+		if err := h.publishGroupSync(ctx, store.GroupSyncPayload{
 			GroupID:   partyID,
 			ProfileID: scope.ProfileID,
 			Signal:    store.GroupSignalNudge,
@@ -331,13 +331,8 @@ func (h *Handler) reportPartyDrift(ctx context.Context, scope auth.Scope, partyI
 	}
 }
 
-// broadcastTransition appends a {item, position, present_at} transition to the
-// SSE outbox for delivery to every same-Profile member. The Profile
-// gate on the outbox event is the delivery authorization; the present instant is
-// encoded as server-clock Unix ms so each member pairs it with its calibrated
-// offset and releases at present − own_render_latency.
 func (h *Handler) broadcastTransition(ctx context.Context, groupID string, profile store.ProfileID, t conductor.Transition) error {
-	return h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{
+	return h.publishGroupSync(ctx, store.GroupSyncPayload{
 		GroupID:     groupID,
 		ProfileID:   profile,
 		Signal:      store.GroupSignalTransition,
@@ -345,6 +340,14 @@ func (h *Handler) broadcastTransition(ctx context.Context, groupID string, profi
 		PositionMS:  t.Position.Milliseconds(),
 		PresentAtMS: t.PresentAt.UnixMilli(),
 	}, time.Now().UTC())
+}
+
+func (h *Handler) publishGroupSync(ctx context.Context, payload store.GroupSyncPayload, now time.Time) error {
+	if hub := h.conductor.SyncHub(); hub != nil && hub.HasSubscribers() {
+		hub.Publish(payload)
+		return nil
+	}
+	return h.store.AppendGroupSyncEvent(ctx, payload, now)
 }
 
 // conductorClientError maps the Registry's typed errors to a client-facing

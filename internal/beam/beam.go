@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
@@ -29,11 +30,16 @@ var (
 // offering session's Reveal state) so a client cannot spoof the receiver's
 // surface choice or Reveal pre-prompt. Absent fields keep current behavior.
 type OfferRequest struct {
-	MediaID         string `json:"mediaID"`
-	PositionSeconds int    `json:"positionSeconds"`
-	TargetDeviceID  string `json:"targetDeviceID,omitempty"`
-	MediaClass      string `json:"mediaClass,omitempty"`
-	SenderRevealed  bool   `json:"senderRevealed,omitempty"`
+	MediaID             string  `json:"mediaID"`
+	PositionSeconds     int     `json:"positionSeconds"`
+	TargetDeviceID      string  `json:"targetDeviceID,omitempty"`
+	MediaClass          string  `json:"mediaClass,omitempty"`
+	SenderRevealed      bool    `json:"senderRevealed,omitempty"`
+	AudioStreamIndex    *int    `json:"audioStreamIndex,omitempty"`
+	SubtitleIndex       *int    `json:"subtitleIndex,omitempty"`
+	PitchShiftSemitones int     `json:"pitchShiftSemitones,omitempty"`
+	Tempo               float64 `json:"tempo,omitempty"`
+	Paused              bool    `json:"paused,omitempty"`
 }
 
 // OfferResponse returns the bearer handoff token to the offering client.
@@ -41,12 +47,17 @@ type OfferRequest struct {
 // SenderRevealed reflects whether the offering session holds Reveal. Both are
 // omitted when empty/false so an absent field keeps current behavior.
 type OfferResponse struct {
-	HandoffToken    string `json:"handoffToken"`
-	MediaID         string `json:"mediaID"`
-	PositionSeconds int    `json:"positionSeconds"`
-	MediaClass      string `json:"mediaClass,omitempty"`
-	SenderRevealed  bool   `json:"senderRevealed,omitempty"`
-	ExpiresAt       string `json:"expiresAt"`
+	HandoffToken        string  `json:"handoffToken"`
+	MediaID             string  `json:"mediaID"`
+	PositionSeconds     int     `json:"positionSeconds"`
+	MediaClass          string  `json:"mediaClass,omitempty"`
+	SenderRevealed      bool    `json:"senderRevealed,omitempty"`
+	AudioStreamIndex    *int    `json:"audioStreamIndex,omitempty"`
+	SubtitleIndex       *int    `json:"subtitleIndex,omitempty"`
+	PitchShiftSemitones int     `json:"pitchShiftSemitones,omitempty"`
+	Tempo               float64 `json:"tempo,omitempty"`
+	Paused              bool    `json:"paused,omitempty"`
+	ExpiresAt           string  `json:"expiresAt"`
 }
 
 // ClaimRequest redeems a Beam handoff offer.
@@ -60,28 +71,49 @@ type ClaimRequest struct {
 // Reveal PIN. Both are advisory hints — the server still re-derives Reveal at
 // claim time — and are omitted when empty/false to keep current behavior.
 type ClaimResponse struct {
-	MediaID         string `json:"mediaID"`
-	PositionSeconds int    `json:"positionSeconds"`
-	SourceDeviceID  string `json:"sourceDeviceID"`
-	SourceSessionID string `json:"sourceSessionID"`
-	TargetDeviceID  string `json:"targetDeviceID,omitempty"`
-	MediaClass      string `json:"mediaClass,omitempty"`
-	SenderRevealed  bool   `json:"senderRevealed,omitempty"`
-	ExpiresAt       string `json:"expiresAt"`
+	MediaID             string  `json:"mediaID"`
+	PositionSeconds     int     `json:"positionSeconds"`
+	SourceDeviceID      string  `json:"sourceDeviceID"`
+	SourceSessionID     string  `json:"sourceSessionID"`
+	TargetDeviceID      string  `json:"targetDeviceID,omitempty"`
+	MediaClass          string  `json:"mediaClass,omitempty"`
+	SenderRevealed      bool    `json:"senderRevealed,omitempty"`
+	AudioStreamIndex    *int    `json:"audioStreamIndex,omitempty"`
+	SubtitleIndex       *int    `json:"subtitleIndex,omitempty"`
+	PitchShiftSemitones int     `json:"pitchShiftSemitones,omitempty"`
+	Tempo               float64 `json:"tempo,omitempty"`
+	Paused              bool    `json:"paused,omitempty"`
+	ExpiresAt           string  `json:"expiresAt"`
+}
+
+type offerPlaybackState struct {
+	audioStreamIndex    *int
+	subtitleIndex       *int
+	pitchShiftSemitones int
+	tempo               float64
+	paused              bool
+	expiresAt           time.Time
 }
 
 // Service owns Beam handoff token mint/redeem semantics.
 type Service struct {
-	store *store.Store
-	auth  *auth.Service
-	now   func() time.Time
+	store     *store.Store
+	auth      *auth.Service
+	now       func() time.Time
+	stateMu   sync.Mutex
+	offerMeta map[string]offerPlaybackState
 }
 
 func NewService(st *store.Store, authz *auth.Service, now func() time.Time) *Service {
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{store: st, auth: authz, now: now}
+	return &Service{
+		store:     st,
+		auth:      authz,
+		now:       now,
+		offerMeta: make(map[string]offerPlaybackState),
+	}
 }
 
 func (s *Service) CreateOffer(ctx context.Context, scope auth.Scope, req OfferRequest) (OfferResponse, error) {
@@ -125,13 +157,26 @@ func (s *Service) CreateOffer(ctx context.Context, scope auth.Scope, req OfferRe
 	if err := s.store.CreateBeamHandoffOffer(ctx, offer); err != nil {
 		return OfferResponse{}, err
 	}
+	s.savePlaybackState(offer.TokenHash, offerPlaybackState{
+		audioStreamIndex:    cloneIntPtr(req.AudioStreamIndex),
+		subtitleIndex:       cloneIntPtr(req.SubtitleIndex),
+		pitchShiftSemitones: req.PitchShiftSemitones,
+		tempo:               req.Tempo,
+		paused:              req.Paused,
+		expiresAt:           expires,
+	}, now)
 	return OfferResponse{
-		HandoffToken:    token,
-		MediaID:         string(media.ID),
-		PositionSeconds: req.PositionSeconds,
-		MediaClass:      string(media.Class),
-		SenderRevealed:  scope.Revealed,
-		ExpiresAt:       expires.Format(time.RFC3339),
+		HandoffToken:        token,
+		MediaID:             string(media.ID),
+		PositionSeconds:     req.PositionSeconds,
+		MediaClass:          string(media.Class),
+		SenderRevealed:      scope.Revealed,
+		AudioStreamIndex:    cloneIntPtr(req.AudioStreamIndex),
+		SubtitleIndex:       cloneIntPtr(req.SubtitleIndex),
+		PitchShiftSemitones: req.PitchShiftSemitones,
+		Tempo:               req.Tempo,
+		Paused:              req.Paused,
+		ExpiresAt:           expires.Format(time.RFC3339),
 	}, nil
 }
 
@@ -178,16 +223,52 @@ func (s *Service) ClaimOffer(ctx context.Context, scope auth.Scope, req ClaimReq
 		}
 		return ClaimResponse{}, err
 	}
+	meta := s.takePlaybackState(hash)
 	return ClaimResponse{
-		MediaID:         string(consumed.MediaID),
-		PositionSeconds: consumed.PositionSeconds,
-		SourceDeviceID:  string(consumed.SourceDeviceID),
-		SourceSessionID: string(consumed.SourceSessionID),
-		TargetDeviceID:  string(consumed.TargetDeviceID),
-		MediaClass:      string(consumed.MediaClass),
-		SenderRevealed:  consumed.SenderRevealed,
-		ExpiresAt:       consumed.ExpiresAt.Format(time.RFC3339),
+		MediaID:             string(consumed.MediaID),
+		PositionSeconds:     consumed.PositionSeconds,
+		SourceDeviceID:      string(consumed.SourceDeviceID),
+		SourceSessionID:     string(consumed.SourceSessionID),
+		TargetDeviceID:      string(consumed.TargetDeviceID),
+		MediaClass:          string(consumed.MediaClass),
+		SenderRevealed:      consumed.SenderRevealed,
+		AudioStreamIndex:    meta.audioStreamIndex,
+		SubtitleIndex:       meta.subtitleIndex,
+		PitchShiftSemitones: meta.pitchShiftSemitones,
+		Tempo:               meta.tempo,
+		Paused:              meta.paused,
+		ExpiresAt:           consumed.ExpiresAt.Format(time.RFC3339),
 	}, nil
+}
+
+func cloneIntPtr(p *int) *int {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+func (s *Service) savePlaybackState(hash string, meta offerPlaybackState, now time.Time) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.offerMeta == nil {
+		s.offerMeta = make(map[string]offerPlaybackState)
+	}
+	for k, v := range s.offerMeta {
+		if !v.expiresAt.After(now) {
+			delete(s.offerMeta, k)
+		}
+	}
+	s.offerMeta[hash] = meta
+}
+
+func (s *Service) takePlaybackState(hash string) offerPlaybackState {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	meta := s.offerMeta[hash]
+	delete(s.offerMeta, hash)
+	return meta
 }
 
 func randomToken() (string, error) {

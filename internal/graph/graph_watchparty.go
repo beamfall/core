@@ -730,7 +730,7 @@ func (h *Handler) broadcastPartyTransition(ctx context.Context, partyID string, 
 	host, _ := h.partyHostProfile(partyID)
 	now := time.Now().UTC()
 	for _, profile := range partyProfiles(members, host, caller) {
-		if err := h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{
+		if err := h.publishGroupSync(ctx, store.GroupSyncPayload{
 			GroupID:      partyID,
 			ProfileID:    profile,
 			Signal:       store.GroupSignalTransition,

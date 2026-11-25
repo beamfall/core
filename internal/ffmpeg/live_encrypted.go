@@ -96,7 +96,7 @@ func encryptedSegmentArgsContext(ctx context.Context, ep EncryptedLiveEndpoint, 
 		return nil, 0, errors.New("ffmpeg: " + reason)
 	}
 	if !rendition.adjust.IsZero() && !rendition.AudioOnly {
-		return nil, 0, errors.New("ffmpeg: an adjusted encode must be audio-only or a composed picture")
+		return nil, 0, ErrEncryptedLiveShape
 	}
 	if startSegment < 0 || segmentSeconds <= 0 {
 		return nil, 0, fmt.Errorf("ffmpeg: invalid segment start %d of %ds", startSegment, segmentSeconds)

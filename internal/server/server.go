@@ -75,6 +75,7 @@ type Server struct {
 	jobStats          JobStatsProvider
 	jobQueue          JobQueueAgeProvider
 	events            EventStore
+	groupSyncHub      GroupSyncSubscriber
 	streamObserver    EventStreamObserver
 	pushNotifications PushNotificationStore
 	v1                V1Store

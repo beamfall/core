@@ -745,6 +745,9 @@ func (s *Service) SetSessions(sessions *Sessions) {
 // nil (the default) leaves the capacity refusal unchanged.
 func (s *Service) SetPartyRoster(roster PartyRoster) {
 	s.roster = roster
+	if s.sessions != nil {
+		s.sessions.SetPartyRoster(roster)
+	}
 }
 
 // SetAuth wires the auth service for becoming-current originator playback
@@ -1565,7 +1568,7 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 	// capacity admit; otherwise the item plays unadjusted.
 	// A build without the adjustment's filters (or the audio encoder) declines
 	// the adjustment rather than offer a stream that fails to start.
-	if !adjust.IsZero() && media.Class == store.MediaClassAudio && sourceHasAudio && transcodeRefusal == "" && s.sessions != nil &&
+	if !adjust.IsZero() && (media.Class == store.MediaClassAudio || media.Class == store.MediaClassVideo) && sourceHasAudio && transcodeRefusal == "" && s.sessions != nil &&
 		audioAdjustSupported(ctx, adjustedAudioRendition(hlsAudio, adjust)) {
 		grant = withAudioAdjustGrant(grant, adjust)
 	} else {
@@ -1602,7 +1605,13 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 		}, nil
 	}
 	if !adjust.IsZero() {
-		adjusted, err := s.adjustedAudioChoice(ctx, grant, suffix, hlsAudio, audioSource, expiresAt)
+		var adjusted StreamChoice
+		var err error
+		if media.Class == store.MediaClassVideo {
+			adjusted, err = s.hlsChoice(ctx, grant, suffix, media, profile, hlsAudio, audioOnlyPeak, expiresAt, ov)
+		} else {
+			adjusted, err = s.adjustedAudioChoice(ctx, grant, suffix, hlsAudio, audioSource, expiresAt)
+		}
 		if err != nil {
 			return decision{}, err
 		}
@@ -1707,6 +1716,23 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 			s.roster.SessionInWatchPartyForMedia(scope.SessionID, media.ID) {
 			var hls StreamChoice
 			var err error
+			if s.sessions != nil && s.sessions.HasSharedEncoder(media.ID, file.ContentFingerprint) {
+				hls, err = s.hlsChoice(ctx, grant, suffix, media, profile, hlsAudio, audioOnlyPeak, expiresAt, ov)
+				if err != nil {
+					return decision{}, err
+				}
+				return decision{
+					media:          media,
+					verdict:        "transcode",
+					reason:         "shared-party-stream",
+					streams:        []StreamChoice{hls},
+					timeline:       timeline,
+					parts:          parts,
+					assets:         assets,
+					captionTracks:  captionTracks,
+					overlayApplied: true,
+				}, nil
+			}
 			if !barred && audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) {
 				// Video direct-plays; only audio needs transcode — copy the video and
 				// transcode only the audio, lighter than a re-encode.

@@ -1414,6 +1414,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		return nil, err
 	}
 	srv.SetModeration(moderationService)
+	srv.SetGroupSyncHub(conductorRegistry.SyncHub())
 	// Seed /health with the runtime capability state: apply the
 	// operator's persisted Workflow toggle overrides so a flipped capability is
 	// reflected. A read error degrades to the compiled-in default rather than

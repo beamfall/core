@@ -103,15 +103,11 @@ func TestHLSSegmentArgsUnadjustedUnchanged(t *testing.T) {
 	}
 }
 
-func TestStartHLSSegmentsRefusesAdjustedSourceVideo(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "film.mkv")
-	if err := os.WriteFile(src, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	rendition := Rendition{Height: 720}.WithAudioAdjust(AudioAdjust{Tempo: 0.9})
-	if _, err := New().StartHLSSegments(context.Background(), src, dir, 0, 4, rendition); err == nil || !strings.Contains(err.Error(), "audio-only or a composed picture") {
-		t.Fatalf("an adjusted encode of the source video must be refused, got %v", err)
+func TestStartHLSSegmentsAllowsAdjustedSourceVideo(t *testing.T) {
+	args := hlsSegmentArgs("/lib/film.mkv", "/d", 0, 4, Rendition{Height: 720}.WithAudioAdjust(AudioAdjust{Tempo: 0.9}))
+	vf := argAfter(args, "-vf")
+	if !strings.Contains(vf, "setpts=(PTS-STARTPTS)/0.9") {
+		t.Fatalf("adjusted source video -vf = %q, want setpts=(PTS-STARTPTS)/0.9", vf)
 	}
 }
 

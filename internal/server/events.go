@@ -29,6 +29,17 @@ type EventStore interface {
 	EventOutboxChanged() <-chan struct{}
 }
 
+// GroupSyncSubscriber delivers ephemeral Conductor group.sync signals in memory
+// to active /api/events SSE streams without touching the SQLite outbox.
+type GroupSyncSubscriber interface {
+	Subscribe() (<-chan store.GroupSyncPayload, func())
+}
+
+// SetGroupSyncHub wires the in-memory group.sync pub/sub hub for /api/events.
+func (s *Server) SetGroupSyncHub(hub GroupSyncSubscriber) {
+	s.groupSyncHub = hub
+}
+
 // eventFallbackPollInterval is how long an idle stream waits before it reads
 // the outbox without having been woken. Streams are woken by the store's
 // commit signal (EventOutboxChanged), so this read only catches an event from
@@ -271,6 +282,12 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 	// next deadline (Scope re-check, keepalive, fallback read) comes due.
 	timer := time.NewTimer(fallback)
 	defer timer.Stop()
+	var syncCh <-chan store.GroupSyncPayload
+	if s.groupSyncHub != nil {
+		ch, unsub := s.groupSyncHub.Subscribe()
+		defer unsub()
+		syncCh = ch
+	}
 	// fresh marks a Scope derived during the current pass: the periodic
 	// re-check's. The handshake's Scope is not fresh: the header flush can block
 	// long enough for a revocation, so the first backlog re-derives it too.
@@ -350,6 +367,34 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 				return
 			case <-changed:
 				woken = true
+			case payload := <-syncCh:
+				if err := refreshScope(); err != nil {
+					return
+				}
+				fresh = false
+				if scope.ProfileID == "" || payload.ProfileID != scope.ProfileID {
+					continue
+				}
+				if payload.Item != "" {
+					if _, err := s.events.Media(ctx, payload.Item, scope.LibraryFilter()); err != nil {
+						continue
+					}
+				}
+				raw, err := json.Marshal(payload)
+				if err != nil {
+					continue
+				}
+				if err := writeSSEEvent(w, store.OutboxEvent{
+					AggregateType: store.OutboxAggregateGroup,
+					AggregateID:   payload.GroupID,
+					Kind:          store.GroupSyncKind,
+					Payload:       raw,
+				}); err != nil {
+					return
+				}
+				flusher.Flush()
+				lastWrite = time.Now()
+				s.notifyStreamHeartbeat(scope)
 			case <-timer.C:
 			}
 		}
