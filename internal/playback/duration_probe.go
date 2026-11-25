@@ -65,8 +65,6 @@ type durationFlight struct {
 	generation string
 	users      int
 	seconds    int // winning positive held until the last overlapping probe finishes
-	valid      bool
-	done       chan struct{}
 }
 
 func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBinding, op *libraryOperation, mediaID store.MediaID, fingerprint, path string) (result int) {
@@ -139,47 +137,21 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 		s.durationFlights = make(map[string]*durationFlight)
 	}
 	flight := s.durationFlights[path]
-	leader := false
 	if flight == nil || flight.generation != source.generation {
-		flight = &durationFlight{generation: source.generation, done: make(chan struct{})}
+		flight = &durationFlight{generation: source.generation}
 		s.durationFlights[path] = flight
-		leader = true
 	}
 	flight.users++
 	s.mu.Unlock()
 
+	probeCtx, cancel := context.WithTimeout(ctx, durationProbeTimeout)
+	defer cancel()
 	seconds := 0
-	valid := true
-	if leader {
-		// Tie the shared singleflight probe to the library operation context
-		// (so DrainLibrary/Close cancel it immediately) while detaching from
-		// caller 1's individual request cancellation so other waiters still
-		// receive the result.
-		baseCtx := context.WithoutCancel(ctx)
-		if op != nil && op.ctx != nil {
-			baseCtx = op.ctx
-		}
-		probeCtx, cancel := context.WithTimeout(baseCtx, durationProbeTimeout)
-		if probe, err := prober.Probe(probeCtx, path); err == nil && probe.DurationSeconds > 0 {
-			seconds = probe.DurationSeconds
-		}
-		cancel()
-		valid = source.matches(captureSource(path, nil, s.statSource))
-		s.mu.Lock()
-		flight.valid = valid
-		if valid && seconds > 0 {
-			flight.seconds = seconds
-		}
-		close(flight.done)
-	} else {
-		select {
-		case <-flight.done:
-		case <-ctx.Done():
-		}
-		s.mu.Lock()
-		valid = flight.valid
-		seconds = flight.seconds
+	if probe, err := prober.Probe(probeCtx, path); err == nil && probe.DurationSeconds > 0 {
+		seconds = probe.DurationSeconds
 	}
+	valid := source.matches(captureSource(path, nil, s.statSource))
+	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.durationFlights[path] != flight {
 		return 0

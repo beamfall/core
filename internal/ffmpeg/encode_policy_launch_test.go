@@ -118,7 +118,7 @@ func TestPinnedEncodePolicyOutlivesConsoleChange(t *testing.T) {
 	hevc := Rendition{Height: 2160, VideoCodec: "hevc", VideoKbps: 16000}.WithEncodePolicy(runner.EncodePolicy())
 
 	runner.SetEncodePolicy(EncodePolicy{SoftwareOnly: true, H264Only: true, Quality: QualityLow})
-	if args := policyArgs(runner, hevc); !containsArgPair(args, "-c:v", "hevc_nvenc") || !containsArgPair(args, "-b:v", "16000k") {
+	if args := policyArgs(runner, hevc); !containsArgPair(args, "-c:v", "hevc_nvenc") || !containsArgPair(args, "-cq", "23") || !containsArgPair(args, "-b:v", "0") || !containsArgPair(args, "-maxrate", "16000k") {
 		t.Fatalf("pinned session argv after the Console change = %v, want hevc_nvenc at the balanced target", args)
 	}
 	unpinned := Rendition{Height: 1080, VideoCodec: "h264", VideoKbps: 6000}

@@ -574,15 +574,15 @@ func TestProbeHardwareAccelLowPowerRetryAlsoFails(t *testing.T) {
 
 func TestHWAccelProbeArgsLowPowerAndAV1(t *testing.T) {
 	low := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: "h264_qsv", LowPower: true}), " ")
-	if !strings.Contains(low, "-c:v h264_qsv -low_power 1 -preset veryfast -b:v 1000k -maxrate 1001k -bufsize 2000k -f null -") {
+	if !strings.Contains(low, "-c:v h264_qsv -low_power 1 -preset veryfast -forced_idr 1 -b:v 1000k -maxrate 1001k -bufsize 2000k -f null -") {
 		t.Fatalf("low-power QSV probe args = %q, want -low_power 1 and the production rate control after the encoder", low)
 	}
 	// The probe uses the production rate control, so a low-power encoder that
 	// cannot do VBR (no HuC firmware) fails the probe instead of every encode.
 	for encoder, want := range map[string]string{
 		"hevc_vaapi": "-c:v hevc_vaapi -rc_mode VBR -b:v 1000k -maxrate 1000k -bufsize 2000k -f null -",
-		"av1_nvenc":  "-c:v av1_nvenc -preset p4 -forced-idr 1 -rc vbr -b:v 1000k -maxrate 1000k -bufsize 2000k -f null -",
-		"h264_amf":   "-c:v h264_amf -quality speed -forced_idr 1 -rc vbr_peak -b:v 1000k -maxrate 1000k -bufsize 2000k -f null -",
+		"av1_nvenc":  "-c:v av1_nvenc -preset p4 -forced-idr 1 -spatial-aq 1 -rc vbr -cq 23 -b:v 0 -maxrate 1000k -bufsize 2000k -f null -",
+		"h264_amf":   "-c:v h264_amf -quality speed -forced_idr 1 -vbaq 1 -rc vbr_peak -b:v 1000k -maxrate 1000k -bufsize 2000k -f null -",
 	} {
 		if got := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: encoder}), " "); !strings.Contains(got, want) {
 			t.Fatalf("%s probe args = %q, want %q", encoder, got, want)
