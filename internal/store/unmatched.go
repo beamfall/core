@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -47,7 +49,13 @@ func (s *Store) QueueUnmatched(ctx context.Context, item UnmatchedItem) error {
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	// The row lives on the Media's plane; a sealed Encrypted Library's Media
+	// is refused as not found rather than queued in the shared catalog.
+	plane, err := s.catalogPlaneForMediaLocked(ctx, item.MediaID)
+	if err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT INTO unmatched_queue(
 			media_id, plugin_id, scraper_id, confidence, threshold,
 			candidate_id, candidate_title, queued_at_ms)
@@ -78,7 +86,14 @@ func (s *Store) ClearUnmatched(ctx context.Context, mediaID MediaID) (bool, erro
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	result, err := s.catalogW.ExecContext(ctx,
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	result, err := plane.writer.ExecContext(ctx,
 		"DELETE FROM unmatched_queue WHERE media_id = ?", mediaID)
 	if err != nil {
 		return false, err
@@ -102,8 +117,15 @@ func (s *Store) IsUnmatched(ctx context.Context, mediaID MediaID) (bool, error) 
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	var one int
-	err := s.catalogR.QueryRowContext(ctx,
+	err = plane.reader.QueryRowContext(ctx,
 		"SELECT 1 FROM unmatched_queue WHERE media_id = ?", mediaID).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -133,13 +155,65 @@ func (s *Store) UnmatchedItems(ctx context.Context, filter LibraryFilter, page .
 	if len(visibleLibraries) == 0 {
 		return []UnmatchedItem{}, nil
 	}
-	libraries, libraryArgs := libraryIDPlaceholders(visibleLibraries)
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	var private []catalogPlane
+	for _, plane := range s.registeredEncryptedPlanesLocked() {
+		if slices.Contains(visibleLibraries, plane.libraryID) {
+			private = append(private, plane)
+		}
+	}
+	if len(private) == 0 {
+		return unmatchedItemsFrom(ctx, s.catalogR, visibleLibraries, certClause, certArgs, limit, offset)
+	}
+	// Each visible open Encrypted Library keeps its queue on its own plane.
+	// Read the first offset+limit rows of every plane, then merge and page in
+	// the same order the single-plane query uses.
+	window := -1
+	if limit >= 0 {
+		window = limit + offset
+	}
+	out, err := unmatchedItemsFrom(ctx, s.catalogR, visibleLibraries, certClause, certArgs, window, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, plane := range private {
+		library, err := s.libraryByIDLocked(ctx, plane.libraryID)
+		if err != nil {
+			return nil, err
+		}
+		pluginID := ""
+		if library.PluginID != nil {
+			pluginID = *library.PluginID
+		}
+		planeCert, planeArgs := planeCertificationFilterSQL(pluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+		items, err := unmatchedItemsFrom(ctx, plane.reader, []LibraryID{plane.libraryID}, planeCert, planeArgs, window, 0)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, items...)
+	}
+	slices.SortFunc(out, func(a, b UnmatchedItem) int {
+		if c := b.QueuedAt.Compare(a.QueuedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(string(a.MediaID), string(b.MediaID))
+	})
+	out = out[min(offset, len(out)):]
+	if limit >= 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// unmatchedItemsFrom reads one plane's visible queue rows, newest first.
+func unmatchedItemsFrom(ctx context.Context, reader *sql.DB, visibleLibraries []LibraryID, certClause string, certArgs []any, limit, offset int) ([]UnmatchedItem, error) {
+	libraries, libraryArgs := libraryIDPlaceholders(visibleLibraries)
 	args := make([]any, 0, len(libraryArgs)+len(certArgs)+2)
 	args = append(args, libraryArgs...)
 	args = append(args, certArgs...)
 	args = append(args, limit, offset)
-	rows, err := s.catalogR.QueryContext(ctx, `
+	//nolint:gosec // G202: only generated placeholders and the fixed certification fragment are interpolated; values are bound args.
+	rows, err := reader.QueryContext(ctx, `
 		SELECT q.media_id, m.title, q.plugin_id, q.scraper_id, q.confidence, q.threshold,
 		       q.candidate_id, q.candidate_title, q.queued_at_ms
 		FROM unmatched_queue q

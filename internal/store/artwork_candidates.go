@@ -44,12 +44,13 @@ func (s *Store) UpsertArtworkCandidate(ctx context.Context, mediaID MediaID, slo
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	if ok, err := s.mediaExistsSQL(ctx, mediaID); err != nil {
+	// A candidate's source URL names what the Media is, so it lives on the
+	// Media's own plane; a sealed Encrypted Library's Media is not found.
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
 		return err
-	} else if !ok {
-		return ValidationError("media not found")
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT OR IGNORE INTO artwork_candidate(id, media_id, slot, source_url, plugin_id, scraper_id, created_at_ms)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		ArtworkCandidateID(mediaID, slot, sourceURL), mediaID, slot, sourceURL,
@@ -70,7 +71,11 @@ func (s *Store) MarkArtworkCandidateApplied(ctx context.Context, candidateID str
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	_, plane, err := s.findArtworkCandidateLocked(ctx, candidateID)
+	if err != nil {
+		return err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -79,6 +84,28 @@ func (s *Store) MarkArtworkCandidateApplied(ctx context.Context, candidateID str
 		return err
 	}
 	return tx.Commit()
+}
+
+// findArtworkCandidateLocked locates a candidate on whichever readable plane
+// holds it. Candidate IDs hash the Media ID, so only the owning plane should
+// match; private planes are asked first so a stranded shared copy awaiting
+// evacuation never shadows the private row.
+func (s *Store) findArtworkCandidateLocked(ctx context.Context, candidateID string) (ArtworkCandidate, catalogPlane, error) {
+	planes := append(s.registeredEncryptedPlanesLocked(), catalogPlane{writer: s.catalogW, reader: s.catalogR})
+	for _, plane := range planes {
+		candidate, err := scanArtworkCandidate(plane.reader.QueryRowContext(ctx, `
+			SELECT id, media_id, slot, source_url, plugin_id, scraper_id, applied, created_at_ms
+			FROM artwork_candidate
+			WHERE id = ?`, candidateID))
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return ArtworkCandidate{}, catalogPlane{}, err
+		}
+		return candidate, plane, nil
+	}
+	return ArtworkCandidate{}, catalogPlane{}, ValidationError("artwork candidate not found")
 }
 
 // ArtworkCandidateApply carries the prepared file mutation and audit context
@@ -133,7 +160,7 @@ func (s *Store) ApplyArtworkCandidate(ctx context.Context, apply ArtworkCandidat
 
 	artworkCandidateMutationMu.Lock()
 	defer artworkCandidateMutationMu.Unlock()
-	applied, err := s.artworkCandidateApplied(ctx, candidateID)
+	applied, err := s.artworkCandidateApplied(ctx, mediaID, candidateID)
 	if err != nil {
 		return err
 	}
@@ -163,7 +190,16 @@ func (s *Store) ApplyArtworkCandidate(ctx context.Context, apply ArtworkCandidat
 	if err := s.guardLocked(); err != nil {
 		return errors.Join(err, rollbackArtworkCandidate(rollbackArtwork))
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
+		return errors.Join(err, rollbackArtworkCandidate(rollbackArtwork))
+	}
+	if plane.encrypted {
+		// The shared activity index keeps only the opaque operation and
+		// Library identifiers; the Media ID stays on the private plane.
+		activity.TargetID = ""
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.Join(err, rollbackArtworkCandidate(rollbackArtwork))
 	}
@@ -191,14 +227,14 @@ func (s *Store) ApplyArtworkCandidate(ctx context.Context, apply ArtworkCandidat
 	}
 	if err := tx.Commit(); err != nil {
 		rollbackErr := rollbackArtworkCandidateTransaction(tx)
-		restoreErr := s.restoreArtworkCandidateApplyState(
-			context.WithoutCancel(ctx), mediaID, slot, candidateID, prior,
+		restoreErr := restoreArtworkCandidateApplyState(
+			context.WithoutCancel(ctx), plane.writer, mediaID, slot, candidateID, prior,
 		)
 		return errors.Join(err, rollbackErr, restoreErr, rollbackArtworkCandidate(rollbackArtwork))
 	}
 	if err := appendActivitySQL(ctx, s.eventsW, activity); err != nil {
-		restoreErr := s.restoreArtworkCandidateApplyState(
-			context.WithoutCancel(ctx), mediaID, slot, candidateID, prior,
+		restoreErr := restoreArtworkCandidateApplyState(
+			context.WithoutCancel(ctx), plane.writer, mediaID, slot, candidateID, prior,
 		)
 		return errors.Join(err, restoreErr, rollbackArtworkCandidate(rollbackArtwork))
 	}
@@ -213,14 +249,18 @@ func newArtworkCandidateApplyOperationID() (string, error) {
 	return "artwork-apply-" + hex.EncodeToString(raw[:]), nil
 }
 
-func (s *Store) artworkCandidateApplied(ctx context.Context, candidateID string) (bool, error) {
+func (s *Store) artworkCandidateApplied(ctx context.Context, mediaID MediaID, candidateID string) (bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
+		return false, err
+	}
 	var applied int
-	err := s.catalogR.QueryRowContext(ctx, `SELECT applied FROM artwork_candidate WHERE id = ?`, candidateID).Scan(&applied)
+	err = plane.reader.QueryRowContext(ctx, `SELECT applied FROM artwork_candidate WHERE id = ?`, candidateID).Scan(&applied)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -311,13 +351,14 @@ func markArtworkCandidateAppliedSQL(ctx context.Context, tx *sql.Tx, candidateID
 	return err
 }
 
-func (s *Store) restoreArtworkCandidateApplyState(
+func restoreArtworkCandidateApplyState(
 	ctx context.Context,
+	writer *sql.DB,
 	mediaID MediaID,
 	slot, candidateID string,
 	state artworkCandidateApplyState,
 ) error {
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	tx, err := writer.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -361,7 +402,11 @@ func (s *Store) lockArtworkSlot(ctx context.Context, mediaID MediaID, slot strin
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
+		return err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -384,10 +429,14 @@ func (s *Store) ArtworkCandidates(ctx context.Context, mediaID MediaID, slot str
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	if _, err := s.visibleMediaSQL(ctx, mediaID, filter); err != nil {
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
 		return []ArtworkCandidate{}, nil
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, mediaID, filter); err != nil {
+		return []ArtworkCandidate{}, nil
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT id, media_id, slot, source_url, plugin_id, scraper_id, applied, created_at_ms
 		FROM artwork_candidate
 		WHERE media_id = ? AND slot = ?
@@ -418,17 +467,11 @@ func (s *Store) ArtworkCandidate(ctx context.Context, candidateID string, filter
 	if err := s.guardLocked(); err != nil {
 		return ArtworkCandidate{}, err
 	}
-	candidate, err := scanArtworkCandidate(s.catalogR.QueryRowContext(ctx, `
-		SELECT id, media_id, slot, source_url, plugin_id, scraper_id, applied, created_at_ms
-		FROM artwork_candidate
-		WHERE id = ?`, strings.TrimSpace(candidateID)))
+	candidate, plane, err := s.findArtworkCandidateLocked(ctx, strings.TrimSpace(candidateID))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ArtworkCandidate{}, ValidationError("artwork candidate not found")
-		}
 		return ArtworkCandidate{}, err
 	}
-	if _, err := s.visibleMediaSQL(ctx, candidate.MediaID, filter); err != nil {
+	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, candidate.MediaID, filter); err != nil {
 		return ArtworkCandidate{}, ValidationError("artwork candidate not found")
 	}
 	return candidate, nil
@@ -444,7 +487,21 @@ func (s *Store) AllArtworkCandidateIDs(ctx context.Context) ([]string, error) {
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `SELECT id FROM artwork_candidate`)
+	// Open Encrypted Libraries contribute their own candidates. A sealed one's
+	// IDs are unreadable, so its cached previews are not protected here.
+	var ids []string
+	for _, plane := range s.allCatalogPlanesLocked() {
+		found, err := artworkCandidateIDsFrom(ctx, plane.reader)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, found...)
+	}
+	return ids, nil
+}
+
+func artworkCandidateIDsFrom(ctx context.Context, reader *sql.DB) ([]string, error) {
+	rows, err := reader.QueryContext(ctx, `SELECT id FROM artwork_candidate`)
 	if err != nil {
 		return nil, err
 	}
@@ -486,8 +543,15 @@ func (s *Store) ArtworkSlotManual(ctx context.Context, mediaID MediaID, slot str
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	var source string
-	err := s.catalogW.QueryRowContext(ctx,
+	err = plane.writer.QueryRowContext(ctx,
 		`SELECT source FROM media_field_provenance WHERE media_id = ? AND field = ?`,
 		mediaID, ArtworkLockField(slot)).Scan(&source)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -507,7 +571,14 @@ func (s *Store) ClearArtworkSlotApplied(ctx context.Context, mediaID MediaID, sl
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx,
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx,
 		`UPDATE artwork_candidate SET applied = 0 WHERE media_id = ? AND slot = ?`, mediaID, slot)
 	return err
 }

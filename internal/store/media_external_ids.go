@@ -2,6 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"slices"
 	"strings"
 )
 
@@ -56,14 +59,21 @@ func (s *Store) AddMediaExternalID(ctx context.Context, mediaID MediaID, scheme 
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	result, err := s.catalogW.ExecContext(ctx, `
+	// The identifier lives on the Media's own plane. A sealed Encrypted
+	// Library's Media resolves to not-found, so the write is refused rather
+	// than parked in the shared catalog.
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
+		return err
+	}
+	result, err := plane.writer.ExecContext(ctx, `
 		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
 		VALUES (?, ?, ?)
 	`, mediaID, scheme, value)
 	if err != nil {
 		return err
 	}
-	if inserted, err := result.RowsAffected(); err == nil && inserted > 0 {
+	if inserted, err := result.RowsAffected(); err == nil && inserted > 0 && !plane.encrypted {
 		s.emitMediaUpdated(ctx, mediaID)
 	}
 	return nil
@@ -80,7 +90,14 @@ func (s *Store) MediaExternalIDs(ctx context.Context, mediaID MediaID) ([]MediaE
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT scheme, value
 		FROM media_external_id
 		WHERE media_id = ?
@@ -115,38 +132,44 @@ func (s *Store) MediaExternalIDsBatch(ctx context.Context, mediaIDs []MediaID) (
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	for start := 0; start < len(mediaIDs); start += bulkWriteChunkSize {
-		chunk := mediaIDs[start:min(start+bulkWriteChunkSize, len(mediaIDs))]
-		args := make([]any, len(chunk))
-		for i, id := range chunk {
-			args[i] = id
-		}
-		// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
-		rows, err := s.catalogR.QueryContext(ctx, `
-			SELECT media_id, scheme, value
-			FROM media_external_id
-			WHERE media_id IN (`+sqlPlaceholders(len(chunk))+`)
-			ORDER BY media_id, scheme, value
-		`, args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var mediaID MediaID
-			var id MediaExternalID
-			if err := rows.Scan(&mediaID, &id.Scheme, &id.Value); err != nil {
-				_ = rows.Close()
+	// Media IDs are unique across planes, so each plane contributes only its
+	// own Media's identifiers and the union needs no de-duplication.
+	for _, plane := range s.allCatalogPlanesLocked() {
+		for start := 0; start < len(mediaIDs); start += bulkWriteChunkSize {
+			chunk := mediaIDs[start:min(start+bulkWriteChunkSize, len(mediaIDs))]
+			if err := mediaExternalIDsChunk(ctx, plane.reader, chunk, out); err != nil {
 				return nil, err
 			}
-			out[mediaID] = append(out[mediaID], id)
-		}
-		err = rows.Err()
-		_ = rows.Close()
-		if err != nil {
-			return nil, err
 		}
 	}
 	return out, nil
+}
+
+func mediaExternalIDsChunk(ctx context.Context, reader *sql.DB, chunk []MediaID, out map[MediaID][]MediaExternalID) error {
+	args := make([]any, len(chunk))
+	for i, id := range chunk {
+		args[i] = id
+	}
+	// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
+	rows, err := reader.QueryContext(ctx, `
+		SELECT media_id, scheme, value
+		FROM media_external_id
+		WHERE media_id IN (`+sqlPlaceholders(len(chunk))+`)
+		ORDER BY media_id, scheme, value
+	`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var mediaID MediaID
+		var id MediaExternalID
+		if err := rows.Scan(&mediaID, &id.Scheme, &id.Value); err != nil {
+			return err
+		}
+		out[mediaID] = append(out[mediaID], id)
+	}
+	return rows.Err()
 }
 
 // MediaIDsByExternalID looks up all Media rows carrying scheme/value. The
@@ -190,7 +213,22 @@ func (s *Store) MediaIDsByExternalID(ctx context.Context, scheme string, value s
 		`
 		args = []any{scheme}
 	}
-	rows, err := s.catalogR.QueryContext(ctx, query, args...)
+	// Every readable plane answers: an open Encrypted Library's identifiers
+	// are on its own plane, and a sealed one's are unreadable by design.
+	var ids []MediaID
+	for _, plane := range s.allCatalogPlanesLocked() {
+		found, err := mediaIDsByExternalIDFrom(ctx, plane.reader, query, args, scheme, value, legacyLookup)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, found...)
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids), nil
+}
+
+func mediaIDsByExternalIDFrom(ctx context.Context, reader *sql.DB, query string, args []any, scheme, value string, legacyLookup bool) ([]MediaID, error) {
+	rows, err := reader.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -208,9 +246,7 @@ func (s *Store) MediaIDsByExternalID(ctx context.Context, scheme string, value s
 				continue
 			}
 		}
-		if len(ids) == 0 || ids[len(ids)-1] != id {
-			ids = append(ids, id)
-		}
+		ids = append(ids, id)
 	}
 	return ids, rows.Err()
 }

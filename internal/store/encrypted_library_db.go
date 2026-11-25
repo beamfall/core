@@ -174,6 +174,14 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 			return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
 		}
 	}
+	// Identification rows an earlier build stranded in the shared catalog move
+	// onto this plane before it serves reads (CORE-0706). This is the last
+	// step: an unwind discards the working DB, so no later failure may discard
+	// rows already deleted from the shared catalog. A failure here unwinds
+	// before or without that delete, so the shared copy survives.
+	if err := s.evacuateIdentificationStateLocked(ctx, plane); err != nil {
+		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
+	}
 	return nil
 }
 
