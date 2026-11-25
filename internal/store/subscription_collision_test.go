@@ -130,6 +130,7 @@ func TestEncryptedLibrarySubscriptionsAreRefused(t *testing.T) {
 	}
 	_, checks["AssociateSubscriptionEntryMedia"] = st.AssociateSubscriptionEntryMedia(ctx, id, privateGUID, media.ID, now)
 	_, checks["FillSubscriptionTitle"] = st.FillSubscriptionTitle(ctx, id, "Private Feed Title 7c1f")
+	checks["RecordItemStateImport"] = st.RecordItemStateImport(ctx, ItemStateImport{ProfileID: "profile-default", SubscriptionID: id, Source: "opml", ItemGUID: privateGUID, Played: true}, now)
 	for name, err := range checks {
 		if !errors.Is(err, ErrEncryptedLibrarySubscription) {
 			t.Errorf("%s error = %v, want ErrEncryptedLibrarySubscription", name, err)
@@ -140,7 +141,63 @@ func TestEncryptedLibrarySubscriptionsAreRefused(t *testing.T) {
 		SELECT (SELECT COUNT(*) FROM subscription_seen_entry WHERE subscription_id = ?)
 		     + (SELECT COUNT(*) FROM subscription WHERE id = ? AND title <> '')
 		     + (SELECT COUNT(*) FROM media_external_id WHERE value = ?)
-	`, id, id, privateGUID).Scan(&leaked); err != nil || leaked != 0 {
+		     + (SELECT COUNT(*) FROM item_state_import WHERE subscription_id = ?)
+	`, id, id, privateGUID, id).Scan(&leaked); err != nil || leaked != 0 {
 		t.Fatalf("catalog rows written for the encrypted Subscription = %d, %v", leaked, err)
+	}
+}
+
+// TestItemStateImportGUIDIsExact replays an imported item state only through
+// the receipt of its exact GUID: a whitespace sibling never applies it.
+func TestItemStateImportGUIDIsExact(t *testing.T) {
+	st, sub, mediaID, now := collisionFixture(t)
+	ctx := context.Background()
+	const guid = " item-exact\t"
+	if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, "item-exact", "/media/local/exact/episode.mp3", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordItemStateImport(ctx, ItemStateImport{ProfileID: "profile-default", SubscriptionID: sub.ID, Source: "opml", ItemGUID: guid, Played: true}, now); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := st.pendingItemStateImports(ctx); err != nil || len(pending) != 0 {
+		t.Fatalf("a trimmed sibling receipt resolved the import: %v, %v", pending, err)
+	}
+	if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, guid, "/media/local/exact/episode.mp3", now); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := st.pendingItemStateImports(ctx)
+	if err != nil || len(pending) != 1 || pending[0].ItemGUID != guid || pending[0].MediaID != mediaID {
+		t.Fatalf("pending = %v, %v, want the exact GUID bound to %s", pending, err, mediaID)
+	}
+}
+
+// TestFeedExternalIDsRoundTripExactly stores and finds a feed GUID External ID
+// byte for byte, while plugin identifiers keep their trimmed form.
+func TestFeedExternalIDsRoundTripExactly(t *testing.T) {
+	st, _, mediaID, _ := collisionFixture(t)
+	ctx := context.Background()
+	const guid = " guid-exact\t"
+	if err := st.AddMediaExternalID(ctx, mediaID, subscriptionFeedGUIDScheme, guid); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddMediaExternalID(ctx, mediaID, "plugin-ref", "  ref-1 "); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := st.MediaExternalIDs(ctx, mediaID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, id := range ids {
+		got[id.Scheme] = id.Value
+	}
+	if got[subscriptionFeedGUIDScheme] != guid || got["plugin-ref"] != "ref-1" {
+		t.Fatalf("external IDs = %q", got)
+	}
+	if found, err := st.MediaIDsByExternalID(ctx, subscriptionFeedGUIDScheme, guid); err != nil || len(found) != 1 || found[0] != mediaID {
+		t.Fatalf("exact lookup = %v, %v", found, err)
+	}
+	if found, err := st.MediaIDsByExternalID(ctx, subscriptionFeedGUIDScheme, "guid-exact"); err != nil || len(found) != 0 {
+		t.Fatalf("a trimmed sibling matched the exact feed GUID: %v, %v", found, err)
 	}
 }
