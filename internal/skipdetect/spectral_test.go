@@ -10,30 +10,6 @@ import (
 	"github.com/beamfall/core/internal/store/storetest"
 )
 
-// spectralDetector adds the spectral capability to fakeDetector. Signatures
-// are whole-file frame sequences keyed by path; the head call returns the
-// first seconds of frames and the tail call the last.
-type spectralDetector struct {
-	*fakeDetector
-	framesByPath map[string][]uint32
-}
-
-func (d *spectralDetector) SpectralFingerprint(_ context.Context, path string, seconds int) ([]uint32, error) {
-	frames := d.framesByPath[path]
-	if n := seconds * spectralFramesPerWindow; len(frames) > n {
-		frames = frames[:n]
-	}
-	return append([]uint32(nil), frames...), nil
-}
-
-func (d *spectralDetector) SpectralFingerprintTail(_ context.Context, path string, seconds, _ int) ([]uint32, error) {
-	frames := d.framesByPath[path]
-	if n := seconds * spectralFramesPerWindow; len(frames) > n {
-		frames = frames[len(frames)-n:]
-	}
-	return append([]uint32(nil), frames...), nil
-}
-
 // noise returns seconds of unrelated, detailed sub-fingerprints.
 func noise(seed uint64, seconds float64) []uint32 {
 	rng := rand.New(rand.NewPCG(seed, ^seed)) // #nosec G404 -- deterministic test signature
@@ -85,9 +61,10 @@ func detectSpectral(t *testing.T, target int, siblings ...spectralSibling) []sto
 	t.Helper()
 	st := storetest.Open(t)
 	enable(t, st, "library-local")
-	det := &spectralDetector{
-		fakeDetector: &fakeDetector{chaptersByPath: map[string][]ffmpeg.Chapter{}, fingerprintByPath: map[string][]float64{}},
-		framesByPath: map[string][]uint32{},
+	det := &fakeDetector{
+		chaptersByPath:    map[string][]ffmpeg.Chapter{},
+		fingerprintByPath: map[string][]float64{},
+		framesByPath:      map[string][]uint32{},
 	}
 	var ids []store.MediaID
 	for _, sib := range siblings {

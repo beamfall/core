@@ -11,14 +11,21 @@
 //     a titled embedded chapter ("Intro", "End Credits") maps to a segment by a
 //     title heuristic.
 //   - cross-Media audio fingerprinting (the series-shaped engine): a sibling's
-//     long shared leading audio run becomes the `intro`; the shared trailing run
-//     becomes `credits`. Confidence comes from the match strength and is gated —
-//     below the auto-apply threshold the segment is dropped (Decision 5), never
-//     surfaced.
+//     long shared run of spectral sub-fingerprints near the opening becomes the
+//     `intro`; the shared run near EOF becomes `credits`. Confidence comes from
+//     the match strength and is gated — below the auto-apply threshold the
+//     segment is dropped (Decision 5), never surfaced.
 //   - prior-Media reverse fingerprinting: short matches from the current
 //     opening, scattered across multiple earlier ordered siblings, become a
-//     `recap`. An opening text cue can corroborate this evidence but never emits
-//     a segment by itself.
+//     `recap`. The loudness signature only proposes those matches; each one
+//     must be confirmed by the spectral sub-fingerprints. An opening text cue
+//     can corroborate this evidence but never emits a segment by itself.
+//
+// A loudness (RMS) envelope is never evidence on its own (CORE-0700): unrelated
+// audio and shared silence share loudness curves. Every auto-applied
+// fingerprint segment rests on spectral sub-fingerprints, which treat silence
+// as neutral and need detailed frames to agree. A detector without the
+// spectral capability fingerprints nothing.
 //
 // All writes go through store.ReplaceDetectedSegment, which enforces manual-
 // always-wins, suppression, and idempotency, so the detector itself never has
@@ -94,6 +101,9 @@ const (
 	// Reverse matching is stricter than aligned method (b): searching an entire
 	// file creates far more collision opportunities than comparing two heads.
 	reverseWindowMatchTolerance = 0.015
+	// reverseSilenceFloor is the loudness (on the [0,1] magnitude scale) at or
+	// below which a window counts as silent and can match nothing.
+	reverseSilenceFloor = 0.01
 	// reverseMatchMinWindows rejects score/sting collisions;
 	// reverseMatchMaxWindows keeps the evidence shaped as short reused clips.
 	reverseMatchMinWindows    = 4
@@ -151,17 +161,12 @@ type Detector interface {
 	AudioFingerprint(ctx context.Context, src string, windowCount int) ([]float64, error)
 }
 
-// tailFingerprinter is an optional detector capability kept separate from
-// Detector so existing chapter-only adapters do not need to implement it.
-type tailFingerprinter interface {
-	AudioFingerprintTail(ctx context.Context, src string, windowCount, durationSeconds int) ([]float64, error)
-}
-
-// spectralFingerprinter is an optional detector capability. When present, the
-// sibling intro and credits search compares spectral sub-fingerprints at frame
-// resolution instead of loudness windows, because siblings often share their
-// loudness curve without sharing their sound (CORE-3111). The reverse recap
-// search still reads the loudness signature.
+// spectralFingerprinter is the detector capability every fingerprint segment
+// rests on. The sibling intro and credits search compares spectral
+// sub-fingerprints at frame resolution, because siblings often share their
+// loudness curve without sharing their sound (CORE-3111), and the reverse
+// recap search confirms each loudness match with them (CORE-0700). It is kept
+// out of Detector so chapter-only adapters need not implement it.
 type spectralFingerprinter interface {
 	SpectralFingerprint(ctx context.Context, src string, seconds int) ([]uint32, error)
 	SpectralFingerprintTail(ctx context.Context, src string, seconds, durationSeconds int) ([]uint32, error)
@@ -307,9 +312,9 @@ func (s *Service) analyzeFingerprints(ctx context.Context, media store.Media, pa
 	if len(siblings) == 0 {
 		return result, ctx.Err()
 	}
-	headSelf, err := s.detector.AudioFingerprint(ctx, path, fingerprintHeadWindows)
-	if err != nil {
-		return result, err
+	spectral, ok := s.detector.(spectralFingerprinter)
+	if !ok {
+		return result, errNoSpectralFingerprints
 	}
 	// Best shared run across any sibling, per kind. Comparing against the
 	// closest sibling (not every pair) is enough: a shared intro recurs across
@@ -318,36 +323,16 @@ func (s *Service) analyzeFingerprints(ctx context.Context, media store.Media, pa
 		intro:   runLimits{maxWindows: maxIntroWindows, durationSeconds: media.DurationSeconds},
 		credits: runLimits{durationSeconds: media.DurationSeconds, offsetSeconds: creditsOffset(media.DurationSeconds), closing: true},
 	}
-	var bestIntro, bestCredits sharedRun
-	if spectral, ok := s.detector.(spectralFingerprinter); ok {
-		bestIntro, bestCredits, err = bestSiblingRuns(ctx, s.store, media, path, siblings, limits, siblingSignatures[uint32]{
-			head: func(src string) ([]uint32, error) {
-				return spectral.SpectralFingerprint(ctx, src, fingerprintHeadWindows)
-			},
-			tail: func(src string, durationSeconds int) ([]uint32, error) {
-				return spectral.SpectralFingerprintTail(ctx, src, fingerprintTailWindows, durationSeconds)
-			},
-			leading:  spectralSharedRun,
-			trailing: spectralSharedRun,
-		})
-	} else if tailDetector, ok := s.detector.(tailFingerprinter); ok {
-		bestIntro, bestCredits, err = bestSiblingRuns(ctx, s.store, media, path, siblings, limits, siblingSignatures[float64]{
-			head: func(src string) ([]float64, error) {
-				// This Media's head is already read for the recap search.
-				if src == path {
-					return headSelf, nil
-				}
-				return s.detector.AudioFingerprint(ctx, src, fingerprintHeadWindows)
-			},
-			tail: func(src string, durationSeconds int) ([]float64, error) {
-				return tailDetector.AudioFingerprintTail(ctx, src, fingerprintTailWindows, durationSeconds)
-			},
-			leading:  anyLimits(sharedLeadingRun),
-			trailing: anyLimits(sharedTrailingRun),
-		})
-	} else {
-		err = errors.New("skipdetect: detector does not support EOF-aligned audio fingerprints")
-	}
+	bestIntro, bestCredits, err := bestSiblingRuns(ctx, s.store, media, path, siblings, limits, siblingSignatures[uint32]{
+		head: func(src string) ([]uint32, error) {
+			return spectral.SpectralFingerprint(ctx, src, fingerprintHeadWindows)
+		},
+		tail: func(src string, durationSeconds int) ([]uint32, error) {
+			return spectral.SpectralFingerprintTail(ctx, src, fingerprintTailWindows, durationSeconds)
+		},
+		leading:  spectralSharedRun,
+		trailing: spectralSharedRun,
+	})
 	if err != nil {
 		return result, err
 	}
@@ -370,7 +355,11 @@ func (s *Service) analyzeFingerprints(ctx context.Context, media store.Media, pa
 	if err != nil {
 		return result, err
 	}
-	recap, ok := s.reverseFingerprint(ctx, headSelf, prior, cue)
+	opening, err := s.openingSignatures(ctx, spectral, path)
+	if err != nil {
+		return result, err
+	}
+	recap, ok := s.reverseFingerprint(ctx, spectral, opening, prior, cue)
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
@@ -395,17 +384,11 @@ func (s *Service) analyzeFingerprints(ctx context.Context, media store.Media, pa
 }
 
 // siblingSignatures reads one signature type for the sibling intro and credits
-// search: the loudness windows or the spectral sub-fingerprints.
+// search (the spectral sub-fingerprints in production).
 type siblingSignatures[T any] struct {
 	head              func(src string) ([]T, error)
 	tail              func(src string, durationSeconds int) ([]T, error)
 	leading, trailing func(self, sibling []T, limits runLimits) sharedRun
-}
-
-// anyLimits adapts an anchored loudness matcher, which finds one run per
-// sibling pair and leaves the limits to the caller.
-func anyLimits(match func(self, sibling []float64) sharedRun) func(self, sibling []float64, limits runLimits) sharedRun {
-	return func(self, sibling []float64, _ runLimits) sharedRun { return match(self, sibling) }
 }
 
 // siblingRunLimits holds the plausibility bounds for each search.
@@ -494,7 +477,30 @@ type recapCue struct {
 	start, end float64
 }
 
-func (s *Service) reverseFingerprint(ctx context.Context, opening []float64, prior []store.MediaID, cue recapCue) (segment, bool) {
+// errNoSpectralFingerprints fails a fingerprint analysis whose detector cannot
+// read spectral sub-fingerprints: loudness alone may not place a segment.
+var errNoSpectralFingerprints = errors.New("skipdetect: detector does not support spectral fingerprints; loudness alone cannot place a segment")
+
+// openingSignature is this Media's opening as both signatures: the loudness
+// windows propose reverse matches and the spectral frames confirm them.
+type openingSignature struct {
+	loudness []float64
+	frames   []uint32
+}
+
+func (s *Service) openingSignatures(ctx context.Context, spectral spectralFingerprinter, path string) (openingSignature, error) {
+	loudness, err := s.detector.AudioFingerprint(ctx, path, reverseFingerprintHeadWindows)
+	if err != nil {
+		return openingSignature{}, err
+	}
+	frames, err := spectral.SpectralFingerprint(ctx, path, reverseFingerprintHeadWindows)
+	if err != nil {
+		return openingSignature{}, err
+	}
+	return openingSignature{loudness: loudness, frames: frames}, nil
+}
+
+func (s *Service) reverseFingerprint(ctx context.Context, spectral spectralFingerprinter, opening openingSignature, prior []store.MediaID, cue recapCue) (segment, bool) {
 	var matches []reverseMatch
 	minMatchWindows := reverseMatchMinWindows
 	if cue.found {
@@ -514,9 +520,55 @@ func (s *Service) reverseFingerprint(ctx context.Context, opening []float64, pri
 		if err != nil {
 			continue
 		}
-		matches = append(matches, backwardMatches(opening, full, siblingID, minMatchWindows)...)
+		frames, err := spectral.SpectralFingerprint(ctx, file.Path, windowCount)
+		if err != nil {
+			continue
+		}
+		for _, match := range backwardMatches(opening.loudness, full, siblingID, minMatchWindows) {
+			if spectrallyConfirmed(opening.frames, frames, match) {
+				matches = append(matches, match)
+			}
+		}
 	}
-	return recapFromMatches(matches, len(opening), cue)
+	return recapFromMatches(matches, len(opening.loudness), cue)
+}
+
+// spectrallyConfirmed reports whether a loudness match is the same sound in
+// both files. The loudness windows align whole seconds, so the spectral frames
+// are compared at every frame shift within one window of that alignment; at
+// the best shift every window must match or sustain (silence, divergence or a
+// window that cannot be compared rejects the match) and at least half of them
+// must match on fresh frames. Equal loudness with a different sound, and
+// shared silence, are therefore never recap evidence.
+func spectrallyConfirmed(self, origin []uint32, match reverseMatch) bool {
+	const fpw = spectralFramesPerWindow
+	windows := match.selfEnd - match.selfStart
+	if windows <= 0 {
+		return false
+	}
+	need := (windows + 1) / 2
+	for shift := -(fpw - 1); shift < fpw; shift++ {
+		fresh, ok := 0, true
+		for k := 0; k < windows && ok; k++ {
+			i := (match.selfStart + k) * fpw
+			j := (match.originStart+k)*fpw + shift
+			if i < 0 || j < 0 || i+fpw > len(self) || j+fpw > len(origin) {
+				ok = false
+				break
+			}
+			switch _, verdict := spectralWindowDistance(self, origin, i, j); verdict {
+			case windowMatches:
+				fresh++
+			case windowSustains:
+			default:
+				ok = false
+			}
+		}
+		if ok && fresh >= need {
+			return true
+		}
+	}
+	return false
 }
 
 func backwardMatches(opening, origin []float64, siblingID store.MediaID, minMatchWindows int) []reverseMatch {
@@ -542,10 +594,13 @@ func backwardMatches(opening, origin []float64, siblingID store.MediaID, minMatc
 	return matches
 }
 
+// matchingWindows counts the leading windows of a and b whose loudness agrees
+// within tolerance. A silent window on either side ends the run: shared
+// silence is not shared audio.
 func matchingWindows(a, b []float64, limit int, tolerance float64) int {
 	n := min(len(a), len(b), limit)
 	for i := 0; i < n; i++ {
-		if math.Abs(a[i]-b[i]) > tolerance {
+		if a[i] <= reverseSilenceFloor || b[i] <= reverseSilenceFloor || math.Abs(a[i]-b[i]) > tolerance {
 			return i
 		}
 	}
@@ -810,59 +865,6 @@ func (run sharedRun) confidence() float64 {
 		score = 1
 	}
 	return score
-}
-
-// sharedLeadingRun finds the longest run of consecutive matching windows
-// starting at window 0 of both signatures — the shared cue both files open (or,
-// for the tail signature, close) with. Two windows match when their loudness
-// magnitudes differ by no more than windowMatchTolerance. The run ends at the
-// first non-matching window; the average difference over the run sets its
-// tightness. Comparing from window 0 is exactly right for an intro (both files
-// open with the theme) and for credits when the tail signatures are aligned to
-// the same trailing length.
-func sharedLeadingRun(self, sibling []float64) sharedRun {
-	n := len(self)
-	if len(sibling) < n {
-		n = len(sibling)
-	}
-	var matched int
-	var sumDiff float64
-	for i := 0; i < n; i++ {
-		diff := math.Abs(self[i] - sibling[i])
-		if diff > windowMatchTolerance {
-			break
-		}
-		sumDiff += diff
-		matched++
-	}
-	if matched == 0 {
-		return sharedRun{}
-	}
-	return sharedRun{startWindow: 0, windows: matched, compared: n, avgDiff: sumDiff / float64(matched)}
-}
-
-// sharedTrailingRun finds the longest run ending at EOF in both signatures.
-// Tail fingerprints are chronological, so credits occupy the suffix rather
-// than window zero of the analysed region.
-func sharedTrailingRun(self, sibling []float64) sharedRun {
-	n := len(self)
-	if len(sibling) < n {
-		n = len(sibling)
-	}
-	var matched int
-	var sumDiff float64
-	for matched < n {
-		diff := math.Abs(self[len(self)-1-matched] - sibling[len(sibling)-1-matched])
-		if diff > windowMatchTolerance {
-			break
-		}
-		sumDiff += diff
-		matched++
-	}
-	if matched == 0 {
-		return sharedRun{}
-	}
-	return sharedRun{startWindow: len(self) - matched, windows: matched, compared: n, avgDiff: sumDiff / float64(matched)}
 }
 
 // spectralSharedRun finds the best plausible run of matching windows that self
