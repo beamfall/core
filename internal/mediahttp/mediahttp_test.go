@@ -1867,6 +1867,10 @@ func newPrecomputedHLSTestHandler(t *testing.T, sessionID store.SessionID, media
 	if err := st.SetPrimaryMediaFile(context.Background(), mediaID, src); err != nil {
 		t.Fatal(err)
 	}
+	srcFingerprint, err := store.HashMediaFileContent(src)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cacheDir := filepath.Join(t.TempDir(), "precomputed")
 	if err := os.MkdirAll(filepath.Join(cacheDir, "720p"), 0o700); err != nil {
 		t.Fatal(err)
@@ -1880,7 +1884,7 @@ func newPrecomputedHLSTestHandler(t *testing.T, sessionID store.SessionID, media
 	if err := st.UpsertPlaybackRendition(context.Background(), store.PlaybackRendition{
 		ID:                 "cached-hls",
 		MediaID:            mediaID,
-		ContentFingerprint: "sha256:cached-hls",
+		ContentFingerprint: srcFingerprint,
 		Kind:               store.PlaybackRenditionKindHLS,
 		Status:             store.PlaybackRenditionReady,
 		RungID:             "720p",
