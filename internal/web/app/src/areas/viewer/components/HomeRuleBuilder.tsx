@@ -154,7 +154,7 @@ export function HomeRuleBuilder({
               type="button"
               variant="ghost"
               size="icon-sm"
-              aria-label="Remove group"
+              aria-label={t("homeRuleRemoveGroup")}
               onClick={onRemoveGroup}
             >
               <Trash2 className="size-3.5" aria-hidden />
@@ -197,7 +197,7 @@ export function HomeRuleBuilder({
                 className="flex flex-wrap items-center gap-2 rounded-lg bg-[var(--bg-surface)]/80 p-2.5"
               >
                 <select
-                  aria-label="Rule field"
+                  aria-label={t("homeRuleField")}
                   value={node.field ?? fieldSpec?.key ?? ""}
                   onChange={(e) => {
                     const nextField = fields.find((f) => f.key === e.target.value);
@@ -222,7 +222,7 @@ export function HomeRuleBuilder({
                 </select>
 
                 <select
-                  aria-label="Rule operator"
+                  aria-label={t("homeRuleOperator")}
                   value={currentOp}
                   onChange={(e) => {
                     const nextOp = e.target.value;
@@ -255,7 +255,7 @@ export function HomeRuleBuilder({
                   <div className="flex items-center gap-1.5">
                     <input
                       type="number"
-                      aria-label="Minimum value"
+                      aria-label={t("homeRuleMinValue")}
                       value={Array.isArray(node.value) ? Number(node.value[0] ?? 0) : 0}
                       onChange={(e) => {
                         const arr = Array.isArray(node.value) ? [...node.value] : [0, 10];
@@ -267,7 +267,7 @@ export function HomeRuleBuilder({
                     <span className="text-xs text-[var(--text-muted)]">–</span>
                     <input
                       type="number"
-                      aria-label="Maximum value"
+                      aria-label={t("homeRuleMaxValue")}
                       value={Array.isArray(node.value) ? Number(node.value[1] ?? 10) : 10}
                       onChange={(e) => {
                         const arr = Array.isArray(node.value) ? [...node.value] : [0, 10];
@@ -334,7 +334,7 @@ export function HomeRuleBuilder({
                       type="number"
                       min={1}
                       max={36500}
-                      aria-label="Number of days"
+                      aria-label={t("homeRuleDays")}
                       value={Number(node.value ?? 30)}
                       onChange={(e) =>
                         updateCondition(index, {
@@ -370,7 +370,7 @@ export function HomeRuleBuilder({
                       list={
                         fieldSpec?.suggestions?.length ? `rule-sugg-${depth}-${index}` : undefined
                       }
-                      aria-label="Rule value"
+                      aria-label={t("homeRuleValue")}
                       value={String(node.value ?? "")}
                       onChange={(e) => {
                         const v =
@@ -395,7 +395,7 @@ export function HomeRuleBuilder({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  aria-label="Remove rule"
+                  aria-label={t("homeRuleRemove")}
                   className="text-[var(--text-muted)] hover:text-foreground"
                   onClick={() => removeCondition(index)}
                 >

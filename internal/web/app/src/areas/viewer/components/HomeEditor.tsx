@@ -273,7 +273,7 @@ export function HomeEditor({ onSaved, onClose }: HomeEditorProps) {
               {config.hero.enabled && (
                 <>
                   <select
-                    aria-label="Hero mode"
+                    aria-label={t("homeHeroModeLabel")}
                     value={config.hero.mode}
                     disabled={saving}
                     onChange={(e) => {

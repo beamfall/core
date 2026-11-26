@@ -231,18 +231,20 @@ export function HomeShelfInspector({
             </label>
 
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-xs font-medium text-[var(--text-secondary)]">Source type</span>
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
+                {t("homeSourceType")}
+              </span>
               <select
-                aria-label="Source type"
+                aria-label={t("homeSourceType")}
                 value={draft.source.type === "playlist" ? "collection" : draft.source.type}
                 onChange={(e) => switchSourceType(e.target.value as HomeShelfSourceType)}
                 className={CONTROL_CLS}
               >
                 <option value="builtin">Built-in feed</option>
-                <option value="rules">Smart rules</option>
+                <option value="rules">{t("homeSourceRules")}</option>
                 <option value="collection">Collection / Playlist</option>
-                <option value="saved-filter">Saved filter</option>
-                <option value="library">Library</option>
+                <option value="saved-filter">{t("homeSourceSavedFilter")}</option>
+                <option value="library">{t("homeSourceLibrary")}</option>
                 <option value="entity">Tag / Category</option>
               </select>
             </label>
@@ -290,7 +292,9 @@ export function HomeShelfInspector({
           {/* Source-specific controls */}
           {draft.source.type === "builtin" && (
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-xs font-medium text-[var(--text-secondary)]">Feed</span>
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
+                {t("homeSourceFeed")}
+              </span>
               <select
                 value={draft.source.builtinKind ?? "recently-added"}
                 onChange={(e) =>
@@ -346,7 +350,9 @@ export function HomeShelfInspector({
 
           {draft.source.type === "saved-filter" && (
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-xs font-medium text-[var(--text-secondary)]">Saved Filter</span>
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
+                {t("homeSavedFilterLabel")}
+              </span>
               <select
                 value={draft.source.savedFilterID ?? ""}
                 onChange={(e) =>
@@ -395,7 +401,9 @@ export function HomeShelfInspector({
                 </select>
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
-                <span className="text-xs font-medium text-[var(--text-secondary)]">Name</span>
+                <span className="text-xs font-medium text-[var(--text-secondary)]">
+                  {t("homeShelfName")}
+                </span>
                 <input
                   type="text"
                   list="home-entity-suggestions"
@@ -488,7 +496,9 @@ export function HomeShelfInspector({
 
               {draft.source.sort?.by === "random" && (
                 <label className="flex flex-col gap-1.5 text-xs">
-                  <span className="font-medium text-[var(--text-secondary)]">Refresh cadence</span>
+                  <span className="font-medium text-[var(--text-secondary)]">
+                    {t("homeRefreshCadence")}
+                  </span>
                   <select
                     value={draft.source.sort?.randomSeedMode ?? "daily"}
                     onChange={(e) =>
@@ -506,9 +516,9 @@ export function HomeShelfInspector({
                     }
                     className={CONTROL_CLS}
                   >
-                    <option value="session">Every visit</option>
-                    <option value="hourly">Hourly</option>
-                    <option value="daily">Daily</option>
+                    <option value="session">{t("homeRefreshSession")}</option>
+                    <option value="hourly">{t("homeRefreshHourly")}</option>
+                    <option value="daily">{t("homeRefreshDaily")}</option>
                   </select>
                 </label>
               )}
@@ -555,10 +565,10 @@ export function HomeShelfInspector({
                   }
                   className={CONTROL_CLS}
                 >
-                  <option value="auto">Auto</option>
-                  <option value="poster">Poster</option>
-                  <option value="landscape">Landscape</option>
-                  <option value="square">Square</option>
+                  <option value="auto">{t("homeArtAuto")}</option>
+                  <option value="poster">{t("homeArtPoster")}</option>
+                  <option value="landscape">{t("homeArtLandscape")}</option>
+                  <option value="square">{t("homeArtSquare")}</option>
                 </select>
               </label>
             </div>
@@ -603,7 +613,9 @@ export function HomeShelfInspector({
           {/* Live Preview Strip */}
           <div className="flex flex-col gap-3 rounded-xl bg-[var(--bg-root)]/45 p-4">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-medium text-[var(--text-secondary)]">Live Preview</span>
+              <span className="font-medium text-[var(--text-secondary)]">
+                {t("homeLivePreview")}
+              </span>
               <span className="text-[var(--text-muted)]">
                 {previewLoading
                   ? t("loading")
