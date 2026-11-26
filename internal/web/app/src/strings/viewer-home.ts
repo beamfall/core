@@ -1,5 +1,8 @@
+import { viewerExperienceStrings } from "./viewer-experience";
+
 export const viewerHomeStrings = {
   en: {
+    ...viewerExperienceStrings.en,
     homeEdit: "Edit home",
     homeEditHelp:
       "Drag shelves or use the arrows to change their order. Hidden shelves stay off your Home.",
@@ -84,6 +87,7 @@ export const viewerHomeStrings = {
     homeLivePreview: "Live Preview",
   },
   fr: {
+    ...viewerExperienceStrings.fr,
     homeEdit: "Modifier l’accueil",
     homeEditHelp:
       "Faites glisser les rayons ou utilisez les flèches pour changer leur ordre. Les rayons masqués n’apparaissent pas sur votre accueil.",
@@ -168,6 +172,7 @@ export const viewerHomeStrings = {
     homeLivePreview: "Aperçu en direct",
   },
   de: {
+    ...viewerExperienceStrings.de,
     homeEdit: "Startseite bearbeiten",
     homeEditHelp:
       "Ziehen Sie Regale oder nutzen Sie die Pfeile, um die Reihenfolge zu ändern. Ausgeblendete Regale erscheinen nicht auf Ihrer Startseite.",
@@ -253,6 +258,7 @@ export const viewerHomeStrings = {
     homeLivePreview: "Live-Vorschau",
   },
   es: {
+    ...viewerExperienceStrings.es,
     homeEdit: "Editar inicio",
     homeEditHelp:
       "Arrastra los estantes o usa las flechas para cambiar su orden. Los estantes ocultos no aparecen en tu inicio.",
@@ -337,6 +343,7 @@ export const viewerHomeStrings = {
     homeLivePreview: "Vista previa en vivo",
   },
   pt: {
+    ...viewerExperienceStrings.pt,
     homeEdit: "Editar início",
     homeEditHelp:
       "Arraste as prateleiras ou use as setas para mudar a ordem. Prateleiras ocultas não aparecem no seu início.",

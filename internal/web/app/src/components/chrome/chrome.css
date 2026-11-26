@@ -4338,3 +4338,312 @@ main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar {
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* ============================================================ *
+ *  Experience Lens — Mode Pill & 1-Tap Launch Lens Overlay
+ * ============================================================ */
+
+.bf-lens-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9999px;
+  background: var(--bg-surface);
+}
+
+.bf-lens-pill.is-sidebar {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-bottom: 12px;
+  border-radius: var(--radius-card);
+}
+
+.bf-lens-pill.is-rail {
+  flex-direction: column;
+  align-items: center;
+  border-radius: var(--radius-card);
+}
+
+.bf-lens-pill.is-inline {
+  flex-wrap: wrap;
+}
+
+.bf-lens-segment {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-lens-pill.is-rail .bf-lens-segment {
+  flex: none;
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--radius-field);
+}
+
+.bf-lens-segment:hover {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+.bf-lens-segment:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.bf-lens-segment.is-active {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.bf-launch-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: color-mix(in oklch, var(--bg-root) 78%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.bf-launch-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: min(860px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  padding: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  transform: translate(-50%, -50%);
+}
+
+.bf-launch-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bf-launch-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 26px;
+}
+
+.bf-launch-lead {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.bf-launch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.bf-launch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-launch-card:hover {
+  border-color: var(--border-strong);
+}
+
+.bf-launch-card-trigger {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--radius-field);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.bf-launch-card-trigger:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-launch-card-trigger:hover .bf-launch-arrow {
+  transform: translateX(2px);
+  color: var(--accent-text);
+}
+
+.bf-launch-badge {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-field);
+  background: color-mix(in oklch, var(--accent) 16%, var(--bg-surface));
+  color: var(--accent-text);
+}
+
+.bf-launch-card-name {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.bf-launch-card-meta {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.bf-launch-arrow {
+  color: var(--text-muted);
+  transition:
+    transform var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-launch-preview-area {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bf-launch-preview-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.bf-launch-preview-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bf-launch-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.bf-launch-thumb:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-field);
+}
+
+.bf-launch-thumb-frame {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-field);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.bf-launch-thumb-fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-muted);
+}
+
+.bf-launch-thumb-progress {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 3px;
+  background: color-mix(in oklch, var(--bg-root) 70%, transparent);
+}
+
+.bf-launch-thumb-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.bf-launch-thumb-title {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bf-launch-thumb:hover .bf-launch-thumb-title {
+  color: var(--text-primary);
+}
+
+.bf-launch-empty-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+  padding: 8px 12px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-field);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bf-launch-empty-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-lens-segment,
+  .bf-launch-card,
+  .bf-launch-arrow {
+    transition: none;
+  }
+}

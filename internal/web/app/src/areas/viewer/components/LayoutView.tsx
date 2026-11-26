@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigationType } from "react-router";
 import { ErrorState } from "@/components/beamfall/workbench";
+import { sectionMatchesLens, useExperienceLens } from "@/components/chrome/experienceLens";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { FieldFilters, Layout, Section } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -48,6 +49,8 @@ export function LayoutView({
 }) {
   const t = useT();
   const { manifest, isManager, refresh } = useSession();
+  const { activeLens, libraryIDFilter } = useExperienceLens();
+  const homeLensLibraryIDs = home && !libraryID ? libraryIDFilter : undefined;
   const navigationType = useNavigationType();
   const [connectionLost, setConnectionLost] = useState(false);
   // Bumped by the failure state's retry: remounts every Section so each
@@ -81,7 +84,9 @@ export function LayoutView({
 
   const { sections, homeRecent, homeHero, homeContinue } = useMemo(() => {
     const all = layout?.sections || [];
-    const known = all.filter((s) => SECTION_KINDS.has(s.kind));
+    const known = all
+      .filter((s) => SECTION_KINDS.has(s.kind))
+      .filter((s) => !home || libraryID || sectionMatchesLens(s, activeLens));
     // Unknown kinds are still dropped, but each distinct one is named once
     // (CORE-0203), like Apple's unknownSectionKind. The kind is plugin
     // vocabulary; the diagnostic carries no Section ids, titles or Reveal state.
@@ -104,7 +109,7 @@ export function LayoutView({
       console.warn("Beamfall rendering diagnostic: SectionLimitExceeded");
     }
     return { sections, homeRecent, homeHero, homeContinue };
-  }, [layout, home, libraryID, t]);
+  }, [layout, home, libraryID, activeLens, t]);
 
   // Map each filter-bar to the index of the section it narrows: the next
   // item-bearing section that is neither a filter-bar nor a hero (buildFilterBar).
@@ -136,7 +141,13 @@ export function LayoutView({
 
   const reportConnectionLost = useCallback(() => setConnectionLost(true), []);
   const recentFilters = homeRecent ? extraFiltersForIndex(sections.indexOf(homeRecent)) : null;
-  const recentFeed = useHomeRecent(homeRecent, recentFilters, attempt, reportConnectionLost);
+  const recentFeed = useHomeRecent(
+    homeRecent,
+    recentFilters,
+    attempt,
+    reportConnectionLost,
+    homeLensLibraryIDs,
+  );
   const hydrationStates = hydration.layout === layout ? hydration.states : {};
   // A Profile with something to resume sees Continue Watching first, above the
   // fold, not a newest-arrival feature (CORE-2825). The feature waits for that
@@ -355,6 +366,7 @@ export function LayoutView({
               key={`${section.id}:${attempt}`}
               section={section}
               libraryID={libraryID}
+              libraryIDs={homeLensLibraryIDs}
               entityID={entityID}
               home={home}
               extraFilters={extraFiltersForIndex(index)}

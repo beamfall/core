@@ -1539,6 +1539,14 @@
         "optional": true
       },
       {
+        "name": "libraryIDs",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
         "name": "limit",
         "kind": "int",
         "optional": true
@@ -5657,6 +5665,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -5689,9 +5706,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -10690,6 +10754,15 @@
               "optional": true
             },
             {
+              "name": "capabilities",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
               "name": "icon",
               "kind": "scalar",
               "optional": true
@@ -10697,6 +10770,59 @@
             {
               "name": "id",
               "kind": "scalar"
+            },
+            {
+              "name": "mediaClasses",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "pluginID",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
+              "name": "presentation",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "defaultIcon",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "interactiveSidecars",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playsAlone",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "resumeMedia",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "selectPlays",
+                  "kind": "scalar",
+                  "optional": true
+                }
+              ]
             },
             {
               "name": "title",
@@ -10711,6 +10837,15 @@
             "optional": true
           },
           {
+            "name": "capabilities",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
             "name": "icon",
             "kind": "scalar",
             "optional": true
@@ -10718,6 +10853,59 @@
           {
             "name": "id",
             "kind": "scalar"
+          },
+          {
+            "name": "mediaClasses",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "pluginID",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "presentation",
+            "kind": "object",
+            "optional": true,
+            "nullable": true,
+            "children": [
+              {
+                "name": "defaultIcon",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "interactiveSidecars",
+                "kind": "list",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "playsAlone",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "resumeMedia",
+                "kind": "scalar",
+                "optional": true,
+                "nullable": true
+              },
+              {
+                "name": "selectPlays",
+                "kind": "scalar",
+                "optional": true
+              }
+            ]
           },
           {
             "name": "title",
@@ -12472,6 +12660,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -12504,9 +12701,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -43257,6 +43501,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "certificationScale",
         "kind": "list",
         "optional": true,
@@ -43290,12 +43543,59 @@
         }
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "mediaLabel",
         "kind": "map",
         "nullable": true,
         "elem": {
           "kind": "scalar"
         }
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       }
     ]
   },
@@ -51916,6 +52216,14 @@
     "kind": "object",
     "arguments": [
       {
+        "name": "libraryIDs",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
         "name": "limit",
         "kind": "int",
         "optional": true
@@ -55533,6 +55841,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -55565,9 +55882,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -55601,6 +55965,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -55633,9 +56006,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -55669,6 +56089,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -55701,9 +56130,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -55737,6 +56213,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -55769,9 +56254,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -55805,6 +56337,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -55837,9 +56378,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -61767,6 +62355,14 @@
         "name": "libraryID",
         "kind": "string",
         "optional": true
+      },
+      {
+        "name": "libraryIDs",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
       },
       {
         "name": "limit",

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { itemMatchesLens, useExperienceLens } from "@/components/chrome/experienceLens";
 import { Button } from "@/components/ui/button";
 import { getIdentityEpochSignal, isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
@@ -85,24 +86,40 @@ export function useHomeRecent(
   extraFilters: FieldFilters | null,
   attempt: number,
   onConnectionLost: () => void,
+  libraryIDFilter?: string[],
 ) {
   const identity = useViewerIdentity();
   const engagementEpoch = useEngagementEpoch();
-  const scope = JSON.stringify([section, extraFilters]);
+  const { activeLens } = useExperienceLens();
+  const scope =
+    libraryIDFilter !== undefined
+      ? JSON.stringify([section, extraFilters, libraryIDFilter])
+      : JSON.stringify([section, extraFilters]);
   // Revalidate on engagement changes without remounting the current hero.
   const epoch = JSON.stringify([identity, scope, attempt]);
-  const request = useMemo(() => ({ section, extraFilters, epoch }), [section, extraFilters, epoch]);
+  const request = useMemo(
+    () => ({ section, extraFilters, libraryIDFilter, epoch }),
+    // scope already serializes libraryIDFilter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [section, extraFilters, epoch],
+  );
   const [result, setResult] = useState<{ request: typeof request; feed: HomeRecentFeed }>();
 
   useEffect(() => {
-    const { section } = request;
+    const { section, libraryIDFilter: lensIDs } = request;
     if (!section) return;
     const controller = new AbortController();
     const identitySignal = getIdentityEpochSignal();
     const signal = identitySignal
       ? AbortSignal.any([controller.signal, identitySignal])
       : controller.signal;
-    const context = { libraryID: "", entityID: "", extraFilters: request.extraFilters, home: true };
+    const context = {
+      libraryID: "",
+      entityID: "",
+      extraFilters: request.extraFilters,
+      home: true,
+      ...(lensIDs !== undefined ? { libraryIDs: lensIDs } : {}),
+    };
     let feed = { data: EMPTY_DATA, pending: 1, failed: false };
     let hasCurrentData = false;
     const publish = (next: HomeRecentFeed) => {
@@ -154,12 +171,19 @@ export function useHomeRecent(
         const { fallbackItems } = cachedRecentData(identity, scope);
         cache({ ...EMPTY_DATA, fallbackItems });
         publish(feed);
-        fetchSectionItems(section, context, signal).then((fallbackItems) => {
+        fetchSectionItems(section, context, signal).then((rawFallback) => {
+          const fallbackItems =
+            lensIDs !== undefined
+              ? rawFallback.filter((item) => itemMatchesLens(item, activeLens))
+              : rawFallback;
           if (!signal.aborted) save({ ...EMPTY_DATA, fallbackItems });
         }, fail);
         return;
       }
-      const visible = libraries.filter((library) => library.showOnHome !== false);
+      const allowedSet = lensIDs ? new Set(lensIDs) : null;
+      const visible = libraries.filter(
+        (library) => library.showOnHome !== false && (!allowedSet || allowedSet.has(library.id)),
+      );
       const cached = reconcileHomeRecentCache(identity, visible);
       const shelves = cached?.scope === scope ? cached.data.shelves : EMPTY_DATA.shelves;
       save({ ...EMPTY_DATA, libraries: visible, shelves }, visible.length);

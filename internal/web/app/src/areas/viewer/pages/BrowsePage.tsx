@@ -2,6 +2,8 @@ import { Pencil } from "lucide-react";
 import { useState } from "react";
 import { Navigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
+import { useExperienceLens } from "@/components/chrome/experienceLens";
+import { ModeLensPill } from "@/components/chrome/ModeLensPill";
 import { Button } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import type { NavigationNode, Section } from "@/lib/graphql/types";
@@ -33,6 +35,7 @@ export function BrowsePage() {
   const displayLocale = useDisplayLocale();
   const { nodeId } = useParams();
   const { manifest, loading } = useSession();
+  const { showModePill } = useExperienceLens();
   const [editingHome, setEditingHome] = useState(false);
   // The node whose Layout settled with nothing in it: an empty Library offers
   // no pivots into empty views (CORE-2322).
@@ -104,7 +107,13 @@ export function BrowsePage() {
       )}
       {home && !editingHome && (
         // Each Profile orders and hides its own Home shelves (CORE-1972).
-        <div className="flex justify-end pb-4">
+        <div
+          className={
+            "flex flex-wrap items-center gap-3 pb-4 " +
+            (showModePill ? "justify-between" : "justify-end")
+          }
+        >
+          {showModePill && <ModeLensPill variant="inline" />}
           <Button variant="ghost" size="sm" onClick={() => setEditingHome(true)}>
             <Pencil aria-hidden />
             {t("homeEdit")}

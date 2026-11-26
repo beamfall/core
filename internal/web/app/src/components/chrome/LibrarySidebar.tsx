@@ -34,6 +34,12 @@ import { pivotOfPath, rememberedLibraryPath } from "@/lib/libraryPivot";
 import { nodePath } from "@/lib/nodePath";
 import type { StringKey } from "@/strings";
 import {
+  useExperienceLens,
+  useExperienceModeLabel,
+  withExperienceModeParam,
+} from "./experienceLens";
+import { ModeLensPill } from "./ModeLensPill";
+import {
   applySidebarPrefs,
   EMPTY_SIDEBAR_PREFS,
   PERSONAL_ENTRIES,
@@ -128,13 +134,18 @@ export function LibrarySidebar({
 }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
+  const { mode: lensMode, activeLens, setMode: setLensMode, matchesLibrary } = useExperienceLens();
+  const modeLabel = useExperienceModeLabel();
   const accents = new Map(libraries.map((library) => [library.id, library.accent]));
   const icons = new Map(libraries.map((library) => [library.id, libraryIcon(library.icon)]));
   const rendered = navigation.filter((node) => node.view === "layout");
   const aggregates = rendered.filter((node) => !node.libraryID);
-  const libraryNodes = rendered.filter((node) => node.libraryID);
+  const allLibraryNodes = rendered.filter((node) => node.libraryID);
+  const visibleLibraryNodes =
+    lensMode === "all"
+      ? allLibraryNodes
+      : allLibraryNodes.filter((node) => matchesLibrary(node.libraryID ?? ""));
   const libraryIDOf = (node: NavigationNode) => node.libraryID ?? "";
-  const { topLevel, unpinned } = resolveSidebarLibraries(libraryNodes, libraryIDOf, prefs);
   const personalIDOf = (entry: PersonalEntry) => entry.id;
   const personal = applySidebarPrefs(
     [...PERSONAL_ENTRIES],
@@ -148,7 +159,7 @@ export function LibrarySidebar({
     prefs: SidebarLibraryPrefs;
     overrides: Record<string, boolean>;
   }>({ prefs, overrides: {} });
-  const activeLibraryID = libraryNodes.find((n) => n.id === activeNodeId)?.libraryID ?? "";
+  const activeLibraryID = allLibraryNodes.find((n) => n.id === activeNodeId)?.libraryID ?? "";
   // Groups manually collapsed while their active library was open; resets when
   // navigating to a different library so the new active library's group auto-expands.
   const [collapsedWhileActive, setCollapsedWhileActive] = useState<{
@@ -178,10 +189,12 @@ export function LibrarySidebar({
     setEditing(null);
   }
   const canEditAny = !!onSavePrefs && (!collapsed || drawer);
-  const canEdit = canEditAny && libraryNodes.length > 0;
+  const canEdit = canEditAny && allLibraryNodes.length > 0;
   // Collapsing to the icon rail (or losing the saver) shows plain navigation;
   // the draft is kept, so expanding again picks the edit up where it was.
   const activeDraft = canEdit && editing?.group === "libraries" ? editing.draft : null;
+  const libraryNodes = activeDraft ? allLibraryNodes : visibleLibraryNodes;
+  const { topLevel, unpinned } = resolveSidebarLibraries(libraryNodes, libraryIDOf, prefs);
   const personalDraft =
     canEditAny && showPersonal && editing?.group === "personal" ? editing.draft : null;
   const moreId = `${id}-more`;
@@ -239,13 +252,14 @@ export function LibrarySidebar({
         <Link
           // A Library reopens on the pivot last used there (CORE-2826); the
           // open one keeps the pivot on screen, which is stored only after render.
-          to={
+          to={withExperienceModeParam(
             !node.libraryID
               ? nodePath(node.id)
               : active
                 ? nodePath(node.id, pivotOfPath(pathname), node.libraryID)
-                : rememberedLibraryPath(node.id, node.libraryID)
-          }
+                : rememberedLibraryPath(node.id, node.libraryID),
+            lensMode,
+          )}
           aria-current={active ? "page" : undefined}
           className={"bf-side-link" + (active ? " is-active" : "")}
           title={collapsed && !drawer ? title : undefined}
@@ -421,15 +435,16 @@ export function LibrarySidebar({
       }
     >
       <nav aria-label={t("navLabel")}>
+        <ModeLensPill variant="sidebar" collapsed={collapsed && !drawer} />
         <ul className="bf-side-list">{aggregates.map(item)}</ul>
-        {libraryNodes.length > 0 && (
+        {allLibraryNodes.length > 0 && (
           <div id={sidebarGroupId(id, "libraries")}>
             <div className="bf-side-heading-row">
               <h2 className="bf-side-heading">{t("libraries")}</h2>
               {canEdit &&
                 !editing &&
                 editButton("libraries", t("sidebarEdit"), () =>
-                  startLibraryDraft(libraryNodes, libraryIDOf, prefs),
+                  startLibraryDraft(allLibraryNodes, libraryIDOf, prefs),
                 )}
             </div>
             {activeDraft ? (
@@ -437,11 +452,22 @@ export function LibrarySidebar({
                 "libraries",
                 activeDraft,
                 (libraryID) => {
-                  const node = libraryNodes.find((n) => n.libraryID === libraryID);
+                  const node = allLibraryNodes.find((n) => n.libraryID === libraryID);
                   return node ? displayString(node.title, displayLocale) : libraryID;
                 },
                 true,
               )
+            ) : libraryNodes.length === 0 && lensMode !== "all" ? (
+              <div className="px-3 py-2 text-xs text-[var(--text-muted)]">
+                <p className="m-0">{t("lensSidebarEmpty", { mode: modeLabel(activeLens) })}</p>
+                <button
+                  type="button"
+                  className="mt-1 underline hover:text-[var(--text-primary)]"
+                  onClick={() => setLensMode("all")}
+                >
+                  {t("lensShowAll")}
+                </button>
+              </div>
             ) : (
               <>
                 <ul className="bf-side-list">

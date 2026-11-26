@@ -2078,13 +2078,25 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 		}
 		entityFilter = &store.EntityFilter{Kind: filterKind, Name: filterName}
 	}
+	reqLibraryIDs, hasLibraryIDs, err := requestedLibraryIDs(req)
+	if err != nil {
+		return nil, err
+	}
+	filter := scope.LibraryFilter()
+	if hasLibraryIDs {
+		var ok bool
+		filter, ok = narrowLibraryFilter(filter, reqLibraryIDs)
+		if !ok {
+			return []SourceItem{}, nil
+		}
+	}
 	if kind == "all-items" && queryText != "" {
 		mode, err := parseSearchMode(req)
 		if err != nil {
 			return nil, err
 		}
 		if mode == SearchModeSemantic || mode == SearchModeAuto {
-			semanticFilter, ok := sourceItemsLibraryFilter(scope.LibraryFilter(), store.LibraryID(libraryID))
+			semanticFilter, ok := sourceItemsLibraryFilter(filter, store.LibraryID(libraryID))
 			if !ok {
 				return []SourceItem{}, nil
 			}
@@ -2118,9 +2130,8 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 			return nil, err
 		}
 	}
-	filter := scope.LibraryFilter()
 	if kind == "home-shelf" {
-		items, err := h.sourceItemsHomeShelf(ctx, scope, trimmedVariable(req, "value"), boundedIntVar(req, "limit", 50, 200), nonNegativeIntVar(req, "offset"))
+		items, err := h.sourceItemsHomeShelf(ctx, scope, filter, trimmedVariable(req, "value"), boundedIntVar(req, "limit", 50, 200), nonNegativeIntVar(req, "offset"))
 		if err != nil {
 			return nil, err
 		}
@@ -2202,6 +2213,61 @@ func sourceItemsLibraryFilter(filter store.LibraryFilter, libraryID store.Librar
 	}
 	filter.AllowedIDs = []store.LibraryID{libraryID}
 	return filter, true
+}
+
+func requestedLibraryIDs(req request) ([]store.LibraryID, bool, error) {
+	v := newVars(req)
+	raw, ok := v.StringList("libraryIDs", "library IDs")
+	if err := v.Err(); err != nil {
+		return nil, false, err
+	}
+	if !ok {
+		return nil, false, nil
+	}
+	seen := make(map[store.LibraryID]bool, len(raw))
+	ids := make([]store.LibraryID, 0, len(raw))
+	for _, entry := range raw {
+		id := store.LibraryID(strings.TrimSpace(entry))
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids, true, nil
+}
+
+// narrowLibraryFilter restricts base to requested without ever widening grants.
+// An explicit empty requested slice closes visibility (returns ok=false).
+func narrowLibraryFilter(base store.LibraryFilter, requested []store.LibraryID) (store.LibraryFilter, bool) {
+	if len(requested) == 0 {
+		return store.LibraryFilter{}, false
+	}
+	if len(base.AllowedIDs) == 0 {
+		if !base.AllLibraries {
+			return store.LibraryFilter{}, false
+		}
+		out := base
+		out.AllLibraries = false
+		out.AllowedIDs = slices.Clone(requested)
+		return out, true
+	}
+	allowedSet := make(map[store.LibraryID]bool, len(base.AllowedIDs))
+	for _, id := range base.AllowedIDs {
+		allowedSet[id] = true
+	}
+	var merged []store.LibraryID
+	for _, id := range requested {
+		if allowedSet[id] {
+			merged = append(merged, id)
+		}
+	}
+	if len(merged) == 0 {
+		return store.LibraryFilter{}, false
+	}
+	out := base
+	out.AllowedIDs = merged
+	return out, true
 }
 
 // ambientQueue assembles the Ambient Queue on demand from the
@@ -3047,6 +3113,12 @@ type LibraryInfo struct {
 	Icon        string `json:"icon,omitempty"`
 	IconChoice  string `json:"iconChoice,omitempty"`
 	DefaultIcon string `json:"defaultIcon,omitempty"`
+	// MediaClasses, Presentation, and Capabilities mirror the bound plugin's
+	// declared modality contract so clients derive experience modes without
+	// inspecting plugin IDs. Omitted for unbound libraries.
+	MediaClasses []string                `json:"mediaClasses,omitempty"`
+	Presentation *PluginPresentationInfo `json:"presentation,omitempty"`
+	Capabilities []string                `json:"capabilities,omitempty"`
 }
 
 // createLibrary inserts a Library granted to the manager's Profile, or to the
@@ -3162,7 +3234,8 @@ func (h *Handler) libraryInfo(ctx context.Context, library store.Library) (Libra
 	if err != nil {
 		return LibraryInfo{}, err
 	}
-	declaredIcon, mediaClasses := h.libraryIconBasis(library)
+	mediaClasses, presentation, capabilities, _ := h.libraryBundleMetadata(library.PluginID)
+	declaredIcon, _ := h.libraryIconBasis(library)
 	// A stored name this build no longer knows is reported as no choice, so
 	// the three icon fields always agree.
 	iconChoice := library.Icon
@@ -3183,6 +3256,9 @@ func (h *Handler) libraryInfo(ctx context.Context, library store.Library) (Libra
 		Icon:         library.EffectiveIcon(declaredIcon, mediaClasses),
 		IconChoice:   iconChoice,
 		DefaultIcon:  store.DefaultLibraryIcon(declaredIcon, mediaClasses),
+		MediaClasses: mediaClasses,
+		Presentation: presentation,
+		Capabilities: capabilities,
 	}, nil
 }
 
@@ -5980,6 +6056,56 @@ func (h *Handler) identifyApply(ctx context.Context, scope auth.Scope, req reque
 	return h.mediaInfo(ctx, scope, media)
 }
 
+// PluginPresentationInfo describes a plugin's media-presentation and engagement
+// posture so clients derive experience modes without inspecting plugin IDs.
+type PluginPresentationInfo struct {
+	ResumeMedia         *bool    `json:"resumeMedia,omitempty"`
+	PlaysAlone          bool     `json:"playsAlone,omitempty"`
+	SelectPlays         bool     `json:"selectPlays,omitempty"`
+	InteractiveSidecars []string `json:"interactiveSidecars,omitempty"`
+	DefaultIcon         string   `json:"defaultIcon,omitempty"`
+}
+
+func pluginPresentationOf(bundle plugin.Bundle) *PluginPresentationInfo {
+	if bundle.Engagement.ResumeMedia == nil &&
+		!bundle.Engagement.PlaysAlone &&
+		!bundle.Engagement.SelectPlays &&
+		len(bundle.InteractiveSidecars) == 0 &&
+		bundle.LibraryDefaults.Icon == "" {
+		return nil
+	}
+	var resume *bool
+	if bundle.Engagement.ResumeMedia != nil {
+		v := *bundle.Engagement.ResumeMedia
+		resume = &v
+	}
+	return &PluginPresentationInfo{
+		ResumeMedia:         resume,
+		PlaysAlone:          bundle.Engagement.PlaysAlone,
+		SelectPlays:         bundle.Engagement.SelectPlays,
+		InteractiveSidecars: slices.Clone(bundle.InteractiveSidecars),
+		DefaultIcon:         bundle.LibraryDefaults.Icon,
+	}
+}
+
+func pluginCapabilitiesOf(bundle plugin.Bundle) []string {
+	if len(bundle.FeatureEligibility) == 0 {
+		return nil
+	}
+	return slices.Clone(bundle.FeatureEligibility)
+}
+
+func (h *Handler) libraryBundleMetadata(pluginID *string) ([]string, *PluginPresentationInfo, []string, string) {
+	if pluginID == nil || h.plugins == nil {
+		return nil, nil, nil, ""
+	}
+	bundle, ok := h.plugins.Bundle(plugin.ID(*pluginID))
+	if !ok {
+		return nil, nil, nil, ""
+	}
+	return slices.Clone(bundle.MediaClasses), pluginPresentationOf(bundle), pluginCapabilitiesOf(bundle), bundle.Accent
+}
+
 // PluginInfo describes one activated plugin bundle for clients (the Manager's
 // createLibrary picker).
 type PluginInfo struct {
@@ -5995,7 +6121,12 @@ type PluginInfo struct {
 	// screen offers as a managed Profile's ceiling; omitted when the plugin
 	// declares no scale. The values are plugin data, never core domain vocab.
 	CertificationScale []string `json:"certificationScale,omitempty"`
-	libraryDefaults    plugin.LibraryDefaults
+	// MediaClasses, Presentation, and Capabilities carry the plugin's declared
+	// modality and capability contract cleanly to clients.
+	MediaClasses    []string                `json:"mediaClasses,omitempty"`
+	Presentation    *PluginPresentationInfo `json:"presentation,omitempty"`
+	Capabilities    []string                `json:"capabilities,omitempty"`
+	libraryDefaults plugin.LibraryDefaults
 }
 
 func (p PluginInfo) MarshalJSON() ([]byte, error) {
@@ -6024,6 +6155,9 @@ func (h *Handler) pluginInfos() []PluginInfo {
 			MediaLabel:         bundle.MediaLabel,
 			MediaClassLabels:   bundle.MediaClassLabels,
 			CertificationScale: bundle.CertificationScale,
+			MediaClasses:       slices.Clone(bundle.MediaClasses),
+			Presentation:       pluginPresentationOf(bundle),
+			Capabilities:       pluginCapabilitiesOf(bundle),
 			libraryDefaults:    bundle.LibraryDefaults,
 		})
 	}

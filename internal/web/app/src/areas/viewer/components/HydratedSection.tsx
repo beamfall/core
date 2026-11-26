@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { itemMatchesLens, useExperienceLens } from "@/components/chrome/experienceLens";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
@@ -37,11 +38,11 @@ export function sectionCacheKey(
   entityID: string,
   extraFilters: FieldFilters | null | undefined,
   home = false,
+  libraryIDs?: string[],
 ): string {
-  return (
-    SECTION_CACHE_PREFIX +
-    JSON.stringify([section, libraryID, entityID, extraFilters || null, home])
-  );
+  const parts: unknown[] = [section, libraryID, entityID, extraFilters || null, home];
+  if (libraryIDs !== undefined) parts.push(libraryIDs);
+  return SECTION_CACHE_PREFIX + JSON.stringify(parts);
 }
 
 // The write sequence each fetched item list was read at (CORE-2017), keyed by
@@ -77,6 +78,7 @@ export function findCachedSectionItem(identity: string | null, id: string): Sour
 export function HydratedSection({
   section,
   libraryID,
+  libraryIDs,
   entityID,
   home = false,
   extraFilters,
@@ -87,6 +89,8 @@ export function HydratedSection({
 }: {
   section: Section;
   libraryID: string;
+  /** Optional multi-library Experience Lens scope (when on unfiltered Home). */
+  libraryIDs?: string[];
   entityID: string;
   /** Hydrating Home: Libraries hidden from Home stay out (CORE-2360). */
   home?: boolean;
@@ -99,10 +103,11 @@ export function HydratedSection({
 }) {
   const identity = useViewerIdentity();
   const t = useT();
+  const { activeLens } = useExperienceLens();
   // Watched, watchlist and rating changes (here or on another client) revalidate
   // the section behind the items already shown.
   const engagementEpoch = useEngagementEpoch();
-  const cacheKey = sectionCacheKey(section, libraryID, entityID, extraFilters, home);
+  const cacheKey = sectionCacheKey(section, libraryID, entityID, extraFilters, home, libraryIDs);
   const [items, setItems] = useState<SourceItem[] | null>(
     () => readViewerCache<SourceItem[]>(identity, cacheKey) ?? null,
   );
@@ -143,9 +148,23 @@ export function HydratedSection({
       abandon();
       fail();
     }, SECTION_LOAD_TIMEOUT_MS);
-    fetchSectionItems(section, { libraryID, entityID, extraFilters, home }, controller.signal)
-      .then((next) => {
+    fetchSectionItems(
+      section,
+      {
+        libraryID,
+        entityID,
+        extraFilters,
+        home,
+        ...(libraryIDs !== undefined ? { libraryIDs } : {}),
+      },
+      controller.signal,
+    )
+      .then((raw) => {
         if (!alive) return;
+        const next =
+          !libraryID && libraryIDs !== undefined
+            ? raw.filter((item) => itemMatchesLens(item, activeLens))
+            : raw;
         window.clearTimeout(timeout);
         itemsReadSeq.set(next, readSeq);
         writeViewerCache(identity, cacheKey, next);

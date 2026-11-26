@@ -327,11 +327,30 @@ func (h *Handler) searchResultRows(ctx context.Context, scope auth.Scope, req re
 		return SearchResultResponse{}, err
 	}
 	text := strings.TrimSpace(stringVar(req, "query"))
+	reqLibraryIDs, hasLibraryIDs, err := requestedLibraryIDs(req)
+	if err != nil {
+		return SearchResultResponse{}, err
+	}
 	filter := scope.LibraryFilter()
 
 	restricted, err := h.store.HasHiddenRestrictedLibraries(ctx, filter)
 	if err != nil {
 		return SearchResultResponse{}, err
+	}
+	if hasLibraryIDs {
+		var ok bool
+		filter, ok = narrowLibraryFilter(filter, reqLibraryIDs)
+		if !ok {
+			emptyMode := SearchModeKeyword
+			if mode == SearchModeRecommend || mode == SearchModeSemantic {
+				emptyMode = mode
+			}
+			return SearchResultResponse{
+				Mode:                     emptyMode,
+				Items:                    []SearchResultItem{},
+				RestrictedResultsPresent: restricted,
+			}, nil
+		}
 	}
 
 	// recommend: engagement-seeded, content-based retrieval. It does

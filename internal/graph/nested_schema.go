@@ -533,7 +533,7 @@ var fieldArguments = map[string][]NestedArgument{
 	"searchentities":    {{Name: "query", Kind: "string", Optional: true}},
 	"searchfeeds":       {{Name: "query", Kind: "string"}},
 	"preplayqueue":      {{Name: "mediaID", Kind: "string"}},
-	"searchresult":      {{Name: "limit", Kind: "int", Optional: true}, searchModeArgument(), {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}},
+	"searchresult":      {{Name: "libraryIDs", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string"}}, {Name: "limit", Kind: "int", Optional: true}, searchModeArgument(), {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}},
 	"partystage": {
 		// Required since wire 3.0.0: a stage read names the caller's screen
 		// registration (ADR-0240 D10, CORE-3399).
@@ -783,6 +783,7 @@ func sourceArguments() []NestedArgument {
 		entityFiltersArgument(),
 		{Name: "kind", Kind: "string", Optional: true},
 		{Name: "libraryID", Kind: "string", Optional: true},
+		{Name: "libraryIDs", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string"}},
 		{Name: "limit", Kind: "int", Optional: true},
 		searchModeArgument(),
 		{Name: "offset", Kind: "int", Optional: true},

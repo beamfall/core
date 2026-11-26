@@ -36,6 +36,8 @@ export const SECTION_GRID_CAP = 100;
 
 export interface SectionFetchContext {
   libraryID: string;
+  /** Optional multi-library scope filter (used by Experience Lens views). */
+  libraryIDs?: string[];
   /** The context entity for entity-media Sources; "" elsewhere (server ignores it). */
   entityID: string;
   /** A filter-bar selection merged over the Source's declared fieldFilters; null when none. */
@@ -79,6 +81,7 @@ export async function fetchSectionItems(
       kind: source.kind || "",
       entityKind: source.entityKind || "",
       libraryID: ctx.libraryID || "",
+      ...(ctx.libraryIDs !== undefined ? { libraryIDs: ctx.libraryIDs } : {}),
       entityID: ctx.entityID || "",
       fieldFilters: Object.keys(merged).length ? merged : null,
       entityFilter: source.entityFilter || null,

@@ -153,6 +153,8 @@ export interface SourceItem {
    * entity carries the class its linked Media all share, else none (CORE-2362).
    */
   mediaClass?: string;
+  /** The Library owning this item, when returned by sourceItems/searchResult. */
+  libraryID?: string;
   /** Stored Media year or a Section Source Entity's earliest visible linked Media year. */
   year?: number;
   /** A Media item's display content rating (PG-13, TV-MA); absent when unrated (CORE-2398). */
@@ -698,6 +700,15 @@ export interface SemanticCapabilityInfo {
 
 // --- Manage / Console: libraries, plugins, jobs, schedules ----------------
 
+/** A plugin's declared media-presentation & engagement posture (graph.PluginPresentationInfo). */
+export interface PluginPresentationInfo {
+  resumeMedia?: boolean;
+  playsAlone?: boolean;
+  selectPlays?: boolean;
+  interactiveSidecars?: string[];
+  defaultIcon?: string;
+}
+
 /** A Library as the manage area selects it (graph.LibraryInfo). */
 export interface LibraryInfo {
   id: string;
@@ -714,6 +725,9 @@ export interface LibraryInfo {
   iconChoice?: string;
   /** The icon the Library gets when the owner has not chosen one. */
   defaultIcon?: string;
+  mediaClasses?: string[];
+  presentation?: PluginPresentationInfo;
+  capabilities?: string[];
 }
 
 /**
@@ -790,6 +804,16 @@ export interface CreateLibraryResult {
 export interface PluginSummary {
   id: string;
   displayName: DisplayString;
+}
+
+/** Viewer-readable plugin metadata for deriving experience modes without plugin IDs. */
+export interface ViewerPluginInfo {
+  id: string;
+  displayName: DisplayString;
+  mediaLabel?: DisplayString;
+  mediaClasses?: string[];
+  presentation?: PluginPresentationInfo;
+  capabilities?: string[];
 }
 
 /** Job progress detail (graph.JobProgressInfo). */
@@ -2452,8 +2476,12 @@ export interface HomeConfigInput {
 export interface HomeSchemaLibrary {
   id: string;
   title: string;
+  pluginID?: string | null;
   icon?: string;
   accent?: string;
+  mediaClasses?: string[];
+  presentation?: PluginPresentationInfo;
+  capabilities?: string[];
 }
 
 export interface HomeFilterField {
