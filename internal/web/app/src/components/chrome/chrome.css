@@ -2870,6 +2870,11 @@
   .bf-scrub-wrap.has-waveform .bf-slider-thumb {
     height: 36px;
   }
+
+  .bf-scrub-wrap.has-waveform .bf-marker-tick {
+    top: 4px;
+    bottom: 4px;
+  }
 }
 
 .bf-marker-strip {
@@ -2892,6 +2897,25 @@
   top: 0;
   height: 100%;
   background: color-mix(in oklab, var(--state-warning) 55%, transparent);
+}
+
+/* On a waveform seek bar, chapter ticks stay whisper-thin and any skip-segment
+ * range marks the bottom edge so the bars never wash out. */
+.bf-scrub-wrap.has-waveform .bf-marker-tick {
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  height: auto;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--on-scrim) 28%, transparent);
+}
+
+.bf-scrub-wrap.has-waveform .bf-marker-range {
+  top: auto;
+  bottom: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--state-warning) 75%, transparent);
 }
 
 .bf-scrub-tooltip,

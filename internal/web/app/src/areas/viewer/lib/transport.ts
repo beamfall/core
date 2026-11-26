@@ -238,8 +238,9 @@ export function buildMarkerStripModel(
         ? 0
         : finiteNumber(marker.endSeconds);
     const segmentKind = marker.segmentKind || "";
+    const hasSegmentKind = segmentKind.trim() !== "";
     const title = markerTitle(marker);
-    if (endSeconds > startSeconds) {
+    if (hasSegmentKind && endSeconds > startSeconds) {
       const skippable = SKIPPABLE_SEGMENT_KINDS.has(segmentKind);
       ranges.push({
         title,
@@ -254,7 +255,10 @@ export function buildMarkerStripModel(
       if (skippable && currentTimeSeconds >= startSeconds && currentTimeSeconds < endSeconds) {
         skip = { title, segmentKind, endSeconds };
       }
-    } else {
+    } else if (
+      hasSegmentKind ||
+      (startSeconds > 0 && (durationSeconds <= 0 || startSeconds < durationSeconds))
+    ) {
       ticks.push({
         title,
         segmentKind,
@@ -365,6 +369,8 @@ export function chapterSeekTarget(
 
 export interface ChapterEntry {
   startSeconds: number;
+  /** Chapter duration in seconds when known (end time or distance to next chapter). */
+  durationSeconds?: number | null;
   /** The Marker title; empty when the chapter has none (the UI numbers it). */
   title: string;
   /** The server's chapter thumbnail, or null when there is no thumbnail base. */
@@ -382,29 +388,61 @@ export function markerThumbnailName(startSeconds: number): string {
  * current chapter is the last one starting at or before the playhead. */
 export function buildChapterList(
   markers: PlaybackMarker[],
-  options: { thumbnailBase?: string | null; currentTimeSeconds?: number } = {},
+  options: {
+    thumbnailBase?: string | null;
+    currentTimeSeconds?: number;
+    durationSeconds?: number;
+  } = {},
 ): ChapterEntry[] {
-  const byStart = new Map<number, string>();
+  const byStart = new Map<number, { title: string; endSeconds: number }>();
   for (const marker of markers || []) {
     if ((marker.segmentKind || "").trim() !== "") continue;
     const start = finiteNumber(marker.startSeconds, -1);
     if (start < 0) continue;
     const title = (marker.title || "").trim();
-    if (!byStart.has(start) || (!byStart.get(start) && title)) byStart.set(start, title);
+    const rawEnd =
+      marker.endSeconds === undefined || marker.endSeconds === null
+        ? 0
+        : finiteNumber(marker.endSeconds);
+    const endSeconds = rawEnd > start ? rawEnd : 0;
+    const prev = byStart.get(start);
+    if (!prev) {
+      byStart.set(start, { title, endSeconds });
+    } else {
+      byStart.set(start, {
+        title: prev.title || title,
+        endSeconds: Math.max(prev.endSeconds, endSeconds),
+      });
+    }
   }
   const base = options.thumbnailBase || "";
   const current = finiteNumber(options.currentTimeSeconds);
+  const totalDuration = finiteNumber(options.durationSeconds);
   const starts = Array.from(byStart.keys()).sort((a, b) => a - b);
   let currentIndex = -1;
   starts.forEach((start, index) => {
     if (start <= current) currentIndex = index;
   });
-  return starts.map((start, index) => ({
-    startSeconds: start,
-    title: byStart.get(start) || "",
-    thumbnailURL: base ? base + markerThumbnailName(start) : null,
-    current: index === currentIndex,
-  }));
+  return starts.map((start, index) => {
+    const entry = byStart.get(start);
+    const nextStart = starts[index + 1];
+    const ownEnd = entry?.endSeconds ?? 0;
+    const effectiveEnd =
+      ownEnd > start
+        ? ownEnd
+        : nextStart !== undefined
+          ? nextStart
+          : totalDuration > start
+            ? totalDuration
+            : 0;
+    return {
+      startSeconds: start,
+      durationSeconds: effectiveEnd > start ? effectiveEnd - start : null,
+      title: entry?.title || "",
+      thumbnailURL: base ? base + markerThumbnailName(start) : null,
+      current: index === currentIndex,
+    };
+  });
 }
 
 // --- Up Next + resume -----------------------------------------------------
