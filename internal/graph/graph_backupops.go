@@ -55,6 +55,13 @@ type BackupStatusInfo struct {
 	UpdateGateClear bool             `json:"updateGateClear"`
 	UpgradeGate     string           `json:"upgradeGate"`
 	LastDrill       *BackupDrillInfo `json:"lastDrill"`
+	// UnverifiedUpgradeBanner reports an unacknowledged binary version jump
+	// across an unverified or bypassed backup gate (ADR-0243 D3).
+	UnverifiedUpgradeBanner bool               `json:"unverifiedUpgradeBanner"`
+	FailedSet               string             `json:"failedSet"`
+	LastBinaryVersion       string             `json:"lastBinaryVersion"`
+	LastUpgradeBypass       *UpgradeBypassInfo `json:"lastUpgradeBypass"`
+	LastUnverifiedUpgrade   *UpgradeEventInfo  `json:"lastUnverifiedUpgrade"`
 }
 
 // BackupRunInfo is one scheduled-backup outcome.
@@ -92,7 +99,7 @@ func (h *Handler) backupStatus() (BackupStatusInfo, error) {
 	if err != nil {
 		return BackupStatusInfo{}, err
 	}
-	return backupStatusInfo(status), nil
+	return enrichBackupStatusInfo(backupStatusInfo(status), status), nil
 }
 
 func (h *Handler) acknowledgeBackupBanner(ctx context.Context, scope auth.Scope, req request) (BackupStatusInfo, error) {
@@ -101,6 +108,9 @@ func (h *Handler) acknowledgeBackupBanner(ctx context.Context, scope auth.Scope,
 		return BackupStatusInfo{}, err
 	}
 	banner := backupcore.Banner(trimmedVariable(req, "banner"))
+	if banner == backupcore.BannerUnverifiedUpgrade {
+		return h.acknowledgeUpgradeBanner(ctx, scope)
+	}
 	status, err := ops.AcknowledgeBanner(banner)
 	if errors.Is(err, backupcore.ErrUnknownBanner) {
 		return BackupStatusInfo{}, clientError("banner must be backup-failed or integrity-failed")
@@ -111,7 +121,7 @@ func (h *Handler) acknowledgeBackupBanner(ctx context.Context, scope auth.Scope,
 	if err := h.logActivity(ctx, scope, store.ActivityConfigUpdate, "backup", "banner-acknowledged:"+string(banner), ""); err != nil {
 		return BackupStatusInfo{}, err
 	}
-	return backupStatusInfo(status), nil
+	return enrichBackupStatusInfo(backupStatusInfo(status), status), nil
 }
 
 func (h *Handler) setBackupUpgradeGate(ctx context.Context, scope auth.Scope, req request) (BackupStatusInfo, error) {
@@ -130,7 +140,7 @@ func (h *Handler) setBackupUpgradeGate(ctx context.Context, scope auth.Scope, re
 	if err := h.logActivity(ctx, scope, store.ActivityConfigUpdate, "backup", "upgrade-gate:"+gate, ""); err != nil {
 		return BackupStatusInfo{}, err
 	}
-	return backupStatusInfo(status), nil
+	return enrichBackupStatusInfo(backupStatusInfo(status), status), nil
 }
 
 func (h *Handler) verifyBackupNow(ctx context.Context, scope auth.Scope, req request) (BackupDrillInfo, error) {

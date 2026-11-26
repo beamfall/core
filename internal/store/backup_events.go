@@ -34,6 +34,11 @@ type BackupEventPayload struct {
 	FailureClass string `json:"failureClass,omitempty"`
 	// Set is the Backup Set directory's base name, when one was written.
 	Set string `json:"set,omitempty"`
+	// FromVersion and ToVersion identify a release binary upgrade transition, if any.
+	FromVersion string `json:"fromVersion,omitempty"`
+	ToVersion   string `json:"toVersion,omitempty"`
+	// Policy records the active upgrade gate ("soft" or "hard") on upgrade events.
+	Policy string `json:"policy,omitempty"`
 }
 
 // AppendBackupEvent records one scheduled-backup outcome in the event outbox,

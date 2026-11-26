@@ -162,6 +162,17 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"setbackupupgradegate": {
 		{Name: "gate", Kind: "string"},
 	},
+	"authorizebackupupgradebypass": {
+		{Name: "confirmation", Kind: "string"},
+		{Name: "password", Kind: "string"},
+		{Name: "reason", Kind: "string"},
+		{Name: "targetVersion", Kind: "string"},
+	},
+	"stagecoreupdate": {
+		{Name: "distDir", Kind: "string"},
+	},
+	"cancelstagedcoreupdate": {},
+	"stagedcoreupdate":       {},
 	"verifybackupnow": {
 		{Name: "backupKey", Kind: "string"},
 		{Name: "envelope", Kind: "string"},

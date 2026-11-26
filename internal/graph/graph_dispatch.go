@@ -291,23 +291,28 @@ var diagnosticsTokenMutations = map[string]bool{
 // Admin Session only, so a token can never mint another credential, read the
 // backup key, or widen who may sign in from the network.
 var agentTokenDenied = map[string]bool{
-	"createapitoken":              true,
-	"createapikey":                true,
-	"registerimportsource":        true,
-	"transferprofileowner":        true,
-	"revealbackupkey":             true,
-	"acknowledgebackupkey":        true,
-	"verifybackupnow":             true,
-	"setjellyfincompat":           true,
-	"setprofileintegrationsignin": true,
-	"createjellyfincompatkey":     true,
+	"createapitoken":               true,
+	"createapikey":                 true,
+	"registerimportsource":         true,
+	"transferprofileowner":         true,
+	"revealbackupkey":              true,
+	"acknowledgebackupkey":         true,
+	"verifybackupnow":              true,
+	"authorizebackupupgradebypass": true,
+	"stagecoreupdate":              true,
+	"cancelstagedcoreupdate":       true,
+	"setjellyfincompat":            true,
+	"setprofileintegrationsignin":  true,
+	"createjellyfincompatkey":      true,
 }
 
 // sessionOnlyReads are admin reads no token tier may run: the Console's
 // listing of Player Profiles shows who may control each display and whether
-// walk-up is on (ADR-0240 D4, D7), which only the owner's Admin Session sees.
+// walk-up is on (ADR-0240 D4, D7), and stagedCoreUpdate exposes host update
+// staging paths (ADR-0243 D1), which only the owner's Admin Session sees.
 var sessionOnlyReads = map[string]bool{
-	"playerprofiles": true,
+	"playerprofiles":   true,
+	"stagedcoreupdate": true,
 }
 
 // adminTokenMayRun reports whether the request authenticated with an admin API
@@ -932,6 +937,10 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"acknowledgebackupbanner":            newFieldHandler("acknowledgeBackupBanner", "acknowledgeBackupBanner", fieldMutation, roleSession|roleAdmin, 154),
 	"setbackupupgradegate":               newFieldHandler("setBackupUpgradeGate", "setBackupUpgradeGate", fieldMutation, roleSession|roleAdmin, 154),
 	"verifybackupnow":                    newFieldHandler("verifyBackupNow", "verifyBackupNow", fieldMutation, roleSession|roleAdmin, 154),
+	"stagedcoreupdate":                   newFieldHandler("stagedCoreUpdate", "stagedCoreUpdate", fieldRead, roleSession|roleAdmin, 154),
+	"authorizebackupupgradebypass":       newFieldHandler("authorizeBackupUpgradeBypass", "authorizeBackupUpgradeBypass", fieldMutation, roleSession|roleAdmin, 154),
+	"stagecoreupdate":                    newFieldHandler("stageCoreUpdate", "stageCoreUpdate", fieldMutation, roleSession|roleAdmin, 154),
+	"cancelstagedcoreupdate":             newFieldHandler("cancelStagedCoreUpdate", "cancelStagedCoreUpdate", fieldMutation, roleSession|roleAdmin, 154),
 }
 
 func dispatchFieldBlock000(dispatch *fieldDispatchContext) response {
@@ -4794,6 +4803,30 @@ func dispatchFieldBlock154(dispatch *fieldDispatchContext) response {
 	if fields["verifybackupnow"] {
 		drill, err := h.verifyBackupNow(ctx, scope, req)
 		if resp := resolveField(dispatch, "verifybackupnow", drill, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["stagedcoreupdate"] {
+		staged, err := h.stagedCoreUpdate(ctx)
+		if resp := resolveField(dispatch, "stagedcoreupdate", staged, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["authorizebackupupgradebypass"] {
+		status, err := h.authorizeBackupUpgradeBypass(ctx, scope, req)
+		if resp := resolveField(dispatch, "authorizebackupupgradebypass", status, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["stagecoreupdate"] {
+		staged, err := h.stageCoreUpdate(ctx, scope, req)
+		if resp := resolveField(dispatch, "stagecoreupdate", staged, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["cancelstagedcoreupdate"] {
+		canceled, err := h.cancelStagedCoreUpdate(ctx, scope)
+		if resp := resolveField(dispatch, "cancelstagedcoreupdate", canceled, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

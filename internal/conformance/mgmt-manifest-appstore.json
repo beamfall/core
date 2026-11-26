@@ -30,6 +30,10 @@
       "effect": "read"
     },
     {
+      "field": "authorizebackupupgradebypass",
+      "effect": "write"
+    },
+    {
       "field": "backup",
       "effect": "write"
     },
@@ -87,6 +91,10 @@
     },
     {
       "field": "bulktrashbrokenselected",
+      "effect": "write"
+    },
+    {
+      "field": "cancelstagedcoreupdate",
       "effect": "write"
     },
     {
@@ -503,6 +511,14 @@
     },
     {
       "field": "sonicanalysisenabled",
+      "effect": "read"
+    },
+    {
+      "field": "stagecoreupdate",
+      "effect": "write"
+    },
+    {
+      "field": "stagedcoreupdate",
       "effect": "read"
     },
     {

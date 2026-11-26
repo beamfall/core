@@ -71,6 +71,7 @@ import type {
   SkipDetectionInfo,
   SmartCollectionInfo,
   StagedRestoreInfo,
+  StagedUpdateInfo,
   SubscriptionInfo,
   SubscriptionRetentionResult,
   TagAssignmentInfo,
@@ -778,7 +779,7 @@ export async function acknowledgeBackupKey(
 }
 
 const BACKUP_STATUS_FIELDS =
-  "backupFailedBanner integrityFailedBanner upgradeGate updateGateClear lastIntegrityPass { at failureClass set } lastSuccess { at failureClass set } lastFailure { at failureClass set } lastIntegrityFailure { at failureClass set } lastDrill { at verified set reason }";
+  "backupFailedBanner integrityFailedBanner unverifiedUpgradeBanner upgradeGate updateGateClear failedSet lastBinaryVersion lastIntegrityPass { at failureClass set } lastSuccess { at failureClass set } lastFailure { at failureClass set } lastIntegrityFailure { at failureClass set } lastDrill { at verified set reason } lastUpgradeBypass { at targetVersion actorProfileID policy failedSet reason appliedAt valid } lastUnverifiedUpgrade { at fromVersion toVersion bypassed reason }";
 
 const BACKUP_STATUS_QUERY = `query BackupStatus { backupStatus { ${BACKUP_STATUS_FIELDS} } }`;
 
@@ -790,7 +791,7 @@ export async function fetchBackupStatus(signal?: AbortSignal): Promise<BackupSta
 
 const ACKNOWLEDGE_BACKUP_BANNER_MUTATION = `mutation AcknowledgeBackupBanner($banner: String!) { acknowledgeBackupBanner(banner: $banner) { ${BACKUP_STATUS_FIELDS} } }`;
 
-/** AcknowledgeBackupBanner — dismiss one failure banner until the next failure. */
+/** AcknowledgeBackupBanner — dismiss one failure or unverified-upgrade banner. */
 export async function acknowledgeBackupBanner(
   banner: BackupBanner,
   signal?: AbortSignal,
@@ -816,6 +817,69 @@ export async function setBackupUpgradeGate(
     signal,
   );
   return data.setBackupUpgradeGate;
+}
+
+const STAGED_UPDATE_FIELDS =
+  "staged status stagedAt targetVersion channel commit artifactName artifactSHA256 sourceDistDir bypassAuthorized appliedAt rollbackBinary";
+
+const STAGED_CORE_UPDATE_QUERY = `query StagedCoreUpdate { stagedCoreUpdate { ${STAGED_UPDATE_FIELDS} } }`;
+
+/** StagedCoreUpdate — inspect any signed release distribution staged for `beamfall upgrade apply`. */
+export async function fetchStagedCoreUpdate(signal?: AbortSignal): Promise<StagedUpdateInfo> {
+  const data = await graphql<{ stagedCoreUpdate: StagedUpdateInfo }>(
+    STAGED_CORE_UPDATE_QUERY,
+    {},
+    signal,
+  );
+  return data.stagedCoreUpdate;
+}
+
+const AUTHORIZE_BACKUP_UPGRADE_BYPASS_MUTATION = `mutation AuthorizeBackupUpgradeBypass($targetVersion: String!, $confirmation: String!, $reason: String!, $password: String!) { authorizeBackupUpgradeBypass(targetVersion: $targetVersion, confirmation: $confirmation, reason: $reason, password: $password) { ${BACKUP_STATUS_FIELDS} } }`;
+
+/** AuthorizeBackupUpgradeBypass — step-up admin password re-auth to bypass the soft update gate (ADR-0243). */
+export async function authorizeBackupUpgradeBypass(
+  input: {
+    targetVersion: string;
+    confirmation: string;
+    reason: string;
+    password: string;
+  },
+  signal?: AbortSignal,
+): Promise<BackupStatusInfo> {
+  const data = await graphql<{ authorizeBackupUpgradeBypass: BackupStatusInfo }>(
+    AUTHORIZE_BACKUP_UPGRADE_BYPASS_MUTATION,
+    input,
+    signal,
+  );
+  return data.authorizeBackupUpgradeBypass;
+}
+
+const STAGE_CORE_UPDATE_MUTATION = `mutation StageCoreUpdate($distDir: String!) { stageCoreUpdate(distDir: $distDir) { ${STAGED_UPDATE_FIELDS} } }`;
+
+/** StageCoreUpdate — verify a signed release dist dir and stage it under the backup update gate. */
+export async function stageCoreUpdate(
+  distDir: string,
+  signal?: AbortSignal,
+): Promise<StagedUpdateInfo> {
+  const data = await graphql<{ stageCoreUpdate: StagedUpdateInfo }>(
+    STAGE_CORE_UPDATE_MUTATION,
+    { distDir },
+    signal,
+  );
+  return data.stageCoreUpdate;
+}
+
+const CANCEL_STAGED_CORE_UPDATE_MUTATION =
+  "mutation CancelStagedCoreUpdate { cancelStagedCoreUpdate }";
+
+/** CancelStagedCoreUpdate — drop any currently staged release update. */
+export async function cancelStagedCoreUpdate(signal?: AbortSignal): Promise<boolean> {
+  const data = await graphql<{ cancelStagedCoreUpdate: boolean }>(
+    CANCEL_STAGED_CORE_UPDATE_MUTATION,
+    {},
+    signal,
+  );
+  return data.cancelStagedCoreUpdate;
 }
 
 const VERIFY_BACKUP_NOW_MUTATION =

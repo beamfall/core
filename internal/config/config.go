@@ -172,6 +172,11 @@ type Config struct {
 	// is bound to transport RemoteAddr; proxy headers are honored only for an
 	// explicitly trusted proxy CIDR.
 	JellyfinCompat JellyfinCompatConfig
+
+	// AllowUnverifiedUpgrade permits one server boot across a release binary
+	// version transition even when the hard ADR-0192 backup update gate is
+	// blocked (ADR-0243 recovery escape hatch).
+	AllowUnverifiedUpgrade bool
 }
 
 type JellyfinCompatConfig struct {
@@ -552,6 +557,13 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 		}
 		cfg.JellyfinCompat.Enabled = enabled
 	}
+	if value, ok := lookupEnv("BEAMFALL_ALLOW_UNVERIFIED_UPGRADE"); ok && value != "" {
+		allowed, err := strconv.ParseBool(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid BEAMFALL_ALLOW_UNVERIFIED_UPGRADE: %w", err)
+		}
+		cfg.AllowUnverifiedUpgrade = allowed
+	}
 	if value, ok := lookupEnv("BEAMFALL_JELLYFIN_COMPAT_CIDRS"); ok {
 		cfg.JellyfinCompat.AllowedCIDRs = parseList(value)
 	}
@@ -622,6 +634,7 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 	fs.BoolVar(&cfg.AllowConformanceSeed, "allow-conformance-seed", cfg.AllowConformanceSeed, "permit the test/dev-only conformance seed profile")
 	fs.BoolVar(&cfg.AllowTestSeed, "allow-test-seed", cfg.AllowTestSeed, "permit the test/dev-only acceptance seed profile and --seed-development-data (plants known credentials; never a production serve)")
 	fs.BoolVar(&cfg.AllowNetworkDataDir, "allow-network-data-dir", cfg.AllowNetworkDataDir, "allow SQLite data directory on a network filesystem")
+	fs.BoolVar(&cfg.AllowUnverifiedUpgrade, "allow-unverified-upgrade", cfg.AllowUnverifiedUpgrade, "allow booting a new release binary once even when blocked by the hard backup update gate")
 	fs.IntVar(&cfg.TranscodeCap, "transcode-cap", cfg.TranscodeCap, "maximum concurrent transcode sessions")
 	fs.StringVar(&cfg.TranscodeScratchDir, "transcode-tmp", cfg.TranscodeScratchDir, "existing scratch directory for live HLS transcodes (empty = <data-dir>/transcode)")
 	fs.TextVar(&cfg.LogLevel, "log-level", &cfg.LogLevel, "operator log level: debug, info, warn, or error")

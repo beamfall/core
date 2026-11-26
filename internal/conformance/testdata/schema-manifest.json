@@ -110,6 +110,11 @@
     "tier": "session"
   },
   {
+    "field": "authorizebackupupgradebypass",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "backup",
     "effect": "write",
     "tier": "admin"
@@ -201,6 +206,11 @@
   },
   {
     "field": "bulktrashbrokenselected",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "cancelstagedcoreupdate",
     "effect": "write",
     "tier": "admin"
   },
@@ -1828,6 +1838,16 @@
     "field": "sourceitems",
     "effect": "read",
     "tier": "session"
+  },
+  {
+    "field": "stagecoreupdate",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "stagedcoreupdate",
+    "effect": "read",
+    "tier": "admin"
   },
   {
     "field": "stagedrestore",

@@ -5,7 +5,9 @@ import {
   acknowledgeBackupKey,
   addCollectionMedia,
   assignTag,
+  authorizeBackupUpgradeBypass,
   bulkAssignTags,
+  cancelStagedCoreUpdate,
   cancelStagedRestore,
   createCollection,
   createMarker,
@@ -21,6 +23,7 @@ import {
   fetchBackupStatus,
   fetchLibraries,
   fetchMetadataExport,
+  fetchStagedCoreUpdate,
   fetchStagedRestore,
   fetchTrashedLibraries,
   fixMatch,
@@ -41,6 +44,7 @@ import {
   setBackupUpgradeGate,
   setLibraryIcon,
   setLibraryShowOnHome,
+  stageCoreUpdate,
   stageRestore,
   unassignTag,
   updateCollection,
@@ -67,6 +71,7 @@ const MANAGE_READS: [string, (signal: AbortSignal) => Promise<unknown>][] = [
   ["fetchBackupKeyStatus", (s) => fetchBackupKeyStatus(s)],
   ["fetchBackupStatus", (s) => fetchBackupStatus(s)],
   ["fetchMetadataExport", (s) => fetchMetadataExport(s)],
+  ["fetchStagedCoreUpdate", (s) => fetchStagedCoreUpdate(s)],
   ["fetchStagedRestore", (s) => fetchStagedRestore(s)],
 ];
 
@@ -709,5 +714,35 @@ describe("manage mutation request recording", () => {
       envelope: "/backups/a/set.bbk",
       backupKey: "drill-words",
     });
+  });
+
+  it("upgrade gate bypass, dist staging and unverified banner ack serialize inputs cleanly (CORE-3513)", async () => {
+    await fetchStagedCoreUpdate();
+    await authorizeBackupUpgradeBypass({
+      targetVersion: "v2.0.0",
+      confirmation: "v2.0.0 beamfall-backup-9",
+      reason: "critical fix",
+      password: "admin-pw-test",
+    });
+    await stageCoreUpdate("/opt/beamfall/dist");
+    await cancelStagedCoreUpdate();
+    await acknowledgeBackupBanner("unverified-upgrade");
+
+    expect(recorded[0].query).toContain("query StagedCoreUpdate { stagedCoreUpdate");
+    expect(recorded[0].variables).toEqual({});
+    expect(recorded[1].query).toContain(
+      "authorizeBackupUpgradeBypass(targetVersion: $targetVersion, confirmation: $confirmation, reason: $reason, password: $password)",
+    );
+    expect(recorded[1].query).not.toContain("admin-pw-test");
+    expect(recorded[1].variables).toEqual({
+      targetVersion: "v2.0.0",
+      confirmation: "v2.0.0 beamfall-backup-9",
+      reason: "critical fix",
+      password: "admin-pw-test",
+    });
+    expect(recorded[2].query).toContain("stageCoreUpdate(distDir: $distDir)");
+    expect(recorded[2].variables).toEqual({ distDir: "/opt/beamfall/dist" });
+    expect(recorded[3].query).toBe("mutation CancelStagedCoreUpdate { cancelStagedCoreUpdate }");
+    expect(recorded[4].variables).toEqual({ banner: "unverified-upgrade" });
   });
 });

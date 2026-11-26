@@ -108,6 +108,11 @@
       "tier": "session"
     },
     {
+      "field": "authorizebackupupgradebypass",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "backup",
       "effect": "write",
       "tier": "admin"
@@ -199,6 +204,11 @@
     },
     {
       "field": "bulktrashbrokenselected",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
+      "field": "cancelstagedcoreupdate",
       "effect": "write",
       "tier": "admin"
     },
@@ -1763,6 +1773,16 @@
       "tier": "session"
     },
     {
+      "field": "stagecoreupdate",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
+      "field": "stagedcoreupdate",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
       "field": "stagedrestore",
       "effect": "read",
       "tier": "admin"
@@ -2208,7 +2228,15 @@
           "kind": "scalar"
         },
         {
+          "name": "failedSet",
+          "kind": "scalar"
+        },
+        {
           "name": "integrityFailedBanner",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastBinaryVersion",
           "kind": "scalar"
         },
         {
@@ -2325,6 +2353,76 @@
               "kind": "scalar"
             }
           ]
+        },
+        {
+          "name": "lastUnverifiedUpgrade",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "bypassed",
+              "kind": "scalar"
+            },
+            {
+              "name": "fromVersion",
+              "kind": "scalar"
+            },
+            {
+              "name": "reason",
+              "kind": "scalar"
+            },
+            {
+              "name": "toVersion",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "lastUpgradeBypass",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "actorProfileID",
+              "kind": "scalar"
+            },
+            {
+              "name": "appliedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "failedSet",
+              "kind": "scalar"
+            },
+            {
+              "name": "policy",
+              "kind": "scalar"
+            },
+            {
+              "name": "reason",
+              "kind": "scalar"
+            },
+            {
+              "name": "targetVersion",
+              "kind": "scalar"
+            },
+            {
+              "name": "valid",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "unverifiedUpgradeBanner",
+          "kind": "scalar"
         },
         {
           "name": "updateGateClear",
@@ -4054,70 +4152,7 @@
       ]
     },
     {
-      "field": "backup",
-      "kind": "object",
-      "children": [
-        {
-          "name": "manifest",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "backuphistory",
-      "kind": "object",
-      "children": [
-        {
-          "name": "createdAt",
-          "kind": "scalar"
-        },
-        {
-          "name": "directory",
-          "kind": "scalar"
-        },
-        {
-          "name": "error",
-          "kind": "scalar",
-          "optional": true
-        },
-        {
-          "name": "keyFingerprint",
-          "kind": "scalar"
-        },
-        {
-          "name": "keyState",
-          "kind": "scalar"
-        },
-        {
-          "name": "sizeBytes",
-          "kind": "scalar"
-        },
-        {
-          "name": "valid",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "backupkeystatus",
-      "kind": "object",
-      "children": [
-        {
-          "name": "daysLeft",
-          "kind": "scalar"
-        },
-        {
-          "name": "expiresAt",
-          "kind": "scalar"
-        },
-        {
-          "name": "pending",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "backupstatus",
+      "field": "authorizebackupupgradebypass",
       "kind": "object",
       "children": [
         {
@@ -4125,7 +4160,15 @@
           "kind": "scalar"
         },
         {
+          "name": "failedSet",
+          "kind": "scalar"
+        },
+        {
           "name": "integrityFailedBanner",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastBinaryVersion",
           "kind": "scalar"
         },
         {
@@ -4242,6 +4285,354 @@
               "kind": "scalar"
             }
           ]
+        },
+        {
+          "name": "lastUnverifiedUpgrade",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "bypassed",
+              "kind": "scalar"
+            },
+            {
+              "name": "fromVersion",
+              "kind": "scalar"
+            },
+            {
+              "name": "reason",
+              "kind": "scalar"
+            },
+            {
+              "name": "toVersion",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "lastUpgradeBypass",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "actorProfileID",
+              "kind": "scalar"
+            },
+            {
+              "name": "appliedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "failedSet",
+              "kind": "scalar"
+            },
+            {
+              "name": "policy",
+              "kind": "scalar"
+            },
+            {
+              "name": "reason",
+              "kind": "scalar"
+            },
+            {
+              "name": "targetVersion",
+              "kind": "scalar"
+            },
+            {
+              "name": "valid",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "unverifiedUpgradeBanner",
+          "kind": "scalar"
+        },
+        {
+          "name": "updateGateClear",
+          "kind": "scalar"
+        },
+        {
+          "name": "upgradeGate",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "backup",
+      "kind": "object",
+      "children": [
+        {
+          "name": "manifest",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "backuphistory",
+      "kind": "object",
+      "children": [
+        {
+          "name": "createdAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "directory",
+          "kind": "scalar"
+        },
+        {
+          "name": "error",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "keyFingerprint",
+          "kind": "scalar"
+        },
+        {
+          "name": "keyState",
+          "kind": "scalar"
+        },
+        {
+          "name": "sizeBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "valid",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "backupkeystatus",
+      "kind": "object",
+      "children": [
+        {
+          "name": "daysLeft",
+          "kind": "scalar"
+        },
+        {
+          "name": "expiresAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "pending",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "backupstatus",
+      "kind": "object",
+      "children": [
+        {
+          "name": "backupFailedBanner",
+          "kind": "scalar"
+        },
+        {
+          "name": "failedSet",
+          "kind": "scalar"
+        },
+        {
+          "name": "integrityFailedBanner",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastBinaryVersion",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastDrill",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "backupCreatedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "databases",
+              "kind": "scalar"
+            },
+            {
+              "name": "durationMs",
+              "kind": "scalar"
+            },
+            {
+              "name": "libraries",
+              "kind": "scalar"
+            },
+            {
+              "name": "reason",
+              "kind": "scalar"
+            },
+            {
+              "name": "set",
+              "kind": "scalar"
+            },
+            {
+              "name": "verified",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "lastFailure",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "failureClass",
+              "kind": "scalar"
+            },
+            {
+              "name": "set",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "lastIntegrityFailure",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "failureClass",
+              "kind": "scalar"
+            },
+            {
+              "name": "set",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "lastIntegrityPass",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "failureClass",
+              "kind": "scalar"
+            },
+            {
+              "name": "set",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "lastSuccess",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "failureClass",
+              "kind": "scalar"
+            },
+            {
+              "name": "set",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "lastUnverifiedUpgrade",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "bypassed",
+              "kind": "scalar"
+            },
+            {
+              "name": "fromVersion",
+              "kind": "scalar"
+            },
+            {
+              "name": "reason",
+              "kind": "scalar"
+            },
+            {
+              "name": "toVersion",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "lastUpgradeBypass",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "actorProfileID",
+              "kind": "scalar"
+            },
+            {
+              "name": "appliedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "failedSet",
+              "kind": "scalar"
+            },
+            {
+              "name": "policy",
+              "kind": "scalar"
+            },
+            {
+              "name": "reason",
+              "kind": "scalar"
+            },
+            {
+              "name": "targetVersion",
+              "kind": "scalar"
+            },
+            {
+              "name": "valid",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "unverifiedUpgradeBanner",
+          "kind": "scalar"
         },
         {
           "name": "updateGateClear",
@@ -4596,6 +4987,10 @@
           "kind": "scalar"
         }
       ]
+    },
+    {
+      "field": "cancelstagedcoreupdate",
+      "kind": "scalar"
     },
     {
       "field": "cancelstagedrestore",
@@ -54168,7 +54563,15 @@
           "kind": "scalar"
         },
         {
+          "name": "failedSet",
+          "kind": "scalar"
+        },
+        {
           "name": "integrityFailedBanner",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastBinaryVersion",
           "kind": "scalar"
         },
         {
@@ -54285,6 +54688,76 @@
               "kind": "scalar"
             }
           ]
+        },
+        {
+          "name": "lastUnverifiedUpgrade",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "bypassed",
+              "kind": "scalar"
+            },
+            {
+              "name": "fromVersion",
+              "kind": "scalar"
+            },
+            {
+              "name": "reason",
+              "kind": "scalar"
+            },
+            {
+              "name": "toVersion",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "lastUpgradeBypass",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "actorProfileID",
+              "kind": "scalar"
+            },
+            {
+              "name": "appliedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "failedSet",
+              "kind": "scalar"
+            },
+            {
+              "name": "policy",
+              "kind": "scalar"
+            },
+            {
+              "name": "reason",
+              "kind": "scalar"
+            },
+            {
+              "name": "targetVersion",
+              "kind": "scalar"
+            },
+            {
+              "name": "valid",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "unverifiedUpgradeBanner",
+          "kind": "scalar"
         },
         {
           "name": "updateGateClear",
@@ -63451,6 +63924,114 @@
       ]
     },
     {
+      "field": "stagecoreupdate",
+      "kind": "object",
+      "children": [
+        {
+          "name": "appliedAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "artifactName",
+          "kind": "scalar"
+        },
+        {
+          "name": "artifactSHA256",
+          "kind": "scalar"
+        },
+        {
+          "name": "bypassAuthorized",
+          "kind": "scalar"
+        },
+        {
+          "name": "channel",
+          "kind": "scalar"
+        },
+        {
+          "name": "commit",
+          "kind": "scalar"
+        },
+        {
+          "name": "rollbackBinary",
+          "kind": "scalar"
+        },
+        {
+          "name": "sourceDistDir",
+          "kind": "scalar"
+        },
+        {
+          "name": "staged",
+          "kind": "scalar"
+        },
+        {
+          "name": "stagedAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "status",
+          "kind": "scalar"
+        },
+        {
+          "name": "targetVersion",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "stagedcoreupdate",
+      "kind": "object",
+      "children": [
+        {
+          "name": "appliedAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "artifactName",
+          "kind": "scalar"
+        },
+        {
+          "name": "artifactSHA256",
+          "kind": "scalar"
+        },
+        {
+          "name": "bypassAuthorized",
+          "kind": "scalar"
+        },
+        {
+          "name": "channel",
+          "kind": "scalar"
+        },
+        {
+          "name": "commit",
+          "kind": "scalar"
+        },
+        {
+          "name": "rollbackBinary",
+          "kind": "scalar"
+        },
+        {
+          "name": "sourceDistDir",
+          "kind": "scalar"
+        },
+        {
+          "name": "staged",
+          "kind": "scalar"
+        },
+        {
+          "name": "stagedAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "status",
+          "kind": "scalar"
+        },
+        {
+          "name": "targetVersion",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "stagedrestore",
       "kind": "object",
       "children": [
@@ -69154,6 +69735,10 @@
         "effect": "read"
       },
       {
+        "field": "authorizebackupupgradebypass",
+        "effect": "write"
+      },
+      {
         "field": "backup",
         "effect": "write"
       },
@@ -69211,6 +69796,10 @@
       },
       {
         "field": "bulktrashbrokenselected",
+        "effect": "write"
+      },
+      {
+        "field": "cancelstagedcoreupdate",
         "effect": "write"
       },
       {
@@ -69627,6 +70216,14 @@
       },
       {
         "field": "sonicanalysisenabled",
+        "effect": "read"
+      },
+      {
+        "field": "stagecoreupdate",
+        "effect": "write"
+      },
+      {
+        "field": "stagedcoreupdate",
         "effect": "read"
       },
       {

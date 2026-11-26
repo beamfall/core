@@ -11,6 +11,7 @@ import { backupOpsStrings } from "./backup-ops";
 import { backupRetentionStrings } from "./backup-retention";
 import { backupRetentionExportStrings } from "./backup-retention-export";
 import { backupRetentionHistoryStrings } from "./backup-retention-history";
+import { backupUpgradeGateStrings } from "./backup-upgrade-gate";
 import { castStrings } from "./cast";
 import { collectionMarkerStrings } from "./collections-markers";
 import { collectionMarkerEditorStrings } from "./collections-markers-editor";
@@ -174,6 +175,7 @@ export const en = {
   ...stagedRestoreStrings.en,
   ...backupKeyStrings.en,
   ...backupOpsStrings.en,
+  ...backupUpgradeGateStrings.en,
   ...miniPlayerStrings.en,
   ...activityPageStrings.en,
   ...activitySecurityStrings.en,
@@ -269,6 +271,7 @@ export const fr = {
   ...stagedRestoreStrings.fr,
   ...backupKeyStrings.fr,
   ...backupOpsStrings.fr,
+  ...backupUpgradeGateStrings.fr,
   ...miniPlayerStrings.fr,
   ...activityPageStrings.fr,
   ...activitySecurityStrings.fr,
@@ -364,6 +367,7 @@ export const de = {
   ...stagedRestoreStrings.de,
   ...backupKeyStrings.de,
   ...backupOpsStrings.de,
+  ...backupUpgradeGateStrings.de,
   ...miniPlayerStrings.de,
   ...activityPageStrings.de,
   ...activitySecurityStrings.de,
@@ -459,6 +463,7 @@ export const es = {
   ...stagedRestoreStrings.es,
   ...backupKeyStrings.es,
   ...backupOpsStrings.es,
+  ...backupUpgradeGateStrings.es,
   ...miniPlayerStrings.es,
   ...activityPageStrings.es,
   ...activitySecurityStrings.es,
@@ -554,6 +559,7 @@ export const pt = {
   ...stagedRestoreStrings.pt,
   ...backupKeyStrings.pt,
   ...backupOpsStrings.pt,
+  ...backupUpgradeGateStrings.pt,
   ...miniPlayerStrings.pt,
   ...activityPageStrings.pt,
   ...activitySecurityStrings.pt,

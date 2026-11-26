@@ -4,10 +4,15 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  acknowledgeBackupBanner,
+  authorizeBackupUpgradeBypass,
+  cancelStagedCoreUpdate,
   fetchBackupStatus,
   fetchConsoleConfig,
+  fetchStagedCoreUpdate,
   fetchUpdateStatus,
   setConsoleConfig,
+  stageCoreUpdate,
 } from "@/lib/graphql";
 import type { BackupStatusInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
@@ -22,10 +27,15 @@ class ResizeObserverStub {
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
 
 vi.mock("@/lib/graphql", () => ({
+  acknowledgeBackupBanner: vi.fn(),
+  authorizeBackupUpgradeBypass: vi.fn(),
+  cancelStagedCoreUpdate: vi.fn(),
   fetchBackupStatus: vi.fn(),
   fetchConsoleConfig: vi.fn(),
+  fetchStagedCoreUpdate: vi.fn(),
   fetchUpdateStatus: vi.fn(),
   setConsoleConfig: vi.fn(),
+  stageCoreUpdate: vi.fn(),
 }));
 
 const config = {
@@ -67,6 +77,20 @@ beforeEach(() => {
   vi.mocked(fetchUpdateStatus).mockResolvedValue(updateStatus);
   vi.mocked(setConsoleConfig).mockResolvedValue(config);
   vi.mocked(fetchBackupStatus).mockResolvedValue(NO_BACKUP);
+  vi.mocked(fetchStagedCoreUpdate).mockResolvedValue({
+    staged: false,
+    status: "",
+    stagedAt: "",
+    targetVersion: "",
+    channel: "",
+    commit: "",
+    artifactName: "",
+    artifactSHA256: "",
+    sourceDistDir: "",
+    bypassAuthorized: false,
+    appliedAt: "",
+    rollbackBinary: "",
+  });
 });
 
 function renderUpdates() {
@@ -325,5 +349,297 @@ describe("update backup gate (CORE-0778)", () => {
     expect(gate.clear).toBe(false);
     expect(gate.steps.verify).toBe("pending");
     expect(backupGateState({ ...acknowledged, upgradeGate: "hard" }).steps.install).toBe("blocked");
+  });
+
+  it("enforces soft elevated bypass step-up re-auth, hard-block refusal, signed dist staging, and banner ack (CORE-3513)", async () => {
+    vi.mocked(fetchUpdateStatus).mockResolvedValue({
+      ...updateStatus,
+      state: "updateAvailable",
+      updateAvailable: true,
+      latestVersion: "v2.0.0",
+    });
+    const blockedSoft: BackupStatusInfo = {
+      ...NO_BACKUP,
+      upgradeGate: "soft",
+      updateGateClear: false,
+      failedSet: "beamfall-backup-11",
+      unverifiedUpgradeBanner: true,
+      lastUnverifiedUpgrade: {
+        at: "2026-11-26T05:00:00Z",
+        fromVersion: "v1.0.0",
+        toVersion: "v1.1.0",
+        bypassed: false,
+        reason: "soft-gate-unverified",
+      },
+    };
+    const bypassedSoft: BackupStatusInfo = {
+      ...blockedSoft,
+      unverifiedUpgradeBanner: false,
+      lastUpgradeBypass: {
+        at: "2026-11-26T07:00:00Z",
+        targetVersion: "v2.0.0",
+        actorProfileID: "profile-default",
+        policy: "soft",
+        failedSet: "beamfall-backup-11",
+        reason: "urgent security fix",
+        appliedAt: "",
+      },
+    };
+    vi.mocked(fetchBackupStatus)
+      .mockResolvedValueOnce(blockedSoft)
+      .mockResolvedValueOnce(bypassedSoft)
+      .mockResolvedValue(bypassedSoft);
+    vi.mocked(authorizeBackupUpgradeBypass).mockResolvedValue(bypassedSoft);
+    vi.mocked(stageCoreUpdate).mockResolvedValue({
+      staged: true,
+      status: "staged",
+      stagedAt: "2026-11-26T07:01:00Z",
+      targetVersion: "v2.0.0",
+      channel: "stable",
+      commit: "deadbeef",
+      artifactName: "beamfall-linux-amd64",
+      artifactSHA256: "abc",
+      sourceDistDir: "/opt/dist",
+      bypassAuthorized: true,
+      appliedAt: "",
+      rollbackBinary: "",
+    });
+    vi.mocked(cancelStagedCoreUpdate).mockResolvedValue(true);
+    vi.mocked(acknowledgeBackupBanner).mockResolvedValue({
+      ...blockedSoft,
+      unverifiedUpgradeBanner: false,
+    });
+
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <UpdateAwareness />
+      </I18nProvider>,
+    );
+
+    const gate = await screen.findByRole("region", { name: "Backup before update" });
+    expect(within(gate).getByText(/Gate policy: Soft/i)).toBeVisible();
+    // Unverified upgrade banner is visible and dismissible.
+    expect(within(gate).getByRole("alert")).toHaveTextContent(
+      "Unverified upgrade detected (v1.0.0 -> v1.1.0)",
+    );
+    await user.click(within(gate).getByRole("button", { name: "Acknowledge" }));
+    expect(acknowledgeBackupBanner).toHaveBeenCalledWith("unverified-upgrade");
+
+    // Stage button stays disabled until gate is cleared or bypassed.
+    expect(within(gate).getByRole("button", { name: "Stage signed update" })).toBeDisabled();
+
+    // Step-up elevated bypass requires password, confirmation naming version + failed Set, and reason.
+    await user.click(within(gate).getByRole("button", { name: "Review elevated bypass" }));
+    const pw = within(gate).getByLabelText("Admin password");
+    await user.type(pw, "admin-pass-123");
+    await user.type(within(gate).getByLabelText("Typed confirmation"), "v2.0.0 beamfall-backup-11");
+    await user.type(within(gate).getByLabelText("Audit reason"), "urgent security fix");
+    await user.click(within(gate).getByRole("button", { name: "Authorize elevated bypass" }));
+
+    expect(authorizeBackupUpgradeBypass).toHaveBeenCalledWith({
+      targetVersion: "v2.0.0",
+      confirmation: "v2.0.0 beamfall-backup-11",
+      reason: "urgent security fix",
+      password: "admin-pass-123",
+    });
+    expect(setConsoleConfig).not.toHaveBeenCalled();
+
+    // Once bypassed, staging is enabled and calls stageCoreUpdate without triggering settings save.
+    const distInput = await waitFor(() => {
+      const el = within(gate).getByLabelText("Signed release dist path");
+      expect(el).toBeEnabled();
+      return el;
+    });
+    await user.type(distInput, "/opt/dist");
+    await user.click(within(gate).getByRole("button", { name: "Stage signed update" }));
+    expect(stageCoreUpdate).toHaveBeenCalledWith("/opt/dist");
+    expect(setConsoleConfig).not.toHaveBeenCalled();
+  });
+
+  it("disables elevated bypass UI completely when Hard block policy is active", async () => {
+    vi.mocked(fetchUpdateStatus).mockResolvedValue({
+      ...updateStatus,
+      state: "updateAvailable",
+      updateAvailable: true,
+      latestVersion: "v2.0.0",
+    });
+    vi.mocked(fetchBackupStatus).mockResolvedValue({
+      ...NO_BACKUP,
+      upgradeGate: "hard",
+      updateGateClear: false,
+    });
+    render(
+      <I18nProvider>
+        <UpdateAwareness />
+      </I18nProvider>,
+    );
+    const gate = await screen.findByRole("region", { name: "Backup before update" });
+    expect(within(gate).getByText(/Gate policy: Hard block/i)).toBeVisible();
+    expect(within(gate).queryByRole("button", { name: "Review elevated bypass" })).toBeNull();
+    expect(within(gate).getByText(/Elevated bypass is disabled under Hard block/i)).toBeVisible();
+  });
+
+  it("shows active unverified-upgrade warning and staging even when core is up to date", async () => {
+    vi.mocked(fetchUpdateStatus).mockResolvedValue({
+      state: "upToDate",
+      enabled: true,
+      channel: "stable",
+      currentVersion: "v1.1.0",
+      latestVersion: "v1.1.0",
+      updateAvailable: false,
+    });
+    vi.mocked(fetchBackupStatus).mockResolvedValue({
+      ...NO_BACKUP,
+      unverifiedUpgradeBanner: true,
+      lastUnverifiedUpgrade: {
+        at: "2026-11-26T05:00:00Z",
+        fromVersion: "v1.0.0",
+        toVersion: "v1.1.0",
+        bypassed: false,
+        reason: "soft-gate-unverified",
+      },
+    });
+    renderUpdates();
+    const gate = await screen.findByRole("region", { name: "Backup before update" });
+    expect(within(gate).getByRole("alert")).toHaveTextContent(
+      "Unverified upgrade detected (v1.0.0 -> v1.1.0)",
+    );
+    expect(within(gate).getByLabelText("Signed release dist path")).toBeInTheDocument();
+  });
+
+  it("invalidates soft elevated bypass in UI when a newer backup failure is recorded", async () => {
+    vi.mocked(fetchUpdateStatus).mockResolvedValue({
+      ...updateStatus,
+      state: "updateAvailable",
+      updateAvailable: true,
+      latestVersion: "v2.0.0",
+    });
+    vi.mocked(fetchBackupStatus).mockResolvedValue({
+      ...NO_BACKUP,
+      upgradeGate: "soft",
+      updateGateClear: false,
+      failedSet: "beamfall-backup-12",
+      lastFailure: {
+        at: "2026-11-26T08:00:00Z",
+        failureClass: "destination-full",
+        set: "beamfall-backup-12",
+      },
+      lastUpgradeBypass: {
+        at: "2026-11-26T07:00:00Z",
+        targetVersion: "v2.0.0",
+        actorProfileID: "profile-default",
+        policy: "soft",
+        failedSet: "beamfall-backup-11",
+        reason: "old grant",
+        appliedAt: "",
+      },
+    });
+    renderUpdates();
+    const gate = await screen.findByRole("region", { name: "Backup before update" });
+    expect(within(gate).queryByText(/Elevated bypass authorized for/i)).toBeNull();
+    expect(within(gate).getByLabelText("Signed release dist path")).toBeDisabled();
+    expect(within(gate).getByRole("button", { name: "Stage signed update" })).toBeDisabled();
+  });
+
+  it("respects server-computed valid=false for same-second superseded bypass", async () => {
+    vi.mocked(fetchUpdateStatus).mockResolvedValue({
+      ...updateStatus,
+      state: "updateAvailable",
+      updateAvailable: true,
+      latestVersion: "v2.0.0",
+    });
+    vi.mocked(fetchBackupStatus).mockResolvedValue({
+      ...NO_BACKUP,
+      upgradeGate: "soft",
+      updateGateClear: false,
+      failedSet: "beamfall-backup-12",
+      lastFailure: {
+        at: "2026-11-26T12:00:00Z",
+        failureClass: "destination-full",
+        set: "beamfall-backup-12",
+      },
+      lastUpgradeBypass: {
+        at: "2026-11-26T12:00:00Z",
+        targetVersion: "v2.0.0",
+        actorProfileID: "profile-default",
+        policy: "soft",
+        failedSet: "beamfall-backup-11",
+        reason: "same second superseded",
+        appliedAt: "",
+        valid: false,
+      },
+    });
+    renderUpdates();
+    const gate = await screen.findByRole("region", { name: "Backup before update" });
+    expect(within(gate).queryByText(/Elevated bypass authorized for/i)).toBeNull();
+    expect(within(gate).getByRole("button", { name: "Stage signed update" })).toBeDisabled();
+  });
+
+  it("tracks refreshed latestVersion in soft elevated bypass without retaining a stale release", async () => {
+    vi.mocked(fetchUpdateStatus)
+      .mockResolvedValueOnce({
+        ...updateStatus,
+        state: "updateAvailable",
+        updateAvailable: true,
+        latestVersion: "v1.6",
+      })
+      .mockResolvedValueOnce({
+        ...updateStatus,
+        state: "updateAvailable",
+        updateAvailable: true,
+        latestVersion: "v1.7",
+      });
+    vi.mocked(fetchBackupStatus).mockResolvedValue({
+      ...NO_BACKUP,
+      upgradeGate: "soft",
+      updateGateClear: false,
+      failedSet: "beamfall-backup-11",
+    });
+    vi.mocked(authorizeBackupUpgradeBypass).mockResolvedValue({
+      ...NO_BACKUP,
+      upgradeGate: "soft",
+      updateGateClear: false,
+      failedSet: "beamfall-backup-11",
+      lastUpgradeBypass: {
+        at: "2026-11-26T09:00:00Z",
+        targetVersion: "v1.7",
+        actorProfileID: "profile-default",
+        policy: "soft",
+        failedSet: "beamfall-backup-11",
+        reason: "urgent security fix",
+        appliedAt: "",
+      },
+    });
+
+    const user = userEvent.setup();
+    renderUpdates();
+
+    const gate = await screen.findByRole("region", { name: "Backup before update" });
+    await user.click(within(gate).getByRole("button", { name: "Review elevated bypass" }));
+    expect(
+      await within(gate).findByText(
+        "Names version (v1.6) and the failed Backup Set (beamfall-backup-11)",
+      ),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Check now" }));
+    expect(
+      await within(gate).findByText(
+        "Names version (v1.7) and the failed Backup Set (beamfall-backup-11)",
+      ),
+    ).toBeVisible();
+
+    await user.type(within(gate).getByLabelText("Admin password"), "admin-pass-123");
+    await user.type(within(gate).getByLabelText("Typed confirmation"), "v1.7 beamfall-backup-11");
+    await user.type(within(gate).getByLabelText("Audit reason"), "urgent security fix");
+    await user.click(within(gate).getByRole("button", { name: "Authorize elevated bypass" }));
+
+    expect(authorizeBackupUpgradeBypass).toHaveBeenCalledWith({
+      targetVersion: "v1.7",
+      confirmation: "v1.7 beamfall-backup-11",
+      reason: "urgent security fix",
+      password: "admin-pass-123",
+    });
   });
 });

@@ -70,12 +70,17 @@
       "tier": "admin",
       "children": [
         "backupFailedBanner",
+        "failedSet",
         "integrityFailedBanner",
+        "lastBinaryVersion",
         "lastDrill",
         "lastFailure",
         "lastIntegrityFailure",
         "lastIntegrityPass",
         "lastSuccess",
+        "lastUnverifiedUpgrade",
+        "lastUpgradeBypass",
+        "unverifiedUpgradeBanner",
         "updateGateClear",
         "upgradeGate"
       ]
@@ -351,6 +356,27 @@
       ]
     },
     {
+      "field": "authorizebackupupgradebypass",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backupFailedBanner",
+        "failedSet",
+        "integrityFailedBanner",
+        "lastBinaryVersion",
+        "lastDrill",
+        "lastFailure",
+        "lastIntegrityFailure",
+        "lastIntegrityPass",
+        "lastSuccess",
+        "lastUnverifiedUpgrade",
+        "lastUpgradeBypass",
+        "unverifiedUpgradeBanner",
+        "updateGateClear",
+        "upgradeGate"
+      ]
+    },
+    {
       "field": "backup",
       "effect": "write",
       "tier": "admin",
@@ -388,12 +414,17 @@
       "tier": "admin",
       "children": [
         "backupFailedBanner",
+        "failedSet",
         "integrityFailedBanner",
+        "lastBinaryVersion",
         "lastDrill",
         "lastFailure",
         "lastIntegrityFailure",
         "lastIntegrityPass",
         "lastSuccess",
+        "lastUnverifiedUpgrade",
+        "lastUpgradeBypass",
+        "unverifiedUpgradeBanner",
         "updateGateClear",
         "upgradeGate"
       ]
@@ -531,6 +562,11 @@
       "children": [
         "affected"
       ]
+    },
+    {
+      "field": "cancelstagedcoreupdate",
+      "effect": "write",
+      "tier": "admin"
     },
     {
       "field": "cancelstagedrestore",
@@ -4534,12 +4570,17 @@
       "tier": "admin",
       "children": [
         "backupFailedBanner",
+        "failedSet",
         "integrityFailedBanner",
+        "lastBinaryVersion",
         "lastDrill",
         "lastFailure",
         "lastIntegrityFailure",
         "lastIntegrityPass",
         "lastSuccess",
+        "lastUnverifiedUpgrade",
+        "lastUpgradeBypass",
+        "unverifiedUpgradeBanner",
         "updateGateClear",
         "upgradeGate"
       ]
@@ -5382,6 +5423,44 @@
         "summary",
         "title",
         "year"
+      ]
+    },
+    {
+      "field": "stagecoreupdate",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "appliedAt",
+        "artifactName",
+        "artifactSHA256",
+        "bypassAuthorized",
+        "channel",
+        "commit",
+        "rollbackBinary",
+        "sourceDistDir",
+        "staged",
+        "stagedAt",
+        "status",
+        "targetVersion"
+      ]
+    },
+    {
+      "field": "stagedcoreupdate",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "appliedAt",
+        "artifactName",
+        "artifactSHA256",
+        "bypassAuthorized",
+        "channel",
+        "commit",
+        "rollbackBinary",
+        "sourceDistDir",
+        "staged",
+        "stagedAt",
+        "status",
+        "targetVersion"
       ]
     },
     {

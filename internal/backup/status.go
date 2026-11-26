@@ -60,11 +60,15 @@ type Status struct {
 	LastIntegrityFailure *RunRecord `json:"lastIntegrityFailure,omitempty"`
 	// LastIntegrityPass is the newest run whose set passed its integrity
 	// check: the recorded evidence the update gate reads.
-	LastIntegrityPass    *RunRecord   `json:"lastIntegrityPass,omitempty"`
-	BackupFailedAckAt    *time.Time   `json:"backupFailedAckAt,omitempty"`
-	IntegrityFailedAckAt *time.Time   `json:"integrityFailedAckAt,omitempty"`
-	UpgradeGate          string       `json:"upgradeGate,omitempty"`
-	LastDrill            *DrillRecord `json:"lastDrill,omitempty"`
+	LastIntegrityPass      *RunRecord           `json:"lastIntegrityPass,omitempty"`
+	BackupFailedAckAt      *time.Time           `json:"backupFailedAckAt,omitempty"`
+	IntegrityFailedAckAt   *time.Time           `json:"integrityFailedAckAt,omitempty"`
+	UpgradeGate            string               `json:"upgradeGate,omitempty"`
+	LastDrill              *DrillRecord         `json:"lastDrill,omitempty"`
+	LastBinaryVersion      string               `json:"lastBinaryVersion,omitempty"`
+	LastUpgradeBypass      *UpgradeBypassRecord `json:"lastUpgradeBypass,omitempty"`
+	LastUnverifiedUpgrade  *UpgradeEventRecord  `json:"lastUnverifiedUpgrade,omitempty"`
+	UnverifiedUpgradeAckAt *time.Time           `json:"unverifiedUpgradeAckAt,omitempty"`
 }
 
 // EffectiveUpgradeGate is the update policy, soft unless hard was chosen.

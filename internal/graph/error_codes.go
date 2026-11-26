@@ -247,6 +247,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"unknown transport command":           ErrorCodeInvalid,
 
 	"subscription was refreshed recently; try again later": ErrorCodeThrottled,
+	"too many admin password attempts; retry later":        ErrorCodeThrottled,
 
 	"fix match is unavailable in encrypted libraries":    ErrorCodeInvalid,
 	"sequence must be a string of at most 32 characters": ErrorCodeInvalid,
@@ -336,6 +337,10 @@ var clientErrorCodes = map[string]ErrorCode{
 	"scan preview token has expired":                                                       ErrorCodeConflict,
 	"sonic analysis is not available on this server":                                       ErrorCodeConflict,
 	"scan preview is stale because the library changed":                                    ErrorCodeConflict,
+	"backup update gate requires a verified Backup Set newer than any failure":             ErrorCodeConflict,
+	"elevated update bypass is disabled while upgrade gate policy is hard":                 ErrorCodeConflict,
+	"typed confirmation does not match target version and failed Backup Set":               ErrorCodeInvalid,
+	"audit reason is required for elevated update bypass":                                  ErrorCodeInvalid,
 
 	"offline pack job did not produce a pack":    ErrorCodeInternal,
 	"playback rendition cache is not configured": ErrorCodeInternal,
@@ -380,6 +385,8 @@ func (r clientErrorRule) matches(message string) bool {
 // clientErrorRules classify the regular message families, first match wins.
 // Only the INVALID families below match dynamic messages built at runtime.
 var clientErrorRules = []clientErrorRule{
+	// CORE-3513: backup update gate blocked errors carry policy suffixes at runtime.
+	{code: ErrorCodeConflict, prefix: "backup update gate requires a verified Backup Set newer than any failure"},
 	{code: ErrorCodeThrottled, suffix: " throttled"},
 	{code: ErrorCodeNotFound, suffix: "not found"},
 	// An unknown field in the query text is a malformed request.
@@ -398,6 +405,8 @@ var clientErrorRules = []clientErrorRule{
 	{code: ErrorCodeConflict, suffix: " is not applicable to this library"},
 	// An installed plugin built for an incompatible plugin SDK (CORE-2837).
 	{code: ErrorCodeConflict, prefix: "plugin does not support this server's plugin SDK: "},
+	// Elevated bypass target version conflicts with the staged core update (CORE-3513).
+	{code: ErrorCodeConflict, prefix: "targetVersion does not match the staged update version "},
 	// A feed probe failure carries only its failure class (CORE-2953).
 	{code: ErrorCodeInvalid, prefix: "feed could not be read: "},
 	{code: ErrorCodeInvalid, suffix: " required"},

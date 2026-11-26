@@ -614,5 +614,31 @@ describe("BackupExportPage", () => {
       expect(key).toHaveValue("");
       expect(screen.getByText("Pass")).toBeVisible();
     });
+
+    it("renders and acknowledges an unverified-upgrade alert banner (CORE-3513)", async () => {
+      mockBackupStatus.mockResolvedValue({
+        ...QUIET_STATUS,
+        unverifiedUpgradeBanner: true,
+        lastUnverifiedUpgrade: {
+          at: "2026-11-26T06:00:00Z",
+          fromVersion: "v1.0.0",
+          toVersion: "v1.1.0",
+          bypassed: false,
+          reason: "soft-gate-unverified",
+        },
+      });
+      mockAckBanner.mockResolvedValue({
+        ...QUIET_STATUS,
+        unverifiedUpgradeBanner: false,
+      });
+
+      const user = userEvent.setup();
+      renderPage();
+      expect(
+        await screen.findByText(/Unverified upgrade detected \(v1\.0\.0 -> v1\.1\.0\)/),
+      ).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "Acknowledge" }));
+      expect(mockAckBanner).toHaveBeenCalledWith("unverified-upgrade");
+    });
   });
 });

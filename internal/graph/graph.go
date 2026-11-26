@@ -742,6 +742,9 @@ type Handler struct {
 	// backupOps reads scheduled-backup state and runs restore drills
 	// (CORE-0778). Nil means the build has none.
 	backupOps BackupOps
+	// updateGateOps handles elevated soft-gate bypass and signed dist staging
+	// (CORE-3513). Nil means staging is unavailable.
+	updateGateOps UpdateGateOps
 
 	// playbackInvalidationMu guards playbackInvalidation and playbackPaused so
 	// periodic playback reports are throttled while pause/finish/end transitions
@@ -7289,6 +7292,7 @@ var queryFields = map[string]bool{
 	"stagedrestore":          true, // CORE-1720: the restore staged for the next start
 	"backupkeystatus":        true, // CORE-2032: whether the backup key still has to be saved
 	"backupstatus":           true, // CORE-0778: backup banners, update gate and last drill
+	"stagedcoreupdate":       true, // CORE-3513: staged signed release distribution status
 	"libraryhealthitems":     true,
 	"libraryduplicategroups": true,
 	"metadataexport":         true,
@@ -7504,6 +7508,9 @@ var mutationFields = map[string]bool{
 	"acknowledgebackupbanner":            true, // CORE-0778: dismiss a backup failure banner
 	"setbackupupgradegate":               true, // CORE-0778: soft or hard update gate
 	"verifybackupnow":                    true, // CORE-0778: run the restore drill
+	"authorizebackupupgradebypass":       true, // CORE-3513: step-up admin bypass for soft update gate
+	"stagecoreupdate":                    true, // CORE-3513: verify and stage a signed release dist
+	"cancelstagedcoreupdate":             true, // CORE-3513: cancel a staged update
 	"scanlibrary":                        true,
 	"refreshlibrarymetadata":             true, // CORE-1136: queue a Library-wide metadata refresh
 	"scanpreview":                        true, // CORE-1054: plan a rescan and mint a single-use token
@@ -7699,10 +7706,14 @@ var adminFields = map[string]bool{
 	"revealbackupkey":      true,
 	"acknowledgebackupkey": true,
 	// Backup operations (CORE-0778): banners, update gate and restore drill.
-	"backupstatus":            true,
-	"acknowledgebackupbanner": true,
-	"setbackupupgradegate":    true,
-	"verifybackupnow":         true,
+	"backupstatus":                 true,
+	"acknowledgebackupbanner":      true,
+	"setbackupupgradegate":         true,
+	"verifybackupnow":              true,
+	"stagedcoreupdate":             true,
+	"authorizebackupupgradebypass": true,
+	"stagecoreupdate":              true,
+	"cancelstagedcoreupdate":       true,
 	// Authorized native→server import transport (apple ADR-0003 §1/§3,
 	// POWERTOOLS-6B): the Admin Session tier the loopback bearer authenticates as
 	// — only the native Companion authority can register a source token or import.

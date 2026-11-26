@@ -107,7 +107,9 @@ export function BackupOpsSection({ envelope, setName }: { envelope: string; setN
   // turns the toggle on.
   const hard = status?.upgradeGate === "hard";
   const lastDrill = status?.lastDrill ?? null;
-  const incidents = status ? status.backupFailedBanner || status.integrityFailedBanner : false;
+  const incidents = status
+    ? status.backupFailedBanner || status.integrityFailedBanner || status.unverifiedUpgradeBanner
+    : false;
 
   return (
     <ManageSection title={t("backupOpsHeading")} lead={t("backupOpsLead")}>
@@ -133,6 +135,20 @@ export function BackupOpsSection({ envelope, setName }: { envelope: string; setN
               title={t("backupOpsIntegrityFailedTitle")}
               body={t("backupOpsIntegrityFailedBody", {
                 time: formatDateTime(status.lastIntegrityFailure?.at ?? ""),
+              })}
+              busy={busy}
+              onAcknowledge={onAcknowledge}
+            />
+          )}
+          {status?.unverifiedUpgradeBanner && (
+            <IncidentBanner
+              kind="unverified-upgrade"
+              title={t("backupUnverifiedUpgradeTitle", {
+                from: status.lastUnverifiedUpgrade?.fromVersion ?? "?",
+                to: status.lastUnverifiedUpgrade?.toVersion ?? status.lastBinaryVersion ?? "?",
+              })}
+              body={t("backupUnverifiedUpgradeBody", {
+                reason: status.lastUnverifiedUpgrade?.reason ?? "unverified",
               })}
               busy={busy}
               onAcknowledge={onAcknowledge}

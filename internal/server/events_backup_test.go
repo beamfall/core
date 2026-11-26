@@ -13,15 +13,24 @@ import (
 // non-Media aggregate to every session.
 func TestBackupEventNeverReachesSSE(t *testing.T) {
 	srv, _ := newTestServerWithStore(t)
-	event := store.OutboxEvent{
-		Kind:          store.BackupEventFailed,
-		AggregateType: store.OutboxAggregateBackup,
-		Payload:       []byte(`{"failureClass":"destination-full"}`),
-		OccurredAt:    time.Unix(0, 0).UTC(),
-	}
-	for _, profile := range []store.ProfileID{"", "profile-default", "profile-managed"} {
-		if srv.eventPermitted(context.Background(), event, profile, eventsActionRevealedFilter()) {
-			t.Fatalf("backup event delivered on SSE to profile %q", profile)
+	for _, kind := range []string{
+		store.BackupEventCompleted,
+		store.BackupEventFailed,
+		store.BackupEventIntegrityFailed,
+		store.BackupEventUpgradeBypassed,
+		store.BackupEventUpgradeWithoutBackup,
+		store.BackupEventUpdateStaged,
+	} {
+		event := store.OutboxEvent{
+			Kind:          kind,
+			AggregateType: store.OutboxAggregateBackup,
+			Payload:       []byte(`{"failureClass":"destination-full","toVersion":"v1.1.0","policy":"soft"}`),
+			OccurredAt:    time.Unix(0, 0).UTC(),
+		}
+		for _, profile := range []store.ProfileID{"", "profile-default", "profile-managed"} {
+			if srv.eventPermitted(context.Background(), event, profile, eventsActionRevealedFilter()) {
+				t.Fatalf("backup event %q delivered on SSE to profile %q", kind, profile)
+			}
 		}
 	}
 }

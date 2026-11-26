@@ -1029,12 +1029,46 @@ export interface BackupDrillInfo {
 export type BackupUpgradeGate = "soft" | "hard";
 
 /** The two distinct backup failure banners (ADR-0192 §6). */
-export type BackupBanner = "backup-failed" | "integrity-failed";
+export type BackupBanner = "backup-failed" | "integrity-failed" | "unverified-upgrade";
 
 /**
  * The scheduled-backup state behind the backup banners, recovery evidence and
  * update gate (graph.BackupStatusInfo, CORE-0778 BKUP-14). No key material.
  */
+export interface UpgradeBypassInfo {
+  at: string;
+  targetVersion: string;
+  actorProfileID: string;
+  policy: string;
+  failedSet: string;
+  reason: string;
+  appliedAt: string;
+  valid?: boolean;
+}
+
+export interface UpgradeEventInfo {
+  at: string;
+  fromVersion: string;
+  toVersion: string;
+  bypassed: boolean;
+  reason: string;
+}
+
+export interface StagedUpdateInfo {
+  staged: boolean;
+  status: string;
+  stagedAt: string;
+  targetVersion: string;
+  channel: string;
+  commit: string;
+  artifactName: string;
+  artifactSHA256: string;
+  sourceDistDir: string;
+  bypassAuthorized: boolean;
+  appliedAt: string;
+  rollbackBinary: string;
+}
+
 export interface BackupStatusInfo {
   backupFailedBanner: boolean;
   integrityFailedBanner: boolean;
@@ -1047,6 +1081,11 @@ export interface BackupStatusInfo {
   updateGateClear?: boolean;
   upgradeGate: BackupUpgradeGate;
   lastDrill: BackupDrillInfo | null;
+  unverifiedUpgradeBanner?: boolean;
+  failedSet?: string;
+  lastBinaryVersion?: string;
+  lastUpgradeBypass?: UpgradeBypassInfo | null;
+  lastUnverifiedUpgrade?: UpgradeEventInfo | null;
 }
 
 /**

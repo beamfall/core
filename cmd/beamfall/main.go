@@ -80,6 +80,8 @@ func runWithOutput(ctx context.Context, args []string, stdout io.Writer) error {
 		return scan(ctx, args[1:], stdout)
 	case "serve":
 		return serve(ctx, args[1:])
+	case "upgrade":
+		return upgradeCommand(ctx, args[1:], stdout)
 	case "token":
 		return tokenCommand(ctx, args[1:], stdout)
 	default:
