@@ -432,7 +432,7 @@ func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia) err
 // image's are never vouched for, nor any under a hydrator that may write any
 // field; a hydrator naming its fields leaves only those out (CORE-2554).
 func (s *scanWalkState) vouchForLegacyScanValues(refresh *store.ParserFieldRefresh, path string) {
-	if imageClassForPath(path) {
+	if imageClassForPath(path) || len(s.localExtractors) > 0 {
 		return
 	}
 	if s.metadataHydrator == nil {

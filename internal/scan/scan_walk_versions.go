@@ -21,12 +21,21 @@ type versionAnchor struct {
 	label       string
 }
 
+// importsStandalone reports whether imported imports on its own without
+// part-queuing or version grouping. A Library configured with local extractors
+// imports every file on its own regardless of probe or extractor output, so
+// fast rescans, full scans, and directory sweeps always agree (CORE-3029).
+func (s *scanWalkState) importsStandalone(imported store.ImportMediaFile) bool {
+	return imported.Class == store.MediaClassImage || len(s.localExtractors) > 0
+}
+
 // versionGroupKey names the title a parsed file belongs to within one
 // directory, or "" when the file cannot group: an unparsed, untitled, Part,
-// image or Extra file always imports on its own. The key is built from the
-// plugin's parsed fields only, so the grouping rule itself stays in plugins.
+// image, Extra, or local-extractor file always imports on its own. The key is
+// built from the plugin's parsed fields only, so the grouping rule itself stays
+// in plugins.
 func (s *scanWalkState) versionGroupKey(imported store.ImportMediaFile, parsed ParsedMedia, parsedOK bool) string {
-	if !parsedOK || parsed.Title == "" || parsed.PartGroup != "" || imported.Extra || imported.Class == store.MediaClassImage {
+	if !parsedOK || parsed.Title == "" || parsed.PartGroup != "" || imported.Extra || s.importsStandalone(imported) {
 		return ""
 	}
 	if !store.ValidMediaVersionLabel(parsed.VersionLabel) {
