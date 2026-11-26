@@ -2099,10 +2099,13 @@ func (r Rendition) rateControlArgs() []string {
 		case HWAccelQSV:
 			// h264/hevc_qsv pick CBR when -maxrate equals -b:v; one kb/s of
 			// headroom keeps them in capped VBR instead of padding to the rung.
+			// Leave -extbrc unset (FFmpeg's -1 auto default): forcing -extbrc 1
+			// returns MFX_ERR_UNSUPPORTED (-3) on Intel Gen9/9.5 (UHD 630)
+			// h264_qsv video-memory (format=qsv) surfaces (CORE-3538).
 			if target == maxrate {
 				maxrate++
 			}
-			out = append(out, "-extbrc", "1", "-b:v", fmt.Sprintf("%dk", target))
+			out = append(out, "-b:v", fmt.Sprintf("%dk", target))
 		case HWAccelVideoToolbox:
 			out = append(out, "-realtime", "1", "-b:v", fmt.Sprintf("%dk", target))
 		default:
