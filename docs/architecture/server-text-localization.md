@@ -53,7 +53,7 @@ non-source catalog falls back to the source text for that key.
 | Activity log entries | `internal/store` | (a) | Stable action codes. Clients render them. |
 | Push notifications | `internal/push` | (a) | Type and identifier only. No text leaves the server. |
 | Path picker refusals | `internal/server` | (a) | Stable diagnostics that the web matches to its own copy. |
-| Manifest default navigation and shelf titles | `internal/manifest/manifest.go` | (b), deferred | `LocaleString` maps with `en` and `fr` only. Clients pick the entry. Adding `de`, `es` and `pt` changes the client-pinned manifest golden (see Follow-ups). |
+| Manifest default navigation and shelf titles | `internal/manifest/manifest.go` | (b) | Rendered into `LocaleString` maps for every shipped locale (`en`, `fr`, `de`, `es`, `pt`) via `internal/l10n`. |
 | Webhook and email notification text | `internal/webhook/format.go`, `internal/webhook/email.go` | (b), deferred | English only. A delivery has no request locale; it needs a per-endpoint locale setting (see Follow-ups). |
 
 Plugin-contributed labels (display names, shelf titles) are plugin data delivered as `LocaleString`
@@ -105,8 +105,6 @@ These need wire or contract changes that would make clients repin, so this chang
 - A message key in GraphQL error `extensions`, so clients can localize class (a) messages without
   matching English.
 - A REST code for the admin password minimum length.
-- `de`, `es` and `pt` entries for the manifest default titles, which means regenerating the manifest
-  golden and having clients re-vendor it.
 - A per-endpoint locale for webhook and email delivery.
 - An empty participant name in Watch Party roster and ended broadcasts, so that each client renders
   its own fallback.

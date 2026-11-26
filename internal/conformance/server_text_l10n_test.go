@@ -31,18 +31,10 @@ var serverTextExempt = []string{
 	"internal/web/",
 }
 
-// knownLocaleMaps are the plugin.LocaleString literals in core that predate
-// CORE-2102. They carry only en and fr and sit in the client-pinned manifest
-// golden, so moving them to the catalog is a wire follow-up. Key: file and
-// the en value. Do not add to this list; put new text in internal/l10n.
-var knownLocaleMaps = map[string]bool{
-	"internal/manifest/manifest.go|Home":              true,
-	"internal/manifest/manifest.go|Ambient":           true,
-	"internal/manifest/manifest.go|Continue Watching": true,
-	"internal/manifest/manifest.go|Watchlist":         true,
-	"internal/manifest/manifest.go|Recently Added":    true,
-	"internal/manifest/manifest.go|Your Most-Played":  true,
-}
+// knownLocaleMaps lists any hand-written plugin.LocaleString literals in core
+// that predate CORE-2102. All default manifest titles now render from
+// internal/l10n (CORE-2123). Do not add to this list; put new text in internal/l10n.
+var knownLocaleMaps = map[string]bool{}
 
 // knownSentenceMessages are sentence-style literals passed to a message
 // writer that predate CORE-2102 and are classified (a) in the inventory doc:

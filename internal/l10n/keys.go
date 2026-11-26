@@ -58,10 +58,18 @@ const (
 	SetupLANHintSignIn      Key = "setup.lan_hint.sign_in"
 )
 
-// Home shelf titles added after CORE-2102, rendered into every shipped locale
-// of the manifest's LocaleString (CORE-2822).
-const ManifestShelfNextUp Key = "manifest.shelf.next_up"
-const ManifestShelfContinueListening Key = "manifest.shelf.continue_listening"
+// Home shelf and default navigation titles rendered into every shipped locale
+// of the manifest's LocaleString (CORE-2822, CORE-2123).
+const (
+	ManifestNavHome                Key = "manifest.nav.home"
+	ManifestNavAmbient             Key = "manifest.nav.ambient"
+	ManifestShelfContinueWatching  Key = "manifest.shelf.continue_watching"
+	ManifestShelfNextUp            Key = "manifest.shelf.next_up"
+	ManifestShelfContinueListening Key = "manifest.shelf.continue_listening"
+	ManifestShelfWatchlist         Key = "manifest.shelf.watchlist"
+	ManifestShelfRecentlyAdded     Key = "manifest.shelf.recently_added"
+	ManifestShelfYourMostPlayed    Key = "manifest.shelf.your_most_played"
+)
 
 // Station explanations (ADR-0098 area 5, CORE-2772): why an item joined a
 // generated Station, and the Station-level scarcity note.

@@ -456,6 +456,24 @@ func TestManifestHasAmbientEntry(t *testing.T) {
 	if got := ambient.Title.Resolve("en"); got != "Ambient" {
 		t.Fatalf("Ambient entry English title = %q, want %q", got, "Ambient")
 	}
+	home := layoutByID(doc, "layout-home")
+	for _, node := range doc.Navigation {
+		if node.LibraryID != "" {
+			continue
+		}
+		for _, locale := range []string{"en", "fr", "de", "es", "pt"} {
+			if _, ok := node.Title[locale]; !ok {
+				t.Errorf("navigation %q missing %q title: %#v", node.ID, locale, node.Title)
+			}
+		}
+	}
+	for _, section := range home.Sections {
+		for _, locale := range []string{"en", "fr", "de", "es", "pt"} {
+			if _, ok := section.Title[locale]; !ok {
+				t.Errorf("home section %q missing %q title: %#v", section.ID, locale, section.Title)
+			}
+		}
+	}
 }
 
 // TestSourceFieldFiltersWireShape pins the filter serialization rule: a

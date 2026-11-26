@@ -183,7 +183,7 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 	navigation := []NavigationNode{
 		{
 			ID:       "home",
-			Title:    plugin.LocaleString{"en": "Home", "fr": "Accueil"},
+			Title:    catalogTitle(l10n.ManifestNavHome),
 			View:     "layout",
 			LayoutID: "layout-home",
 		},
@@ -195,7 +195,7 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 		// a Source, it does not browse a Layout.
 		{
 			ID:    "ambient",
-			Title: plugin.LocaleString{"en": "Ambient", "fr": "Ambiance"},
+			Title: catalogTitle(l10n.ManifestNavAmbient),
 			View:  "ambient",
 		},
 	}
@@ -526,7 +526,7 @@ func homeLayout() Layout {
 			{
 				ID:          "continue",
 				Kind:        "shelf",
-				Title:       plugin.LocaleString{"en": "Continue Watching", "fr": "Reprendre la lecture"},
+				Title:       catalogTitle(l10n.ManifestShelfContinueWatching),
 				ArtworkSlot: "poster",
 				Source:      SourceSpec{Kind: "continue-watching"},
 			},
@@ -552,21 +552,21 @@ func homeLayout() Layout {
 			{
 				ID:          "watchlist",
 				Kind:        "shelf",
-				Title:       plugin.LocaleString{"en": "Watchlist", "fr": "Ma liste"},
+				Title:       catalogTitle(l10n.ManifestShelfWatchlist),
 				ArtworkSlot: "poster",
 				Source:      SourceSpec{Kind: "watchlist"},
 			},
 			{
 				ID:          "recent",
 				Kind:        "shelf",
-				Title:       plugin.LocaleString{"en": "Recently Added", "fr": "Ajouts récents"},
+				Title:       catalogTitle(l10n.ManifestShelfRecentlyAdded),
 				ArtworkSlot: "poster",
 				Source:      SourceSpec{Kind: "recently-added"},
 			},
 			{
 				ID:          "your-most-played",
 				Kind:        "shelf",
-				Title:       plugin.LocaleString{"en": "Your Most-Played", "fr": "Vos plus lus"},
+				Title:       catalogTitle(l10n.ManifestShelfYourMostPlayed),
 				ArtworkSlot: "poster",
 				Source:      SourceSpec{Kind: "most-played"},
 			},
