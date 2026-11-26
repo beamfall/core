@@ -133,22 +133,23 @@ func (h *Handler) outermostContainers(ctx context.Context, items []store.SourceI
 	return current, seen, nil
 }
 
-// rollUpContainers replaces each non-audio Media item a declared container
+// rollUpContainers replaces each held Media item a declared container
 // holds with one Entity card for its outermost container, placed where the
 // container's first item stood (CORE-3058). The card takes the earliest
-// nonzero year of the items it stands for. Items no container holds, audio
-// items (a person's audio page lists tracks, CORE-2362) and items whose
-// container chain passes through contextID (a container's own page lists its
-// children) are kept as they are.
-func (h *Handler) rollUpContainers(ctx context.Context, contextID store.EntityID, items []store.SourceItem) ([]store.SourceItem, error) {
+// nonzero year of the items it stands for. Items no container holds, items
+// whose container chain passes through contextID (a container's own page lists
+// its children), audio items inside a person context (a person's audio page
+// lists tracks, CORE-2362), and single-track audio releases (< 2 visible
+// held items) are kept as they are.
+func (h *Handler) rollUpContainers(ctx context.Context, filter store.LibraryFilter, contextID store.EntityID, items []store.SourceItem) ([]store.SourceItem, error) {
 	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
 		return nil, err
 	}
-	// Only non-audio Media can roll up, so only they walk the container chain.
+	skipAudio := contextID != "" && h.entityIsPerson(ctx, filter, contextID)
 	var candidates []store.SourceItem
 	var at []int
 	for i, item := range items {
-		if item.Kind != "entity" && item.MediaClass != store.MediaClassAudio {
+		if item.Kind != "entity" && (!skipAudio || item.MediaClass != store.MediaClassAudio) {
 			candidates = append(candidates, item)
 			at = append(at, i)
 		}
@@ -165,15 +166,36 @@ func (h *Handler) rollUpContainers(ctx context.Context, contextID store.EntityID
 	}
 	outer := make(map[int]store.TitledEntityLink, len(found))
 	seen := make(map[int]map[store.EntityID]bool, len(foundSeen))
+	audioContainers := make([]string, 0, len(found))
+	seenAudio := map[store.EntityID]bool{}
 	for j, link := range found {
+		if link.EntityID == "" {
+			continue
+		}
 		outer[at[j]] = link
 		seen[at[j]] = foundSeen[j]
+		if candidates[j].MediaClass == store.MediaClassAudio && !seenAudio[link.EntityID] {
+			seenAudio[link.EntityID] = true
+			audioContainers = append(audioContainers, string(link.EntityID))
+		}
+	}
+	var audioCounts map[string]int
+	if len(audioContainers) > 0 && h.plugins != nil {
+		roll := h.allContainerRollUp()
+		audioCounts, err = h.store.ContainerMediaCounts(ctx, filter, audioContainers, roll)
+		if err != nil {
+			return nil, err
+		}
 	}
 	rolled := make([]store.SourceItem, 0, len(items))
 	cardAt := map[store.EntityID]int{}
 	for i, item := range items {
 		link, held := outer[i]
 		if !held || seen[i][contextID] {
+			rolled = append(rolled, item)
+			continue
+		}
+		if item.MediaClass == store.MediaClassAudio && audioCounts[string(link.EntityID)] < 2 {
 			rolled = append(rolled, item)
 			continue
 		}
@@ -189,11 +211,41 @@ func (h *Handler) rollUpContainers(ctx context.Context, contextID store.EntityID
 			Kind:       "entity",
 			Title:      link.Title,
 			LibraryID:  link.LibraryID,
+			MediaClass: item.MediaClass,
 			Restricted: item.Restricted,
 			Year:       item.Year,
 		})
 	}
 	return rolled, nil
+}
+
+func (h *Handler) entityIsPerson(ctx context.Context, filter store.LibraryFilter, id store.EntityID) bool {
+	if h.store == nil || id == "" {
+		return false
+	}
+	entity, err := h.store.Entity(ctx, id, filter)
+	if err != nil {
+		return false
+	}
+	bundle, ok := h.libraryBundle(ctx, entity.LibraryID)
+	if !ok {
+		return false
+	}
+	kind, ok := declaredKind(bundle.EntityKinds, entity.Kind)
+	return ok && kind.Archetype == "person"
+}
+
+func (h *Handler) allContainerRollUp() store.ContainerRollUp {
+	if h.plugins == nil {
+		return store.ContainerRollUp{}
+	}
+	members, parents := h.plugins.ContainerRollUpRelations()
+	direct := h.plugins.ContainerRollUpDirectRelations()
+	return store.ContainerRollUp{
+		MemberRelations: members,
+		ParentRelations: parents,
+		DirectRelations: direct,
+	}
 }
 
 // sourceItemContainer renders an item's container for the wire, with the

@@ -21,6 +21,8 @@ import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import {
   groupByContainer,
   groupsNewByContainer,
+  groupsShelfByContainer,
+  useMultiItemContainers,
   withContainerPoster,
 } from "../lib/containerGroups";
 import {
@@ -147,13 +149,17 @@ function SeeAllResults({
   // over everything paged in so far, so a container split across pages still
   // reads as one card; on an entity page it does not fold, as the shelf does not.
   // Continue Watching draws its items with their container's poster, as its shelf does.
+  const foldSeeAll = Boolean(ctx && !ctx.entityID && groupsShelfByContainer(ctx.section));
+  const multiItemContainers = useMultiItemContainers(loaded, foldSeeAll);
   const items = useMemo(() => {
     if (!ctx) return loaded;
     if (ctx.section.source?.kind === "continue-watching") return loaded.map(withContainerPoster);
-    return !ctx.entityID && groupsNewByContainer(ctx.section)
-      ? groupByContainer(loaded, (count) => t("cardNewCount", { count }))
-      : loaded;
-  }, [ctx, loaded, t]);
+    if (!foldSeeAll) return loaded;
+    const countLabel = groupsNewByContainer(ctx.section)
+      ? (count: number) => t("cardNewCount", { count })
+      : () => "";
+    return groupByContainer(loaded, countLabel, { multiItemContainers });
+  }, [ctx, foldSeeAll, loaded, multiItemContainers, t]);
   const gridRef = useRef<HTMLUListElement | null>(null);
   const gridWindow = useVirtualGrid({
     gridRef,

@@ -42,6 +42,17 @@ function displayKey(value: DisplayString): string {
   return JSON.stringify(entries.filter(([, text]) => text).sort(([x], [y]) => (x < y ? -1 : 1)));
 }
 
+/** The browse kind whose label matches a category browse label, if any. */
+export function matchingBrowseKind(
+  label: DisplayString | undefined,
+  kinds: readonly LibraryEntityKind[],
+): LibraryEntityKind | undefined {
+  if (!label) return undefined;
+  const key = displayKey(label);
+  if (key === "[]") return undefined;
+  return kinds.find((entry) => entry.label && displayKey(entry.label) === key);
+}
+
 /**
  * The singular name of the container kind a browse label names. The server
  * labels a container count with the kind's browse Section title, the same
@@ -52,13 +63,8 @@ export function singularLabel(
   label: DisplayString,
   kinds: readonly LibraryEntityKind[],
 ): DisplayString | undefined {
-  const key = displayKey(label);
-  if (key === "[]") return undefined;
-  const kind = kinds.find(
-    (entry) =>
-      entry.label && displayString(entry.kindDisplayName) && displayKey(entry.label) === key,
-  );
-  return kind?.kindDisplayName;
+  const kind = matchingBrowseKind(label, kinds);
+  return kind && displayString(kind.kindDisplayName) ? kind.kindDisplayName : undefined;
 }
 
 /** Pairs each value with its count; counts that do not line up are dropped. */

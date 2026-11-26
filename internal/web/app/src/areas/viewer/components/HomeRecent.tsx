@@ -16,7 +16,7 @@ import {
 } from "@/lib/viewerCache";
 import { useEngagementEpoch } from "../actions/engagementSync";
 import { artworkSlotURL } from "../lib/artwork";
-import { foldNewShelf, groupByContainer } from "../lib/containerGroups";
+import { foldNewShelf, groupByContainer, useMultiItemContainers } from "../lib/containerGroups";
 import { fetchSectionItems } from "../lib/sections";
 import { isSpoilerCandidate, useSpoilerGuard } from "../lib/spoilerGuard";
 import {
@@ -75,10 +75,13 @@ function cachedRecentData(identity: string | null, scope: string): HomeRecentDat
   return cached?.scope === scope ? cached.data : EMPTY_DATA;
 }
 
-function heroCandidates(items: SourceItem[]): SourceItem[] {
+function heroCandidates(
+  items: SourceItem[],
+  multiItemContainers?: ReadonlySet<string>,
+): SourceItem[] {
   const unlocked = items.filter((item) => !item.locked);
   // The shelf can show a container poster even when its individual items lack art.
-  return [...unlocked, ...groupByContainer(unlocked, () => "")];
+  return [...unlocked, ...groupByContainer(unlocked, () => "", { multiItemContainers })];
 }
 
 export function useHomeRecent(
@@ -200,6 +203,14 @@ export function useHomeRecent(
     return stop;
   }, [request, identity, scope, engagementEpoch, onConnectionLost]);
 
+  const heroRaw = useMemo(() => {
+    const { data } = result?.request === request ? result.feed : { data: EMPTY_DATA };
+    return data.fallbackItems.length
+      ? data.fallbackItems
+      : data.libraries.flatMap(({ id }) => data.shelves.get(id) ?? []);
+  }, [request, result]);
+  const heroMulti = useMultiItemContainers(heroRaw, Boolean(section && heroRaw.length > 0));
+
   return useMemo(() => {
     const { data, pending, failed } =
       result?.request === request
@@ -224,12 +235,12 @@ export function useHomeRecent(
       shelves,
       fallbackItems,
       heroItems: fallbackItems.length
-        ? heroCandidates(fallbackItems)
-        : libraries.flatMap(({ id }) => heroCandidates(shelves.get(id) ?? [])),
+        ? heroCandidates(fallbackItems, heroMulti)
+        : libraries.flatMap(({ id }) => heroCandidates(shelves.get(id) ?? [], heroMulti)),
       pending: Boolean(pending),
       epoch: request.epoch,
     };
-  }, [request, result, section]);
+  }, [request, result, section, heroMulti]);
 }
 
 export function HomeRecentShelves({
@@ -261,8 +272,16 @@ export function HomeRecentShelves({
   if (!pending && requestedPage !== page) setPage(page);
   const pageLibraries = populated.slice(page * maxShelves, (page + 1) * maxShelves);
   const seeAll = buildSeeAll?.(section);
+  const shelfItems = useMemo(
+    () =>
+      fallbackItems.length
+        ? fallbackItems
+        : pageLibraries.flatMap(({ id }) => shelves.get(id) ?? []),
+    [fallbackItems, pageLibraries, shelves],
+  );
+  const multiItemContainers = useMultiItemContainers(shelfItems, shelfItems.length > 0);
   const groupItems = (items: SourceItem[]) =>
-    foldNewShelf(items, (count) => t("cardNewCount", { count }));
+    foldNewShelf(items, (count) => t("cardNewCount", { count }), { multiItemContainers });
   if (fallbackItems.length) {
     return (
       <SectionView

@@ -2,10 +2,18 @@ package graph
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/manifest"
+	"github.com/beamfall/core/internal/plugin"
+	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
 )
 
 const (
@@ -139,5 +147,116 @@ func BenchmarkEntityPage(b *testing.B) {
 			}
 			b.ReportMetric(float64(size), "bytes/resp")
 		})
+	}
+}
+
+// TestMediaForEntityAudioCategoryRollsUpMultiItemContainers verifies that a
+// category Entity page holding audio Media rolls multi-item direct containers
+// (>= 2 visible children) up into Entity cards while keeping 1-item audio
+// releases and person pages (track listings) unrolled.
+func TestMediaForEntityAudioCategoryRollsUpMultiItemContainers(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	bundle := plugin.Bundle{
+		ID:          "audiokit",
+		Version:     "0.1.0",
+		DisplayName: plugin.L("Audiokit"),
+		MediaLabel:  plugin.L("Cut"),
+		EntityKinds: []plugin.EntityKind{
+			{Name: "holder", Archetype: "container", OrderedChildren: true, Relations: []plugin.RelationSpec{
+				{Name: "holds-cut", ToKind: plugin.MediaKindName, Cardinality: "one"},
+			}},
+			{Name: "creator", Archetype: "person", Relations: []plugin.RelationSpec{
+				{Name: "performed", ToKind: plugin.MediaKindName},
+			}},
+			{Name: "category-mood", Archetype: "category", Relations: []plugin.RelationSpec{
+				{Name: "marks", ToKind: plugin.MediaKindName},
+			}},
+		},
+		Layouts: []plugin.LayoutSpec{{
+			ID:   "home",
+			Role: "browse",
+			Sections: []plugin.SectionSpec{
+				{ID: "holders", Kind: "grid", Title: plugin.L("Holders"), Source: plugin.SourceSpec{Kind: "entity-items", EntityKind: "holder"}},
+			},
+		}},
+	}
+	registry, err := newTestPluginRegistry([]plugin.Bundle{bundle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(
+		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, registry),
+		auth.NewService(st),
+		st,
+		registry,
+	)
+	library, err := st.CreateLibrary(ctx, "Audio", false, "audiokit", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importCut := func(name string) store.MediaID {
+		item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: library.ID, Path: "/audio/" + name + ".flac", Title: name,
+			Container: "flac", Codec: "flac", Class: store.MediaClassAudio, ContentFingerprint: "fp-" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return item.ID
+	}
+	cut1 := importCut("Cut One")
+	cut2 := importCut("Cut Two")
+	solo := importCut("Solo Cut")
+
+	for _, e := range []store.Entity{
+		{ID: "entity-holder-multi", LibraryID: library.ID, Kind: "holder", Title: "Double Set"},
+		{ID: "entity-holder-single", LibraryID: library.ID, Kind: "holder", Title: "Single Cut"},
+		{ID: "entity-creator", LibraryID: library.ID, Kind: "creator", Title: "The Creator"},
+		{ID: "entity-mood", LibraryID: library.ID, Kind: "category-mood", Title: "Chill"},
+	} {
+		if err := st.UpsertEntity(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, rel := range []store.EntityRelation{
+		{FromEntityID: "entity-holder-multi", Name: "holds-cut", ToMediaID: cut1},
+		{FromEntityID: "entity-holder-multi", Name: "holds-cut", ToMediaID: cut2},
+		{FromEntityID: "entity-holder-single", Name: "holds-cut", ToMediaID: solo},
+		{FromEntityID: "entity-creator", Name: "performed", ToMediaID: cut1},
+		{FromEntityID: "entity-creator", Name: "performed", ToMediaID: solo},
+		{FromEntityID: "entity-mood", Name: "marks", ToMediaID: cut1},
+		{FromEntityID: "entity-mood", Name: "marks", ToMediaID: solo},
+	} {
+		if err := st.UpsertEntityRelation(ctx, rel); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	readRolled := func(entityID string) map[string]string {
+		resp := postGraphJSON(t, handler, authorizeViewer, rollUpMediaQuery, map[string]any{"entityID": entityID, "rollUp": true})
+		if len(resp.Errors) != 0 {
+			t.Fatalf("mediaForEntity(%s) errors = %#v", entityID, resp.Errors)
+		}
+		var cards []rollUpCard
+		if err := json.Unmarshal(resp.Data["mediaForEntity"], &cards); err != nil {
+			t.Fatal(err)
+		}
+		byID := make(map[string]string, len(cards))
+		for _, c := range cards {
+			byID[c.ID] = c.Kind
+		}
+		return byID
+	}
+
+	// Category page rolls multi-item holder up to entity while keeping 1-item solo as media.
+	moodCards := readRolled("entity-mood")
+	if len(moodCards) != 2 || moodCards["entity-holder-multi"] != "entity" || moodCards[string(solo)] != "media" {
+		t.Fatalf("category rollUp = %v, want multi-holder as entity and 1-item solo as media", moodCards)
+	}
+	// Person page keeps individual audio cuts as media.
+	personCards := readRolled("entity-creator")
+	if len(personCards) != 2 || personCards[string(cut1)] != "media" || personCards[string(solo)] != "media" {
+		t.Fatalf("person rollUp = %v, want individual cuts kept as media", personCards)
 	}
 }

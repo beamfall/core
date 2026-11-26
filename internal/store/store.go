@@ -896,6 +896,9 @@ type SourceQuery struct {
 type ContainerRollUp struct {
 	MemberRelations []string
 	ParentRelations []string
+	// DirectRelations link a directly-browsed container Entity to a Media it
+	// holds when that container does not climb into a parent container.
+	DirectRelations []string
 }
 
 // EntityFilter names one entity by declared kind plus stored title (the same

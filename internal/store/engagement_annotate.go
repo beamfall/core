@@ -393,3 +393,138 @@ func scanProgressRows(rows *sql.Rows, into map[MediaID]SourceEngagement) error {
 func sqlPlaceholders(n int) string {
 	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
 }
+
+// ContainerMediaCounts returns, for each container Entity ID, how many distinct
+// non-trashed visible Media it holds either directly (via DirectRelations or
+// MemberRelations) or through child containers reachable via ParentRelations.
+// Used by container roll-up to distinguish multi-item audio containers (>= 2
+// tracks) from single-track releases without relying on sort_order.
+func (s *Store) ContainerMediaCounts(ctx context.Context, filter LibraryFilter, containerIDs []string, rollUp ContainerRollUp) (map[string]int, error) {
+	out := make(map[string]int, len(containerIDs))
+	if len(containerIDs) == 0 {
+		return out, nil
+	}
+	directAndMember := make([]string, 0, len(rollUp.DirectRelations)+len(rollUp.MemberRelations))
+	seenRel := make(map[string]bool, len(rollUp.DirectRelations)+len(rollUp.MemberRelations))
+	for _, r := range rollUp.DirectRelations {
+		if r != "" && !seenRel[r] {
+			seenRel[r] = true
+			directAndMember = append(directAndMember, r)
+		}
+	}
+	for _, r := range rollUp.MemberRelations {
+		if r != "" && !seenRel[r] {
+			seenRel[r] = true
+			directAndMember = append(directAndMember, r)
+		}
+	}
+	if len(directAndMember) == 0 {
+		return out, nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+
+	raw := make(map[string][]MediaID, len(containerIDs))
+	seenPair := map[[2]string]struct{}{}
+	var allMedia []MediaID
+	planes := s.openCatalogReadersLocked()
+	directPH := sqlPlaceholders(len(directAndMember))
+	hasClimb := len(rollUp.ParentRelations) > 0 && len(rollUp.MemberRelations) > 0
+	var parentPH, memberPH string
+	if hasClimb {
+		parentPH = sqlPlaceholders(len(rollUp.ParentRelations))
+		memberPH = sqlPlaceholders(len(rollUp.MemberRelations))
+	}
+
+	for start := 0; start < len(containerIDs); start += engagementChunkSize {
+		chunk := containerIDs[start:min(start+engagementChunkSize, len(containerIDs))]
+		chunkPH := sqlPlaceholders(len(chunk))
+		var sqlText strings.Builder
+		args := make([]any, 0, len(chunk)+len(directAndMember)+len(chunk)+len(rollUp.ParentRelations)+len(rollUp.MemberRelations))
+		sqlText.WriteString(`
+			SELECT r.from_entity_id, r.to_media_id
+			FROM entity_relation r
+			JOIN media m ON m.id = r.to_media_id
+			WHERE r.from_entity_id IN (` + chunkPH + `)
+			  AND r.relation IN (` + directPH + `)
+			  AND m.trashed_at_ms IS NULL AND m.extra = 0`)
+		for _, id := range chunk {
+			args = append(args, id)
+		}
+		for _, rel := range directAndMember {
+			args = append(args, rel)
+		}
+		if hasClimb {
+			sqlText.WriteString(`
+			UNION ALL
+			SELECT p.to_entity_id, c.to_media_id
+			FROM entity_relation p
+			JOIN entity sn ON sn.id = p.from_entity_id AND sn.trashed_at_ms IS NULL
+			JOIN entity_relation c ON c.from_entity_id = sn.id
+			JOIN media m ON m.id = c.to_media_id
+			WHERE p.to_entity_id IN (` + chunkPH + `)
+			  AND p.relation IN (` + parentPH + `)
+			  AND c.relation IN (` + memberPH + `)
+			  AND m.trashed_at_ms IS NULL AND m.extra = 0`)
+			for _, id := range chunk {
+				args = append(args, id)
+			}
+			for _, rel := range rollUp.ParentRelations {
+				args = append(args, rel)
+			}
+			for _, rel := range rollUp.MemberRelations {
+				args = append(args, rel)
+			}
+		}
+
+		for _, db := range planes {
+			// #nosec G202 -- only generated placeholders are interpolated; IDs and relations are bound args.
+			rows, err := db.QueryContext(ctx, sqlText.String(), args...)
+			if err != nil {
+				return nil, err
+			}
+			for rows.Next() {
+				var cID string
+				var mID MediaID
+				if err := rows.Scan(&cID, &mID); err != nil {
+					_ = rows.Close()
+					return nil, err
+				}
+				key := [2]string{cID, string(mID)}
+				if _, dup := seenPair[key]; dup {
+					continue
+				}
+				seenPair[key] = struct{}{}
+				raw[cID] = append(raw[cID], mID)
+				allMedia = append(allMedia, mID)
+			}
+			if err := rows.Close(); err != nil {
+				return nil, err
+			}
+			if err := rows.Err(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(allMedia) == 0 {
+		return out, nil
+	}
+	visible, err := s.visibleMediaIDsSQL(ctx, allMedia, filter)
+	if err != nil {
+		return nil, err
+	}
+	for cID, ids := range raw {
+		count := 0
+		for _, id := range ids {
+			if _, ok := visible[id]; ok {
+				count++
+			}
+		}
+		out[cID] = count
+	}
+	return out, nil
+}

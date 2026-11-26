@@ -1998,14 +1998,15 @@ func readField[T any](ctx context.Context, data map[string]any, errs *[]graphErr
 // their top container, so a TV genre shelf lists shows, not episodes. Every
 // other feed lists Media as themselves (nil).
 func (h *Handler) genreRollUp(kind string, entityFilter *store.EntityFilter) *store.ContainerRollUp {
-	if kind != "all-items" || entityFilter == nil {
+	if kind != "all-items" || entityFilter == nil || h.plugins == nil {
 		return nil
 	}
 	members, parents := h.plugins.ContainerRollUpRelations()
-	if len(members) == 0 || len(parents) == 0 {
+	direct := h.plugins.ContainerRollUpDirectRelations()
+	if (len(members) == 0 || len(parents) == 0) && len(direct) == 0 {
 		return nil
 	}
-	return &store.ContainerRollUp{MemberRelations: members, ParentRelations: parents}
+	return &store.ContainerRollUp{MemberRelations: members, ParentRelations: parents, DirectRelations: direct}
 }
 
 // playedFilterVars reads the History filters for the played Source kinds:
@@ -6836,7 +6837,7 @@ func (h *Handler) mediaForEntity(ctx context.Context, scope auth.Scope, req requ
 		return nil, clientError("unknown entity")
 	}
 	if boolVar(req, "rollUp") {
-		if items, err = h.rollUpContainers(ctx, store.EntityID(entityID), items); err != nil {
+		if items, err = h.rollUpContainers(ctx, scope.LibraryFilter(), store.EntityID(entityID), items); err != nil {
 			return nil, err
 		}
 	}

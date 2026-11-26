@@ -296,11 +296,12 @@ function pluralRules(locale: string): Intl.PluralRules {
 }
 
 /**
- * The Library pivot address for one grouping value (CORE-2437): the Media view
- * of `/all`, filtered to that value, so a Category tile opens what it names.
+ * The Library pivot address for one grouping value (CORE-2437): opens the
+ * matching browse view (for instance the Albums grid when the category counts
+ * Albums) or the Media view of `/all`, filtered to that value.
  */
-export function libraryCategorySearch(kind: string, value: string): string {
+export function libraryCategorySearch(kind: string, value: string, view = MEDIA_VIEW): string {
   const params = browseStateParams({ ...DEFAULT_BROWSE_STATE, groups: { [kind]: value } });
-  params.set(LIBRARY_VIEW_PARAM, MEDIA_VIEW);
+  params.set(LIBRARY_VIEW_PARAM, view);
   return `?${params.toString()}`;
 }

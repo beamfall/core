@@ -474,6 +474,56 @@ func (h *Handler) evaluateHomeShelf(ctx context.Context, scope auth.Scope, filte
 			limit = 20
 		}
 	}
+	if offset < 0 {
+		offset = 0
+	}
+	if !homeShelfShouldRollUp(shelf) {
+		return h.evaluateHomeShelfRaw(ctx, scope, filter, shelf, limit, offset)
+	}
+	fetchLimit := min(max((offset+limit)*5, 100), 500)
+	raw, rawTotal, err := h.evaluateHomeShelfRaw(ctx, scope, filter, shelf, fetchLimit, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+	var contextID store.EntityID
+	if shelf.Source.Type == "entity" && shelf.Source.EntityID != "" {
+		contextID = store.EntityID(shelf.Source.EntityID)
+	}
+	rolled, err := h.rollUpContainers(ctx, filter, contextID, raw)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := len(rolled)
+	if rawTotal > len(raw) {
+		total = rawTotal
+	}
+	if offset >= len(rolled) {
+		return []store.SourceItem{}, total, nil
+	}
+	end := min(offset+limit, len(rolled))
+	return rolled[offset:end], total, nil
+}
+
+func homeShelfShouldRollUp(shelf store.HomeShelf) bool {
+	if shelf.Source.RollUpContainers != nil {
+		return *shelf.Source.RollUpContainers
+	}
+	switch shelf.Source.Type {
+	case "rules", "library", "saved-filter", "entity":
+		return true
+	case "builtin":
+		switch shelf.Source.BuiltinKind {
+		case "recently-added", "recently-played", "most-played", "top-picks", "random":
+			return true
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+func (h *Handler) evaluateHomeShelfRaw(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, shelf store.HomeShelf, limit, offset int) ([]store.SourceItem, int, error) {
 	scopedFilter, ok := intersectLibraryFilter(filter, shelf.Source.LibraryIDs)
 	if !ok {
 		return []store.SourceItem{}, 0, nil

@@ -166,3 +166,81 @@ func TestSourceItemsContainerRollUpListsShowsNotEpisodes(t *testing.T) {
 		t.Fatalf("Comedy without roll-up = %v, want the four Media", sourceItemIDs(items))
 	}
 }
+
+// TestSourceItemsDirectContainerRollUpMultiVsSingleItem verifies 1-level direct
+// container roll-up: an audio container holding >= 2 visible items rolls up
+// into one entity card even when only one child carries the filtered category,
+// while a single-track audio container (1 item in catalog) and loose items
+// stay individual media items.
+func TestSourceItemsDirectContainerRollUpMultiVsSingleItem(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+
+	importAudio := func(path, title string) MediaID {
+		t.Helper()
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: "library-local", Path: path, Title: title,
+			Container: "flac", Codec: "flac", Class: MediaClassAudio,
+			ContentFingerprint: HashMediaFilePath(path),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return media.ID
+	}
+	multiOne := importAudio("/audio/box-a/01-intro.flac", "Delta Intro")
+	multiTwo := importAudio("/audio/box-a/02-outro.flac", "Beta Outro")
+	single := importAudio("/audio/single-b/01-solo.flac", "Echo Solo")
+	loose := importAudio("/audio/loose-track.flac", "Gamma Loose")
+
+	upsert := func(id EntityID, kind, title string) {
+		t.Helper()
+		if err := st.UpsertEntity(ctx, Entity{ID: id, LibraryID: "library-local", Kind: kind, Title: title}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	relate := func(relation EntityRelation) {
+		t.Helper()
+		if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upsert("entity-tag-jazz", "topic", "Jazz")
+	upsert("entity-box-a", "record", "Alpha Box")
+	upsert("entity-box-single", "record", "Solo Record")
+
+	// Multi-item record has 2 tracks, only multiOne tagged with Jazz.
+	relate(EntityRelation{FromEntityID: "entity-box-a", Name: "holds-audio", ToMediaID: multiOne})
+	relate(EntityRelation{FromEntityID: "entity-box-a", Name: "holds-audio", ToMediaID: multiTwo})
+	relate(EntityRelation{FromEntityID: "entity-box-single", Name: "holds-audio", ToMediaID: single})
+	for _, media := range []MediaID{multiOne, single, loose} {
+		relate(EntityRelation{FromEntityID: "entity-tag-jazz", Name: "tags", ToMediaID: media})
+	}
+
+	local := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+	jazz := &EntityFilter{Kind: "topic", Name: "Jazz"}
+	rollUp := &ContainerRollUp{DirectRelations: []string{"holds-audio"}}
+
+	items := mustSourceItems(t, st, local, SourceQuery{Kind: "all-items", EntityFilter: jazz, RollUp: rollUp})
+	type card struct {
+		id   MediaID
+		kind string
+	}
+	got := make([]card, 0, len(items))
+	for _, item := range items {
+		got = append(got, card{item.ID, item.Kind})
+	}
+	want := []card{
+		{"entity-box-a", "entity"},
+		{single, "media"},
+		{loose, "media"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("rolled-up Jazz = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("rolled-up Jazz[%d] = %v, want %v", i, got[i], want[i])
+		}
+	}
+}

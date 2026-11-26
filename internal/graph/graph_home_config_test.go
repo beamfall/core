@@ -2,11 +2,17 @@ package graph
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/manifest"
+	"github.com/beamfall/core/internal/plugin"
+	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
 
@@ -121,5 +127,115 @@ func TestHomeStudioGraphRoundTrip(t *testing.T) {
 	handler.ServeHTTP(rstTmplRec, rstTmplReq)
 	if rstTmplRec.Code != http.StatusOK {
 		t.Fatalf("resetDefaultHomeTemplate status = %d: %s", rstTmplRec.Code, rstTmplRec.Body.String())
+	}
+}
+
+func TestHomeShelfEvaluatesRollUpContainersForAudioMultiVsSingle(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	bundle := plugin.Bundle{
+		ID:          "audiokit",
+		Version:     "0.1.0",
+		DisplayName: plugin.L("Audiokit"),
+		MediaLabel:  plugin.L("Cut"),
+		EntityKinds: []plugin.EntityKind{
+			{Name: "holder", Archetype: "container", OrderedChildren: true, Relations: []plugin.RelationSpec{
+				{Name: "holds-cut", ToKind: plugin.MediaKindName, Cardinality: "one"},
+			}},
+		},
+		Layouts: []plugin.LayoutSpec{{
+			ID:   "home",
+			Role: "browse",
+			Sections: []plugin.SectionSpec{
+				{ID: "holders", Kind: "grid", Title: plugin.L("Holders"), Source: plugin.SourceSpec{Kind: "entity-items", EntityKind: "holder"}},
+			},
+		}},
+	}
+	registry, err := newTestPluginRegistry([]plugin.Bundle{bundle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(
+		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, registry),
+		auth.NewService(st),
+		st,
+		registry,
+	)
+	library, err := st.CreateLibrary(ctx, "Audio", false, "audiokit", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importCut := func(name string) store.MediaID {
+		item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: library.ID, Path: "/hs/" + name + ".flac", Title: name,
+			Container: "flac", Codec: "flac", Class: store.MediaClassAudio, ContentFingerprint: "fp-hs-" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return item.ID
+	}
+	c1 := importCut("Cut 1")
+	c2 := importCut("Cut 2")
+	single := importCut("Solo Cut")
+
+	for _, e := range []store.Entity{
+		{ID: "hs-multi", LibraryID: library.ID, Kind: "holder", Title: "Full Release"},
+		{ID: "hs-single", LibraryID: library.ID, Kind: "holder", Title: "Solo Release"},
+	} {
+		if err := st.UpsertEntity(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, rel := range []store.EntityRelation{
+		{FromEntityID: "hs-multi", Name: "holds-cut", ToMediaID: c1},
+		{FromEntityID: "hs-multi", Name: "holds-cut", ToMediaID: c2},
+		{FromEntityID: "hs-single", Name: "holds-cut", ToMediaID: single},
+	} {
+		if err := st.UpsertEntityRelation(ctx, rel); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	preview := func(rollUp any) []map[string]any {
+		src := map[string]any{
+			"type":       "library",
+			"libraryIDs": []string{string(library.ID)},
+		}
+		if rollUp != nil {
+			src["rollUpContainers"] = rollUp
+		}
+		reply := postHomeStudioJSON(t, handler, `query Prev($shelf: HomeShelfInput!) { previewHomeShelf(shelf: $shelf, limit: 10) { totalCount items { id kind title } } }`, map[string]any{
+			"shelf": map[string]any{
+				"id":      "hs-test",
+				"title":   "Audio Recent",
+				"display": map[string]any{"style": "shelf", "artworkSlot": "poster", "limit": 10},
+				"source":  src,
+			},
+		})
+		if errs, _ := reply["errors"].([]any); len(errs) != 0 {
+			t.Fatalf("previewHomeShelf errors: %#v", errs)
+		}
+		rawItems := reply["data"].(map[string]any)["previewHomeShelf"].(map[string]any)["items"].([]any)
+		out := make([]map[string]any, 0, len(rawItems))
+		for _, item := range rawItems {
+			out = append(out, item.(map[string]any))
+		}
+		return out
+	}
+
+	// Default (rollUpContainers omitted): multi-track container collapses into 1 entity,
+	// while 1-track single stays media.
+	defaultItems := preview(nil)
+	if len(defaultItems) != 2 ||
+		defaultItems[0]["id"] != string(single) || defaultItems[0]["kind"] != "media" ||
+		defaultItems[1]["id"] != "hs-multi" || defaultItems[1]["kind"] != "entity" {
+		t.Fatalf("default home-shelf rollUp = %#v, want [%s(media), hs-multi(entity)]", defaultItems, single)
+	}
+
+	// Explicit rollUpContainers=false keeps all 3 individual media tracks unrolled.
+	rawItems := preview(false)
+	if len(rawItems) != 3 {
+		t.Fatalf("rollUpContainers=false len = %d, want 3 media items: %#v", len(rawItems), rawItems)
 	}
 }

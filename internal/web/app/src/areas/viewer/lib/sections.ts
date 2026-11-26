@@ -1,6 +1,6 @@
 import { fetchSourceItems } from "@/lib/graphql";
 import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
-import { groupsNewByContainer, NEW_SHELF_FETCH } from "./containerGroups";
+import { groupsShelfByContainer, NEW_SHELF_FETCH } from "./containerGroups";
 
 // The six renderable Section kinds (manifest.Section.kind), copied exactly from
 // the vanilla app.js SECTION_KINDS set. Unknown kinds are skipped, with one
@@ -69,7 +69,7 @@ export async function fetchSectionItems(
     ? ctx.paging.limit
     : section.kind === "hero"
       ? 1
-      : groupsNewByContainer(section)
+      : groupsShelfByContainer(section)
         ? NEW_SHELF_FETCH
         : section.kind === "shelf"
           ? source.kind === "home-shelf"

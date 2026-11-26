@@ -1680,11 +1680,11 @@ func (s *Store) listeningStatsSourceItems(ctx context.Context, profileID Profile
 	var items []SourceItem
 	switch query.Kind {
 	case "top-tracks":
-		items = listeningStatsSourceItemsFrom(stats.TopTracks)
+		items = listeningStatsSourceItemsFrom(stats.TopTracks, "media")
 	case "top-artists":
-		items = listeningStatsSourceItemsFrom(stats.TopArtists)
+		items = listeningStatsSourceItemsFrom(stats.TopArtists, "entity")
 	case "top-albums":
-		items = listeningStatsSourceItemsFrom(stats.TopAlbums)
+		items = listeningStatsSourceItemsFrom(stats.TopAlbums, "entity")
 	case "listening-summary":
 		items = []SourceItem{{
 			ID:      MediaID(stats.Period),
@@ -1703,14 +1703,18 @@ func (s *Store) listeningStatsSourceItems(ctx context.Context, profileID Profile
 	return items, nil
 }
 
-func listeningStatsSourceItemsFrom(stats []ListeningStatsItem) []SourceItem {
+func listeningStatsSourceItemsFrom(stats []ListeningStatsItem, sourceKind string) []SourceItem {
 	items := make([]SourceItem, len(stats))
 	for i, item := range stats {
 		summary := "1 play"
 		if item.PlayCount != 1 {
 			summary = strconv.Itoa(item.PlayCount) + " plays"
 		}
-		items[i] = SourceItem{ID: MediaID(item.ID), Kind: item.Kind, Title: item.Title, LibraryID: item.libraryID, Summary: summary}
+		kind := sourceKind
+		if kind == "" {
+			kind = item.Kind
+		}
+		items[i] = SourceItem{ID: MediaID(item.ID), Kind: kind, Title: item.Title, LibraryID: item.libraryID, Summary: summary}
 	}
 	return items
 }

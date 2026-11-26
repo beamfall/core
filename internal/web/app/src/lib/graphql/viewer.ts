@@ -248,6 +248,41 @@ export async function fetchSourceItems(
   return data.sourceItems ?? [];
 }
 
+const CONTAINER_PROBE_BATCH = 40;
+
+/**
+ * Probes container Entities whose catalog child count could not be inferred
+ * from the shelf window alone, returning the subset holding at least two
+ * visible children. Executes batched aliased `mediaForEntity` operations so
+ * 1-track audio singles remain standalone items while multi-track albums fold
+ * even when only one track fell in the shelf window.
+ */
+export async function fetchMultiItemContainers(
+  containerIDs: readonly string[],
+  signal?: AbortSignal,
+): Promise<Set<string>> {
+  const unique = [...new Set(containerIDs.filter(Boolean))];
+  const multi = new Set<string>();
+  for (let start = 0; start < unique.length; start += CONTAINER_PROBE_BATCH) {
+    const chunk = unique.slice(start, start + CONTAINER_PROBE_BATCH);
+    const decls = chunk.map((_, i) => `$id${i}: String!`).join(", ");
+    const fields = chunk.map((_, i) => `c${i}: mediaForEntity(entityID: $id${i}) { id }`).join(" ");
+    const vars = Object.fromEntries(chunk.map((id, i) => [`id${i}`, id]));
+    const data = await graphql<Record<string, { id: string }[] | null | undefined>>(
+      `query ContainerChildProbe(${decls}) { ${fields} }`,
+      vars,
+      signal,
+    );
+    if (!data) continue;
+    for (let i = 0; i < chunk.length; i++) {
+      if ((data[`c${i}`]?.length ?? 0) >= 2) {
+        multi.add(chunk[i]);
+      }
+    }
+  }
+  return multi;
+}
+
 const SMART_COLLECTION_ITEMS_QUERY =
   "query SmartCollectionItems($kind: String, $value: String, $limit: Int, $offset: Int) { sourceItems(kind: $kind, value: $value, limit: $limit, offset: $offset) { id title durationSeconds mediaClass locked playsAlone } }";
 

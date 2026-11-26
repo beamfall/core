@@ -17,7 +17,13 @@ import {
   useContinueWatchingRemoved,
 } from "../actions/continueWatching";
 import { useEngagementEpoch } from "../actions/engagementSync";
-import { foldNewShelf, groupsNewByContainer, withContainerPoster } from "../lib/containerGroups";
+import {
+  foldNewShelf,
+  groupsNewByContainer,
+  groupsShelfByContainer,
+  useMultiItemContainers,
+  withContainerPoster,
+} from "../lib/containerGroups";
 import { fetchSectionItems } from "../lib/sections";
 import { Hero } from "./Hero";
 import { SectionView, type SeeAllTarget } from "./SectionView";
@@ -191,19 +197,24 @@ export function HydratedSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity, section, cacheKey, engagementEpoch]);
 
-  // Newly added items fold under their container (CORE-2524); a container's own
+  // Discovery shelves fold multi-item containers (CORE-2524); a container's own
   // page lists its items as they are.
-  const shown = useMemo(() => {
+  const foldShelf = !entityID && groupsShelfByContainer(section);
+  const kept = useMemo(() => {
     const readSeq = readSeqOf(items);
-    const kept =
-      items && continueRow && removed.size
-        ? items.filter((item) => !continueWatchingKeepsOut(removed, item.id, readSeq))
-        : items;
+    return items && continueRow && removed.size
+      ? items.filter((item) => !continueWatchingKeepsOut(removed, item.id, readSeq))
+      : items;
+  }, [items, continueRow, removed]);
+  const multiItemContainers = useMultiItemContainers(kept, Boolean(kept && foldShelf));
+  const shown = useMemo(() => {
     if (kept && continueRow) return kept.map(withContainerPoster);
-    return kept && !entityID && groupsNewByContainer(section)
-      ? foldNewShelf(kept, (count) => t("cardNewCount", { count }))
-      : kept;
-  }, [items, continueRow, removed, entityID, section, t]);
+    if (!kept || !foldShelf) return kept;
+    const countLabel = groupsNewByContainer(section)
+      ? (count: number) => t("cardNewCount", { count })
+      : () => "";
+    return foldNewShelf(kept, countLabel, { multiItemContainers });
+  }, [kept, continueRow, foldShelf, section, multiItemContainers, t]);
   // A row emptied by removals reads as empty to the Layout, as a served empty
   // row does, and as visible again when an Undo brings a card back.
   const removedAll = Boolean(items?.length) && shown?.length === 0;

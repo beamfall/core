@@ -2418,32 +2418,86 @@ func entityRelationFilterSQL(filter *EntityFilter, visible []LibraryID, liveOnly
 // visible are the visible-Library binds matched already uses; the returned
 // args follow matched's, before LIMIT and OFFSET.
 func containerRollUpSQL(matched string, rollUp *ContainerRollUp, placeholders []string, visible []LibraryID) (string, []any) {
-	members := make([]string, len(rollUp.MemberRelations))
-	parents := make([]string, len(rollUp.ParentRelations))
-	args := make([]any, 0, len(members)+len(parents)+len(visible))
-	for i, relation := range rollUp.MemberRelations {
-		members[i] = "?"
-		args = append(args, relation)
-	}
-	for i, relation := range rollUp.ParentRelations {
-		parents[i] = "?"
-		args = append(args, relation)
-	}
-	for _, id := range visible {
-		args = append(args, id)
-	}
-	return `
-		WITH matched AS (` + matched + `),
-		tops AS (
+	hasClimbed := len(rollUp.MemberRelations) > 0 && len(rollUp.ParentRelations) > 0
+	hasDirect := len(rollUp.DirectRelations) > 0
+
+	args := make([]any, 0, len(rollUp.MemberRelations)+len(rollUp.ParentRelations)+len(rollUp.DirectRelations)*2+len(visible)*3)
+	var ctes []string
+	var topParts []string
+
+	if hasClimbed {
+		members := sqlPlaceholders(len(rollUp.MemberRelations))
+		parents := sqlPlaceholders(len(rollUp.ParentRelations))
+		for _, relation := range rollUp.MemberRelations {
+			args = append(args, relation)
+		}
+		for _, relation := range rollUp.ParentRelations {
+			args = append(args, relation)
+		}
+		for _, id := range visible {
+			args = append(args, id)
+		}
+		ctes = append(ctes, `climbed AS (
 			SELECT mt.id AS media_id, t.id AS top_id, t.title AS top_title, t.library_id AS top_library_id
 			FROM matched mt
 			JOIN entity_relation c ON c.to_media_id = mt.id
-			  AND c.relation IN (` + strings.Join(members, ", ") + `)
+			  AND c.relation IN (`+members+`)
 			JOIN entity sn ON sn.id = c.from_entity_id AND sn.trashed_at_ms IS NULL
 			JOIN entity_relation p ON p.from_entity_id = c.from_entity_id
-			  AND p.relation IN (` + strings.Join(parents, ", ") + `)
+			  AND p.relation IN (`+parents+`)
 			JOIN entity t ON t.id = p.to_entity_id AND t.trashed_at_ms IS NULL
-			  AND t.library_id IN (` + strings.Join(placeholders, ", ") + `)
+			  AND t.library_id IN (`+strings.Join(placeholders, ", ")+`)
+		)`)
+		topParts = append(topParts, `SELECT media_id, top_id, top_title, top_library_id FROM climbed`)
+	}
+
+	if hasDirect {
+		direct := sqlPlaceholders(len(rollUp.DirectRelations))
+		libs := strings.Join(placeholders, ", ")
+		for _, relation := range rollUp.DirectRelations {
+			args = append(args, relation)
+		}
+		for _, id := range visible {
+			args = append(args, id)
+		}
+		for _, relation := range rollUp.DirectRelations {
+			args = append(args, relation)
+		}
+		for _, id := range visible {
+			args = append(args, id)
+		}
+		notClimbed := ""
+		if hasClimbed {
+			notClimbed = " AND mt.id NOT IN (SELECT media_id FROM climbed)"
+		}
+		// Keep single-track audio items (e.g. standalone singles) unrolled;
+		// multi-track audio containers (>= 2 visible tracks) and non-audio containers roll up.
+		ctes = append(ctes, `direct AS (
+			SELECT mt.id AS media_id, t.id AS top_id, t.title AS top_title, t.library_id AS top_library_id
+			FROM matched mt
+			JOIN media mt_m ON mt_m.id = mt.id
+			JOIN entity_relation c ON c.to_media_id = mt.id
+			  AND c.relation IN (`+direct+`)
+			JOIN entity t ON t.id = c.from_entity_id AND t.trashed_at_ms IS NULL
+			  AND t.library_id IN (`+libs+`)
+			WHERE (mt_m.media_class != 'audio' OR (
+				SELECT COUNT(DISTINCT mc.to_media_id)
+				FROM entity_relation mc
+				JOIN media mm ON mm.id = mc.to_media_id
+				WHERE mc.from_entity_id = t.id
+				  AND mc.relation IN (`+direct+`)
+				  AND mm.trashed_at_ms IS NULL
+				  AND mm.library_id IN (`+libs+`)
+			) >= 2)`+notClimbed+`
+		)`)
+		topParts = append(topParts, `SELECT media_id, top_id, top_title, top_library_id FROM direct`)
+	}
+
+	return `
+		WITH matched AS (` + matched + `),
+		` + strings.Join(ctes, ",\n\t\t") + `,
+		tops AS (
+			` + strings.Join(topParts, "\n\t\t\tUNION ALL\n\t\t\t") + `
 		)
 		SELECT id, kind, title, library_id, duration_seconds, '' AS members FROM matched
 		WHERE id NOT IN (SELECT media_id FROM tops)
@@ -3937,7 +3991,7 @@ func (s *Store) allItemsSQL(ctx context.Context, filter LibraryFilter, fieldFilt
 	query := matched + `
 		ORDER BY m.title COLLATE NOCASE, m.id
 		LIMIT ? OFFSET ?`
-	rolling := rollUp != nil && len(rollUp.MemberRelations) > 0 && len(rollUp.ParentRelations) > 0
+	rolling := rollUp != nil && ((len(rollUp.MemberRelations) > 0 && len(rollUp.ParentRelations) > 0) || len(rollUp.DirectRelations) > 0)
 	if rolling {
 		var rollUpArgs []any
 		query, rollUpArgs = containerRollUpSQL(matched, rollUp, placeholders, visible)

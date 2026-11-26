@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, subscribeEvents } from "@/lib/api";
+import { fetchMultiItemContainers } from "@/lib/graphql";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
@@ -28,6 +29,7 @@ vi.mock("../lib/sections", async (importOriginal) => {
 
 vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
+  fetchMultiItemContainers: vi.fn(async () => new Set<string>()),
   setContinueWatchingHidden: vi.fn(async () => ({
     id: "media-1",
     kind: "media",
@@ -410,5 +412,44 @@ describe("HydratedSection Continue Watching removal (CORE-2017)", () => {
     currentItem = { ...item, engagement: { completed: true } };
     sendInvalidation("engagement-changed");
     expect(await screen.findByRole("link", { name: "Visible item, Finished" })).toBeVisible();
+  });
+
+  it("folds multi-track albums on music playback shelves while preserving 1-track singles", async () => {
+    vi.mocked(fetchMultiItemContainers).mockResolvedValue(new Set(["album-revolver"]));
+    const mostPlayed: Section = {
+      id: "most-played",
+      kind: "shelf",
+      title: { en: "Most Played" },
+      artworkSlot: "poster",
+      source: { kind: "most-played" },
+    };
+    const track = (id: string, title: string, albumID: string, albumTitle: string): SourceItem => ({
+      id,
+      kind: "media",
+      title,
+      mediaClass: "audio",
+      container: { id: albumID, title: albumTitle, artwork: { poster: `/art/${albumID}.jpg` } },
+    });
+    vi.mocked(fetchSectionItems).mockResolvedValue([
+      track("t1", "Taxman", "album-revolver", "Revolver"),
+      track("t2", "What Was I Made For", "album-single", "What Was I Made For"),
+    ]);
+
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <HydratedSection section={mostPlayed} libraryID="lib-music" entityID="" />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByRole("link", { name: "Revolver" })).toHaveAttribute(
+      "href",
+      "/entity/album-revolver",
+    );
+    expect(screen.getByRole("link", { name: /^What Was I Made For/ })).toHaveAttribute(
+      "href",
+      "/media/t2",
+    );
   });
 });

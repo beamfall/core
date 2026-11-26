@@ -484,4 +484,33 @@ describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
     await userEvent.click(within(alert).getByRole("button"));
     expect(await screen.findByRole("link", { name: "Drama 2 items" })).toBeInTheDocument();
   });
+
+  it("opens container-counted category tiles in the matching container view (Albums) rather than flat Media", async () => {
+    serveKinds([
+      {
+        kind: "album",
+        label: { en: "Albums" },
+        kindDisplayName: { en: "Album" },
+        archetype: "container",
+        total: 42,
+      },
+    ]);
+    serveCategories([
+      {
+        kind: "genre",
+        values: ["Rock", "Mixed Bag"],
+        counts: [320, 4],
+        browseCounts: [42, 4],
+        browseLabels: [{ en: "Albums" }, { en: "" }],
+      },
+    ]);
+    renderAt("/n/library-films/categories");
+
+    const rock = await screen.findByRole("link", { name: "Rock 42 Albums" });
+    expect(rock).toHaveAttribute("href", "/n/library-films/all?group.genre=Rock&view=album");
+    expect(screen.getByRole("link", { name: "Mixed Bag 4 items" })).toHaveAttribute(
+      "href",
+      "/n/library-films/all?group.genre=Mixed+Bag&view=media",
+    );
+  });
 });

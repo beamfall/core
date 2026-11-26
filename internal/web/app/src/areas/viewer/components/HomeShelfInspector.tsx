@@ -608,6 +608,28 @@ export function HomeShelfInspector({
                 />
               </label>
             </div>
+
+            {(draft.source.type === "library" ||
+              draft.source.type === "rules" ||
+              draft.source.type === "saved-filter" ||
+              (draft.source.type === "builtin" &&
+                draft.source.builtinKind !== "next-up" &&
+                draft.source.builtinKind !== "continue-listening")) && (
+              <label className="flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] pt-3 text-xs">
+                <span className="font-medium text-[var(--text-secondary)]">
+                  {t("homeShelfRollUp")}
+                </span>
+                <Switch
+                  checked={draft.source.rollUpContainers ?? true}
+                  onCheckedChange={(rollUpContainers) =>
+                    setDraft({
+                      ...draft,
+                      source: { ...draft.source, rollUpContainers },
+                    })
+                  }
+                />
+              </label>
+            )}
           </div>
 
           {/* Live Preview Strip */}
