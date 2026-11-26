@@ -2,20 +2,11 @@
 
 ### Requirement: Related Media read
 
-The graph SHALL answer `relatedMedia(mediaID, limit)` with Media that share at least two of the
-named Media's first four category-archetype credits and first three person-archetype credits (in the
-server's credit order), at least one of them a category credit, ordered by how many of those credits
-they share, most first, ties in first-read order. The limit SHALL default to 20 and be capped at 50.
-
-#### Scenario: Exclusions and duplicates
-
-- **WHEN** related Media are listed
-- **THEN** the named Media is not listed
-- **AND** Extras (the Extra bit, or the Extra side of an `extra-of` relation) are not listed
-- **AND** Media with the same title (case and surrounding space ignored) and year are listed once, as
-  the first-ranked of them, and Media with the named Media's own title and year are not listed
-- **AND** Media that share only one credit are not listed, so the result MAY be shorter than the
-  limit or empty
+The graph SHALL answer `relatedMedia(mediaID, limit)` with Media sharing at least two of the named
+Media's first four category-archetype credits and first three person-archetype credits (in the
+server's credit order), at least one a category credit, ordered by shared count descending, ties in
+first-read order. The named Media and single-credit matches SHALL NOT be listed, so the result MAY
+be shorter than the limit or empty. The limit SHALL default to 20 and be capped at 50.
 
 #### Scenario: Ranked by shared credits
 
@@ -38,10 +29,23 @@ they share, most first, ties in first-read order. The limit SHALL default to 20 
 - **WHEN** a Media shares only one category credit with the item
 - **THEN** `relatedMedia` does not list it, and returns an empty list when no Media shares two
 
+## ADDED Requirements
+
+### Requirement: Related Media exclude Extras
+
+Extras (Media with the Extra bit, or the Extra side of an `extra-of` relation) SHALL NOT be listed
+by `relatedMedia`.
+
 #### Scenario: Extras left out
 
 - **WHEN** a Media sharing the item's credits has the Extra bit or is an `extra-of` another Media
 - **THEN** `relatedMedia` does not list it
+
+### Requirement: Related Media list one item per title and year
+
+Media with the same title (case and surrounding space ignored) and year SHALL be listed once by
+`relatedMedia`, as the first-ranked of them, and Media with the named Media's own title and year
+SHALL NOT be listed.
 
 #### Scenario: Same title listed once
 

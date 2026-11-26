@@ -8,10 +8,10 @@ Let a viewer set a Profile's watch state directly, without playing: mark an item
 ### Requirement: A Profile can mark an item watched or unwatched
 
 The `setWatched` mutation SHALL set the calling Profile's watched state for one visible Media, or
-for every visible Media a visible Entity relates to directly or through its same-Kind child
-Entities. Marking watched SHALL clear the resume position and count one play when the Media was not
-already watched. Marking unwatched SHALL clear the watched state, the resume position and the play
-count. The mark SHALL survive a projection rebuild and SHALL NOT change another Profile's state.
+for every visible Media a visible Entity relates to directly or through eligible child Entities.
+Marking watched SHALL clear the resume position and count one play when the Media was not already
+watched. Marking unwatched SHALL clear the watched state, the resume position and the play count.
+The mark SHALL survive a projection rebuild and SHALL NOT change another Profile's state.
 
 #### Scenario: Mark one Media watched
 
@@ -161,3 +161,23 @@ NOT.
 
 - **WHEN** a removed Media receives a playback report with the position it already had
 - **THEN** the Media stays off the `continue-watching` Source
+
+### Requirement: Marking an Entity watched reaches nested container kinds
+
+When `setWatched` targets a visible Entity, eligible child Entities SHALL be limited to same-Kind
+children under a declared parent relation, or children of another container Kind in the same
+Library that nest in it by a relation the Library's plugin declares between the two container Kinds.
+
+#### Scenario: Mark a container of nested containers watched
+
+- **WHEN** a Profile calls `setWatched` with `watched: true` on a container Entity holding no Media
+  of its own, whose parts (another container Kind) nest in it by a declared relation and hold three
+  Media between them
+- **THEN** all three Media read as watched and the Entity's state reads as watched, and a part
+  linked to it only by an undeclared relation, or by a relation only another plugin declares, keeps
+  its Media unwatched
+
+#### Scenario: Mark a container of nested containers unwatched
+
+- **WHEN** the same Profile then calls `setWatched` with `watched: false` on that Entity
+- **THEN** all three Media read as unwatched

@@ -2,16 +2,11 @@
 
 ### Requirement: Library browse reports the plugin's groupings
 
-`facets` SHALL list the groupings, the decades and the quality tiers present in the library's
-visible set before filtering. A grouping SHALL be a category-archetype entity kind declared by the
-Library's plugin, reported with its kind, the plugin's display name, its values in title order and,
-parallel to the values, `counts`: the number of distinct visible Media each value reaches.
-
-#### Scenario: Capped and empty groupings
-
-- **WHEN** a kind reaches more values than the facet cap
-- **THEN** the reported values are the most used ones, ties broken by title
-- **AND** a kind with no value in reach, and a Library without a plugin, report none
+`facets` SHALL list the groupings, decades and quality tiers in the library's visible set before
+filtering. A grouping SHALL be a category-archetype entity kind declared by the Library's plugin,
+reported with its kind, the plugin's display name, values in title order and parallel `counts` (the
+number of distinct visible Media each value reaches). A kind with no value in reach, and a Library
+without a plugin, SHALL report none.
 
 #### Scenario: Groupings come from the plugin
 
@@ -25,11 +20,6 @@ parallel to the values, `counts`: the number of distinct visible Media each valu
 - **WHEN** three visible Media relate to the genre `Drama` and one to `Western`
 - **THEN** the genre grouping reports `values` `["Drama", "Western"]` and `counts` `[3, 1]`
 
-#### Scenario: The cap keeps the most used values
-
-- **WHEN** a kind reaches more values than the facet cap
-- **THEN** the grouping reports the cap's worth of values with the highest counts, in title order
-
 ## REMOVED Requirements
 
 ### Requirement: Categories pivot tiles each grouping value
@@ -40,6 +30,16 @@ parallel to the values, `counts`: the number of distinct visible Media each valu
 **Migration**: Tiles still open the same filtered Media view.
 
 ## ADDED Requirements
+
+### Requirement: Grouping facets cap at the most used values
+
+When a category kind reaches more values than the facet cap, the reported values SHALL be the most
+used ones, with ties broken by title, returned in title order.
+
+#### Scenario: The cap keeps the most used values
+
+- **WHEN** a kind reaches more values than the facet cap
+- **THEN** the grouping reports the cap's worth of values with the highest counts, in title order
 
 ### Requirement: Categories pivot leads with featured groupings
 

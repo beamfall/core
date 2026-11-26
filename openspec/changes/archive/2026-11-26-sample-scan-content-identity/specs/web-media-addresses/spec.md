@@ -34,16 +34,8 @@ segment and SHALL use the sampled token for sampled Media.
 ### Requirement: Old and stale addresses resolve to the canonical one
 
 The web viewer SHALL resolve a watch or detail address by its token and SHALL accept a bare Media
-ID. An unqualified address spelling a sampled Media ID SHALL try that ID first and fall back to the
-SHA-256 Media ID with the same digits only after a confirmed miss. Once the item is loaded, the
-viewer SHALL replace the address in place without adding a history entry or restarting playback.
-
-#### Scenario: Ambiguous bookmark and lookup failures
-
-- **WHEN** the viewer resolves an ambiguous bookmark
-- **THEN** it MAY display cached sampled detail meanwhile
-- **AND** it retries transient lookup failures while the address and viewer identity remain current
-- **AND** it shows the existing unavailable state for permanent failures
+ID. Once the item is loaded, the viewer SHALL replace the address in place without adding a history
+entry or restarting playback.
 
 #### Scenario: Legacy bare-ID link
 
@@ -54,22 +46,6 @@ viewer SHALL replace the address in place without adding a history entry or rest
 
 - **WHEN** a viewer opens an address whose words no longer match the item
 - **THEN** the item opens and the address is corrected
-
-#### Scenario: Identical digest prefix across schemes
-
-- **WHEN** a sampled Media ID and a legacy Media ID have the same 17 digest digits
-- **THEN** the viewer resolves their tagged and untagged addresses to their respective IDs
-
-#### Scenario: Generating addresses for a legacy title with the sampled ID slug
-
-- **WHEN** a legacy title has the slug `media-sample1`
-- **THEN** the viewer qualifies its readable SHA-256 address with the Library slug, or generates
-  the bare SHA-256 ID when the Library slug is unavailable
-
-#### Scenario: Previously issued unqualified legacy bookmark
-
-- **WHEN** a viewer opens `/watch/media-sample1-a371bff46385f7ded` and the sampled ID is absent
-- **THEN** the viewer resolves the bookmark to `media-sha256-a371bff46385f7ded`
 
 #### Scenario: Navigate with a known sampled Media ID
 
@@ -87,3 +63,29 @@ viewer SHALL replace the address in place without adding a history entry or rest
 
 - **WHEN** an operator enters a copied link, a sampled token, or a readable path segment ending in that token
 - **THEN** Bulk Edit sends the sampled Media ID to preview and apply
+
+## ADDED Requirements
+
+### Requirement: Unqualified sampled addresses fall back after a confirmed miss
+
+An unqualified address spelling a sampled Media ID SHALL try that ID first and fall back to the
+SHA-256 Media ID with the same digits only after a confirmed miss. While resolving an ambiguous
+bookmark, the viewer MAY display cached sampled detail. The viewer SHALL retry transient lookup
+failures while the address and viewer identity remain current, and show the existing unavailable
+state for permanent failures.
+
+#### Scenario: Identical digest prefix across schemes
+
+- **WHEN** a sampled Media ID and a legacy Media ID have the same 17 digest digits
+- **THEN** the viewer resolves their tagged and untagged addresses to their respective IDs
+
+#### Scenario: Generating addresses for a legacy title with the sampled ID slug
+
+- **WHEN** a legacy title has the slug `media-sample1`
+- **THEN** the viewer qualifies its readable SHA-256 address with the Library slug, or generates
+  the bare SHA-256 ID when the Library slug is unavailable
+
+#### Scenario: Previously issued unqualified legacy bookmark
+
+- **WHEN** a viewer opens `/watch/media-sample1-a371bff46385f7ded` and the sampled ID is absent
+- **THEN** the viewer resolves the bookmark to `media-sha256-a371bff46385f7ded`

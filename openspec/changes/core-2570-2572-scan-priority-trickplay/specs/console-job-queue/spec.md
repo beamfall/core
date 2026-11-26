@@ -8,16 +8,6 @@ history folded into one row per job kind (its newest run and a run count). Each 
 the job was queued, started or finished as a relative time and, once started, its elapsed duration.
 On a phone the progress text SHALL stay on one line beside a legible bar.
 
-#### Scenario: Duration labels
-
-- **WHEN** a job row shows its duration
-- **THEN** a running job labels elapsed time as "{duration} since first start", including waits and
-  yields
-- **AND** running and yielded jobs with more than one attempt append "attempt {attempts}"
-- **AND** yielded jobs keep their paused note without a duration
-- **AND** a finished job says "took {duration}" for at most one attempt and
-  "took {duration} over {attempts} attempts" for multiple attempts
-
 #### Scenario: Recurring polls
 
 - **WHEN** the history holds hundreds of completed runs of one recurring job kind
@@ -27,6 +17,16 @@ On a phone the progress text SHALL stay on one line beside a legible bar.
 
 - **WHEN** a scan of a folder failed and a later scan of the same folder completed
 - **THEN** the failure is history, not an unresolved failure
+
+## ADDED Requirements
+
+### Requirement: Job queue labels elapsed time and attempts
+
+Running jobs SHALL label elapsed time as "{duration} since first start", including waits and
+yields. Running and yielded jobs with more than one attempt SHALL append "attempt {attempts}".
+Yielded jobs SHALL keep their paused note without a duration. Finished jobs SHALL say
+"took {duration}" for at most one attempt and "took {duration} over {attempts} attempts" for
+multiple attempts.
 
 #### Scenario: Running third attempt
 
@@ -47,8 +47,6 @@ On a phone the progress text SHALL stay on one line beside a legible bar.
 
 - **WHEN** a job completes after two attempts
 - **THEN** the row says "took {duration} over 2 attempts"
-
-## ADDED Requirements
 
 ### Requirement: Scans are queued above background sweeps
 
