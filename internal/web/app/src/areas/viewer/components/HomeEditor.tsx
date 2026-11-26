@@ -45,6 +45,15 @@ const EMPTY_SCHEMA: HomeFilterSchemaInfo = {
   pinnables: { collections: [], smartCollections: [], savedFilters: [] },
 };
 
+const SOURCE_BADGES: Record<string, string> = {
+  rules: "Smart",
+  collection: "Pinned",
+  playlist: "Pinned",
+  "saved-filter": "Filter",
+  library: "Library",
+  entity: "Tag",
+};
+
 function countRules(group?: SmartRuleGroup): number {
   if (!group) return 0;
   let count = 0;
@@ -59,7 +68,7 @@ function summarizeShelf(shelf: HomeShelf, schema: HomeFilterSchemaInfo): string 
   const parts: string[] = [];
   const libs = shelf.source.libraryIDs ?? [];
   if (libs.length === 0) {
-    parts.push("All Home libraries");
+    parts.push("All libraries");
   } else {
     const names = libs.map((id) => schema.libraries.find((l) => l.id === id)?.title ?? id);
     parts.push(names.join(", "));
@@ -71,7 +80,9 @@ function summarizeShelf(shelf: HomeShelf, schema: HomeFilterSchemaInfo): string 
   if (shelf.source.sort?.by) {
     parts.push(`Sort: ${shelf.source.sort.by}`);
   }
-  parts.push(`${shelf.display.style} · Max ${shelf.display.limit}`);
+  const styleLabel =
+    shelf.display.style === "shelf" ? "Rail" : shelf.display.style === "grid" ? "Grid" : "List";
+  parts.push(`${styleLabel} · ${shelf.display.limit} items`);
   return parts.join(" · ");
 }
 
@@ -192,24 +203,24 @@ export function HomeEditor({ onSaved, onClose }: HomeEditorProps) {
       : (shelves?.find((s) => s.id === editingShelfID) ?? null);
 
   return (
-    <section aria-labelledby="home-editor-title" className="flex max-w-3xl flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 id="home-editor-title" className="text-xl font-semibold">
+    <section aria-labelledby="home-editor-title" className="flex max-w-3xl flex-col gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h2 id="home-editor-title" className="text-xl font-semibold tracking-tight">
             {t("homeStudioTitle")}
           </h2>
           <p className="text-sm text-[var(--text-secondary)]">{t("homeStudioHelp")}</p>
         </div>
 
         {config?.canEditTemplate && (
-          <div className="inline-flex rounded-md border border-[var(--border)] p-0.5 text-xs">
+          <div className="inline-flex rounded-lg bg-[var(--bg-root)]/70 p-1 text-xs">
             <button
               type="button"
               onClick={() => setTemplateMode(false)}
               className={
-                "rounded px-3 py-1.5 font-medium transition-colors " +
+                "rounded-md px-3 py-1.5 font-medium transition-colors " +
                 (!templateMode
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-primary text-primary-foreground shadow-xs"
                   : "text-[var(--text-secondary)] hover:text-foreground")
               }
             >
@@ -219,9 +230,9 @@ export function HomeEditor({ onSaved, onClose }: HomeEditorProps) {
               type="button"
               onClick={() => setTemplateMode(true)}
               className={
-                "rounded px-3 py-1.5 font-medium transition-colors " +
+                "rounded-md px-3 py-1.5 font-medium transition-colors " +
                 (templateMode
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-primary text-primary-foreground shadow-xs"
                   : "text-[var(--text-secondary)] hover:text-foreground")
               }
             >
@@ -240,14 +251,16 @@ export function HomeEditor({ onSaved, onClose }: HomeEditorProps) {
       {config === null ? (
         !failed && <p aria-busy="true">{t("loading")}</p>
       ) : (
-        <>
-          {/* Hero Banner Control */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-muted/15 px-4 py-3">
+        <div className="flex flex-col gap-5">
+          {/* Hero Banner Card */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3.5">
             <div className="flex items-center gap-3">
-              <Sparkles className="size-4 text-primary" aria-hidden />
+              <div className="rounded-lg bg-primary/10 p-2 text-primary">
+                <Sparkles className="size-4" aria-hidden />
+              </div>
               <div>
                 <div className="text-sm font-medium">{t("homeHeroTitle")}</div>
-                <div className="text-xs text-[var(--text-secondary)]">
+                <div className="text-xs text-[var(--text-muted)]">
                   {!config.hero.enabled
                     ? "Hidden on Home"
                     : config.hero.mode === "shelf"
@@ -256,7 +269,7 @@ export function HomeEditor({ onSaved, onClose }: HomeEditorProps) {
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2.5">
               {config.hero.enabled && (
                 <>
                   <select
@@ -280,7 +293,7 @@ export function HomeEditor({ onSaved, onClose }: HomeEditorProps) {
                         },
                       });
                     }}
-                    className="h-8 rounded border border-[var(--border)] bg-background px-2 text-xs"
+                    className="h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--control-bg)] px-2.5 text-xs transition-colors hover:bg-[var(--control-bg-hover)] focus:border-primary focus:outline-none"
                   >
                     <option value="auto">{t("homeHeroModeAuto")}</option>
                     <option value="shelf">{t("homeHeroModeShelf")}</option>
@@ -293,7 +306,7 @@ export function HomeEditor({ onSaved, onClose }: HomeEditorProps) {
                       disabled={saving}
                       onClick={() => setEditingShelfID("__hero__")}
                     >
-                      <Pencil className="mr-1 size-3.5" aria-hidden />
+                      <Pencil className="mr-1.5 size-3.5" aria-hidden />
                       {t("homeHeroEditSource")}
                     </Button>
                   )}
@@ -313,132 +326,154 @@ export function HomeEditor({ onSaved, onClose }: HomeEditorProps) {
             </div>
           </div>
 
-          {/* Shelf List */}
-          <ul className="flex flex-col gap-2">
-            {config.shelves.map((shelf, index) => {
-              const name = shelf.title || shelf.id;
-              return (
-                <li
-                  key={shelf.id}
-                  data-section-id={shelf.id}
-                  className={
-                    "flex items-center gap-3 rounded-lg border border-[var(--border)] px-3 py-2.5" +
-                    (shelf.hidden ? " opacity-60" : "") +
-                    (dragging === shelf.id ? " ring-2 ring-primary" : "")
-                  }
-                  draggable={!saving}
-                  onDragStart={(event) => {
-                    setDragging(shelf.id);
-                    event.dataTransfer?.setData("text/plain", shelf.id);
-                    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-                  }}
-                  onDragOver={(event) => {
-                    if (dragging) event.preventDefault();
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    if (dragging)
-                      move(
-                        config.shelves.findIndex((s) => s.id === dragging),
-                        index,
-                      );
-                    setDragging(null);
-                  }}
-                  onDragEnd={() => setDragging(null)}
-                  onKeyDown={(event) => onRowKeyDown(event, index)}
-                >
-                  <GripVertical aria-hidden className="size-4 shrink-0 cursor-grab" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-medium">{name}</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
-                        {shelf.source.type}
-                      </span>
+          {/* Shelves Section */}
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                Shelves ({config.shelves.length})
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={saving}
+                onClick={() => setShowAddDialog(true)}
+              >
+                <Plus className="mr-1.5 size-3.5" aria-hidden />
+                {t("homeAddShelf")}
+              </Button>
+            </div>
+
+            <ul className="flex flex-col gap-2">
+              {config.shelves.map((shelf, index) => {
+                const name = shelf.title || shelf.id;
+                const badge = SOURCE_BADGES[shelf.source.type];
+                return (
+                  <li
+                    key={shelf.id}
+                    data-section-id={shelf.id}
+                    className={
+                      "flex items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-3 transition-colors hover:bg-[var(--bg-raised)]" +
+                      (shelf.hidden ? " opacity-50" : "") +
+                      (dragging === shelf.id ? " ring-2 ring-primary" : "")
+                    }
+                    draggable={!saving}
+                    onDragStart={(event) => {
+                      setDragging(shelf.id);
+                      event.dataTransfer?.setData("text/plain", shelf.id);
+                      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragOver={(event) => {
+                      if (dragging) event.preventDefault();
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      if (dragging)
+                        move(
+                          config.shelves.findIndex((s) => s.id === dragging),
+                          index,
+                        );
+                      setDragging(null);
+                    }}
+                    onDragEnd={() => setDragging(null)}
+                    onKeyDown={(event) => onRowKeyDown(event, index)}
+                  >
+                    <GripVertical
+                      aria-hidden
+                      className="size-4 shrink-0 cursor-grab text-[var(--text-muted)]"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium">{name}</span>
+                        {badge && (
+                          <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                            {badge}
+                          </span>
+                        )}
+                      </div>
+                      <p className="truncate text-xs text-[var(--text-muted)]">
+                        {summarizeShelf(shelf, schema)}
+                      </p>
                     </div>
-                    <p className="truncate text-xs text-[var(--text-secondary)]">
-                      {summarizeShelf(shelf, schema)}
-                    </p>
-                  </div>
-                  <Switch
-                    checked={!shelf.hidden}
-                    disabled={saving}
-                    aria-label={t("homeEditVisible", { name })}
-                    onCheckedChange={(visible) => toggle(shelf.id, visible)}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t("homeEditShelf", { name })}
-                    disabled={saving}
-                    onClick={() => setEditingShelfID(shelf.id)}
-                  >
-                    <Pencil aria-hidden />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t("homeDuplicateShelf", { name })}
-                    disabled={saving}
-                    onClick={() => duplicateShelf(shelf)}
-                  >
-                    <Copy aria-hidden />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t("homeDeleteShelf", { name })}
-                    disabled={saving}
-                    onClick={() => removeShelf(shelf.id)}
-                  >
-                    <Trash2 aria-hidden />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t("homeEditMoveUp", { name })}
-                    disabled={saving || index === 0}
-                    onClick={() => move(index, index - 1)}
-                  >
-                    <ChevronUp aria-hidden />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t("homeEditMoveDown", { name })}
-                    disabled={saving || index === config.shelves.length - 1}
-                    onClick={() => move(index, index + 1)}
-                  >
-                    <ChevronDown aria-hidden />
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        </>
+                    <Switch
+                      checked={!shelf.hidden}
+                      disabled={saving}
+                      aria-label={t("homeEditVisible", { name })}
+                      onCheckedChange={(visible) => toggle(shelf.id, visible)}
+                    />
+                    <div className="flex items-center gap-0.5 text-[var(--text-muted)]">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={t("homeEditShelf", { name })}
+                        disabled={saving}
+                        onClick={() => setEditingShelfID(shelf.id)}
+                      >
+                        <Pencil aria-hidden />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={t("homeDuplicateShelf", { name })}
+                        disabled={saving}
+                        onClick={() => duplicateShelf(shelf)}
+                      >
+                        <Copy aria-hidden />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={t("homeDeleteShelf", { name })}
+                        disabled={saving}
+                        onClick={() => removeShelf(shelf.id)}
+                      >
+                        <Trash2 aria-hidden />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={t("homeEditMoveUp", { name })}
+                        disabled={saving || index === 0}
+                        onClick={() => move(index, index - 1)}
+                      >
+                        <ChevronUp aria-hidden />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={t("homeEditMoveDown", { name })}
+                        disabled={saving || index === config.shelves.length - 1}
+                        onClick={() => move(index, index + 1)}
+                      >
+                        <ChevronDown aria-hidden />
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          disabled={saving || config === null}
-          onClick={() => setShowAddDialog(true)}
-        >
-          <Plus className="mr-1.5 size-4" aria-hidden />
-          {t("homeAddShelf")}
-        </Button>
+      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] pt-4">
         <Button disabled={saving || config === null} onClick={save}>
           {t("homeEditSave")}
         </Button>
         <Button variant="outline" disabled={saving} onClick={onClose}>
           {t("homeEditCancel")}
         </Button>
-        <Button variant="ghost" className="ml-auto" disabled={saving} onClick={reset}>
+        <Button
+          variant="ghost"
+          className="ml-auto text-[var(--text-secondary)]"
+          disabled={saving}
+          onClick={reset}
+        >
           {t("homeEditReset")}
         </Button>
       </div>

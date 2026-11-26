@@ -40,6 +40,9 @@ const GROUP_LABELS: Record<HomeFilterField["group"], string> = {
   entities: "People & Tags",
 };
 
+const INPUT_CLS =
+  "h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--control-bg)] px-2.5 text-xs transition-colors hover:bg-[var(--control-bg-hover)] focus:border-primary focus:outline-none";
+
 export function HomeRuleBuilder({
   group,
   fields,
@@ -106,21 +109,23 @@ export function HomeRuleBuilder({
   return (
     <div
       className={
-        "flex flex-col gap-2 rounded-md border border-[var(--border)] p-3" +
-        (depth > 0 ? " bg-muted/20" : "")
+        "flex flex-col gap-3 rounded-xl p-3.5 " +
+        (depth > 0
+          ? "border border-[var(--border-subtle)] bg-[var(--bg-surface)]/80"
+          : "bg-[var(--bg-root)]/45")
       }
     >
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-md border border-[var(--border)] p-0.5 text-xs">
+        <div className="inline-flex rounded-lg bg-[var(--bg-surface)] p-0.5 text-xs">
           {(["all", "any", "none"] as const).map((mode) => (
             <button
               key={mode}
               type="button"
               onClick={() => onChange({ ...group, match: mode })}
               className={
-                "rounded px-2 py-1 font-medium transition-colors " +
+                "rounded-md px-2.5 py-1 font-medium transition-colors " +
                 (group.match === mode
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-primary text-primary-foreground shadow-xs"
                   : "text-[var(--text-secondary)] hover:text-foreground")
               }
             >
@@ -159,7 +164,7 @@ export function HomeRuleBuilder({
       </div>
 
       {group.conditions.length === 0 ? (
-        <p className="text-xs text-[var(--text-secondary)]">
+        <p className="text-xs text-[var(--text-muted)]">
           No rules yet — matches all items in the selected libraries.
         </p>
       ) : (
@@ -189,7 +194,7 @@ export function HomeRuleBuilder({
             return (
               <div
                 key={`r-${index}`}
-                className="flex flex-wrap items-center gap-2 rounded border border-[var(--border)]/60 bg-background/40 p-2"
+                className="flex flex-wrap items-center gap-2 rounded-lg bg-[var(--bg-surface)]/80 p-2.5"
               >
                 <select
                   aria-label="Rule field"
@@ -203,7 +208,7 @@ export function HomeRuleBuilder({
                       value: nextField?.valueType === "number" ? 0 : "",
                     });
                   }}
-                  className="h-8 rounded border border-[var(--border)] bg-background px-2 text-xs"
+                  className={INPUT_CLS}
                 >
                   {groupedFields.map((grp) => (
                     <optgroup key={grp.group} label={GROUP_LABELS[grp.group]}>
@@ -237,7 +242,7 @@ export function HomeRuleBuilder({
                     }
                     updateCondition(index, { field: node.field, op: nextOp, value: nextVal });
                   }}
-                  className="h-8 rounded border border-[var(--border)] bg-background px-2 text-xs"
+                  className={INPUT_CLS}
                 >
                   {ops.map((op) => (
                     <option key={op} value={op}>
@@ -247,7 +252,7 @@ export function HomeRuleBuilder({
                 </select>
 
                 {!isBoolOp && isBetweenOp && (
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <input
                       type="number"
                       aria-label="Minimum value"
@@ -257,9 +262,9 @@ export function HomeRuleBuilder({
                         arr[0] = Number(e.target.value);
                         updateCondition(index, { ...node, value: arr });
                       }}
-                      className="h-8 w-20 rounded border border-[var(--border)] bg-background px-2 text-xs"
+                      className={`${INPUT_CLS} w-20`}
                     />
-                    <span className="text-xs text-[var(--text-secondary)]">–</span>
+                    <span className="text-xs text-[var(--text-muted)]">–</span>
                     <input
                       type="number"
                       aria-label="Maximum value"
@@ -269,13 +274,13 @@ export function HomeRuleBuilder({
                         arr[1] = Number(e.target.value);
                         updateCondition(index, { ...node, value: arr });
                       }}
-                      className="h-8 w-20 rounded border border-[var(--border)] bg-background px-2 text-xs"
+                      className={`${INPUT_CLS} w-20`}
                     />
                   </div>
                 )}
 
                 {!isBoolOp && isListOp && (
-                  <div className="flex min-w-44 flex-1 flex-col gap-1">
+                  <div className="flex min-w-44 flex-1 flex-col gap-1.5">
                     <input
                       type="text"
                       aria-label="Comma-separated values"
@@ -290,7 +295,7 @@ export function HomeRuleBuilder({
                           .filter(Boolean);
                         updateCondition(index, { ...node, value: list });
                       }}
-                      className="h-8 w-full rounded border border-[var(--border)] bg-background px-2 text-xs"
+                      className={`${INPUT_CLS} w-full`}
                     />
                     {fieldSpec?.suggestions && fieldSpec.suggestions.length > 0 && (
                       <div className="flex flex-wrap gap-1">
@@ -308,10 +313,10 @@ export function HomeRuleBuilder({
                                 updateCondition(index, { ...node, value: next });
                               }}
                               className={
-                                "rounded-full border px-2 py-0.5 text-[10px] transition-colors " +
+                                "rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors " +
                                 (active
-                                  ? "border-primary bg-primary/15 text-primary"
-                                  : "border-[var(--border)] text-[var(--text-secondary)] hover:text-foreground")
+                                  ? "bg-primary/15 text-primary ring-1 ring-primary/40"
+                                  : "bg-[var(--control-bg)] text-[var(--text-secondary)] hover:bg-[var(--control-bg-hover)] hover:text-foreground")
                               }
                             >
                               {s}
@@ -337,14 +342,14 @@ export function HomeRuleBuilder({
                           value: Math.max(1, Number(e.target.value)),
                         })
                       }
-                      className="h-8 w-20 rounded border border-[var(--border)] bg-background px-2 text-xs"
+                      className={`${INPUT_CLS} w-20`}
                     />
                     {[7, 30, 90, 365].map((days) => (
                       <button
                         key={days}
                         type="button"
                         onClick={() => updateCondition(index, { ...node, value: days })}
-                        className="rounded border border-[var(--border)] px-1.5 py-0.5 text-[11px] hover:bg-muted"
+                        className="rounded-md bg-[var(--control-bg)] px-2 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--control-bg-hover)] hover:text-foreground"
                       >
                         {days}d
                       </button>
@@ -374,7 +379,7 @@ export function HomeRuleBuilder({
                             : e.target.value;
                         updateCondition(index, { ...node, value: v });
                       }}
-                      className="h-8 min-w-36 flex-1 rounded border border-[var(--border)] bg-background px-2 text-xs"
+                      className={`${INPUT_CLS} min-w-36 flex-1`}
                     />
                     {fieldSpec?.suggestions && fieldSpec.suggestions.length > 0 && (
                       <datalist id={`rule-sugg-${depth}-${index}`}>
@@ -391,6 +396,7 @@ export function HomeRuleBuilder({
                   variant="ghost"
                   size="icon-sm"
                   aria-label="Remove rule"
+                  className="text-[var(--text-muted)] hover:text-foreground"
                   onClick={() => removeCondition(index)}
                 >
                   <Trash2 className="size-3.5" aria-hidden />

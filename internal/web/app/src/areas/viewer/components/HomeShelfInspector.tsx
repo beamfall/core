@@ -43,6 +43,20 @@ const SORT_OPTIONS = [
   { value: "random", label: "Random" },
 ];
 
+const CONTROL_CLS =
+  "h-9 rounded-lg border border-[var(--border-subtle)] bg-[var(--control-bg)] px-3 text-sm transition-colors hover:bg-[var(--control-bg-hover)] focus:border-primary focus:outline-none";
+
+function previewAspectClass(slot: HomeArtworkSlot): string {
+  switch (slot) {
+    case "square":
+      return "aspect-square";
+    case "landscape":
+      return "aspect-video";
+    default:
+      return "aspect-[2/3]";
+  }
+}
+
 export function HomeShelfInspector({
   shelf,
   schema: initialSchema,
@@ -183,10 +197,13 @@ export function HomeShelfInspector({
       aria-label={draft.title || "Edit shelf"}
       className="fixed inset-0 z-50 flex justify-end bg-background/80 backdrop-blur-xs"
     >
-      <div className="flex h-full w-full max-w-2xl flex-col gap-4 overflow-y-auto border-l border-[var(--border)] bg-background p-6 shadow-2xl">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold">{draft.title || "Edit shelf"}</h3>
-          <div className="flex items-center gap-2">
+      <div className="flex h-full w-full max-w-2xl flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-2xl">
+        {/* Sticky Header */}
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-6 py-4">
+          <h3 className="truncate text-lg font-semibold tracking-tight">
+            {draft.title || "Edit shelf"}
+          </h3>
+          <div className="flex shrink-0 items-center gap-2">
             <Button type="button" variant="outline" size="sm" onClick={onCancel}>
               {t("homeEditCancel")}
             </Button>
@@ -196,410 +213,440 @@ export function HomeShelfInspector({
           </div>
         </div>
 
-        {/* Title & Source Type */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">{t("homeShelfTitle")}</span>
-            <input
-              type="text"
-              value={draft.title}
-              maxLength={120}
-              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-              className="h-9 rounded-md border border-[var(--border)] bg-background px-3 text-sm"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">Source type</span>
-            <select
-              aria-label="Source type"
-              value={draft.source.type === "playlist" ? "collection" : draft.source.type}
-              onChange={(e) => switchSourceType(e.target.value as HomeShelfSourceType)}
-              className="h-9 rounded-md border border-[var(--border)] bg-background px-3 text-sm"
-            >
-              <option value="builtin">Built-in feed</option>
-              <option value="rules">Smart rules</option>
-              <option value="collection">Collection / Playlist</option>
-              <option value="saved-filter">Saved filter</option>
-              <option value="library">Library</option>
-              <option value="entity">Tag / Category</option>
-            </select>
-          </label>
-        </div>
-
-        {/* Library Scope */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">{t("homeShelfLibraries")}</span>
-            <button
-              type="button"
-              onClick={() => setDraft({ ...draft, source: { ...draft.source, libraryIDs: [] } })}
-              className={
-                "text-xs underline-offset-2 " +
-                (selectedLibs.length === 0
-                  ? "font-semibold text-primary"
-                  : "text-[var(--text-secondary)] hover:underline")
-              }
-            >
-              {t("homeShelfAllLibraries")}
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {schema.libraries.map((lib) => {
-              const active = selectedLibs.includes(lib.id);
-              return (
-                <button
-                  key={lib.id}
-                  type="button"
-                  onClick={() => toggleLibrary(lib.id)}
-                  className={
-                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
-                    (active
-                      ? "border-primary bg-primary/15 text-primary"
-                      : "border-[var(--border)] text-[var(--text-secondary)] hover:text-foreground")
-                  }
-                >
-                  {lib.title}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Source-specific controls */}
-        {draft.source.type === "builtin" && (
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">Feed</span>
-            <select
-              value={draft.source.builtinKind ?? "recently-added"}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  source: { ...draft.source, builtinKind: e.target.value },
-                })
-              }
-              className="h-9 rounded-md border border-[var(--border)] bg-background px-3 text-sm"
-            >
-              {BUILTIN_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {(draft.source.type === "collection" || draft.source.type === "playlist") && (
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">Collection / Playlist</span>
-            <select
-              value={draft.source.collectionID ?? draft.source.playlistID ?? ""}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  source: {
-                    ...draft.source,
-                    type: "collection",
-                    collectionID: e.target.value,
-                    playlistID: undefined,
-                  },
-                })
-              }
-              className="h-9 rounded-md border border-[var(--border)] bg-background px-3 text-sm"
-            >
-              {schema.pinnables.smartCollections.map((sc) => (
-                <option key={sc.id} value={sc.id}>
-                  Smart: {sc.name}
-                </option>
-              ))}
-              {schema.pinnables.collections.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {draft.source.type === "saved-filter" && (
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">Saved Filter</span>
-            <select
-              value={draft.source.savedFilterID ?? ""}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  source: { ...draft.source, savedFilterID: e.target.value },
-                })
-              }
-              className="h-9 rounded-md border border-[var(--border)] bg-background px-3 text-sm"
-            >
-              {schema.pinnables.savedFilters.map((sf) => (
-                <option key={sf.id} value={sf.id}>
-                  {sf.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {draft.source.type === "entity" && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {/* Scrollable Body */}
+        <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-5">
+          {/* Title & Source Type */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium">Category / Tag kind</span>
-              <select
-                value={draft.source.entityKind ?? ""}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    source: { ...draft.source, entityKind: e.target.value },
-                  })
-                }
-                className="h-9 rounded-md border border-[var(--border)] bg-background px-3 text-sm"
-              >
-                {schema.fields
-                  .filter((f) => f.valueType === "entity")
-                  .map((f) => {
-                    const kind = f.key.replace(/^entity:/, "");
-                    return (
-                      <option key={kind} value={kind}>
-                        {typeof f.label === "string" ? f.label : (f.label.en ?? kind)}
-                      </option>
-                    );
-                  })}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium">Name</span>
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
+                {t("homeShelfTitle")}
+              </span>
               <input
                 type="text"
-                list="home-entity-suggestions"
-                value={draft.source.entityName ?? ""}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    source: { ...draft.source, entityName: e.target.value, entityID: "" },
-                  })
-                }
-                className="h-9 rounded-md border border-[var(--border)] bg-background px-3 text-sm"
+                value={draft.title}
+                maxLength={120}
+                onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                className={CONTROL_CLS}
               />
-              <datalist id="home-entity-suggestions">
-                {(
-                  schema.fields.find((f) => f.key === `entity:${draft.source.entityKind ?? ""}`)
-                    ?.suggestions ?? []
-                ).map((s) => (
-                  <option key={s} value={s} />
-                ))}
-              </datalist>
+            </label>
+
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="text-xs font-medium text-[var(--text-secondary)]">Source type</span>
+              <select
+                aria-label="Source type"
+                value={draft.source.type === "playlist" ? "collection" : draft.source.type}
+                onChange={(e) => switchSourceType(e.target.value as HomeShelfSourceType)}
+                className={CONTROL_CLS}
+              >
+                <option value="builtin">Built-in feed</option>
+                <option value="rules">Smart rules</option>
+                <option value="collection">Collection / Playlist</option>
+                <option value="saved-filter">Saved filter</option>
+                <option value="library">Library</option>
+                <option value="entity">Tag / Category</option>
+              </select>
             </label>
           </div>
-        )}
 
-        {(draft.source.type === "rules" || draft.source.type === "builtin") && (
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">
-              {draft.source.type === "builtin" ? "Optional post-filter rules" : t("homeShelfRules")}
+          {/* Library Scope */}
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium text-[var(--text-secondary)]">
+              {t("homeShelfLibraries")}
             </span>
-            <HomeRuleBuilder
-              group={draft.source.rules ?? { match: "all", conditions: [] }}
-              fields={schema.fields}
-              onChange={(rules) => setDraft({ ...draft, source: { ...draft.source, rules } })}
-            />
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setDraft({ ...draft, source: { ...draft.source, libraryIDs: [] } })}
+                className={
+                  "rounded-full px-3 py-1.5 text-xs font-medium transition-colors " +
+                  (selectedLibs.length === 0
+                    ? "bg-primary/15 text-primary ring-1 ring-primary/40"
+                    : "bg-[var(--control-bg)] text-[var(--text-secondary)] hover:bg-[var(--control-bg-hover)] hover:text-foreground")
+                }
+              >
+                {t("homeShelfAllLibraries")}
+              </button>
+              {schema.libraries.map((lib) => {
+                const active = selectedLibs.includes(lib.id);
+                return (
+                  <button
+                    key={lib.id}
+                    type="button"
+                    onClick={() => toggleLibrary(lib.id)}
+                    className={
+                      "rounded-full px-3 py-1.5 text-xs font-medium transition-colors " +
+                      (active
+                        ? "bg-primary/15 text-primary ring-1 ring-primary/40"
+                        : "bg-[var(--control-bg)] text-[var(--text-secondary)] hover:bg-[var(--control-bg-hover)] hover:text-foreground")
+                    }
+                  >
+                    {lib.title}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        )}
 
-        {draft.source.type === "rules" && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="font-medium">{t("homeShelfSortBy")}</span>
+          {/* Source-specific controls */}
+          {draft.source.type === "builtin" && (
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="text-xs font-medium text-[var(--text-secondary)]">Feed</span>
               <select
-                value={draft.source.sort?.by ?? "added"}
+                value={draft.source.builtinKind ?? "recently-added"}
                 onChange={(e) =>
                   setDraft({
                     ...draft,
-                    source: {
-                      ...draft.source,
-                      sort: {
-                        by: e.target.value,
-                        desc: draft.source.sort?.desc ?? true,
-                        randomSeedMode: draft.source.sort?.randomSeedMode ?? "daily",
-                      },
-                    },
+                    source: { ...draft.source, builtinKind: e.target.value },
                   })
                 }
-                className="h-8 rounded border border-[var(--border)] bg-background px-2 text-xs"
+                className={CONTROL_CLS}
               >
-                {SORT_OPTIONS.map((opt) => (
+                {BUILTIN_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
                 ))}
               </select>
             </label>
+          )}
 
-            <label className="flex items-center gap-2 self-end pb-1.5 text-xs">
-              <Switch
-                checked={draft.source.sort?.desc ?? true}
-                onCheckedChange={(desc) =>
+          {(draft.source.type === "collection" || draft.source.type === "playlist") && (
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
+                Collection / Playlist
+              </span>
+              <select
+                value={draft.source.collectionID ?? draft.source.playlistID ?? ""}
+                onChange={(e) =>
                   setDraft({
                     ...draft,
                     source: {
                       ...draft.source,
-                      sort: {
-                        by: draft.source.sort?.by ?? "added",
-                        desc,
-                        randomSeedMode: draft.source.sort?.randomSeedMode ?? "",
-                      },
+                      type: "collection",
+                      collectionID: e.target.value,
+                      playlistID: undefined,
                     },
                   })
                 }
-              />
-              <span>{t("homeShelfSortDesc")}</span>
+                className={CONTROL_CLS}
+              >
+                {schema.pinnables.smartCollections.map((sc) => (
+                  <option key={sc.id} value={sc.id}>
+                    Smart: {sc.name}
+                  </option>
+                ))}
+                {schema.pinnables.collections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </label>
+          )}
 
-            {draft.source.sort?.by === "random" && (
-              <label className="flex flex-col gap-1 text-xs">
-                <span className="font-medium">Refresh cadence</span>
+          {draft.source.type === "saved-filter" && (
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="text-xs font-medium text-[var(--text-secondary)]">Saved Filter</span>
+              <select
+                value={draft.source.savedFilterID ?? ""}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    source: { ...draft.source, savedFilterID: e.target.value },
+                  })
+                }
+                className={CONTROL_CLS}
+              >
+                {schema.pinnables.savedFilters.map((sf) => (
+                  <option key={sf.id} value={sf.id}>
+                    {sf.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {draft.source.type === "entity" && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="text-xs font-medium text-[var(--text-secondary)]">
+                  Category / Tag kind
+                </span>
                 <select
-                  value={draft.source.sort?.randomSeedMode ?? "daily"}
+                  value={draft.source.entityKind ?? ""}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      source: { ...draft.source, entityKind: e.target.value },
+                    })
+                  }
+                  className={CONTROL_CLS}
+                >
+                  {schema.fields
+                    .filter((f) => f.valueType === "entity")
+                    .map((f) => {
+                      const kind = f.key.replace(/^entity:/, "");
+                      return (
+                        <option key={kind} value={kind}>
+                          {typeof f.label === "string" ? f.label : (f.label.en ?? kind)}
+                        </option>
+                      );
+                    })}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="text-xs font-medium text-[var(--text-secondary)]">Name</span>
+                <input
+                  type="text"
+                  list="home-entity-suggestions"
+                  value={draft.source.entityName ?? ""}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      source: { ...draft.source, entityName: e.target.value, entityID: "" },
+                    })
+                  }
+                  className={CONTROL_CLS}
+                />
+                <datalist id="home-entity-suggestions">
+                  {(
+                    schema.fields.find((f) => f.key === `entity:${draft.source.entityKind ?? ""}`)
+                      ?.suggestions ?? []
+                  ).map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              </label>
+            </div>
+          )}
+
+          {(draft.source.type === "rules" || draft.source.type === "builtin") && (
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
+                {draft.source.type === "builtin"
+                  ? "Optional post-filter rules"
+                  : t("homeShelfRules")}
+              </span>
+              <HomeRuleBuilder
+                group={draft.source.rules ?? { match: "all", conditions: [] }}
+                fields={schema.fields}
+                onChange={(rules) => setDraft({ ...draft, source: { ...draft.source, rules } })}
+              />
+            </div>
+          )}
+
+          {draft.source.type === "rules" && (
+            <div className="grid grid-cols-1 gap-3 rounded-xl bg-[var(--bg-root)]/45 p-4 sm:grid-cols-3">
+              <label className="flex flex-col gap-1.5 text-xs">
+                <span className="font-medium text-[var(--text-secondary)]">
+                  {t("homeShelfSortBy")}
+                </span>
+                <select
+                  value={draft.source.sort?.by ?? "added"}
                   onChange={(e) =>
                     setDraft({
                       ...draft,
                       source: {
                         ...draft.source,
                         sort: {
-                          by: "random",
-                          desc: false,
-                          randomSeedMode: e.target.value as HomeRandomSeedMode,
+                          by: e.target.value,
+                          desc: draft.source.sort?.desc ?? true,
+                          randomSeedMode: draft.source.sort?.randomSeedMode ?? "daily",
                         },
                       },
                     })
                   }
-                  className="h-8 rounded border border-[var(--border)] bg-background px-2 text-xs"
+                  className={CONTROL_CLS}
                 >
-                  <option value="session">Every visit</option>
-                  <option value="hourly">Hourly</option>
-                  <option value="daily">Daily</option>
+                  {SORT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
               </label>
-            )}
-          </div>
-        )}
 
-        {/* Display Controls */}
-        <div className="grid grid-cols-2 gap-3 rounded-md border border-[var(--border)] p-3 sm:grid-cols-4">
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium">{t("homeShelfStyle")}</span>
-            <select
-              value={draft.display.style}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  display: { ...draft.display, style: e.target.value as HomeShelfStyle },
-                })
-              }
-              className="h-8 rounded border border-[var(--border)] bg-background px-2 text-xs"
-            >
-              <option value="shelf">{t("homeShelfStyleRail")}</option>
-              <option value="grid">{t("homeShelfStyleGrid")}</option>
-              <option value="list">{t("homeShelfStyleList")}</option>
-            </select>
-          </label>
+              <label className="flex items-center gap-2.5 self-end pb-2 text-xs whitespace-nowrap">
+                <Switch
+                  checked={draft.source.sort?.desc ?? true}
+                  onCheckedChange={(desc) =>
+                    setDraft({
+                      ...draft,
+                      source: {
+                        ...draft.source,
+                        sort: {
+                          by: draft.source.sort?.by ?? "added",
+                          desc,
+                          randomSeedMode: draft.source.sort?.randomSeedMode ?? "",
+                        },
+                      },
+                    })
+                  }
+                />
+                <span>{t("homeShelfSortDesc")}</span>
+              </label>
 
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium">{t("homeShelfArtwork")}</span>
-            <select
-              value={draft.display.artworkSlot}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  display: {
-                    ...draft.display,
-                    artworkSlot: e.target.value as HomeArtworkSlot,
-                  },
-                })
-              }
-              className="h-8 rounded border border-[var(--border)] bg-background px-2 text-xs"
-            >
-              <option value="auto">Auto</option>
-              <option value="poster">Poster</option>
-              <option value="landscape">Landscape</option>
-              <option value="square">Square</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium">
-              {t("homeShelfLimit")} ({draft.display.limit})
-            </span>
-            <input
-              type="range"
-              min={4}
-              max={50}
-              value={draft.display.limit}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  display: { ...draft.display, limit: Number(e.target.value) },
-                })
-              }
-              className="mt-2"
-            />
-          </label>
-
-          <label className="flex items-center gap-2 self-end pb-1 text-xs">
-            <Switch
-              checked={draft.hideWhenEmpty}
-              onCheckedChange={(hideWhenEmpty) => setDraft({ ...draft, hideWhenEmpty })}
-            />
-            <span>{t("homeShelfHideEmpty")}</span>
-          </label>
-        </div>
-
-        {/* Live Preview Strip */}
-        <div className="mt-auto flex flex-col gap-2 rounded-md border border-[var(--border)] bg-muted/20 p-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-medium">Live Preview</span>
-            <span className="text-[var(--text-secondary)]">
-              {previewLoading
-                ? t("loading")
-                : preview
-                  ? preview.totalCount === 0
-                    ? t("homeShelfPreviewEmpty")
-                    : t("homeShelfPreviewMatches", { count: String(preview.totalCount) })
-                  : ""}
-            </span>
-          </div>
-          {preview && preview.items.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {preview.items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex w-24 shrink-0 flex-col gap-1 rounded border border-[var(--border)]/60 bg-background/60 p-1.5"
-                >
-                  <div className="aspect-[2/3] w-full overflow-hidden rounded bg-muted/40">
-                    {item.artwork?.poster ? (
-                      <img
-                        src={item.artwork.poster}
-                        alt={item.title}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] text-[var(--text-secondary)]">
-                        {item.title}
-                      </div>
-                    )}
-                  </div>
-                  <span className="truncate text-[11px] font-medium">{item.title}</span>
-                  {item.summary && (
-                    <span className="truncate text-[10px] text-[var(--text-secondary)]">
-                      {item.summary}
-                    </span>
-                  )}
-                </div>
-              ))}
+              {draft.source.sort?.by === "random" && (
+                <label className="flex flex-col gap-1.5 text-xs">
+                  <span className="font-medium text-[var(--text-secondary)]">Refresh cadence</span>
+                  <select
+                    value={draft.source.sort?.randomSeedMode ?? "daily"}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        source: {
+                          ...draft.source,
+                          sort: {
+                            by: "random",
+                            desc: false,
+                            randomSeedMode: e.target.value as HomeRandomSeedMode,
+                          },
+                        },
+                      })
+                    }
+                    className={CONTROL_CLS}
+                  >
+                    <option value="session">Every visit</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                  </select>
+                </label>
+              )}
             </div>
           )}
+
+          {/* Display Controls */}
+          <div className="flex flex-col gap-4 rounded-xl bg-[var(--bg-root)]/45 p-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5 text-xs">
+                <span className="font-medium text-[var(--text-secondary)]">
+                  {t("homeShelfStyle")}
+                </span>
+                <select
+                  value={draft.display.style}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      display: { ...draft.display, style: e.target.value as HomeShelfStyle },
+                    })
+                  }
+                  className={CONTROL_CLS}
+                >
+                  <option value="shelf">{t("homeShelfStyleRail")}</option>
+                  <option value="grid">{t("homeShelfStyleGrid")}</option>
+                  <option value="list">{t("homeShelfStyleList")}</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1.5 text-xs">
+                <span className="font-medium text-[var(--text-secondary)]">
+                  {t("homeShelfArtwork")}
+                </span>
+                <select
+                  value={draft.display.artworkSlot}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      display: {
+                        ...draft.display,
+                        artworkSlot: e.target.value as HomeArtworkSlot,
+                      },
+                    })
+                  }
+                  className={CONTROL_CLS}
+                >
+                  <option value="auto">Auto</option>
+                  <option value="poster">Poster</option>
+                  <option value="landscape">Landscape</option>
+                  <option value="square">Square</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 items-center gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-[var(--text-secondary)]">
+                    {t("homeShelfLimit")}
+                  </span>
+                  <span className="tabular-nums font-semibold text-foreground">
+                    {draft.display.limit}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={4}
+                  max={50}
+                  value={draft.display.limit}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      display: { ...draft.display, limit: Number(e.target.value) },
+                    })
+                  }
+                  className="w-full accent-primary"
+                />
+              </label>
+
+              <label className="flex items-center justify-between gap-3 pt-2 text-xs whitespace-nowrap sm:justify-end">
+                <span className="font-medium text-[var(--text-secondary)]">
+                  {t("homeShelfHideEmpty")}
+                </span>
+                <Switch
+                  checked={draft.hideWhenEmpty}
+                  onCheckedChange={(hideWhenEmpty) => setDraft({ ...draft, hideWhenEmpty })}
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Live Preview Strip */}
+          <div className="flex flex-col gap-3 rounded-xl bg-[var(--bg-root)]/45 p-4">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium text-[var(--text-secondary)]">Live Preview</span>
+              <span className="text-[var(--text-muted)]">
+                {previewLoading
+                  ? t("loading")
+                  : preview
+                    ? preview.totalCount === 0
+                      ? t("homeShelfPreviewEmpty")
+                      : t("homeShelfPreviewMatches", { count: String(preview.totalCount) })
+                    : ""}
+              </span>
+            </div>
+            {preview && preview.items.length > 0 && (
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {preview.items.map((item) => (
+                  <div key={item.id} className="flex w-26 shrink-0 flex-col gap-1.5">
+                    <div
+                      className={
+                        "w-full overflow-hidden rounded-lg bg-[var(--bg-raised)] shadow-sm " +
+                        previewAspectClass(draft.display.artworkSlot)
+                      }
+                    >
+                      {item.artwork?.poster ? (
+                        <img
+                          src={item.artwork.poster}
+                          alt={item.title}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center px-2 text-center text-[10px] text-[var(--text-muted)]">
+                          {item.title}
+                        </div>
+                      )}
+                    </div>
+                    <span className="truncate text-xs font-medium">{item.title}</span>
+                    {item.summary && (
+                      <span className="truncate text-[11px] text-[var(--text-muted)]">
+                        {item.summary}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

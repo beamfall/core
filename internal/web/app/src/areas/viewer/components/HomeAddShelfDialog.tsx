@@ -132,9 +132,9 @@ export function HomeAddShelfDialog({ schema, onAddShelves, onClose }: HomeAddShe
       aria-label={t("homeAddShelf")}
       className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-xs"
     >
-      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-5 overflow-y-auto rounded-xl border border-[var(--border)] bg-background p-6 shadow-2xl">
+      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-5 overflow-y-auto rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-2xl">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">{t("homeAddShelf")}</h3>
+          <h3 className="text-lg font-semibold tracking-tight">{t("homeAddShelf")}</h3>
           <Button type="button" variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
             <X className="size-4" aria-hidden />
           </Button>
@@ -144,7 +144,7 @@ export function HomeAddShelfDialog({ schema, onAddShelves, onClose }: HomeAddShe
         <button
           type="button"
           onClick={addCustomSmartShelf}
-          className="flex items-center gap-3 rounded-lg border border-primary/40 bg-primary/10 p-4 text-left transition-colors hover:bg-primary/15"
+          className="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 p-4 text-left transition-colors hover:bg-primary/15"
         >
           <Sparkles className="size-5 shrink-0 text-primary" aria-hidden />
           <div>
@@ -155,7 +155,7 @@ export function HomeAddShelfDialog({ schema, onAddShelves, onClose }: HomeAddShe
 
         {/* Quick Presets */}
         <div className="flex flex-col gap-2">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             {t("homePresetsTitle")}
           </h4>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
