@@ -134,16 +134,17 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		}
 		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, authoritative)
 	}
-	// A file with extracted local metadata imports on its own, like a still:
-	// a queued part or an attached version would drop it.
-	standalone := imported.Class == store.MediaClassImage || len(task.local) > 0
+	// Files in a local-extractor Library and still images always import on their
+	// own: fast and full paths must agree regardless of transient probe or
+	// extractor outcomes (CORE-3029).
+	standalone := s.importsStandalone(imported)
 	if !standalone && s.isParsedPart(parsed, parsedOK) {
 		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), task.probe.value.Chapters, task.probe.succeeded, false, nil); err != nil {
 			return err
 		}
 		return s.ctx.Err()
 	}
-	if err := s.flushPendingPartsUnlessInGroup(path, imported.Class == store.MediaClassImage); err != nil {
+	if err := s.flushPendingPartsUnlessInGroup(path, standalone); err != nil {
 		return err
 	}
 	versionKey := ""
@@ -334,9 +335,10 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			t.added = true
 		}
 	})
-	// A file with extracted local metadata imports on its own, like a still:
-	// a queued part or an attached version would drop it.
-	standalone := isImage || len(task.local) > 0
+	// Files in a local-extractor Library and still images always import on their
+	// own: fast and full paths must agree regardless of transient probe or
+	// extractor outcomes (CORE-3029).
+	standalone := s.importsStandalone(imported)
 	if !standalone && s.isParsedPart(parsed, parsedOK) {
 		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded, probeSucceeded, probeTags); err != nil {
 			return err
