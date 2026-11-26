@@ -1,6 +1,7 @@
 import { Play } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { itemTargetFor } from "../actions";
@@ -126,16 +127,18 @@ export function TrackList({
             </Link>
             {!item.locked && (
               <div className="bf-child-actions">
-                <button
-                  type="button"
-                  className="bf-row-play"
-                  aria-label={t("trackPlay", { title: item.title })}
-                  onClick={play}
-                  onPointerEnter={preloadPlayer}
-                  onFocus={preloadPlayer}
-                >
-                  <Play aria-hidden />
-                </button>
+                <ActionTooltip label={t("trackPlay", { title: item.title })}>
+                  <button
+                    type="button"
+                    className="bf-row-play"
+                    aria-label={t("trackPlay", { title: item.title })}
+                    onClick={play}
+                    onPointerEnter={preloadPlayer}
+                    onFocus={preloadPlayer}
+                  >
+                    <Play aria-hidden />
+                  </button>
+                </ActionTooltip>
                 <MediaItemCardMenu
                   title={item.title}
                   primaryLabel={t("play")}

@@ -1,5 +1,6 @@
 import { GalleryHorizontal, LayoutGrid, List, Table2 } from "lucide-react";
 import { useCallback, useState } from "react";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 import {
@@ -65,18 +66,19 @@ export function LibraryDisplayToggle({
     >
       {LIBRARY_VIEW_MODES.map((option) => {
         const Icon = MODE_ICONS[option];
+        const label = t(MODE_LABELS[option]);
         return (
-          <button
-            key={option}
-            type="button"
-            className="bf-chip bf-chip-square"
-            aria-label={t(MODE_LABELS[option])}
-            title={t(MODE_LABELS[option])}
-            aria-pressed={mode === option}
-            onClick={() => onChange(option)}
-          >
-            <Icon aria-hidden className="size-4" />
-          </button>
+          <ActionTooltip key={option} label={label}>
+            <button
+              type="button"
+              className="bf-chip bf-chip-square"
+              aria-label={label}
+              aria-pressed={mode === option}
+              onClick={() => onChange(option)}
+            >
+              <Icon aria-hidden className="size-4" />
+            </button>
+          </ActionTooltip>
         );
       })}
     </div>

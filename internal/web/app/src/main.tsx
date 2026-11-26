@@ -5,6 +5,7 @@ import "@fontsource-variable/instrument-sans/wght.css";
 import "./styles/global.css";
 import { AssignInterruptionNotice } from "@/components/assign/AssignInterruptionNotice";
 import { ShellErrorBoundary } from "@/components/chrome/ErrorBoundary";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { handOffSplash } from "@/lib/brandSplash";
 import { I18nProvider } from "@/lib/i18n";
 import { registerServiceWorker } from "@/lib/pwa";
@@ -32,18 +33,20 @@ function render() {
   createRoot(container as HTMLElement).render(
     <StrictMode>
       <I18nProvider>
-        <ShellErrorBoundary>
-          <BrowserRouter basename={basename}>
-            <RegisterProvider>
-              <SessionProvider>
-                <ThemePrefsSync />
-                <AssignInterruptionNotice>
-                  <App />
-                </AssignInterruptionNotice>
-              </SessionProvider>
-            </RegisterProvider>
-          </BrowserRouter>
-        </ShellErrorBoundary>
+        <TooltipProvider>
+          <ShellErrorBoundary>
+            <BrowserRouter basename={basename}>
+              <RegisterProvider>
+                <SessionProvider>
+                  <ThemePrefsSync />
+                  <AssignInterruptionNotice>
+                    <App />
+                  </AssignInterruptionNotice>
+                </SessionProvider>
+              </RegisterProvider>
+            </BrowserRouter>
+          </ShellErrorBoundary>
+        </TooltipProvider>
       </I18nProvider>
     </StrictMode>,
   );

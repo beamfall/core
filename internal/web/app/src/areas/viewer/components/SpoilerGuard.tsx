@@ -1,5 +1,6 @@
 import { EyeClosed, ScanEye } from "lucide-react";
 import type { MouseEvent } from "react";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import { useT } from "@/lib/i18n";
 import { artworkBucketURL } from "../lib/artwork";
 import {
@@ -51,17 +52,20 @@ export function SpoilerRevealButton({
   // Reads the shared guard without starting a load of its own.
   const loading = useSpoilerGuard(false).guardOn === null;
   if (state !== "hidden" && state !== "revealed") return null;
+  const label = t("spoilerRevealItem", { title });
   return (
-    <button
-      type="button"
-      className="bf-row-play bf-spoiler-reveal"
-      aria-label={t("spoilerRevealItem", { title })}
-      aria-pressed={state === "revealed"}
-      disabled={loading}
-      onClick={() => toggleItemReveal(itemID)}
-    >
-      <ScanEye aria-hidden />
-    </button>
+    <ActionTooltip label={label}>
+      <button
+        type="button"
+        className="bf-row-play bf-spoiler-reveal"
+        aria-label={label}
+        aria-pressed={state === "revealed"}
+        disabled={loading}
+        onClick={() => toggleItemReveal(itemID)}
+      >
+        <ScanEye aria-hidden />
+      </button>
+    </ActionTooltip>
   );
 }
 
