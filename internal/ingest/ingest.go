@@ -252,20 +252,34 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if err != nil {
 		return published, err
 	}
-	next := now.Add(clampPollInterval(DefaultPollInterval))
-	if moved {
-		next = now
-	}
 	etag, lastModified := result.ETag, result.LastModified
 	// Another observation needs the full feed. A validator from a temporary
 	// destination also cannot validate the canonical URL on the next poll.
 	if candidate || result.RedirectedTemporarily {
 		etag, lastModified = "", ""
 	}
+	nextFor := func() (time.Time, error) {
+		if moved {
+			return now, nil
+		}
+		interval, err := p.nextPollInterval(ctx, subscription, result, document, now)
+		if err != nil {
+			return time.Time{}, err
+		}
+		return now.Add(interval), nil
+	}
 	if result.NotModified {
+		next, err := nextFor()
+		if err != nil {
+			return published, err
+		}
 		return published, p.store.RecordSubscriptionPollSuccess(ctx, subscription, etag, lastModified, now, next)
 	}
 	selected, catalogued, err := p.catalogue(ctx, subscription, document, now)
+	if err != nil {
+		return published, err
+	}
+	next, err := nextFor()
 	if err != nil {
 		return published, err
 	}

@@ -378,7 +378,16 @@ type FeedDocument struct {
 	// ArtworkURL is the channel's itunes:image, else its RSS image url
 	// ("" when absent).
 	ArtworkURL string
-	Entries    []FeedEntry
+	// UpdateInterval is the channel's declared refresh interval from the Index
+	// updateFrequency extension, RSS <ttl>, or Syndication
+	// updatePeriod/updateFrequency (0 when absent or unparseable).
+	UpdateInterval time.Duration
+	// Complete is true when updateFrequency declares complete="true".
+	Complete bool
+	Entries  []FeedEntry
+	// UnguidedPubDates holds non-zero publication timestamps of feed items
+	// that omitted both an explicit GUID and an enclosure.
+	UnguidedPubDates []time.Time
 }
 
 // ParseFeedEntries extracts every entry's GUID, title, and enclosure from an
@@ -430,13 +439,14 @@ func ParseFeed(data []byte) (FeedDocument, error) {
 			}
 		}
 	}
+	document.UpdateInterval, document.Complete = parseFeedUpdateHints(root.children[0], channel)
 	if items := findElements([]*xmlNode{root}, "item"); len(items) > 0 {
-		document.Entries = rssEntries(items)
+		document.Entries, document.UnguidedPubDates = rssEntries(items)
 		return document, nil
 	}
 	// No <item> elements: either an Atom feed or an empty RSS one — Atom's
 	// <entry> lookup returns the empty list for both.
-	document.Entries = atomEntries(findElements([]*xmlNode{root}, "entry"))
+	document.Entries, document.UnguidedPubDates = atomEntries(findElements([]*xmlNode{root}, "entry"))
 	return document, nil
 }
 
@@ -508,8 +518,9 @@ func parseEnclosureLength(value string) int64 {
 	return n
 }
 
-func rssEntries(items []*xmlNode) []FeedEntry {
+func rssEntries(items []*xmlNode) ([]FeedEntry, []time.Time) {
 	entries := make([]FeedEntry, 0, len(items))
+	var unguided []time.Time
 	for _, item := range items {
 		entry := FeedEntry{
 			GUID:            childText(item, "guid"),
@@ -531,17 +542,21 @@ func rssEntries(items []*xmlNode) []FeedEntry {
 			entry.deriveGUID(childText(item, "link"), childText(item, "pubDate"))
 		}
 		if entry.GUID == "" {
+			if !entry.PublishedAt.IsZero() {
+				unguided = append(unguided, entry.PublishedAt)
+			}
 			continue
 		}
 		entries = append(entries, entry)
 	}
-	return entries
+	return entries, unguided
 }
 
 // atomEntries maps Atom's vocabulary onto the same FeedEntry shape: <id> is
 // the identity, and the enclosure is the first <link rel="enclosure">.
-func atomEntries(items []*xmlNode) []FeedEntry {
+func atomEntries(items []*xmlNode) ([]FeedEntry, []time.Time) {
 	entries := make([]FeedEntry, 0, len(items))
+	var unguided []time.Time
 	for _, item := range items {
 		entry := FeedEntry{
 			GUID:            childText(item, "id"),
@@ -566,11 +581,14 @@ func atomEntries(items []*xmlNode) []FeedEntry {
 			entry.deriveGUID(atomEntryLink(item), childText(item, "published"))
 		}
 		if entry.GUID == "" {
+			if !entry.PublishedAt.IsZero() {
+				unguided = append(unguided, entry.PublishedAt)
+			}
 			continue
 		}
 		entries = append(entries, entry)
 	}
-	return entries
+	return entries, unguided
 }
 
 func atomEntryLink(item *xmlNode) string {
@@ -613,4 +631,405 @@ func childText(scope *xmlNode, name string) string {
 		return ""
 	}
 	return strings.TrimSpace(matched[0].text)
+}
+
+const syndicationNamespace = "http://purl.org/rss/1.0/modules/syndication/"
+
+func parseFeedUpdateHints(docRoot, channel *xmlNode) (time.Duration, bool) {
+	var (
+		updateFreqDur time.Duration
+		complete      bool
+		ttlDur        time.Duration
+		syPeriod      time.Duration
+		hasSyPeriod   bool
+		syFreq        int
+		hasSyFreq     bool
+		syInvalid     bool
+	)
+	for _, child := range channel.children {
+		_, local, hasPrefix := splitXMLPrefix(child.name)
+		if isSyndicationElement(docRoot, channel, child) {
+			switch local {
+			case "updatePeriod":
+				if hasSyPeriod || syInvalid {
+					continue
+				}
+				period, ok := parseSyndicationPeriod(child.text)
+				if !ok {
+					syInvalid = true
+					continue
+				}
+				syPeriod = period
+				hasSyPeriod = true
+			case "updateFrequency":
+				if hasSyFreq || syInvalid {
+					continue
+				}
+				n, err := strconv.Atoi(strings.TrimSpace(child.text))
+				if err != nil || n <= 0 {
+					syInvalid = true
+					continue
+				}
+				syFreq = n
+				hasSyFreq = true
+			}
+			continue
+		}
+		switch local {
+		case "updateFrequency":
+			if !complete && updateFreqDur == 0 {
+				dur, done, ok := parseUpdateFrequencyNode(child)
+				if ok {
+					updateFreqDur = dur
+					complete = done
+				}
+			}
+		case "ttl":
+			if !hasPrefix && ttlDur == 0 {
+				if mins, err := strconv.Atoi(strings.TrimSpace(child.text)); err == nil && mins > 0 {
+					ttlDur = boundedDuration(int64(mins), time.Minute)
+				}
+			}
+		}
+	}
+	if complete {
+		return 24 * time.Hour, true
+	}
+	if updateFreqDur > 0 {
+		return updateFreqDur, false
+	}
+	if ttlDur > 0 {
+		return ttlDur, false
+	}
+	if !syInvalid && (hasSyPeriod || hasSyFreq) {
+		if !hasSyPeriod {
+			syPeriod = 24 * time.Hour
+		}
+		freq := 1
+		if hasSyFreq {
+			freq = syFreq
+		}
+		return syPeriod / time.Duration(freq), false
+	}
+	return 0, false
+}
+
+func isSyndicationElement(docRoot, channel, child *xmlNode) bool {
+	prefix, _, hasPrefix := splitXMLPrefix(child.name)
+	attr := "xmlns"
+	if hasPrefix {
+		attr = "xmlns:" + prefix
+	}
+	for _, node := range []*xmlNode{child, channel, docRoot} {
+		if node == nil {
+			continue
+		}
+		if val, ok := node.attrs[attr]; ok {
+			return strings.TrimSpace(val) == syndicationNamespace
+		}
+	}
+	return hasPrefix && prefix == "sy"
+}
+
+func splitXMLPrefix(name string) (prefix, local string, hasPrefix bool) {
+	if idx := strings.LastIndexByte(name, ':'); idx >= 0 {
+		return name[:idx], name[idx+1:], true
+	}
+	return "", name, false
+}
+
+func boundedDuration(count int64, unit time.Duration) time.Duration {
+	if count <= 0 || unit <= 0 {
+		return 0
+	}
+	limit := int64(maxParsedPollInterval / unit)
+	if count >= limit {
+		return maxParsedPollInterval
+	}
+	return time.Duration(count) * unit
+}
+
+func parseSyndicationPeriod(raw string) (time.Duration, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "hourly":
+		return time.Hour, true
+	case "daily":
+		return 24 * time.Hour, true
+	case "weekly":
+		return 7 * 24 * time.Hour, true
+	case "monthly":
+		return 30 * 24 * time.Hour, true
+	case "yearly":
+		return 365 * 24 * time.Hour, true
+	default:
+		return 0, false
+	}
+}
+
+func parseUpdateFrequencyNode(node *xmlNode) (interval time.Duration, complete bool, ok bool) {
+	if v := strings.TrimSpace(node.attrs["complete"]); strings.EqualFold(v, "true") || v == "1" {
+		return 24 * time.Hour, true, true
+	}
+	if rrule := strings.TrimSpace(node.attrs["rrule"]); rrule != "" {
+		if d, valid := parseRRuleInterval(rrule); valid {
+			return d, false, true
+		}
+	}
+	if d, valid := parseUpdateFrequencyText(node.text); valid {
+		return d, false, true
+	}
+	return 0, false, false
+}
+
+func boundedSubdividedDuration(count int64, unit time.Duration, divisor int64) time.Duration {
+	if count <= 0 || unit <= 0 || divisor <= 0 {
+		return 0
+	}
+	if divisor == 1 {
+		return boundedDuration(count, unit)
+	}
+	q := count / divisor
+	r := count % divisor
+	base := boundedDuration(q, unit)
+	if base >= maxParsedPollInterval {
+		return maxParsedPollInterval
+	}
+	rem := time.Duration(int64(unit)/divisor)*time.Duration(r) + time.Duration((int64(unit)%divisor)*r/divisor)
+	if rem >= maxParsedPollInterval-base {
+		return maxParsedPollInterval
+	}
+	return base + rem
+}
+
+func isValidRRuleByDay(tok string) bool {
+	if len(tok) < 2 {
+		return false
+	}
+	prefix := tok[:len(tok)-2]
+	wday := tok[len(tok)-2:]
+	switch wday {
+	case "MO", "TU", "WE", "TH", "FR", "SA", "SU":
+	default:
+		return false
+	}
+	if prefix == "" {
+		return true
+	}
+	if prefix[0] == '+' || prefix[0] == '-' {
+		prefix = prefix[1:]
+	}
+	n, err := strconv.Atoi(prefix)
+	return err == nil && n >= 1 && n <= 53
+}
+
+func parseRRuleInterval(raw string) (time.Duration, bool) {
+	var (
+		freq      string
+		interval  int64 = 1
+		seenDays        = map[string]bool{}
+		seenHours       = map[int]bool{}
+	)
+	for _, part := range strings.Split(raw, ";") {
+		key, val, found := strings.Cut(strings.TrimSpace(part), "=")
+		if !found {
+			continue
+		}
+		key = strings.ToUpper(strings.TrimSpace(key))
+		val = strings.ToUpper(strings.TrimSpace(val))
+		switch key {
+		case "FREQ":
+			freq = val
+		case "INTERVAL":
+			n, err := strconv.ParseInt(val, 10, 64)
+			if err != nil || n <= 0 {
+				return 0, false
+			}
+			interval = n
+		case "BYDAY":
+			for _, item := range strings.Split(val, ",") {
+				tok := strings.TrimSpace(item)
+				if tok == "" {
+					continue
+				}
+				if !isValidRRuleByDay(tok) {
+					return 0, false
+				}
+				seenDays[tok] = true
+			}
+		case "BYHOUR":
+			for _, item := range strings.Split(val, ",") {
+				tok := strings.TrimSpace(item)
+				if tok == "" {
+					continue
+				}
+				h, err := strconv.Atoi(tok)
+				if err != nil || h < 0 || h > 23 {
+					return 0, false
+				}
+				seenHours[h] = true
+			}
+		}
+	}
+	var unit time.Duration
+	occurrences := int64(1)
+	switch freq {
+	case "SECONDLY":
+		unit = time.Second
+	case "MINUTELY":
+		unit = time.Minute
+	case "HOURLY":
+		unit = time.Hour
+	case "DAILY":
+		unit = 24 * time.Hour
+		if len(seenHours) > 0 {
+			occurrences = int64(len(seenHours))
+		}
+	case "WEEKLY":
+		unit = 7 * 24 * time.Hour
+		if len(seenDays) > 0 {
+			occurrences *= int64(len(seenDays))
+		}
+		if len(seenHours) > 0 {
+			occurrences *= int64(len(seenHours))
+		}
+	case "MONTHLY":
+		unit = 30 * 24 * time.Hour
+		if len(seenHours) > 0 {
+			occurrences *= int64(len(seenHours))
+		}
+	case "YEARLY":
+		unit = 365 * 24 * time.Hour
+	default:
+		return 0, false
+	}
+	return boundedSubdividedDuration(interval, unit, occurrences), true
+}
+
+func parseUpdateFrequencyText(raw string) (time.Duration, bool) {
+	text := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(raw)), " "))
+	if text == "" {
+		return 0, false
+	}
+	switch text {
+	case "hourly", "every hour", "once an hour", "once per hour":
+		return time.Hour, true
+	case "twice hourly", "twice an hour":
+		return 30 * time.Minute, true
+	case "daily", "every day", "once a day", "once daily":
+		return 24 * time.Hour, true
+	case "twice daily", "twice a day":
+		return 12 * time.Hour, true
+	case "weekly", "every week", "once a week", "once weekly":
+		return 7 * 24 * time.Hour, true
+	case "twice weekly", "twice a week", "semiweekly", "semi-weekly":
+		return 84 * time.Hour, true
+	case "biweekly", "bi-weekly", "fortnightly", "every other week", "every two weeks":
+		return 14 * 24 * time.Hour, true
+	case "monthly", "every month", "once a month":
+		return 30 * 24 * time.Hour, true
+	case "bimonthly", "bi-monthly":
+		return 60 * 24 * time.Hour, true
+	case "yearly", "annually", "annual", "every year":
+		return 365 * 24 * time.Hour, true
+	}
+	if d, ok := parseISO8601Duration(text); ok {
+		return d, true
+	}
+	if d, err := time.ParseDuration(text); err == nil && d > 0 {
+		if d > maxParsedPollInterval {
+			return maxParsedPollInterval, true
+		}
+		return d, true
+	}
+	trimmed := strings.TrimPrefix(text, "every ")
+	fields := strings.Fields(trimmed)
+	if len(fields) == 2 {
+		n, err := strconv.ParseInt(fields[0], 10, 64)
+		if err != nil || n <= 0 {
+			return 0, false
+		}
+		unit := fields[1]
+		switch {
+		case strings.HasPrefix(unit, "sec"):
+			return boundedDuration(n, time.Second), true
+		case strings.HasPrefix(unit, "min"):
+			return boundedDuration(n, time.Minute), true
+		case unit == "h" || strings.HasPrefix(unit, "hour") || strings.HasPrefix(unit, "hr"):
+			return boundedDuration(n, time.Hour), true
+		case strings.HasPrefix(unit, "day"):
+			return boundedDuration(n, 24*time.Hour), true
+		case strings.HasPrefix(unit, "week"):
+			return boundedDuration(n, 7*24*time.Hour), true
+		case strings.HasPrefix(unit, "month"):
+			return boundedDuration(n, 30*24*time.Hour), true
+		case strings.HasPrefix(unit, "year"):
+			return boundedDuration(n, 365*24*time.Hour), true
+		}
+	}
+	return 0, false
+}
+
+func parseISO8601Duration(raw string) (time.Duration, bool) {
+	s := strings.ToUpper(strings.TrimSpace(raw))
+	if !strings.HasPrefix(s, "P") || len(s) < 2 {
+		return 0, false
+	}
+	s = s[1:]
+	inTime := false
+	var total time.Duration
+	sawPart := false
+	for len(s) > 0 {
+		if s[0] == 'T' {
+			inTime = true
+			s = s[1:]
+			continue
+		}
+		i := 0
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		if i == 0 || i >= len(s) {
+			return 0, false
+		}
+		n, err := strconv.ParseInt(s[:i], 10, 64)
+		if err != nil || n < 0 {
+			return 0, false
+		}
+		designator := s[i]
+		s = s[i+1:]
+		var unit time.Duration
+		if !inTime {
+			switch designator {
+			case 'Y':
+				unit = 365 * 24 * time.Hour
+			case 'M':
+				unit = 30 * 24 * time.Hour
+			case 'W':
+				unit = 7 * 24 * time.Hour
+			case 'D':
+				unit = 24 * time.Hour
+			default:
+				return 0, false
+			}
+		} else {
+			switch designator {
+			case 'H':
+				unit = time.Hour
+			case 'M':
+				unit = time.Minute
+			case 'S':
+				unit = time.Second
+			default:
+				return 0, false
+			}
+		}
+		sawPart = true
+		add := boundedDuration(n, unit)
+		if add >= maxParsedPollInterval-total {
+			total = maxParsedPollInterval
+		} else {
+			total += add
+		}
+	}
+	return total, sawPart && total > 0
 }
