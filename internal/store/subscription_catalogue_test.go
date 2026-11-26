@@ -456,3 +456,22 @@ func TestRecordSubscriptionMoveObservation(t *testing.T) {
 		t.Fatalf("colliding move rewrote the feed URL to %q", feedURL())
 	}
 }
+
+func TestUpsertSubscriptionCatalogInsertsNewestLast(t *testing.T) {
+	st, sub, now := catalogueFixture(t)
+	ctx := context.Background()
+	entries := catalogueEntries(5) // guid-00 is the newest
+	if _, err := st.UpsertSubscriptionCatalog(ctx, sub.ID, entries, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	var newest, oldest int64
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT rowid FROM media WHERE id = ?`, SubscriptionEntryMediaID(sub.LibraryID, sub.ID, "guid-00")).Scan(&newest); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT rowid FROM media WHERE id = ?`, SubscriptionEntryMediaID(sub.LibraryID, sub.ID, "guid-04")).Scan(&oldest); err != nil {
+		t.Fatal(err)
+	}
+	if newest <= oldest {
+		t.Fatalf("newest rowid %d <= oldest rowid %d; recently-added would list oldest first", newest, oldest)
+	}
+}

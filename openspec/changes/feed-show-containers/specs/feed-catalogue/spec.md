@@ -21,3 +21,13 @@ SHALL hold the feed's catalogue episodes through that relation.
 
 - **WHEN** the Library's plugin declares no such kind
 - **THEN** no Entity or artwork is written
+
+### Requirement: Catalogue insertion order is newest-last
+
+Catalogue entries SHALL be inserted in ascending publish-date order (ties keep feed order) so
+the `recently-added` source, which reads newest row first, lists the newest episode first. The
+entries a call returns SHALL stay in feed order.
+
+#### Scenario: newest episode lists first
+- **WHEN** a feed with five dated entries is catalogued
+- **THEN** the newest entry's media row sorts ahead of the oldest in `recently-added`
