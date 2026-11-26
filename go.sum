@@ -14,6 +14,8 @@ github.com/beamfall/plugin-photos v0.1.16 h1:5aZATupSzWTMUVn1rWpDaUtsV2uybT2hwPs
 github.com/beamfall/plugin-photos v0.1.16/go.mod h1:hbfOyuH/5W6DE2wAiW010MACKSm+necWdx7IuCPV8pU=
 github.com/beamfall/plugin-podcasts v0.1.16 h1:ZHj2kdNHPYmBNU9r6Ii+rptoop5yBtKfMS//ST/+FbY=
 github.com/beamfall/plugin-podcasts v0.1.16/go.mod h1:dQtplBQROEPZZooxhPtNoIFU5FAmjl1iXsJ2+OM+GWo=
+github.com/beamfall/plugin-podcasts v0.1.17 h1:nSu/dOKY1EhIOIX3ImZ6HaIavFEQtOKRpwAqwkf796c=
+github.com/beamfall/plugin-podcasts v0.1.17/go.mod h1:dQtplBQROEPZZooxhPtNoIFU5FAmjl1iXsJ2+OM+GWo=
 github.com/beamfall/plugin-sdk v0.4.15 h1:SolStLQqyMg73qizXI1xGCVAw/Vj4MjYUJXrD5XCDLE=
 github.com/beamfall/plugin-sdk v0.4.15/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
