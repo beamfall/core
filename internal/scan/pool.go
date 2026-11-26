@@ -68,6 +68,7 @@ type workerTask struct {
 	probe       probeOutcome
 	phash       string
 	local       []LocalMetadata
+	localClean  bool
 	err         error
 	done        chan struct{}
 }
