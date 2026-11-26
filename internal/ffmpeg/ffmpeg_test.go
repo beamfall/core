@@ -713,14 +713,22 @@ func TestRenditionRateControlArgsPerEncoder(t *testing.T) {
 		{"nvenc", HWAccelNVENC, "h264", []string{"-preset", "p4", "-forced-idr", "1", "-spatial-aq", "1", "-temporal-aq", "1", "-rc", "vbr", "-cq", "23", "-b:v", "0", "-maxrate", "6000k", "-bufsize", "12000k"}},
 		{"nvenc hevc", HWAccelNVENC, "hevc", []string{"-preset", "p4", "-forced-idr", "1", "-spatial-aq", "1", "-rc", "vbr", "-cq", "23", "-b:v", "0", "-maxrate", "6000k", "-bufsize", "12000k"}},
 		{"vaapi", HWAccelVAAPI, "h264", []string{"-rc_mode", "VBR", "-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}},
-		{"qsv", HWAccelQSV, "h264", []string{"-preset", "veryfast", "-forced_idr", "1", "-extbrc", "1", "-b:v", "6000k", "-maxrate", "6001k", "-bufsize", "12000k"}},
+		{"qsv", HWAccelQSV, "h264", []string{"-preset", "veryfast", "-forced_idr", "1", "-b:v", "6000k", "-maxrate", "6001k", "-bufsize", "12000k"}},
 		{"videotoolbox", HWAccelVideoToolbox, "h264", []string{"-profile:v", "high", "-realtime", "1", "-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := Rendition{VideoCodec: tc.codec, VideoKbps: 6000, hwAccel: tc.accel}
-			if got := r.rateControlArgs(); !equalArgs(got, tc.want) {
+			got := r.rateControlArgs()
+			if !equalArgs(got, tc.want) {
 				t.Fatalf("rateControlArgs = %v, want %v", got, tc.want)
+			}
+			if tc.accel == HWAccelQSV {
+				for _, arg := range got {
+					if arg == "-extbrc" {
+						t.Fatalf("QSV rateControlArgs must not force -extbrc: %v", got)
+					}
+				}
 			}
 		})
 	}
