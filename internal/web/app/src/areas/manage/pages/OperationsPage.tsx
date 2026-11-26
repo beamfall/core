@@ -91,26 +91,40 @@ function JobsSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
-    setError("");
-    setLoading(true);
-    try {
-      setJobs(await fetchJobs());
-    } catch {
-      setError(t("jobsUnavailable"));
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
+  const load = useCallback(
+    async (quiet = false) => {
+      setError("");
+      if (!quiet) setLoading(true);
+      try {
+        setJobs(await fetchJobs());
+      } catch {
+        setError(t("jobsUnavailable"));
+      } finally {
+        if (!quiet) setLoading(false);
+      }
+    },
+    [t],
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const hasActive = jobs.some(
+    (j) => j.status === "running" || j.status === "queued" || j.status === "pending",
+  );
+  useEffect(() => {
+    if (!hasActive) return;
+    const timer = window.setInterval(() => {
+      void load(true);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [hasActive, load]);
+
   return (
     <ManageSection
       actions={
-        <Button type="button" variant="outline" size="sm" onClick={load}>
+        <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
           {t("refresh")}
         </Button>
       }
@@ -122,7 +136,7 @@ function JobsSection() {
           <TableHeader>
             <TableRow>
               <TableHead>{t("jobs")}</TableHead>
-              <TableHead>{t("active")}</TableHead>
+              <TableHead>{t("consoleOverviewStatus")}</TableHead>
               <TableHead className="text-right">{t("info")}</TableHead>
             </TableRow>
           </TableHeader>
@@ -132,7 +146,15 @@ function JobsSection() {
             ) : (
               jobs.map((job) => (
                 <TableRow key={job.id}>
-                  <TableCell className="manage-cell-primary">{jobKindLabel(job.kind, t)}</TableCell>
+                  <TableCell>
+                    <div className="manage-cell-primary">{jobKindLabel(job.kind, t)}</div>
+                    {job.target?.libraryTitle && (
+                      <div className="text-xs text-muted-foreground">{job.target.libraryTitle}</div>
+                    )}
+                    {job.error && (
+                      <div className="text-xs text-[var(--state-danger)]">{job.error}</div>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <StatusBadge state={jobStatusState(job.status)}>
                       {jobStatusLabel(job.status, t)}
@@ -155,11 +177,13 @@ function JobsSection() {
 function SchedulesSection() {
   const t = useT();
   const [schedules, setSchedules] = useState<ScheduleInfo[]>([]);
+  const [loading, setLoading] = useState(true);
   const [libraryTitles, setLibraryTitles] = useState<ReadonlyMap<string, string>>(new Map());
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     setError("");
+    setLoading(true);
     // Titles only label rows; without them a row shows its raw schedule ID.
     void fetchLibraries()
       .then((libraries) =>
@@ -170,6 +194,8 @@ function SchedulesSection() {
       setSchedules(await fetchSchedules());
     } catch {
       setError(t("schedulesUnavailable"));
+    } finally {
+      setLoading(false);
     }
   }, [t]);
 
@@ -193,13 +219,15 @@ function SchedulesSection() {
     schedule: ScheduleInfo,
     kind: TriggerKind,
     fields: TriggerFields,
-  ) => {
+  ): Promise<boolean> => {
     setError("");
     try {
       const updated = await setScheduleTrigger(schedule.id, triggerInput(kind, fields));
       setSchedules((prev) => prev.map((s) => (s.id === schedule.id ? updated : s)));
+      return true;
     } catch {
       setError(t("couldNotUpdateSchedule"));
+      return false;
     }
   };
 
@@ -207,6 +235,7 @@ function SchedulesSection() {
     <ManageSection
       title={t("schedules")}
       collapsible
+      defaultOpen
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>
           {t("refresh")}
@@ -214,10 +243,16 @@ function SchedulesSection() {
       }
     >
       <div data-setting="manage.operations.schedules">
-        {schedules.length === 0 ? (
+        {loading ? (
+          <ManageTable>
+            <TableBody>
+              <TableSkeletonRows columns={2} rows={2} />
+            </TableBody>
+          </ManageTable>
+        ) : schedules.length === 0 ? (
           <EmptyLine message={t("noSchedules")} />
         ) : (
-          <div className="space-y-3">
+          <div>
             {schedules.map((schedule) => (
               <ScheduleRow
                 key={schedule.id}
@@ -244,14 +279,34 @@ function ScheduleRow({
   schedule: ScheduleInfo;
   library: string | null;
   onToggle: (s: ScheduleInfo, enabled: boolean) => Promise<void>;
-  onSaveTrigger: (s: ScheduleInfo, kind: TriggerKind, fields: TriggerFields) => Promise<void>;
+  onSaveTrigger: (s: ScheduleInfo, kind: TriggerKind, fields: TriggerFields) => Promise<boolean>;
 }) {
   const t = useT();
   const [kind, setKind] = useState<TriggerKind>((schedule.trigger?.kind as TriggerKind) || "every");
   const [fields, setFields] = useState<TriggerFields>(triggerFieldsFrom(schedule.trigger));
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
-  const setField = <K extends keyof TriggerFields>(key: K, value: TriggerFields[K]) =>
+  useEffect(() => {
+    setKind((schedule.trigger?.kind as TriggerKind) || "every");
+    setFields(triggerFieldsFrom(schedule.trigger));
+  }, [schedule.trigger]);
+
+  const setField = <K extends keyof TriggerFields>(key: K, value: TriggerFields[K]) => {
+    setSaved(false);
     setFields((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const ok = await onSaveTrigger(schedule, kind, fields);
+      if (ok) setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="manage-fieldrow">
@@ -284,7 +339,13 @@ function ScheduleRow({
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <span className="bf-label-with-tip" data-setting="manage.operations.repeat">
-          <Select value={kind} onValueChange={(v) => setKind(v as TriggerKind)}>
+          <Select
+            value={kind}
+            onValueChange={(v) => {
+              setSaved(false);
+              setKind(v as TriggerKind);
+            }}
+          >
             <SelectTrigger className="w-32" aria-label={t("manageScheduleRepeat")}>
               <SelectValue />
             </SelectTrigger>
@@ -343,13 +404,14 @@ function ScheduleRow({
           <span data-setting="manage.operations.time">
             <TimeOfDaySelect
               value={fields.hour * 60 + fields.minute}
-              onChange={(minute) =>
+              onChange={(minute) => {
+                setSaved(false);
                 setFields((prev) => ({
                   ...prev,
                   hour: Math.floor(minute / 60),
                   minute: minute % 60,
-                }))
-              }
+                }));
+              }}
               aria-label={t("manageScheduleTime")}
               className="min-w-24"
             />
@@ -360,10 +422,16 @@ function ScheduleRow({
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => onSaveTrigger(schedule, kind, fields)}
+          disabled={saving}
+          onClick={() => void handleSave()}
         >
           {t("save")}
         </Button>
+        {saved && (
+          <span role="status" className="text-xs text-muted-foreground">
+            {t("manageSaved")}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -390,7 +458,11 @@ function NumberField({
       max={max}
       step={1}
       value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
+      onChange={(e) => {
+        const parsed = Number.parseInt(e.target.value, 10);
+        const clamped = Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : min;
+        onChange(clamped);
+      }}
       className="w-20"
     />
   );
@@ -399,14 +471,18 @@ function NumberField({
 function WatcherSection() {
   const t = useT();
   const [statuses, setStatuses] = useState<WatcherStatusInfo[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     setError("");
+    setLoading(true);
     try {
       setStatuses(await fetchWatcherStatus());
     } catch {
       setError(t("watcherStatusUnavailable"));
+    } finally {
+      setLoading(false);
     }
   }, [t]);
 
@@ -425,28 +501,32 @@ function WatcherSection() {
         </Button>
       }
     >
-      {statuses.length === 0 ? (
+      {!loading && statuses.length === 0 ? (
         <EmptyLine message={t("watcherStatusEmpty")} />
       ) : (
         <ManageTable>
           <TableHeader>
             <TableRow>
               <TableHead>{t("library")}</TableHead>
-              <TableHead>{t("watcherStateWatching")}</TableHead>
+              <TableHead>{t("consoleOverviewStatus")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {statuses.map((status) => (
-              <TableRow key={status.libraryID}>
-                <TableCell className="manage-cell-primary">
-                  {status.title || status.libraryID}
-                </TableCell>
-                <TableCell className="text-[var(--text-muted)]">
-                  {t(WATCHER_STATE_LABELS[status.state] ?? "watcherStateUnavailable")}
-                  {status.reason ? ` - ${status.reason}` : ""}
-                </TableCell>
-              </TableRow>
-            ))}
+            {loading ? (
+              <TableSkeletonRows columns={2} rows={2} />
+            ) : (
+              statuses.map((status) => (
+                <TableRow key={status.libraryID}>
+                  <TableCell className="manage-cell-primary">
+                    {status.title || status.libraryID}
+                  </TableCell>
+                  <TableCell className="text-[var(--text-muted)]">
+                    {t(WATCHER_STATE_LABELS[status.state] ?? "watcherStateUnavailable")}
+                    {status.reason ? ` - ${status.reason}` : ""}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </ManageTable>
       )}

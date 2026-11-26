@@ -65,6 +65,7 @@ export function BulkOpsPage() {
   const [error, setError] = useState("");
   const [batch, setBatch] = useState<BatchResultInfo | null>(null);
   const [undone, setUndone] = useState(false);
+  const [undoing, setUndoing] = useState(false);
 
   const onApplied = (result: BatchResultInfo) => {
     setBatch(result.batchID ? result : null);
@@ -72,55 +73,58 @@ export function BulkOpsPage() {
   };
 
   const onUndo = async () => {
-    if (!batch?.batchID) return;
+    if (!batch?.batchID || undoing) return;
     setError("");
+    setUndoing(true);
     try {
       await undoBatch(batch.batchID);
       setBatch(null);
       setUndone(true);
     } catch {
       setError(t("bulkOpsUnavailable"));
+    } finally {
+      setUndoing(false);
     }
   };
 
   return (
     <div className="space-y-4">
-      <ManageSection>
-        {batch && (
-          <div className="mb-2 flex items-center gap-3">
-            <StatusBadge state="green">
-              {t("bulkOpsBatchApplied")} · {batch.affected} {t("bulkOpsAffected")}
-            </StatusBadge>
-            <Button type="button" variant="outline" size="sm" onClick={onUndo}>
-              {t("bulkOpsUndo")}
-            </Button>
-          </div>
-        )}
-        {undone && !batch && (
-          <p className="mb-2 text-sm text-muted-foreground">{t("bulkOpsUndone")}</p>
-        )}
-        <ErrorLine message={error} />
-      </ManageSection>
+      {(batch || undone || error) && (
+        <ManageSection>
+          {batch && (
+            <div className="mb-2 flex items-center gap-3">
+              <StatusBadge state="green">
+                {t("bulkOpsBatchApplied")} · {batch.affected} {t("bulkOpsAffected")}
+              </StatusBadge>
+              <Button type="button" variant="outline" size="sm" disabled={undoing} onClick={onUndo}>
+                {undoing ? t("loading") : t("bulkOpsUndo")}
+              </Button>
+            </div>
+          )}
+          {undone && !batch && (
+            <p className="mb-2 text-sm text-muted-foreground">{t("bulkOpsUndone")}</p>
+          )}
+          <ErrorLine message={error} />
+        </ManageSection>
+      )}
 
-      <BulkEditSection onError={setError} onApplied={onApplied} />
-      <OrganizeSection onError={setError} onApplied={onApplied} />
+      <BulkEditSection onApplied={onApplied} />
+      <OrganizeSection onApplied={onApplied} />
     </div>
   );
 }
 
-function BulkEditSection({
-  onError,
-  onApplied,
-}: {
-  onError: (message: string) => void;
-  onApplied: (result: BatchResultInfo) => void;
-}) {
+const COMMON_BULK_FIELDS = ["title", "sortTitle", "year", "summary", "studio", "edition"];
+
+function BulkEditSection({ onApplied }: { onApplied: (result: BatchResultInfo) => void }) {
   const t = useT();
   const { session, isManager } = useSession();
   const [ids, setIds] = useState<string[]>([]);
   const [fieldName, setFieldName] = useState("");
   const [fieldValue, setFieldValue] = useState("");
   const [changes, setChanges] = useState<BulkEditChangeInfo[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   // The inputs the held preview was computed from. Apply is only offered while
   // the form still matches them, so the confirmed count is the real diff.
   const [previewKey, setPreviewKey] = useState("");
@@ -138,28 +142,36 @@ function BulkEditSection({
   };
 
   const onPreview = async () => {
-    onError("");
+    setError("");
     const m = mediaIDs();
     const f = fields();
     if (m.length === 0 || f.length === 0) return;
+    setBusy(true);
     try {
       const previewed = await bulkEditPreview(m, f);
       setChanges(previewed);
       setPreviewKey(JSON.stringify([m, f]));
     } catch {
-      onError(t("bulkOpsUnavailable"));
+      setError(t("bulkOpsUnavailable"));
+    } finally {
+      setBusy(false);
     }
   };
 
   const onApply = async () => {
-    onError("");
+    setError("");
     const m = mediaIDs();
     const f = fields();
     if (m.length === 0 || f.length === 0) return;
+    setBusy(true);
     try {
       onApplied(await bulkEditApply(m, f));
+      setChanges(null);
+      setPreviewKey("");
     } catch {
-      onError(t("bulkOpsUnavailable"));
+      setError(t("bulkOpsUnavailable"));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -169,7 +181,13 @@ function BulkEditSection({
 
   return (
     <ManageSection title={t("bulkEditPreviewHeading")}>
-      <div className="space-y-3">
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void onPreview();
+        }}
+      >
         <div className="space-y-1" data-setting="manage.bulk.mediaIds">
           <span className="bf-label-with-tip">
             <Label htmlFor="bulk-edit-ids">{t("bulkEditMediaIDs")}</Label>
@@ -185,11 +203,17 @@ function BulkEditSection({
             </span>
             <Input
               id="bulk-edit-field-name"
+              list="bulk-edit-field-suggestions"
               value={fieldName}
               autoComplete="off"
               spellCheck={false}
               onChange={(e) => setFieldName(e.target.value)}
             />
+            <datalist id="bulk-edit-field-suggestions">
+              {COMMON_BULK_FIELDS.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
           </div>
           <div className="space-y-1">
             <Label htmlFor="bulk-edit-field-value">{t("bulkEditFieldValue")}</Label>
@@ -199,23 +223,24 @@ function BulkEditSection({
               onChange={(e) => setFieldValue(e.target.value)}
             />
           </div>
-          <Button type="button" variant="outline" onClick={onPreview} disabled={!canRun}>
+          <Button type="submit" variant="outline" disabled={busy || !canRun}>
             {t("bulkEditPreview")}
           </Button>
+          <ConfirmApply
+            label={t("bulkEditApply")}
+            disabled={busy || !canRun || !previewCurrent || count === 0}
+            count={count}
+            onConfirm={onApply}
+          />
           {isManager && session?.profile === "adult" && (
             <AssignDialog
               selection={mediaIDs().map((mediaID) => ({ mediaID }))}
               onChanged={() => setChanges(null)}
             />
           )}
-          <ConfirmApply
-            label={t("bulkEditApply")}
-            disabled={!canRun || !previewCurrent}
-            count={count}
-            onConfirm={onApply}
-          />
         </div>
-      </div>
+      </form>
+      <ErrorLine message={error} />
 
       {changes !== null &&
         (changes.length === 0 ? (
@@ -234,7 +259,7 @@ function BulkEditSection({
                   <TableCell className="manage-cell-primary">
                     {change.title || change.mediaID}
                   </TableCell>
-                  <TableCell className="manage-cell-num">
+                  <TableCell className="manage-cell-num break-all">
                     {fieldSummary(change.old)} → {fieldSummary(change.new)}
                   </TableCell>
                 </TableRow>
@@ -246,19 +271,15 @@ function BulkEditSection({
   );
 }
 
-function OrganizeSection({
-  onError,
-  onApplied,
-}: {
-  onError: (message: string) => void;
-  onApplied: (result: BatchResultInfo) => void;
-}) {
+function OrganizeSection({ onApplied }: { onApplied: (result: BatchResultInfo) => void }) {
   const t = useT();
   const [libraries, setLibraries] = useState<LibraryInfo[]>([]);
   const [libraryID, setLibraryID] = useState("");
   const [template, setTemplate] = useState("");
   const [changes, setChanges] = useState<FileChangeInfo[] | null>(null);
   const [previewKey, setPreviewKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -269,34 +290,41 @@ function OrganizeSection({
         setLibraries(libs);
         if (libs.length > 0) setLibraryID(libs[0].id);
       } catch {
-        // The organize select degrades to empty; the surface stays usable for
-        // bulk edit. No error banner for an unavailable library list here.
+        if (active) setError(t("convertLibrariesUnavailable"));
       }
     })();
     return () => {
       active = false;
     };
-  }, []);
+  }, [t]);
 
   const onPreview = async () => {
-    onError("");
+    setError("");
     if (!libraryID || !template.trim()) return;
+    setBusy(true);
     try {
       const previewed = await organizePreview(libraryID, template.trim());
       setChanges(previewed);
       setPreviewKey(JSON.stringify([libraryID, template.trim()]));
     } catch {
-      onError(t("bulkOpsUnavailable"));
+      setError(t("bulkOpsUnavailable"));
+    } finally {
+      setBusy(false);
     }
   };
 
   const onApply = async () => {
-    onError("");
+    setError("");
     if (!libraryID || !template.trim()) return;
+    setBusy(true);
     try {
       onApplied(await organizeApply(libraryID, template.trim()));
+      setChanges(null);
+      setPreviewKey("");
     } catch {
-      onError(t("bulkOpsUnavailable"));
+      setError(t("bulkOpsUnavailable"));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -307,7 +335,13 @@ function OrganizeSection({
 
   return (
     <ManageSection title={t("organizeHeading")}>
-      <div className="space-y-3">
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void onPreview();
+        }}
+      >
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
             <Label htmlFor="organize-library">{t("organizeLibraryLabel")}</Label>
@@ -340,17 +374,18 @@ function OrganizeSection({
           </div>
         </div>
         <div className="flex items-end gap-3">
-          <Button type="button" variant="outline" onClick={onPreview} disabled={!canRun}>
+          <Button type="submit" variant="outline" disabled={busy || !canRun}>
             {t("organizePreview")}
           </Button>
           <ConfirmApply
             label={t("organizeApply")}
-            disabled={!canRun || !previewCurrent}
+            disabled={busy || !canRun || !previewCurrent || count === 0}
             count={count}
             onConfirm={onApply}
           />
         </div>
-      </div>
+      </form>
+      <ErrorLine message={error} />
 
       {changes !== null &&
         (changes.length === 0 ? (
@@ -369,7 +404,7 @@ function OrganizeSection({
                   <TableCell className="manage-cell-primary">
                     {change.title || change.mediaID}
                   </TableCell>
-                  <TableCell className="manage-cell-num">
+                  <TableCell className="manage-cell-num break-all">
                     {change.oldPath} → {change.newPath}
                   </TableCell>
                 </TableRow>

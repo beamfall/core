@@ -6,6 +6,7 @@ import { resetUnmatchedSuppression, suppressUnmatched } from "@/lib/graphql";
 import type { UnmatchedRecordInfo, UnmatchedSuppressionInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
+import { formatDateTime } from "../../lib/schedule";
 
 /**
  * The three ADR-0068 scopes in the order the approved `fix-match-suppression`
@@ -50,6 +51,32 @@ function suppressionTarget(
     return { scope, recordID: record.id, candidateID: record.candidateID };
   }
   return { scope, recordID: record.id };
+}
+
+export function suppressionScopeLabel(scope: string): StringKey {
+  return SCOPES.find((s) => s.scope === scope)?.label ?? "unmatchedSuppressScopeRecord";
+}
+
+function suppressionResetTarget(
+  active: UnmatchedSuppressionInfo,
+  record: UnmatchedRecordInfo,
+): SuppressionTarget {
+  const scope = active.scope as SuppressionScope;
+  if (scope === "file") {
+    return {
+      scope,
+      fingerprint: active.key || record.mediaID || record.id,
+      sourceHandle: active.sourceHandle || record.sourceHandle,
+    };
+  }
+  if (scope === "candidate") {
+    return {
+      scope,
+      recordID: active.recordID || record.id,
+      candidateID: active.candidateID || record.candidateID,
+    };
+  }
+  return { scope, recordID: active.recordID || record.id };
 }
 
 /**
@@ -137,16 +164,16 @@ export function SuppressionPanel({
             {suppressions.map((active) => (
               <li key={`${active.scope}:${active.key}`} className="grid gap-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-foreground">{active.scope}</span>
+                  <span className="text-sm text-foreground">
+                    {t(suppressionScopeLabel(active.scope))}
+                  </span>
                   <Button
                     size="sm"
                     variant="ghost"
                     disabled={busy}
                     onClick={() =>
                       void run(() =>
-                        resetUnmatchedSuppression(
-                          suppressionTarget(active.scope as SuppressionScope, record),
-                        ),
+                        resetUnmatchedSuppression(suppressionResetTarget(active, record)),
                       )
                     }
                   >
@@ -156,7 +183,7 @@ export function SuppressionPanel({
                 <span className="text-xs text-muted-foreground">
                   {t("unmatchedSuppressProvenance", {
                     actor: active.actorProfileID || t("unmatchedSuppressUnknownActor"),
-                    when: active.createdAt || "",
+                    when: active.createdAt ? formatDateTime(active.createdAt) : "",
                   })}
                   {active.sourceHandle ? ` · ${active.sourceHandle}` : ""}
                 </span>

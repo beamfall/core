@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Link } from "react-router";
 import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
@@ -6,22 +7,32 @@ import {
   ManageSection,
   ManageTable,
   StatusBadge,
+  TableSkeletonRows,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fetchMediaFieldLocks, setMediaFieldLock } from "@/lib/graphql";
-import type { FieldLockInfo } from "@/lib/graphql/types";
+import { fetchMediaFieldLocks, fetchMediaMetadata, setMediaFieldLock } from "@/lib/graphql";
+import type { FieldLockInfo, MediaMetadataInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 
 // fieldLockField_<field> is the localized label for the generic metadata-field
-// names the server returns (title / summary / year). Falls back to the raw
-// field name for any field key without a localized label.
+// names the server returns (title / summary / year). Falls back to a spaced
+// label for any field key without a localized label.
 function fieldLabel(t: (key: StringKey) => string, field: string): string {
   const key = `fieldLockField_${field}` as StringKey;
   const label = t(key);
-  return label === key ? field : label;
+  return label === key ? field.replace(/([a-z])([A-Z])/g, "$1 $2") : label;
+}
+
+function fieldValue(meta: MediaMetadataInfo | null, field: string): string {
+  if (!meta) return "";
+  if (field === "title") return meta.title || "";
+  if (field === "sortTitle") return meta.sortTitle || "";
+  if (field === "year") return meta.year > 0 ? String(meta.year) : "";
+  if (field === "summary") return meta.summary || "";
+  return "";
 }
 
 // Media field locks (ADR-0009 §8): per-field source precedence. A locked field
@@ -35,6 +46,9 @@ export function FieldLocksPage() {
   // The Media ID the shown locks belong to; toggles write to it.
   const [loadedID, setLoadedID] = useState("");
   const [locks, setLocks] = useState<FieldLockInfo[] | null>(null);
+  const [meta, setMeta] = useState<MediaMetadataInfo | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busyField, setBusyField] = useState("");
   const [error, setError] = useState("");
   // Only the newest load may land, so a slow earlier pick cannot replace it.
   const loadSeq = useRef(0);
@@ -47,13 +61,23 @@ export function FieldLocksPage() {
     // Hide the old table while loading so no toggle can write to it mid-load.
     setLoadedID("");
     setLocks(null);
+    setMeta(null);
+    setLoading(true);
     try {
-      const next = await fetchMediaFieldLocks(id);
+      const [next, nextMeta] = await Promise.all([
+        fetchMediaFieldLocks(id),
+        typeof fetchMediaMetadata === "function"
+          ? fetchMediaMetadata(id).catch(() => null)
+          : Promise.resolve(null),
+      ]);
       if (seq !== loadSeq.current) return;
       setLoadedID(id);
       setLocks(next);
+      setMeta(nextMeta);
     } catch {
       if (seq === loadSeq.current) setError(t("fieldLocksUnavailable"));
+    } finally {
+      if (seq === loadSeq.current) setLoading(false);
     }
   };
 
@@ -61,25 +85,31 @@ export function FieldLocksPage() {
     loadSeq.current++;
     setLoadedID("");
     setLocks(null);
+    setMeta(null);
+    setLoading(false);
+    setError("");
   };
 
   const onToggle = async (lock: FieldLockInfo) => {
     setError("");
     const id = loadedID;
-    if (!id) return;
+    if (!id || busyField) return;
     // A load or Clear started since the write owns the table.
     const seq = loadSeq.current;
+    setBusyField(lock.field);
     try {
       const next = await setMediaFieldLock(id, lock.field, !lock.locked);
       if (seq === loadSeq.current) setLocks(next);
     } catch {
       if (seq === loadSeq.current) setError(t("fieldLocksUnavailable"));
+    } finally {
+      setBusyField("");
     }
   };
 
   return (
     <ManageSection>
-      <div className="flex flex-wrap items-start gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
           <Label htmlFor="field-locks-media">{t("fieldLocksMediaLabel")}</Label>
           <EntityPicker
@@ -92,52 +122,68 @@ export function FieldLocksPage() {
             }}
           />
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          className="mt-6"
-          onClick={() => void onLoad()}
-          disabled={!mediaID.trim()}
-        >
-          {t("fieldLocksLoad")}
-        </Button>
+        {loadedID && (
+          <Button asChild variant="outline" size="sm">
+            <Link to={`/manage/items/${encodeURIComponent(loadedID)}`}>
+              {t("itemMetadataHeading")}
+            </Link>
+          </Button>
+        )}
       </div>
 
       <div className="mt-3">
-        {locks === null ? (
-          <EmptyLine message={t("fieldLocksEmpty")} />
-        ) : locks.length === 0 ? (
+        {loading ? (
+          <ManageTable>
+            <TableBody>
+              <TableSkeletonRows columns={4} rows={4} />
+            </TableBody>
+          </ManageTable>
+        ) : !loadedID || locks === null || locks.length === 0 ? (
           <EmptyLine message={t("fieldLocksEmpty")} />
         ) : (
           <ManageTable>
             <TableHeader>
               <TableRow>
-                <TableHead>{t("title")}</TableHead>
-                <TableHead>{t("fieldLockLocked")}</TableHead>
-                <TableHead className="text-right">{t("fieldLockPin")}</TableHead>
+                <TableHead>{t("bulkEditFieldName")}</TableHead>
+                <TableHead>{t("bulkEditFieldValue")}</TableHead>
+                <TableHead>{t("consoleOverviewStatus")}</TableHead>
+                <TableHead className="text-right">{t("tagActionsHeading")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {locks.map((lock) => (
-                <TableRow key={lock.field}>
-                  <TableCell className="manage-cell-primary">{fieldLabel(t, lock.field)}</TableCell>
-                  <TableCell>
-                    <StatusBadge state={lock.locked ? "green" : "neutral"}>
-                      {lock.locked ? t("fieldLockLocked") : t("fieldLockUnlocked")}
-                    </StatusBadge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onToggle(lock)}
-                    >
-                      {lock.locked ? t("fieldLockRelease") : t("fieldLockPin")}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {locks.map((lock) => {
+                const value = fieldValue(meta, lock.field);
+                return (
+                  <TableRow key={lock.field}>
+                    <TableCell className="manage-cell-primary">
+                      {fieldLabel(t, lock.field)}
+                    </TableCell>
+                    <TableCell className="max-w-xs break-words text-muted-foreground" title={value}>
+                      {value || "—"}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge state={lock.locked ? "green" : "neutral"}>
+                        {lock.locked ? t("fieldLockLocked") : t("fieldLockUnlocked")}
+                      </StatusBadge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={busyField !== ""}
+                        onClick={() => void onToggle(lock)}
+                      >
+                        {busyField === lock.field
+                          ? t("loading")
+                          : lock.locked
+                            ? t("fieldLockRelease")
+                            : t("fieldLockPin")}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </ManageTable>
         )}

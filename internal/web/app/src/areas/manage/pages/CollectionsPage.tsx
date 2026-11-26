@@ -2,7 +2,13 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { EntityMultiPicker } from "@/components/beamfall/EntityPicker";
-import { EmptyLine, ErrorLine, ManageSection, ManageTable } from "@/components/beamfall/workbench";
+import {
+  EmptyLine,
+  ErrorLine,
+  ManageSection,
+  ManageTable,
+  TableSkeletonRows,
+} from "@/components/beamfall/workbench";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +40,7 @@ import {
   deleteCollection,
   deleteSmartCollection,
   fetchCollections,
+  fetchMediaMetadata,
   fetchSmartCollections,
   removeCollectionMedia,
   reorderCollectionMedia,
@@ -48,6 +55,7 @@ import type {
 } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
+import { formatDateTime } from "../lib/schedule";
 
 // Collections + Smart Collections (WEB-5F / ADR-0001 / ADR-0061): the manager-
 // gated curation surface for manual, ordered, nestable Collections and for
@@ -107,14 +115,18 @@ export function CollectionsPage() {
           </SelectContent>
         </Select>
       </div>
-      {libraries.length === 0 && <p className="manage-empty">{t("noCollections")}</p>}
-
-      <Tabs.Panel value="manual" className="space-y-4">
-        <ManualCollections libraryID={libraryID} />
-      </Tabs.Panel>
-      <Tabs.Panel value="smart" className="space-y-4">
-        <SmartCollections libraryID={libraryID} />
-      </Tabs.Panel>
+      {libraries.length === 0 ? (
+        <p className="manage-empty">{t("manageNoLibraries")}</p>
+      ) : (
+        <>
+          <Tabs.Panel value="manual" className="space-y-4">
+            <ManualCollections libraryID={libraryID} />
+          </Tabs.Panel>
+          <Tabs.Panel value="smart" className="space-y-4">
+            <SmartCollections libraryID={libraryID} />
+          </Tabs.Panel>
+        </>
+      )}
     </Tabs.Root>
   );
 }
@@ -124,6 +136,7 @@ export function CollectionsPage() {
 function ManualCollections({ libraryID }: { libraryID: string }) {
   const t = useT();
   const [collections, setCollections] = useState<CollectionInfo[]>([]);
+  const [loading, setLoading] = useState(Boolean(libraryID));
   const [includeTrashed, setIncludeTrashed] = useState(false);
   const [selectedID, setSelectedID] = useState("");
   const [error, setError] = useState("");
@@ -131,6 +144,7 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
   // New-collection form state.
   const [newName, setNewName] = useState("");
   const [newParent, setNewParent] = useState(TOP_LEVEL);
+  const [creating, setCreating] = useState(false);
   // Load generation guard (as SubscriptionsPage): a slow response for a Library
   // the picker has since left must not overwrite the current Library's list.
   const loadGeneration = useRef(0);
@@ -139,13 +153,19 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
     async (id: string, trashed: boolean) => {
       const generation = ++loadGeneration.current;
       setError("");
-      setCollections([]);
-      if (!id) return;
+      if (!id) {
+        setCollections([]);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
       try {
         const next = await fetchCollections(id, trashed);
         if (loadGeneration.current === generation) setCollections(next);
       } catch {
         if (loadGeneration.current === generation) setError(t("collectionsUnavailable"));
+      } finally {
+        if (loadGeneration.current === generation) setLoading(false);
       }
     },
     [t],
@@ -175,6 +195,7 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
     setError("");
     const name = newName.trim();
     if (!libraryID || !name) return;
+    setCreating(true);
     try {
       await createCollection({
         libraryID,
@@ -186,6 +207,8 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
       await reload();
     } catch {
       setError(t("couldNotCreateCollection"));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -200,15 +223,29 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
   };
 
   // Reorder a live Collection by swapping its sortOrder with its neighbour.
-  // The schema offers no single swap call, so a failed second write rolls the
-  // first back, and the list is reloaded either way so the displayed order is
-  // always the server's.
+  // When two collections share the same sortOrder (e.g. 0), assign distinct
+  // sequential values so the swap actually changes the server order.
   const onReorder = async (index: number, dir: -1 | 1) => {
     const target = index + dir;
     if (target < 0 || target >= live.length) return;
     setError("");
     const a = live[index];
     const b = live[target];
+    if (a.sortOrder === b.sortOrder) {
+      const reordered = [...live];
+      [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+      try {
+        for (let i = 0; i < reordered.length; i++) {
+          if (reordered[i].sortOrder !== i) {
+            await updateCollection({ id: reordered[i].id, sortOrder: i });
+          }
+        }
+      } catch {
+        setError(t("couldNotUpdateCollection"));
+      }
+      await reload();
+      return;
+    }
     try {
       await updateCollection({ id: a.id, sortOrder: b.sortOrder });
     } catch {
@@ -261,7 +298,7 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
           </label>
         }
       >
-        {live.length === 0 ? (
+        {!loading && live.length === 0 ? (
           <EmptyLine message={t("noCollections")} />
         ) : (
           <ManageTable>
@@ -269,30 +306,40 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
               <TableRow>
                 <TableHead>{t("collectionName")}</TableHead>
                 <TableHead>{t("collectionMembers")}</TableHead>
-                <TableHead className="text-right">{t("rename")}</TableHead>
+                <TableHead className="text-right">{t("tagActionsHeading")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {live.map((c, i) => (
-                <CollectionRow
-                  key={c.id}
-                  collection={c}
-                  selected={c.id === selectedID}
-                  canMoveUp={i > 0}
-                  canMoveDown={i < live.length - 1}
-                  onSelect={() => setSelectedID(c.id)}
-                  onMoveUp={() => onReorder(i, -1)}
-                  onMoveDown={() => onReorder(i, 1)}
-                  onRename={(name) => onRename(c, name)}
-                  onDelete={() => onDelete(c)}
-                />
-              ))}
+              {loading ? (
+                <TableSkeletonRows columns={3} />
+              ) : (
+                live.map((c, i) => (
+                  <CollectionRow
+                    key={c.id}
+                    collection={c}
+                    selected={c.id === selectedID}
+                    canMoveUp={i > 0}
+                    canMoveDown={i < live.length - 1}
+                    onSelect={() => setSelectedID(c.id)}
+                    onMoveUp={() => onReorder(i, -1)}
+                    onMoveDown={() => onReorder(i, 1)}
+                    onRename={(name) => onRename(c, name)}
+                    onDelete={() => onDelete(c)}
+                  />
+                ))
+              )}
             </TableBody>
           </ManageTable>
         )}
         <ErrorLine message={error} />
 
-        <div className="manage-add-row mt-3 flex flex-wrap items-end gap-3 border-t pt-3">
+        <form
+          className="manage-add-row mt-3 flex flex-wrap items-end gap-3 border-t pt-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onCreate();
+          }}
+        >
           <div className="space-y-1">
             <Label htmlFor="collection-name">{t("newCollectionName")}</Label>
             <Input
@@ -320,15 +367,17 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
               </SelectContent>
             </Select>
           </div>
-          <Button type="button" onClick={onCreate}>
-            {t("create")}
+          <Button type="submit" disabled={creating || !newName.trim()}>
+            {creating ? t("loading") : t("create")}
           </Button>
-        </div>
+        </form>
       </ManageSection>
 
       {selected && (
         <MembersEditor
+          key={selected.id}
           collection={selected}
+          onClose={() => setSelectedID("")}
           onChanged={reload}
           onError={() => setError(t("couldNotUpdateMembers"))}
         />
@@ -491,10 +540,12 @@ function CollectionRow({
 
 function MembersEditor({
   collection,
+  onClose,
   onChanged,
   onError,
 }: {
   collection: CollectionInfo;
+  onClose: () => void;
   onChanged: () => Promise<void> | void;
   onError: () => void;
 }) {
@@ -502,16 +553,43 @@ function MembersEditor({
   // Work against a local copy so reordering feels immediate; the order is
   // written whole through reorderCollectionMedia (matches the GraphQL shape).
   const [members, setMembers] = useState<CollectionMemberInfo[]>([]);
+  const [titles, setTitles] = useState<Record<string, string>>({});
   const [addIDs, setAddIDs] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const requestedRef = useRef<Set<string>>(new Set());
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setMembers([...collection.members].sort((a, b) => a.sortOrder - b.sortOrder));
+  }, [collection.members]);
+
+  useEffect(() => {
+    if (typeof fetchMediaMetadata !== "function") return;
+    for (const member of collection.members) {
+      if (requestedRef.current.has(member.mediaID)) continue;
+      requestedRef.current.add(member.mediaID);
+      void Promise.resolve(fetchMediaMetadata(member.mediaID))
+        .then((info) => {
+          if (mountedRef.current && info?.title) {
+            setTitles((prev) => ({ ...prev, [member.mediaID]: info.title }));
+          }
+        })
+        .catch(() => {});
+    }
   }, [collection.members]);
 
   // The optimistic local order is restored from the server on failure: a
   // rejected write must not leave the UI claiming an order the server never
   // took.
   const persistOrder = async (ordered: CollectionMemberInfo[]) => {
+    setBusy(true);
     try {
       await reorderCollectionMedia(
         collection.id,
@@ -522,10 +600,13 @@ function MembersEditor({
       setMembers([...collection.members].sort((a, b) => a.sortOrder - b.sortOrder));
       await onChanged();
       onError();
+    } finally {
+      setBusy(false);
     }
   };
 
   const onMove = (index: number, dir: -1 | 1) => {
+    if (busy) return;
     const target = index + dir;
     if (target < 0 || target >= members.length) return;
     const next = [...members];
@@ -535,22 +616,28 @@ function MembersEditor({
   };
 
   const onRemove = async (mediaID: string) => {
+    setBusy(true);
     try {
       await removeCollectionMedia(collection.id, [mediaID]);
       await onChanged();
     } catch {
       onError();
+    } finally {
+      setBusy(false);
     }
   };
 
   const onAdd = async () => {
     if (addIDs.length === 0) return;
+    setBusy(true);
     try {
       await addCollectionMedia(collection.id, addIDs);
       setAddIDs([]);
       await onChanged();
     } catch {
       onError();
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -558,9 +645,14 @@ function MembersEditor({
     <ManageSection
       title={collection.name}
       actions={
-        <span className="text-sm text-muted-foreground">
-          {t("memberCountLabel", { n: members.length })}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">
+            {t("memberCountLabel", { n: members.length })}
+          </span>
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+            {t("dialogClose")}
+          </Button>
+        </div>
       }
     >
       {members.length === 0 ? (
@@ -569,7 +661,7 @@ function MembersEditor({
         <ManageTable>
           <TableHeader>
             <TableRow>
-              <TableHead>{t("mediaID")}</TableHead>
+              <TableHead>{t("title")}</TableHead>
               <TableHead>{t("added")}</TableHead>
               <TableHead className="text-right">{t("remove")}</TableHead>
             </TableRow>
@@ -586,7 +678,7 @@ function MembersEditor({
                         size="icon"
                         className="size-5"
                         aria-label={t("reorderUp")}
-                        disabled={i === 0}
+                        disabled={busy || i === 0}
                         onClick={() => onMove(i, -1)}
                       >
                         <ChevronUp aria-hidden />
@@ -597,30 +689,36 @@ function MembersEditor({
                         size="icon"
                         className="size-5"
                         aria-label={t("reorderDown")}
-                        disabled={i === members.length - 1}
+                        disabled={busy || i === members.length - 1}
                         onClick={() => onMove(i, 1)}
                       >
                         <ChevronDown aria-hidden />
                       </Button>
                     </span>
-                    <Link
-                      to={`/manage/items/${encodeURIComponent(m.mediaID)}`}
-                      className="manage-mono underline-offset-2 hover:underline"
-                      aria-label={`${t("itemMetadataEditLink")} ${m.mediaID}`}
-                    >
-                      {m.mediaID}
-                    </Link>
+                    <div className="min-w-0">
+                      <Link
+                        to={`/manage/items/${encodeURIComponent(m.mediaID)}`}
+                        className="underline-offset-2 hover:underline"
+                        aria-label={`${t("itemMetadataEditLink")} ${m.mediaID}`}
+                      >
+                        {titles[m.mediaID] || m.mediaID}
+                      </Link>
+                      {titles[m.mediaID] && (
+                        <div className="manage-mono text-xs text-muted-foreground">{m.mediaID}</div>
+                      )}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell className="manage-mono text-muted-foreground">
-                  {m.addedAt ?? ""}
+                  {m.addedAt ? formatDateTime(m.addedAt) : ""}
                 </TableCell>
                 <TableCell className="text-right">
                   <Button
                     type="button"
                     variant="danger"
                     size="sm"
-                    onClick={() => onRemove(m.mediaID)}
+                    disabled={busy}
+                    onClick={() => void onRemove(m.mediaID)}
                   >
                     {t("remove")}
                   </Button>
@@ -631,7 +729,7 @@ function MembersEditor({
         </ManageTable>
       )}
 
-      <div className="manage-add-row mt-3 flex flex-wrap items-start gap-3 border-t pt-3">
+      <div className="manage-add-row mt-3 flex flex-wrap items-end gap-3 border-t pt-3">
         <div className="grow space-y-1">
           <Label htmlFor="member-ids">{t("addMediaIDsLabel")}</Label>
           <EntityMultiPicker
@@ -641,7 +739,7 @@ function MembersEditor({
             className="w-full"
           />
         </div>
-        <Button type="button" className="mt-6" onClick={onAdd} disabled={addIDs.length === 0}>
+        <Button type="button" onClick={() => void onAdd()} disabled={busy || addIDs.length === 0}>
           {t("addMembers")}
         </Button>
       </div>
@@ -654,6 +752,7 @@ function MembersEditor({
 function SmartCollections({ libraryID }: { libraryID: string }) {
   const t = useT();
   const [smart, setSmart] = useState<SmartCollectionInfo[]>([]);
+  const [loading, setLoading] = useState(Boolean(libraryID));
   const [error, setError] = useState("");
   const [selectedID, setSelectedID] = useState<string>("");
   const loadGeneration = useRef(0);
@@ -662,13 +761,19 @@ function SmartCollections({ libraryID }: { libraryID: string }) {
     async (id: string) => {
       const generation = ++loadGeneration.current;
       setError("");
-      setSmart([]);
-      if (!id) return;
+      if (!id) {
+        setSmart([]);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
       try {
         const next = await fetchSmartCollections(id);
         if (loadGeneration.current === generation) setSmart(next);
       } catch {
         if (loadGeneration.current === generation) setError(t("collectionsUnavailable"));
+      } finally {
+        if (loadGeneration.current === generation) setLoading(false);
       }
     },
     [t],
@@ -700,7 +805,7 @@ function SmartCollections({ libraryID }: { libraryID: string }) {
   return (
     <>
       <ManageSection title={t("smartCollections")}>
-        {smart.length === 0 ? (
+        {!loading && smart.length === 0 ? (
           <EmptyLine message={t("noSmartCollections")} />
         ) : (
           <ManageTable>
@@ -711,41 +816,45 @@ function SmartCollections({ libraryID }: { libraryID: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {smart.map((s) => (
-                <TableRow key={s.id} data-selected={s.id === selectedID || undefined}>
-                  <TableCell className="manage-cell-primary">
-                    <Button
-                      type="button"
-                      variant="link"
-                      className="h-auto p-0 text-left text-[var(--text-primary)]"
-                      onClick={() => setSelectedID(s.id)}
-                    >
-                      {s.name}
-                    </Button>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button type="button" variant="danger" size="sm">
-                          {t("remove")}
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>{t("remove")}</AlertDialogTitle>
-                          <AlertDialogDescription>{s.name}</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => onDelete(s)}>
+              {loading ? (
+                <TableSkeletonRows columns={2} />
+              ) : (
+                smart.map((s) => (
+                  <TableRow key={s.id} data-selected={s.id === selectedID || undefined}>
+                    <TableCell className="manage-cell-primary">
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="h-auto p-0 text-left text-[var(--text-primary)]"
+                        onClick={() => setSelectedID(s.id)}
+                      >
+                        {s.name}
+                      </Button>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button type="button" variant="danger" size="sm">
                             {t("remove")}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </TableCell>
-                </TableRow>
-              ))}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t("remove")}</AlertDialogTitle>
+                            <AlertDialogDescription>{s.name}</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => onDelete(s)}>
+                              {t("remove")}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </ManageTable>
         )}
@@ -783,11 +892,15 @@ function SmartCollectionEditor({
   const [name, setName] = useState(smart?.name ?? "");
   const [sourceExpr, setSourceExpr] = useState(smart?.sourceExpr ?? "");
   const [sortExpr, setSortExpr] = useState(smart?.sortExpr ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const onSave = async () => {
     const trimmedName = name.trim();
     const trimmedSource = sourceExpr.trim();
     if (!trimmedName || !trimmedSource) return;
+    setSaving(true);
+    setSaved(false);
     try {
       if (smart) {
         await updateSmartCollection({
@@ -804,22 +917,37 @@ function SmartCollectionEditor({
           sourceExpr: trimmedSource,
           sortExpr: sortExpr.trim() || null,
         });
+        setName("");
+        setSourceExpr("");
+        setSortExpr("");
       }
+      setSaved(true);
       await onSaved();
     } catch {
       onError();
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
     <ManageSection title={smart ? smart.name : t("newSmartCollection")}>
-      <div className="space-y-3">
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void onSave();
+        }}
+      >
         <div className="space-y-1">
           <Label htmlFor="smart-name">{t("collectionName")}</Label>
           <Input
             id="smart-name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setSaved(false);
+            }}
             className="w-72"
           />
         </div>
@@ -829,7 +957,10 @@ function SmartCollectionEditor({
             id="smart-source"
             value={sourceExpr}
             spellCheck={false}
-            onChange={(e) => setSourceExpr(e.target.value)}
+            onChange={(e) => {
+              setSourceExpr(e.target.value);
+              setSaved(false);
+            }}
             className="manage-mono min-h-20"
           />
           <p className="text-xs text-muted-foreground">{t("sourceExprHelp")}</p>
@@ -840,17 +971,25 @@ function SmartCollectionEditor({
             id="smart-sort"
             value={sortExpr}
             spellCheck={false}
-            onChange={(e) => setSortExpr(e.target.value)}
+            onChange={(e) => {
+              setSortExpr(e.target.value);
+              setSaved(false);
+            }}
             className="manage-mono min-h-16"
           />
           <p className="text-xs text-muted-foreground">{t("sortExprHelp")}</p>
         </div>
-        <div className="flex justify-end">
-          <Button type="button" onClick={onSave}>
-            {t("saveSource")}
+        <div className="flex items-center justify-end gap-2">
+          {saved && (
+            <span role="status" className="text-xs text-muted-foreground">
+              {t("manageSaved")}
+            </span>
+          )}
+          <Button type="submit" disabled={saving || !name.trim() || !sourceExpr.trim()}>
+            {saving ? t("loading") : t("saveSource")}
           </Button>
         </div>
-      </div>
+      </form>
     </ManageSection>
   );
 }

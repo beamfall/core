@@ -33,17 +33,19 @@ import { CONVERT_PRESETS, enqueueConvertJob, fetchConvertJobs } from "../lib/pow
 // convert job kind. When the server has no enqueue field the surface degrades to
 // monitoring-only with a clear notice rather than a hard error.
 export function ConvertPage() {
+  const [refreshKey, setRefreshKey] = useState(0);
   return (
     <div className="space-y-4">
-      <ConvertEnqueueSection />
-      <ConvertQueueSection />
+      <ConvertEnqueueSection onEnqueued={() => setRefreshKey((k) => k + 1)} />
+      <ConvertQueueSection refreshKey={refreshKey} />
     </div>
   );
 }
 
-function ConvertEnqueueSection() {
+function ConvertEnqueueSection({ onEnqueued }: { onEnqueued: () => void }) {
   const t = useT();
   const [libraries, setLibraries] = useState<LibraryInfo[]>([]);
+  const [loadingLibs, setLoadingLibs] = useState(true);
   const [libraryID, setLibraryID] = useState("");
   const [srcPath, setSrcPath] = useState("");
   const [preset, setPreset] = useState(CONVERT_PRESETS[0].id);
@@ -54,12 +56,15 @@ function ConvertEnqueueSection() {
 
   useEffect(() => {
     void (async () => {
+      setLoadingLibs(true);
       try {
         const libs = await fetchLibraries();
         setLibraries(libs);
         if (libs.length > 0) setLibraryID(libs[0].id);
       } catch {
         setError(t("convertLibrariesUnavailable"));
+      } finally {
+        setLoadingLibs(false);
       }
     })();
   }, [t]);
@@ -81,6 +86,7 @@ function ConvertEnqueueSection() {
       }
       setNotice(t("convertQueued"));
       setSrcPath("");
+      onEnqueued();
     } catch {
       setError(t("convertFailed"));
     } finally {
@@ -91,68 +97,74 @@ function ConvertEnqueueSection() {
   return (
     <ManageSection>
       <div className="manage-fieldrow space-y-3">
-        <div className="grid gap-1">
-          <Label htmlFor="convert-library">{t("library")}</Label>
-          <Select value={libraryID} onValueChange={setLibraryID}>
-            <SelectTrigger id="convert-library" className="w-64">
-              <SelectValue placeholder={t("library")} />
-            </SelectTrigger>
-            <SelectContent>
-              {libraries.map((lib) => (
-                <SelectItem key={lib.id} value={lib.id}>
-                  {lib.title || lib.id}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {!loadingLibs && libraries.length === 0 ? (
+          <EmptyLine message={t("manageNoLibraries")} />
+        ) : (
+          <>
+            <div className="grid gap-1">
+              <Label htmlFor="convert-library">{t("library")}</Label>
+              <Select value={libraryID} onValueChange={setLibraryID} disabled={loadingLibs}>
+                <SelectTrigger id="convert-library" className="w-64">
+                  <SelectValue placeholder={loadingLibs ? t("loading") : t("library")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {libraries.map((lib) => (
+                    <SelectItem key={lib.id} value={lib.id}>
+                      {lib.title || lib.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        <PathPickerField
-          id="convert-source"
-          label={t("convertSourceLabel")}
-          role="incomingFolder"
-          value={srcPath}
-          onChange={setSrcPath}
-          libraryID={libraryID || undefined}
-          placeholder="/path/to/source"
-        />
+            <PathPickerField
+              id="convert-source"
+              label={t("convertSourceLabel")}
+              role="incomingFolder"
+              value={srcPath}
+              onChange={setSrcPath}
+              libraryID={libraryID || undefined}
+              placeholder="/path/to/source"
+            />
 
-        <div className="grid gap-1" data-setting="manage.convert.preset">
-          <span className="bf-label-with-tip">
-            <Label htmlFor="convert-preset">{t("convertPresetLabel")}</Label>
-            <HelpTip label={t("convertPresetLabel")} text="manageConvertPresetHelp" />
-          </span>
-          <Select value={preset} onValueChange={setPreset}>
-            <SelectTrigger id="convert-preset" className="w-64">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CONVERT_PRESETS.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {t(p.labelKey)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            <div className="grid gap-1" data-setting="manage.convert.preset">
+              <span className="bf-label-with-tip">
+                <Label htmlFor="convert-preset">{t("convertPresetLabel")}</Label>
+                <HelpTip label={t("convertPresetLabel")} text="manageConvertPresetHelp" />
+              </span>
+              <Select value={preset} onValueChange={setPreset}>
+                <SelectTrigger id="convert-preset" className="w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONVERT_PRESETS.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {t(p.labelKey)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        <div className="flex items-center gap-3">
-          <Button type="button" size="sm" disabled={busy || unavailable} onClick={onConvert}>
-            {t("convert")}
-          </Button>
-          {notice && (
-            <span role="status" className="text-sm text-muted-foreground">
-              {notice}
-            </span>
-          )}
-        </div>
+            <div className="flex items-center gap-3">
+              <Button type="button" size="sm" disabled={busy || unavailable} onClick={onConvert}>
+                {t("convert")}
+              </Button>
+              {notice && (
+                <span role="status" className="text-sm text-muted-foreground">
+                  {notice}
+                </span>
+              )}
+            </div>
+          </>
+        )}
         <ErrorLine message={error} />
       </div>
     </ManageSection>
   );
 }
 
-function ConvertQueueSection() {
+function ConvertQueueSection({ refreshKey }: { refreshKey: number }) {
   const t = useT();
   const [jobs, setJobs] = useState<JobInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -172,7 +184,7 @@ function ConvertQueueSection() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   return (
     <ManageSection
@@ -190,7 +202,7 @@ function ConvertQueueSection() {
           <TableHeader>
             <TableRow>
               <TableHead>{t("jobs")}</TableHead>
-              <TableHead>{t("active")}</TableHead>
+              <TableHead>{t("consoleOverviewStatus")}</TableHead>
               <TableHead className="text-right">{t("info")}</TableHead>
             </TableRow>
           </TableHeader>
@@ -200,7 +212,12 @@ function ConvertQueueSection() {
             ) : (
               jobs.map((job) => (
                 <TableRow key={job.id}>
-                  <TableCell className="manage-cell-primary">{job.id}</TableCell>
+                  <TableCell>
+                    <div className="manage-cell-primary">{job.target?.libraryTitle || job.id}</div>
+                    {job.target?.libraryTitle && (
+                      <div className="font-mono text-xs text-muted-foreground">{job.id}</div>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <StatusBadge state={jobStatusState(job.status)}>
                       {jobStatusLabel(job.status, t)}

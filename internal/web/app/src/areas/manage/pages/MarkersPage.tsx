@@ -8,6 +8,7 @@ import {
   ManageSection,
   ManageTable,
   StatusBadge,
+  TableSkeletonRows,
 } from "@/components/beamfall/workbench";
 import {
   AlertDialog,
@@ -81,6 +82,15 @@ function byStart(a: MarkerInfo, b: MarkerInfo): number {
   return a.id.localeCompare(b.id);
 }
 
+function formatTimecode(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const hrs = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return hrs > 0 ? `${hrs}:${pad(mins)}:${pad(secs)}` : `${mins}:${pad(secs)}`;
+}
+
 export function MarkersPage() {
   const t = useT();
   const [mediaInput, setMediaInput] = useState("");
@@ -89,6 +99,8 @@ export function MarkersPage() {
   const [trashed, setTrashed] = useState<MarkerInfo[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   // Only the newest load may land, so a slow earlier pick cannot replace it.
   const loadSeq = useRef(0);
@@ -101,6 +113,7 @@ export function MarkersPage() {
       const target = id.trim();
       if (!target) return;
       const seq = ++loadSeq.current;
+      setLoading(true);
       if (target !== targetRef.current) {
         // A new item: hide the old one's rows so New and row actions cannot write to it mid-load.
         targetRef.current = target;
@@ -120,6 +133,8 @@ export function MarkersPage() {
         setLoaded(true);
       } catch {
         if (seq === loadSeq.current) setError(t("markersUnavailable"));
+      } finally {
+        if (seq === loadSeq.current) setLoading(false);
       }
     },
     [t],
@@ -134,6 +149,7 @@ export function MarkersPage() {
     setTrashed([]);
     setSelected(new Set());
     setLoaded(false);
+    setLoading(false);
   };
 
   const onLoad = () => void load(mediaInput);
@@ -141,14 +157,17 @@ export function MarkersPage() {
 
   const onCreate = async () => {
     const id = mediaID;
-    if (!id) return;
+    if (!id || creating) return;
     setError("");
+    setCreating(true);
     try {
       await createMarker(id, blankDraft());
       // Reload even if another reload ran meanwhile: it may have read before this create committed.
       if (targetRef.current === id) await load(id);
     } catch {
       if (targetRef.current === id) setError(t("markersSaveFailed"));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -179,7 +198,7 @@ export function MarkersPage() {
           ) : undefined
         }
       >
-        <div className="flex flex-wrap items-start gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           <div className="grow space-y-1">
             <Label htmlFor="markers-media-id">{t("markersMediaID")}</Label>
             <EntityPicker
@@ -192,17 +211,28 @@ export function MarkersPage() {
               }}
             />
           </div>
-          <Button type="button" variant="outline" className="mt-6" onClick={onLoad}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!mediaInput.trim() || loading}
+            onClick={onLoad}
+          >
             {t("markersLoad")}
           </Button>
-          <Button type="button" className="mt-6" onClick={onCreate} disabled={!mediaID}>
-            {t("markersNew")}
+          <Button type="button" onClick={onCreate} disabled={!mediaID || creating}>
+            {creating ? t("loading") : t("markersNew")}
           </Button>
         </div>
         <ErrorLine message={error} />
 
-        {loaded &&
-          (markers.length === 0 ? (
+        {loading && !loaded ? (
+          <ManageTable className="mt-3">
+            <TableBody>
+              <TableSkeletonRows columns={3} rows={3} />
+            </TableBody>
+          </ManageTable>
+        ) : loaded ? (
+          markers.length === 0 ? (
             <EmptyLine message={t("markersEmpty")} />
           ) : (
             <div className="mt-3 space-y-2">
@@ -221,12 +251,25 @@ export function MarkersPage() {
                 />
               ))}
             </div>
-          ))}
+          )
+        ) : (
+          <div className="mt-3">
+            <EmptyLine message={t("manageSelectMediaPrompt")} />
+          </div>
+        )}
       </ManageSection>
 
-      {loaded && <BulkSection selected={selectedMarkers} onError={setError} onApplied={reload} />}
+      {loaded && markers.length > 0 && (
+        <BulkSection
+          selected={selectedMarkers}
+          totalCount={markers.length}
+          onSelectAll={() => setSelected(new Set(markers.map((m) => m.id)))}
+          onClearSelection={() => setSelected(new Set())}
+          onApplied={reload}
+        />
+      )}
 
-      {loaded && <TrashedSection markers={trashed} onError={setError} onRestored={reload} />}
+      {loaded && <TrashedSection markers={trashed} onRestored={reload} />}
     </div>
   );
 }
@@ -258,6 +301,9 @@ function MarkerRow({
   const t = useT();
   const [draft, setDraft] = useState<MarkerInput>(() => toDraft(marker));
   const [tagInput, setTagInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   // A reload after a swap hands this row new seconds; the draft must follow or
   // the next Save would write the pre-swap values back.
@@ -265,7 +311,10 @@ function MarkerRow({
     setDraft(toDraft(marker));
   }, [marker]);
 
-  const set = (patch: Partial<MarkerInput>) => setDraft((d) => ({ ...d, ...patch }));
+  const set = (patch: Partial<MarkerInput>) => {
+    setSaved(false);
+    setDraft((d) => ({ ...d, ...patch }));
+  };
 
   const addTag = () => {
     const tag = tagInput.trim();
@@ -279,59 +328,92 @@ function MarkerRow({
 
   const onSave = async () => {
     onError("");
+    setSaved(false);
+    setBusy(true);
+    const pendingTag = tagInput.trim();
+    const tags = draft.tags ?? [];
+    const nextDraft =
+      pendingTag && !tags.includes(pendingTag) ? { ...draft, tags: [...tags, pendingTag] } : draft;
+    if (pendingTag) {
+      setDraft(nextDraft);
+      setTagInput("");
+    }
     try {
-      await updateMarker(marker.id, draft);
+      await updateMarker(marker.id, nextDraft);
+      setSaved(true);
       onSaved();
     } catch {
       onError(t("markersSaveFailed"));
+    } finally {
+      setBusy(false);
     }
   };
 
-  // Reorder: swap start seconds with the timeline neighbor and persist both, so
-  // the order is durable (markers re-sort by start on reload).
+  // Reorder: swap start positions with the timeline neighbor while preserving
+  // each marker's own duration so ranged segments never invert (start > end).
   const swapWith = async (neighbor: MarkerInfo) => {
     onError("");
+    setBusy(true);
+    const myDuration =
+      marker.endSeconds != null ? Math.max(0, marker.endSeconds - marker.startSeconds) : null;
+    const neighborDuration =
+      neighbor.endSeconds != null ? Math.max(0, neighbor.endSeconds - neighbor.startSeconds) : null;
     try {
       await Promise.all([
-        updateMarker(marker.id, { ...draft, startSeconds: neighbor.startSeconds }),
+        updateMarker(marker.id, {
+          ...draft,
+          startSeconds: neighbor.startSeconds,
+          endSeconds: myDuration != null ? neighbor.startSeconds + myDuration : null,
+        }),
         updateMarker(neighbor.id, {
           ...toDraft(neighbor),
           startSeconds: marker.startSeconds,
+          endSeconds: neighborDuration != null ? marker.startSeconds + neighborDuration : null,
         }),
       ]);
       onSaved();
     } catch {
       onError(t("markersSaveFailed"));
+    } finally {
+      setBusy(false);
     }
   };
 
   const onDelete = async () => {
     onError("");
+    setBusy(true);
     try {
       await deleteMarker(marker.id);
       onSaved();
     } catch {
       onError(t("markersDeleteFailed"));
+    } finally {
+      setBusy(false);
     }
   };
 
   const kindLabel = marker.segmentKind || t("markersChapter");
+  const timeSummary =
+    marker.endSeconds != null
+      ? `${formatTimecode(marker.startSeconds)}–${formatTimecode(marker.endSeconds)}`
+      : formatTimecode(marker.startSeconds);
 
   return (
     <div className={`manage-section rounded-lg border p-3 ${selected ? "border-primary/60" : ""}`}>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Checkbox
           checked={selected}
           onCheckedChange={(v) => onToggleSelected(v === true)}
           aria-label={`${t("markersHeading")} ${marker.title || marker.id}`}
         />
+        <span className="manage-mono text-xs text-muted-foreground">{timeSummary}</span>
         <span className="grow truncate text-sm font-semibold">{marker.title || marker.id}</span>
         <StatusBadge state={marker.segmentKind ? "cyan" : "neutral"}>{kindLabel}</StatusBadge>
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          disabled={!canMoveUp}
+          disabled={busy || !canMoveUp}
           aria-label={t("markersMoveEarlier")}
           onClick={() => neighborUp && swapWith(neighborUp)}
         >
@@ -341,112 +423,145 @@ function MarkerRow({
           type="button"
           variant="ghost"
           size="sm"
-          disabled={!canMoveDown}
+          disabled={busy || !canMoveDown}
           aria-label={t("markersMoveLater")}
           onClick={() => neighborDown && swapWith(neighborDown)}
         >
           ↓
         </Button>
-      </div>
-
-      <div className="mt-3 grid grid-cols-3 gap-3">
-        <div className="space-y-1">
-          <Label htmlFor={`start-${marker.id}`}>{t("markersStart")}</Label>
-          <Input
-            id={`start-${marker.id}`}
-            type="number"
-            value={draft.startSeconds}
-            onChange={(e) => set({ startSeconds: Number(e.target.value) })}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={`end-${marker.id}`}>{t("markersEnd")}</Label>
-          <Input
-            id={`end-${marker.id}`}
-            type="number"
-            value={draft.endSeconds ?? ""}
-            onChange={(e) =>
-              set({
-                endSeconds: e.target.value === "" ? null : Number(e.target.value),
-              })
-            }
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={`kind-${marker.id}`}>{t("markersKind")}</Label>
-          <Select
-            value={draft.segmentKind || "__none__"}
-            onValueChange={(v) => set({ segmentKind: v === "__none__" ? "" : v })}
-          >
-            <SelectTrigger id={`kind-${marker.id}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">{t("markersKindNone")}</SelectItem>
-              {SEGMENT_KINDS.map((kind) => (
-                <SelectItem key={kind} value={kind}>
-                  {kind}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="mt-3 space-y-1">
-        <Label htmlFor={`title-${marker.id}`}>{t("title")}</Label>
-        <Input
-          id={`title-${marker.id}`}
-          value={draft.title ?? ""}
-          onChange={(e) => set({ title: e.target.value })}
-        />
-      </div>
-
-      <div className="mt-3 space-y-1">
-        <Label>{t("markersTags")}</Label>
-        <div className="flex flex-wrap items-center gap-2">
-          {(draft.tags ?? []).map((tag) => (
-            <span
-              key={tag}
-              className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
-            >
-              {tag}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label={`${t("markersDelete")} ${tag}`}
-                className="size-6 text-muted-foreground hover:bg-transparent hover:text-destructive"
-                onClick={() => removeTag(tag)}
-              >
-                <X aria-hidden />
-              </Button>
-            </span>
-          ))}
-          <Input
-            className="w-32"
-            value={tagInput}
-            placeholder={t("markersAddTag")}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setTagInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addTag();
-              }
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="mt-3 flex items-center gap-2">
-        <span className="grow" />
-        <ConfirmDelete onConfirm={onDelete} />
-        <Button type="button" size="sm" onClick={onSave}>
-          {t("save")}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          {expanded ? t("manageCollapse") : t("manageExpand")}
         </Button>
       </div>
+
+      {expanded && (
+        <>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <Label htmlFor={`start-${marker.id}`}>{t("markersStart")}</Label>
+              <Input
+                id={`start-${marker.id}`}
+                type="number"
+                min={0}
+                value={draft.startSeconds}
+                onChange={(e) => {
+                  const parsed = Number(e.target.value);
+                  set({ startSeconds: Number.isFinite(parsed) ? Math.max(0, parsed) : 0 });
+                }}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor={`end-${marker.id}`}>{t("markersEnd")}</Label>
+              <Input
+                id={`end-${marker.id}`}
+                type="number"
+                min={0}
+                value={draft.endSeconds ?? ""}
+                onChange={(e) =>
+                  set({
+                    endSeconds:
+                      e.target.value === "" ? null : Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor={`kind-${marker.id}`}>{t("markersKind")}</Label>
+              <Select
+                value={draft.segmentKind || "__none__"}
+                onValueChange={(v) => set({ segmentKind: v === "__none__" ? "" : v })}
+              >
+                <SelectTrigger id={`kind-${marker.id}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t("markersKindNone")}</SelectItem>
+                  {SEGMENT_KINDS.map((kind) => (
+                    <SelectItem key={kind} value={kind}>
+                      {kind}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="mt-3 space-y-1">
+            <Label htmlFor={`title-${marker.id}`}>{t("title")}</Label>
+            <Input
+              id={`title-${marker.id}`}
+              value={draft.title ?? ""}
+              onChange={(e) => set({ title: e.target.value })}
+            />
+          </div>
+
+          <div className="mt-3 space-y-1">
+            <Label>{t("markersTags")}</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              {(draft.tags ?? []).map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
+                >
+                  {tag}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`${t("markersDelete")} ${tag}`}
+                    className="size-6 text-muted-foreground hover:bg-transparent hover:text-destructive"
+                    onClick={() => removeTag(tag)}
+                  >
+                    <X aria-hidden />
+                  </Button>
+                </span>
+              ))}
+              <Input
+                className="w-32"
+                value={tagInput}
+                placeholder={t("markersAddTag")}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addTag();
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!tagInput.trim()}
+                onClick={addTag}
+              >
+                {t("markersRetagAdd")}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            {saved && (
+              <span role="status" className="text-xs text-muted-foreground">
+                {t("manageSaved")}
+              </span>
+            )}
+            <span className="grow" />
+            <ConfirmDelete label={marker.title || marker.id} disabled={busy} onConfirm={onDelete} />
+            <Button type="button" size="sm" disabled={busy} onClick={onSave}>
+              {busy ? t("loading") : t("save")}
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -454,19 +569,33 @@ function MarkerRow({
 // The destructive-delete confirm gate (HARD invariant #6). Delete is soft, but
 // the confirm matches the manage register's destructive pattern; restore is the
 // recovery path from the Deleted markers panel.
-function ConfirmDelete({ onConfirm }: { onConfirm: () => void }) {
+function ConfirmDelete({
+  label,
+  disabled,
+  onConfirm,
+}: {
+  label: string;
+  disabled: boolean;
+  onConfirm: () => void;
+}) {
   const t = useT();
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="text-destructive">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="text-destructive"
+          disabled={disabled}
+        >
           {t("markersDelete")}
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{t("markersDelete")}</AlertDialogTitle>
-          <AlertDialogDescription>{t("markersBulkDeleteLead")}</AlertDialogDescription>
+          <AlertDialogDescription>{label}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
@@ -487,11 +616,15 @@ function ConfirmDelete({ onConfirm }: { onConfirm: () => void }) {
 // the list reflects the authoritative state.
 function BulkSection({
   selected,
-  onError,
+  totalCount,
+  onSelectAll,
+  onClearSelection,
   onApplied,
 }: {
   selected: MarkerInfo[];
-  onError: (message: string) => void;
+  totalCount: number;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
   onApplied: () => void;
 }) {
   const t = useT();
@@ -499,9 +632,19 @@ function BulkSection({
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [applied, setApplied] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   const count = selected.length;
-  const canRun = count > 0 && tags.length > 0;
+  const effectiveTags = useMemo(() => {
+    const pending = tagInput.trim();
+    return pending && !tags.includes(pending) ? [...tags, pending] : tags;
+  }, [tags, tagInput]);
+  const canRun = count > 0 && effectiveTags.length > 0 && !busy;
+
+  useEffect(() => {
+    setApplied(0);
+  }, [count, mode]);
 
   const addTag = () => {
     const tag = tagInput.trim();
@@ -510,31 +653,43 @@ function BulkSection({
   };
 
   const onRetag = async () => {
-    onError("");
+    setError("");
     if (!canRun) return;
+    setBusy(true);
+    const nextTags = effectiveTags;
+    if (tagInput.trim()) {
+      setTags(nextTags);
+      setTagInput("");
+    }
     try {
       await Promise.all(
         selected.map((m) => {
           const draft = toDraft(m);
-          const merged = mode === "replace" ? tags : [...new Set([...(draft.tags ?? []), ...tags])];
+          const merged =
+            mode === "replace" ? nextTags : [...new Set([...(draft.tags ?? []), ...nextTags])];
           return updateMarker(m.id, { ...draft, tags: merged });
         }),
       );
       setApplied(count);
       onApplied();
     } catch {
-      onError(t("markersSaveFailed"));
+      setError(t("markersSaveFailed"));
+    } finally {
+      setBusy(false);
     }
   };
 
   const onBulkDelete = async () => {
-    onError("");
-    if (count === 0) return;
+    setError("");
+    if (count === 0 || busy) return;
+    setBusy(true);
     try {
       await Promise.all(selected.map((m) => deleteMarker(m.id)));
       onApplied();
     } catch {
-      onError(t("markersDeleteFailed"));
+      setError(t("markersDeleteFailed"));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -543,9 +698,25 @@ function BulkSection({
       title={t("markersBulkHeading")}
       lead={t("markersBulkLead")}
       actions={
-        <StatusBadge state={count > 0 ? "green" : "neutral"}>
-          {t("markersSelectedCount", { count })}
-        </StatusBadge>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={count === totalCount}
+            onClick={onSelectAll}
+          >
+            {t("manageSelectAll", { count: totalCount })}
+          </Button>
+          {count > 0 && (
+            <Button type="button" variant="ghost" size="sm" onClick={onClearSelection}>
+              {t("clear")}
+            </Button>
+          )}
+          <StatusBadge state={count > 0 ? "green" : "neutral"}>
+            {t("markersSelectedCount", { count })}
+          </StatusBadge>
+        </div>
       }
     >
       <div className="space-y-3">
@@ -597,12 +768,20 @@ function BulkSection({
                 }
               }}
             />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!tagInput.trim()}
+              onClick={addTag}
+            >
+              {t("markersRetagAdd")}
+            </Button>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <p className="text-sm text-muted-foreground">{t("markersRetag", { count })}</p>
-          <Button type="button" className="ml-auto" disabled={!canRun} onClick={onRetag}>
+        <div className="flex items-center justify-end gap-3">
+          <Button type="button" disabled={!canRun} onClick={onRetag}>
             {t("markersRetag", { count })}
           </Button>
         </div>
@@ -613,8 +792,13 @@ function BulkSection({
 
         <div className="flex items-center gap-3 border-t pt-3">
           <p className="text-sm text-muted-foreground">{t("markersBulkDeleteLead")}</p>
-          <BulkDeleteConfirm count={count} disabled={count === 0} onConfirm={onBulkDelete} />
+          <BulkDeleteConfirm
+            count={count}
+            disabled={busy || count === 0}
+            onConfirm={onBulkDelete}
+          />
         </div>
+        <ErrorLine message={error} />
       </div>
     </ManageSection>
   );
@@ -666,22 +850,25 @@ function BulkDeleteConfirm({
 // rows intact; the parent reloads so it rejoins the editor list.
 function TrashedSection({
   markers,
-  onError,
   onRestored,
 }: {
   markers: MarkerInfo[];
-  onError: (message: string) => void;
   onRestored: () => void;
 }) {
   const t = useT();
+  const [restoringID, setRestoringID] = useState("");
+  const [error, setError] = useState("");
 
   const onRestore = async (marker: MarkerInfo) => {
-    onError("");
+    setError("");
+    setRestoringID(marker.id);
     try {
       await restoreMarker(marker.id);
       onRestored();
     } catch {
-      onError(t("markersRestoreFailed"));
+      setError(t("markersRestoreFailed"));
+    } finally {
+      setRestoringID("");
     }
   };
 
@@ -719,9 +906,10 @@ function TrashedSection({
                     type="button"
                     variant="outline"
                     size="sm"
+                    disabled={restoringID !== ""}
                     onClick={() => onRestore(marker)}
                   >
-                    {t("restore")}
+                    {restoringID === marker.id ? t("loading") : t("restore")}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -729,6 +917,7 @@ function TrashedSection({
           </TableBody>
         </ManageTable>
       )}
+      <ErrorLine message={error} />
     </ManageSection>
   );
 }

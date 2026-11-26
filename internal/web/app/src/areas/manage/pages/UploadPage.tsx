@@ -47,6 +47,7 @@ type UploadRow = {
   relativeDir: string;
   sent: number;
   failed: boolean;
+  proposalFailed?: boolean;
   uploadID?: string;
   proposal?: MediaUploadProposal;
   target?: MediaUploadTarget;
@@ -129,30 +130,68 @@ export function UploadPage() {
       }
     }
     if (sent.length > 0) {
-      try {
-        const proposals: MediaUploadProposal[] = [];
-        for (const batch of batches(sent.map((s) => s.uploadID))) {
-          proposals.push(...(await proposeMediaUploads(libraryID, batch)));
-        }
-        const byID = new Map(proposals.map((p) => [p.uploadID, p]));
-        setRows((current) =>
-          current.map((row) => {
-            const proposal = row.uploadID ? byID.get(row.uploadID) : undefined;
-            if (!proposal) return row;
-            return {
-              ...row,
-              proposal,
-              target: proposal.target,
-              destination: proposal.destination,
-              conflict: proposal.conflict ? "fail" : "keep",
-            };
-          }),
-        );
-      } catch {
-        setError(t("mediaUploadProposalsFailed"));
-      }
+      await proposeForRows(sent.map((s) => s.uploadID));
     }
     setBusy(false);
+  };
+
+  const proposeForRows = async (uploadIDs: string[]) => {
+    const idSet = new Set(uploadIDs);
+    try {
+      const proposals: MediaUploadProposal[] = [];
+      for (const batch of batches(uploadIDs)) {
+        proposals.push(...(await proposeMediaUploads(libraryID, batch)));
+      }
+      const byID = new Map(proposals.map((p) => [p.uploadID, p]));
+      setRows((current) =>
+        current.map((row) => {
+          const proposal = row.uploadID ? byID.get(row.uploadID) : undefined;
+          if (!proposal) return row;
+          return {
+            ...row,
+            proposalFailed: false,
+            proposal,
+            target: proposal.target,
+            destination: proposal.destination,
+            conflict: proposal.conflict ? "fail" : "keep",
+          };
+        }),
+      );
+    } catch {
+      setRows((current) =>
+        current.map((row) =>
+          row.uploadID && idSet.has(row.uploadID) ? { ...row, proposalFailed: true } : row,
+        ),
+      );
+      setError(t("mediaUploadProposalsFailed"));
+    }
+  };
+
+  const onRetryRow = async (row: UploadRow) => {
+    if (!libraryID) return;
+    setError("");
+    setBusy(true);
+    try {
+      if (row.uploadID && row.proposalFailed) {
+        patch(row.key, { proposalFailed: false });
+        await proposeForRows([row.uploadID]);
+      } else {
+        patch(row.key, { failed: false, proposalFailed: false, sent: 0 });
+        const status = await openMediaUpload(libraryID, row.file, row.relativeDir);
+        patch(row.key, { uploadID: status.uploadID });
+        await sendMediaUpload(row.file, status, (offset) => patch(row.key, { sent: offset }));
+        await proposeForRows([status.uploadID]);
+      }
+    } catch {
+      patch(row.key, { failed: true });
+      setError(t("mediaUploadFailed", { name: row.file.name }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onClearPlaced = () => {
+    setRows((current) => current.filter((row) => !row.result?.path));
   };
 
   // Removing a row that is staged but not placed discards the staged bytes
@@ -277,15 +316,29 @@ export function UploadPage() {
 
       {rows.length > 0 && (
         <ManageSection
+          title={t("manageUploadQueueHeading", { count: rows.length })}
           actions={
-            <Button
-              type="button"
-              size="sm"
-              disabled={busy || placeable.length === 0}
-              onClick={onPlace}
-            >
-              {t("mediaUploadPlace")}
-            </Button>
+            <div className="flex items-center gap-2">
+              {rows.some((r) => Boolean(r.result?.path)) && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={onClearPlaced}
+                >
+                  {t("manageUploadClearPlaced")}
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy || placeable.length === 0}
+                onClick={onPlace}
+              >
+                {t("mediaUploadPlace")}
+              </Button>
+            </div>
           }
         >
           <ManageTable>
@@ -302,7 +355,9 @@ export function UploadPage() {
                   key={row.key}
                   row={row}
                   libraryID={libraryID}
+                  busy={busy}
                   onChange={(change) => patch(row.key, change)}
+                  onRetry={() => void onRetryRow(row)}
                   onRemove={() => onRemove(row)}
                 />
               ))}
@@ -317,12 +372,16 @@ export function UploadPage() {
 function UploadRowView({
   row,
   libraryID,
+  busy,
   onChange,
+  onRetry,
   onRemove,
 }: {
   row: UploadRow;
   libraryID: string;
+  busy: boolean;
   onChange: (change: Partial<UploadRow>) => void;
+  onRetry: () => void;
   onRemove: () => void;
 }) {
   const t = useT();
@@ -336,11 +395,14 @@ function UploadRowView({
         {row.proposal?.parsed && (
           <div className="text-xs text-muted-foreground">{parseLabel(row.proposal.parsed)}</div>
         )}
-        {!row.proposal && !row.failed && (
+        {!row.proposal && !row.failed && !row.proposalFailed && (
           <div className="text-xs text-muted-foreground">{t("mediaUploadSent", { percent })}</div>
         )}
         {row.failed && (
           <StatusBadge state="red">{t("mediaUploadFailed", { name: row.file.name })}</StatusBadge>
+        )}
+        {row.proposalFailed && (
+          <StatusBadge state="red">{t("mediaUploadProposalsFailed")}</StatusBadge>
         )}
         {row.result?.error && <StatusBadge state="red">{row.result.error}</StatusBadge>}
         {placed && <StatusBadge state="green">{t("mediaUploadPlaced")}</StatusBadge>}
@@ -352,7 +414,7 @@ function UploadRowView({
             target={row.target}
             disabled={placed}
             onPick={(target) =>
-              onChange({ target, destination: target.destination || row.destination })
+              onChange({ target, destination: target?.destination || row.destination })
             }
           />
         )}
@@ -394,10 +456,17 @@ function UploadRowView({
             )}
           </>
         )}
-        {!placed && (row.proposal || row.failed) && (
-          <Button type="button" size="sm" variant="ghost" onClick={onRemove}>
-            {t("mediaUploadRemove")}
-          </Button>
+        {!placed && (row.proposal || row.failed || row.proposalFailed) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {(row.failed || row.proposalFailed) && (
+              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onRetry}>
+                {t("jobRetryAction")}
+              </Button>
+            )}
+            <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={onRemove}>
+              {t("mediaUploadRemove")}
+            </Button>
+          </div>
         )}
       </TableCell>
     </TableRow>
@@ -413,26 +482,30 @@ function TargetPicker({
   libraryID: string;
   target?: MediaUploadTarget;
   disabled: boolean;
-  onPick: (target: MediaUploadTarget) => void;
+  onPick: (target: MediaUploadTarget | undefined) => void;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<MediaUploadTarget[] | null>(null);
   const [error, setError] = useState("");
 
   const search = async () => {
     setError("");
+    setSearching(true);
     try {
       setResults(await searchMediaUploadTargets(libraryID, query.trim()));
     } catch {
       setError(t("mediaUploadSearchFailed"));
+    } finally {
+      setSearching(false);
     }
   };
 
   return (
     <div className="space-y-1">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span>
           {target ? (
             <>
@@ -444,9 +517,16 @@ function TargetPicker({
           )}
         </span>
         {!disabled && (
-          <Button type="button" size="sm" variant="outline" onClick={() => setOpen(!open)}>
-            {t("mediaUploadChange")}
-          </Button>
+          <>
+            <Button type="button" size="sm" variant="outline" onClick={() => setOpen(!open)}>
+              {t("mediaUploadChange")}
+            </Button>
+            {target && (
+              <Button type="button" size="sm" variant="ghost" onClick={() => onPick(undefined)}>
+                {t("clear")}
+              </Button>
+            )}
+          </>
         )}
       </div>
       {open && (
@@ -457,29 +537,38 @@ function TargetPicker({
             void search();
           }}
         >
-          <Input
-            aria-label={t("mediaUploadSearch")}
-            placeholder={t("mediaUploadSearch")}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {results?.length === 0 && <EmptyLine message={t("mediaUploadNoResults")} />}
-          {results?.map((result) => (
-            <Button
-              key={result.entityID}
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="w-full justify-start"
-              onClick={() => {
-                onPick(result);
-                setOpen(false);
-              }}
-            >
-              {result.kindLabel}: {result.title}
-              {result.year ? ` (${result.year})` : ""}
+          <div className="flex items-center gap-1.5">
+            <Input
+              aria-label={t("mediaUploadSearch")}
+              placeholder={t("mediaUploadSearch")}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <Button type="submit" size="sm" variant="outline" disabled={searching}>
+              {t("search")}
             </Button>
-          ))}
+          </div>
+          {results?.length === 0 && <EmptyLine message={t("mediaUploadNoResults")} />}
+          {results && results.length > 0 && (
+            <div className="max-h-48 overflow-y-auto rounded-md border border-[var(--border-subtle)] p-1">
+              {results.map((result) => (
+                <Button
+                  key={result.entityID}
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    onPick(result);
+                    setOpen(false);
+                  }}
+                >
+                  {result.kindLabel}: {result.title}
+                  {result.year ? ` (${result.year})` : ""}
+                </Button>
+              ))}
+            </div>
+          )}
           <ErrorLine message={error} />
         </form>
       )}

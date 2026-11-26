@@ -11,6 +11,7 @@ import {
   suppressUnmatched,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import { formatDateTime } from "../../lib/schedule";
 import { CreateMediaForm } from "./CreateMediaForm";
 import { RecordInbox } from "./RecordInbox";
 
@@ -400,7 +401,9 @@ describe("RecordInbox", () => {
     await openRecord(user);
 
     // Provenance is rendered next to each reset.
-    expect(await screen.findByText(/profile-default · 2026-07-26T14:32:00Z/)).toBeVisible();
+    expect(
+      await screen.findByText(`profile-default · ${formatDateTime("2026-07-26T14:32:00Z")}`),
+    ).toBeVisible();
     const resets = screen.getAllByRole("button", { name: "Reset suppression" });
     expect(resets).toHaveLength(2);
 

@@ -244,6 +244,7 @@
 }
 
 .manage-folder-selected-path {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -251,7 +252,6 @@
 }
 
 .manage-folder-selected .status-chip {
-  margin-left: auto;
   flex: 0 0 auto;
 }
 
@@ -351,6 +351,10 @@
  * ------------------------------------------------------------------------- */
 .manage-area .manage-fieldrow {
   padding: var(--mg-space-3) 0;
+}
+
+.manage-area .manage-fieldrow + .manage-fieldrow {
+  border-top: 1px solid var(--border-subtle);
 }
 
 /* ---------------------------------------------------------------------------
