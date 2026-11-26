@@ -39,6 +39,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { Slider } from "@/components/ui/astryx-primitives";
 import { NativeSelect } from "@/components/ui/select";
 import type { MetadataAttribution } from "@/lib/graphql";
@@ -67,6 +68,7 @@ import { versionLabel } from "../lib/versionChoice";
 import { useRemotePlayerTarget } from "../remote/remoteControl";
 import { AudioSyncPanel } from "./AudioSyncPanel";
 import { ChapterList } from "./ChapterList";
+import { ChaptersDrawer } from "./ChaptersDrawer";
 import { CastControl } from "./cast/CastControl";
 import { InfoOverlay } from "./InfoOverlay";
 import { listenerMuted, setListenerMuted } from "./listenerMute";
@@ -303,6 +305,7 @@ export function PlayerTransport({
   const openKey = musicQueueOpen ? "musicQueue" : otherOpenKey;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chaptersOpen, setChaptersOpen] = useState(false);
+  const [chaptersDrawerOpen, setChaptersDrawerOpen] = useState(false);
   const [buffered, setBuffered] = useState(0);
   const [hover, setHover] = useState<{ left: number; time: number } | null>(null);
   const narrow = useNarrowViewport();
@@ -324,10 +327,15 @@ export function PlayerTransport({
     y: number;
   } | null>(null);
 
+  useEffect(() => {
+    void mediaID;
+    setChaptersDrawerOpen(false);
+  }, [mediaID]);
+
   // Report open/closed up so the stage can keep chrome visible while a menu is up.
   useEffect(() => {
-    onMenuOpenChange?.(settingsOpen || chaptersOpen || openKey !== null);
-  }, [openKey, settingsOpen, chaptersOpen, onMenuOpenChange]);
+    onMenuOpenChange?.(settingsOpen || chaptersOpen || chaptersDrawerOpen || openKey !== null);
+  }, [openKey, settingsOpen, chaptersOpen, chaptersDrawerOpen, onMenuOpenChange]);
 
   const closeSettings = useCallback(
     (restoreFocus: boolean) => {
@@ -832,7 +840,9 @@ export function PlayerTransport({
   const chapters = buildChapterList(state.markers, {
     thumbnailBase: state.info?.assets?.markerThumbnailBase,
     currentTimeSeconds: current,
+    durationSeconds: duration,
   });
+  const showChaptersDrawerButton = audioStage && !onUpNextToggle && chapters.length > 0;
   const skipBackLabel = t("seekBackSeconds", { seconds: skipInterval });
   const skipForwardLabel = t("seekForwardSeconds", { seconds: skipInterval });
 
@@ -1130,14 +1140,16 @@ export function PlayerTransport({
             <ChevronsRight aria-hidden="true" />
             <span className="sr-only">{t("nextChapter")}</span>
           </button>
-          <ChapterList
-            chapters={chapters}
-            trickplay={state.trickplay}
-            trickplayBaseURL={state.trickplayBaseURL}
-            container={layerRef}
-            onSeek={seekTo}
-            onOpenChange={setChaptersOpen}
-          />
+          {!showChaptersDrawerButton && (
+            <ChapterList
+              chapters={chapters}
+              trickplay={state.trickplay}
+              trickplayBaseURL={state.trickplayBaseURL}
+              container={layerRef}
+              onSeek={seekTo}
+              onOpenChange={setChaptersOpen}
+            />
+          )}
 
           <div className="bf-volume">
             <button
@@ -1194,6 +1206,17 @@ export function PlayerTransport({
               onClick={onUpNextToggle}
               aria-pressed={!!upNextOpen}
               aria-label={t("upNextList")}
+              className="bf-control is-icon"
+            >
+              <ListOrdered aria-hidden="true" />
+            </button>
+          )}
+          {showChaptersDrawerButton && (
+            <button
+              type="button"
+              onClick={() => setChaptersDrawerOpen((open) => !open)}
+              aria-pressed={chaptersDrawerOpen}
+              aria-label={t("chapters")}
               className="bf-control is-icon"
             >
               <ListOrdered aria-hidden="true" />
@@ -1490,6 +1513,17 @@ export function PlayerTransport({
           onDownloaded={renegotiate}
         />
       )}
+      {showChaptersDrawerButton &&
+        chaptersDrawerOpen &&
+        (stageRef?.current ?? layerRef.current) &&
+        createPortal(
+          <ChaptersDrawer
+            chapters={chapters}
+            onSeek={seekTo}
+            onClose={() => setChaptersDrawerOpen(false)}
+          />,
+          (stageRef?.current ?? layerRef.current)!,
+        )}
     </div>
   );
 }

@@ -1,10 +1,10 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { type ComponentProps, createRef, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
-import type { Locale } from "@/strings";
+import { type Locale, STRINGS } from "@/strings";
 import { PlayerTransport } from "./PlayerTransport";
 import { getTrackChangeMotion, resetTrackChangeMotionForTest } from "./trackChangeMotion";
 import type { PlayerState } from "./usePlayer";
@@ -992,5 +992,77 @@ describe("PlayerTransport lyrics toggle", () => {
   it("has no toggle when the page offers no lyrics view", () => {
     renderAudio(undefined);
     expect(screen.queryByRole("button", { name: "Lyrics" })).not.toBeInTheDocument();
+  });
+});
+
+describe("PlayerTransport audiobook chapters drawer and waveform ticks", () => {
+  it("renders container chapters as ticks without range fill overlays", () => {
+    const markers = [
+      { title: "Chapter 1", startSeconds: 0, endSeconds: 600, segmentKind: "" },
+      { title: "Chapter 2", startSeconds: 600, endSeconds: 1200, segmentKind: "" },
+    ];
+    const { container } = render(
+      <Harness
+        extra={{ audioStage: true }}
+        playerState={{
+          ...state,
+          markers,
+          info: { mediaClass: "audio", assets: {}, streams: [] } as never,
+        }}
+      />,
+    );
+    const video = screen.getByTestId("video") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, writable: true, value: 1200 });
+    fireEvent.loadedMetadata(video);
+
+    expect(container.querySelector(".bf-marker-range")).toBeNull();
+    expect(container.querySelectorAll(".bf-marker-tick")).toHaveLength(1);
+  });
+
+  it("toggles the right-hand Chapters drawer on standalone audio stage and seeks on chapter click", () => {
+    const markers = [
+      { title: "Opening", startSeconds: 0, endSeconds: 300, segmentKind: "" },
+      { title: "Middle", startSeconds: 300, endSeconds: 900, segmentKind: "" },
+    ];
+    render(
+      <Harness
+        extra={{ audioStage: true }}
+        playerState={{
+          ...state,
+          markers,
+          info: { mediaClass: "audio", assets: {}, streams: [] } as never,
+        }}
+      />,
+    );
+    const video = screen.getByTestId("video") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, writable: true, value: 900 });
+    fireEvent.loadedMetadata(video);
+
+    const chaptersButton = screen.getByRole("button", { name: STRINGS.en.chapters });
+    expect(chaptersButton).toHaveAttribute("aria-pressed", "false");
+    const transportRow = chaptersButton.closest(".bf-transport-row");
+    const spacer = transportRow?.querySelector(".bf-transport-spacer");
+    expect(spacer).not.toBeNull();
+    expect(
+      (spacer?.compareDocumentPosition(chaptersButton) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    fireEvent.click(chaptersButton);
+    expect(chaptersButton).toHaveAttribute("aria-pressed", "true");
+
+    const drawer = screen.getByRole("complementary", { name: STRINGS.en.chapters });
+    expect(within(drawer).getByText("Opening")).toBeInTheDocument();
+    expect(within(drawer).getByText("Middle")).toBeInTheDocument();
+    const openingButton = within(drawer).getByRole("button", { name: /Opening/ });
+    const middleButton = within(drawer).getByRole("button", { name: /Middle/ });
+    expect(openingButton).toHaveAttribute("aria-current", "true");
+    expect(within(openingButton).getByText("5:00")).toBeInTheDocument();
+    expect(within(middleButton).getByText("10:00")).toBeInTheDocument();
+
+    fireEvent.click(middleButton);
+    expect(video.currentTime).toBe(300);
+
+    fireEvent.keyDown(drawer, { key: "Escape" });
+    expect(screen.queryByRole("complementary", { name: STRINGS.en.chapters })).toBeNull();
   });
 });

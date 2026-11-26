@@ -543,4 +543,36 @@ describe("MusicQueuePanel", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueSaveDuplicateTrack);
     expect(createCalls).toBe(0);
   });
+
+  it("renders single-line flex rows, non-wrapping action container, and distinct playlist placeholder", async () => {
+    const longTitle =
+      "A Very Long Music Track Title That Must Truncate Cleanly Instead Of Wrapping Action Icons";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        page([
+          { id: "track-202", title: "Current Track", mediaClass: "audio", libraryID: "lib-1" },
+          { id: "b", title: longTitle, mediaClass: "audio", libraryID: "lib-1" },
+          { id: "c", title: "Third Track", mediaClass: "audio", libraryID: "lib-1" },
+        ]),
+      ),
+    );
+    renderQueuePanel();
+    const panel = screen.getByRole("dialog", { name: STRINGS.en.musicQueueTitle });
+    const titleEl = await within(panel).findByText(longTitle);
+    expect(titleEl).toHaveClass("bf-music-queue-row-title");
+    const rowEl = titleEl.closest("li");
+    expect(rowEl).toHaveClass("bf-music-queue-row");
+    expect(
+      rowEl?.querySelector(".bf-music-queue-actions")?.querySelectorAll("button"),
+    ).toHaveLength(3);
+    const currentEl = within(panel).getByText("Current Track");
+    expect(currentEl).toHaveAttribute("aria-current", "true");
+    expect(currentEl.closest("li")).toHaveAttribute("data-current", "true");
+    const playlistInput = within(panel).getByRole("textbox", {
+      name: STRINGS.en.musicQueuePlaylistName,
+    });
+    expect(playlistInput).toHaveAttribute("placeholder", STRINGS.en.musicQueuePlaylistName);
+    expect(playlistInput).not.toHaveAttribute("placeholder", STRINGS.en.musicQueueTitle);
+  });
 });

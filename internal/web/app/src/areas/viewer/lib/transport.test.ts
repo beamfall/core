@@ -4,6 +4,7 @@ import {
   autoSkipSegmentAt,
   autoSkipSegmentKey,
   buildChapterList,
+  buildMarkerStripModel,
   buildRenditionMenuModel,
   buildRouteDetailModel,
   chapterSeekTarget,
@@ -295,5 +296,46 @@ describe("resolution labels (CORE-2485)", () => {
       info: { streams: [] } as unknown as PlaybackInfo,
     });
     expect(rows.some((r) => r.labelKey === "infoSource")).toBe(false);
+  });
+});
+
+describe("container chapter markers and chapter durations", () => {
+  it("renders markers without segmentKind as boundary ticks with no full-bar ranges", () => {
+    const model = buildMarkerStripModel(
+      [
+        { title: "Chapter 1", startSeconds: 0, endSeconds: 600, segmentKind: "" },
+        { title: "Chapter 2", startSeconds: 600, endSeconds: 1200, segmentKind: "" },
+        { title: "Chapter 3", startSeconds: 1200, endSeconds: 1800, segmentKind: "" },
+      ],
+      { durationSeconds: 1800, currentTimeSeconds: 300 },
+    );
+    expect(model.ranges).toEqual([]);
+    expect(model.ticks).toHaveLength(2);
+    expect(model.skip).toBeNull();
+  });
+
+  it("still emits skip ranges for markers with an explicit segmentKind", () => {
+    const model = buildMarkerStripModel(
+      [
+        { title: "Chapter 1", startSeconds: 0, endSeconds: 1800, segmentKind: "" },
+        { title: "Intro", startSeconds: 60, endSeconds: 120, segmentKind: "intro" },
+      ],
+      { durationSeconds: 1800, currentTimeSeconds: 90 },
+    );
+    expect(model.ranges).toHaveLength(1);
+    expect(model.skip).toBeTruthy();
+  });
+
+  it("computes chapter durations from marker bounds, next chapter, or total duration", () => {
+    const chapters = buildChapterList(
+      [
+        { title: "Opening", startSeconds: 0, endSeconds: 450, segmentKind: "" },
+        { title: "Part Two", startSeconds: 450, segmentKind: "" },
+        { title: "Finale", startSeconds: 1000, segmentKind: "" },
+      ],
+      { currentTimeSeconds: 500, durationSeconds: 1500 },
+    );
+    expect(chapters.map((c) => c.durationSeconds)).toEqual([450, 550, 500]);
+    expect(chapters.map((c) => c.current)).toEqual([false, true, false]);
   });
 });
