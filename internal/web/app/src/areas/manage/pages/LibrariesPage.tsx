@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { DeleteLibraryButton } from "@/components/beamfall/LibraryDelete";
 import {
@@ -18,6 +18,17 @@ import {
   PathPickerField,
   StatusChip,
 } from "@/components/beamfall/workbench";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -77,6 +88,7 @@ export function LibrariesPage({ renameEnabled }: { renameEnabled: boolean }) {
   const [plugins, setPlugins] = useState<PluginSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [createError, setCreateError] = useState("");
   const [newTitle, setNewTitle] = useState("");
   const [newPlugin, setNewPlugin] = useState(NONE);
 
@@ -119,7 +131,7 @@ export function LibrariesPage({ renameEnabled }: { renameEnabled: boolean }) {
   const onCreate = async () => {
     const title = newTitle.trim();
     if (!title) return;
-    setError("");
+    setCreateError("");
     try {
       await createLibrary(title, newPlugin === NONE ? null : newPlugin);
       requestManifestRefresh();
@@ -127,7 +139,7 @@ export function LibrariesPage({ renameEnabled }: { renameEnabled: boolean }) {
       setNewPlugin(NONE);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("couldNotCreateLibrary"));
+      setCreateError(err instanceof Error ? err.message : t("couldNotCreateLibrary"));
     }
   };
 
@@ -158,7 +170,6 @@ export function LibrariesPage({ renameEnabled }: { renameEnabled: boolean }) {
                     onTogglePreview={onTogglePreview}
                     onRootsSaved={onRootsSaved}
                     onDeleted={() => void load()}
-                    onError={setError}
                   />
                 ))
               )}
@@ -198,6 +209,7 @@ export function LibrariesPage({ renameEnabled }: { renameEnabled: boolean }) {
             {t("createLibrary")}
           </Button>
         </ManageInlineForm>
+        <ErrorLine message={createError} />
       </ManageSection>
     </div>
   );
@@ -209,19 +221,19 @@ function LibraryRow({
   onTogglePreview,
   onRootsSaved,
   onDeleted,
-  onError,
 }: {
   library: LibraryInfo;
   renameEnabled: boolean;
   onTogglePreview: (lib: LibraryInfo, enabled: boolean) => Promise<void>;
   onRootsSaved: (libraryID: string, roots: string[]) => void;
   onDeleted: () => void;
-  onError: (message: string) => void;
 }) {
   const t = useT();
-  const [rootsText, setRootsText] = useState((library.roots ?? []).join("\n"));
+  const savedRootsKey = (library.roots ?? []).join("\n");
+  const [rootsText, setRootsText] = useState(savedRootsKey);
   const [newRoot, setNewRoot] = useState("");
   const [tree, setTree] = useState<FolderEntryInfo | null>(null);
+  const [currentBrowsePath, setCurrentBrowsePath] = useState<string | undefined>(undefined);
   const [selectedPath, setSelectedPath] = useState("");
   const [selectedKind, setSelectedKind] = useState<"folder" | "file">("folder");
   const [folderName, setFolderName] = useState("");
@@ -229,27 +241,34 @@ function LibraryRow({
   const [moveDestination, setMoveDestination] = useState("");
   const [lastTrash, setLastTrash] = useState<ManagedTrashInfo | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cardError, setCardError] = useState("");
+  const selectedPathRef = useRef(selectedPath);
+  selectedPathRef.current = selectedPath;
   const rescanPhase = useRescanState(library.id).phase;
   const scanBusy = rescanPhase === "starting" || rescanPhase === "scanning";
 
+  useEffect(() => {
+    setRootsText(savedRootsKey);
+  }, [savedRootsKey]);
+
   const loadTree = useCallback(async () => {
-    if ((library.roots ?? []).length === 0 && !rootsText.trim()) {
+    if (!savedRootsKey.trim()) {
       setTree(null);
       setSelectedPath("");
       return;
     }
     try {
-      const next = await fetchFolderTree(library.id, undefined, 2);
+      const next = await fetchFolderTree(library.id, currentBrowsePath, 2);
       setTree(next);
       const firstRoot = next.children?.find((entry) => entry.kind === "folder");
-      if (!selectedPath && firstRoot) {
+      if (!selectedPathRef.current && firstRoot) {
         setSelectedPath(firstRoot.path);
         setSelectedKind("folder");
       }
     } catch {
       setTree(null);
     }
-  }, [library.id, library.roots, rootsText, selectedPath]);
+  }, [library.id, currentBrowsePath, savedRootsKey]);
 
   useEffect(() => {
     void loadTree();
@@ -258,26 +277,27 @@ function LibraryRow({
   const onScan = async () => {
     const path = selectedPath.trim();
     if (!path) {
-      onError(t("selectFolderToScan"));
+      setCardError(t("selectFolderToScan"));
       return;
     }
     if (selectedKind !== "folder") {
-      onError(t("selectFolderToScan"));
+      setCardError(t("selectFolderToScan"));
       return;
     }
-    onError("");
+    setCardError("");
     // The tracker drives the status chip below, like a full rescan (CORE-2012).
-    if ((await startRescan(library.id, [path])) === "refused") onError(t("scanNeedsUnlock"));
+    if ((await startRescan(library.id, [path])) === "refused") setCardError(t("scanNeedsUnlock"));
   };
 
   const rootsList = rootsText
     .split(/\n+/)
     .map((v) => v.trim())
     .filter(Boolean);
+  const rootsDirty = rootsText !== savedRootsKey || Boolean(newRoot.trim());
 
   const onSaveRoots = async () => {
     setBusy(true);
-    onError("");
+    setCardError("");
     // A path typed into the picker but not yet staged is saved too, so Save
     // never silently drops what the field shows (CORE-2077).
     const nextRoots = [...new Set([...rootsList, newRoot.trim()].filter(Boolean))];
@@ -286,9 +306,8 @@ function LibraryRow({
       setRootsText(updated.roots.join("\n"));
       setNewRoot("");
       onRootsSaved(library.id, updated.roots);
-      await loadTree();
     } catch (err) {
-      onError(err instanceof Error ? err.message : t("couldNotUpdateRoots"));
+      setCardError(err instanceof Error ? err.message : t("couldNotUpdateRoots"));
     } finally {
       setBusy(false);
     }
@@ -311,7 +330,7 @@ function LibraryRow({
     const name = folderName.trim();
     if (!parentForCreate || !name) return;
     setBusy(true);
-    onError("");
+    setCardError("");
     try {
       const created = await createManagedFolder(library.id, parentForCreate, name);
       setFolderName("");
@@ -319,7 +338,7 @@ function LibraryRow({
       setSelectedKind(created.kind);
       await loadTree();
     } catch (err) {
-      onError(err instanceof Error ? err.message : t("managedFileOperationFailed"));
+      setCardError(err instanceof Error ? err.message : t("managedFileOperationFailed"));
     } finally {
       setBusy(false);
     }
@@ -329,7 +348,7 @@ function LibraryRow({
     const name = renameTo.trim();
     if (!renameEnabled || !selectedPath || !name) return;
     setBusy(true);
-    onError("");
+    setCardError("");
     try {
       const renamed = await renameManagedPath(library.id, selectedPath, name);
       setRenameTo("");
@@ -337,7 +356,7 @@ function LibraryRow({
       setSelectedKind(renamed.kind);
       await loadTree();
     } catch (err) {
-      onError(err instanceof Error ? err.message : t("managedFileOperationFailed"));
+      setCardError(err instanceof Error ? err.message : t("managedFileOperationFailed"));
     } finally {
       setBusy(false);
     }
@@ -347,7 +366,7 @@ function LibraryRow({
     const destination = moveDestination.trim();
     if (!selectedPath || !destination) return;
     setBusy(true);
-    onError("");
+    setCardError("");
     try {
       const moved = await moveManagedPath(library.id, selectedPath, destination);
       setMoveDestination("");
@@ -355,7 +374,7 @@ function LibraryRow({
       setSelectedKind(moved.kind);
       await loadTree();
     } catch (err) {
-      onError(err instanceof Error ? err.message : t("managedFileOperationFailed"));
+      setCardError(err instanceof Error ? err.message : t("managedFileOperationFailed"));
     } finally {
       setBusy(false);
     }
@@ -363,9 +382,8 @@ function LibraryRow({
 
   const onDelete = async () => {
     if (!selectedPath) return;
-    if (!window.confirm(t("confirmDeleteManagedPath"))) return;
     setBusy(true);
-    onError("");
+    setCardError("");
     try {
       const trash = await deleteManagedPath(library.id, selectedPath);
       setLastTrash(trash);
@@ -373,7 +391,7 @@ function LibraryRow({
       setSelectedKind("folder");
       await loadTree();
     } catch (err) {
-      onError(err instanceof Error ? err.message : t("managedFileOperationFailed"));
+      setCardError(err instanceof Error ? err.message : t("managedFileOperationFailed"));
     } finally {
       setBusy(false);
     }
@@ -382,7 +400,7 @@ function LibraryRow({
   const onRestore = async () => {
     if (!lastTrash) return;
     setBusy(true);
-    onError("");
+    setCardError("");
     try {
       const restored = await restoreManagedPath(library.id, lastTrash.trashID);
       setSelectedPath(restored.path);
@@ -390,7 +408,7 @@ function LibraryRow({
       setLastTrash(null);
       await loadTree();
     } catch (err) {
-      onError(err instanceof Error ? err.message : t("managedFileOperationFailed"));
+      setCardError(err instanceof Error ? err.message : t("managedFileOperationFailed"));
     } finally {
       setBusy(false);
     }
@@ -441,16 +459,21 @@ function LibraryRow({
             >
               {t("stagePathPickerRoot")}
             </Button>
-            <Button type="button" size="sm" disabled={busy} onClick={onSaveRoots}>
+            <Button type="button" size="sm" disabled={busy || !rootsDirty} onClick={onSaveRoots}>
               {t("save")}
             </Button>
           </>
         }
       />
+      {rootsDirty && (
+        <p className="text-xs text-muted-foreground" role="status">
+          {t("manageUnsavedChanges")}
+        </p>
+      )}
     </div>
   );
   return (
-    <article className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-fill)] p-4">
+    <article className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
       <header className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
           <h3 className="break-words text-[15px] font-semibold">{library.title}</h3>
@@ -487,24 +510,43 @@ function LibraryRow({
           </summary>
           <p className="pb-3 text-xs text-[var(--text-muted)]">{t("libraryFileToolsHint")}</p>
           <div className="manage-folder-tools pb-3">
-            {tree ? (
-              <Tree.Root className="manage-folder-tree" aria-label={t("folderTree")}>
-                <FolderTree
-                  entry={tree}
-                  depth={0}
-                  selectedPath={selectedPath}
-                  onSelect={(entry) => {
-                    setSelectedPath(entry.path);
-                    setSelectedKind(entry.kind);
-                    if (entry.kind === "folder") setMoveDestination(entry.path);
-                  }}
-                />
-              </Tree.Root>
-            ) : (
-              <div className="manage-folder-tree" role="status" aria-label={t("folderTree")}>
-                <p className="text-xs text-[var(--text-muted)]">{t("folderTreeEmpty")}</p>
-              </div>
-            )}
+            <div className="flex min-w-0 flex-col gap-1.5">
+              {currentBrowsePath && (
+                <div className="flex items-center gap-2 text-xs">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCurrentBrowsePath(undefined)}
+                  >
+                    {t("back")}
+                  </Button>
+                  <span className="min-w-0 flex-1 break-all font-mono text-muted-foreground">
+                    {currentBrowsePath}
+                  </span>
+                </div>
+              )}
+              {tree ? (
+                <Tree.Root className="manage-folder-tree" aria-label={t("folderTree")}>
+                  <FolderTree
+                    entry={tree}
+                    depth={0}
+                    selectedPath={selectedPath}
+                    onSelect={(entry) => {
+                      setSelectedPath(entry.path);
+                      setSelectedKind(entry.kind);
+                    }}
+                    onDrill={(entry) => {
+                      if (entry.kind === "folder") setCurrentBrowsePath(entry.path);
+                    }}
+                  />
+                </Tree.Root>
+              ) : (
+                <div className="manage-folder-tree" role="status" aria-label={t("folderTree")}>
+                  <p className="text-xs text-[var(--text-muted)]">{t("folderTreeEmpty")}</p>
+                </div>
+              )}
+            </div>
             <div className="manage-folder-controls">
               <div className="manage-folder-selected">
                 <span className="manage-folder-selected-label">{t("selected")}</span>
@@ -516,11 +558,24 @@ function LibraryRow({
                     {t(selectedKind === "folder" ? "folderKindFolder" : "folderKindFile")}
                   </StatusChip>
                 )}
+                {selectedKind === "folder" &&
+                  selectedPath &&
+                  selectedPath !== currentBrowsePath && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => setCurrentBrowsePath(selectedPath)}
+                    >
+                      {t("open")}
+                    </Button>
+                  )}
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="ml-auto shrink-0"
+                  className="shrink-0"
                   disabled={busy || scanBusy || selectedKind !== "folder" || !selectedPath}
                   onClick={onScan}
                 >
@@ -569,27 +624,28 @@ function LibraryRow({
                   {t("rename")}
                 </Button>
               </div>
-              <div className={actionRow}>
-                <Input
-                  aria-label={t("destinationFolder")}
-                  placeholder={t("destinationFolder")}
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={moveDestination}
-                  onChange={(e) => setMoveDestination(e.target.value)}
-                  className="min-w-0 flex-1"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-28 shrink-0"
-                  disabled={busy || !selectedPath || !moveDestination.trim()}
-                  onClick={onMove}
-                >
-                  {t("move")}
-                </Button>
-              </div>
+              <PathPickerField
+                id={`move-${library.id}`}
+                label={t("destinationFolder")}
+                role="incomingFolder"
+                value={moveDestination}
+                libraryID={library.id}
+                placeholder={t("destinationFolder")}
+                onChange={setMoveDestination}
+                inputClassName="min-w-0 flex-1"
+                actions={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-28 shrink-0"
+                    disabled={busy || !selectedPath || !moveDestination.trim()}
+                    onClick={onMove}
+                  >
+                    {t("move")}
+                  </Button>
+                }
+              />
               <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border-subtle)] pt-3">
                 <Button
                   type="button"
@@ -600,20 +656,36 @@ function LibraryRow({
                 >
                   {t("restore")}
                 </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  disabled={busy || !selectedPath}
-                  onClick={onDelete}
-                >
-                  {t("delete")}
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      size="sm"
+                      disabled={busy || !selectedPath}
+                    >
+                      {t("delete")}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t("delete")}</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {t("confirmDeleteManagedPath")}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+                      <AlertDialogAction onClick={onDelete}>{t("delete")}</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
           </div>
         </details>
       )}
+      <ErrorLine message={cardError} />
       <footer className="mt-4 flex justify-end border-t border-[var(--border-subtle)] pt-3">
         <DeleteLibraryButton library={library} onDeleted={onDeleted} />
       </footer>
@@ -632,11 +704,13 @@ function FolderTree({
   depth,
   selectedPath,
   onSelect,
+  onDrill,
 }: {
   entry: FolderEntryInfo;
   depth: number;
   selectedPath: string;
   onSelect: (entry: FolderEntryInfo) => void;
+  onDrill: (entry: FolderEntryInfo) => void;
 }) {
   const t = useT();
   const isSyntheticRoot = !entry.path;
@@ -661,6 +735,7 @@ function FolderTree({
           aria-level={depth + 1}
           className={`manage-folder-node depth-${depth}${isFolder ? "" : " file"}`}
           onClick={() => onSelect(entry)}
+          onDoubleClick={() => onDrill(entry)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
@@ -682,6 +757,7 @@ function FolderTree({
           depth={isSyntheticRoot ? 0 : depth + 1}
           selectedPath={selectedPath}
           onSelect={onSelect}
+          onDrill={onDrill}
         />
       ))}
     </>

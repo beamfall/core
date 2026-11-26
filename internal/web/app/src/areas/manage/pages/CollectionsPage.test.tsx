@@ -25,6 +25,7 @@ vi.mock("@/lib/graphql", () => ({
     restrictedResultsPresent: false,
   })),
   fetchCollections: vi.fn(),
+  fetchMediaMetadata: vi.fn(),
   createCollection: vi.fn(),
   updateCollection: vi.fn(),
   deleteCollection: vi.fn(),

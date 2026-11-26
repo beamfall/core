@@ -102,6 +102,7 @@ function ItemSearch({
   onPick,
   mediaOnly = false,
   excludeID,
+  excludeIDs,
   disabled = false,
 }: {
   id: string;
@@ -110,6 +111,7 @@ function ItemSearch({
   onPick: (item: SearchResultItem) => void | Promise<void>;
   mediaOnly?: boolean;
   excludeID?: string;
+  excludeIDs?: ReadonlySet<string>;
   disabled?: boolean;
 }) {
   const { t, displayLocale } = useI18n();
@@ -138,7 +140,8 @@ function ItemSearch({
       const response = await searchResult(query, "keyword", controller.signal, { offset });
       if (controller.signal.aborted) return;
       const page = response.items.filter(
-        (item) => item.id !== excludeID && !(mediaOnly && isEntity(item)),
+        (item) =>
+          item.id !== excludeID && !excludeIDs?.has(item.id) && !(mediaOnly && isEntity(item)),
       );
       setResults((prev) => (offset === 0 || !prev ? page : [...prev, ...page]));
       setSearch({
@@ -285,7 +288,13 @@ function LoadState({
   onClose: () => void;
 }) {
   const { t } = useI18n();
-  if (state === "loading") return <EmptyLine message={t("curationLoading")} />;
+  if (state === "loading") {
+    return (
+      <ManageSection>
+        <EmptyLine message={t("curationLoading")} />
+      </ManageSection>
+    );
+  }
   return (
     <ManageSection>
       {state === "missing" ? (
@@ -323,15 +332,18 @@ function MediaView({ id, onClose }: { id: string; onClose: () => void }) {
   const [detail, setDetail] = useState<MediaDetail | "loading" | "missing" | "failed">("loading");
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  const loadSeq = useRef(0);
   const inFlight = useRef(false);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     const [media, files, extras, editions] = await Promise.all([
       fetchMedia(id),
       fetchMediaFiles(id),
       fetchMediaRelations(id, "extra-of"),
       fetchMediaRelations(id, "edition-of"),
     ]);
+    if (seq !== loadSeq.current) return;
     if (!media) {
       setDetail("missing");
       return;
@@ -351,15 +363,17 @@ function MediaView({ id, onClose }: { id: string; onClose: () => void }) {
   // The picked item points AT the open one: from = extra/edition, to = this
   // item. That is the direction scan writes and mediaRelations reads.
   const link = async (relation: "extra-of" | "edition-of", picked: SearchResultItem) => {
-    if (inFlight.current) return;
+    if (inFlight.current) return false;
     inFlight.current = true;
     setSaveError("");
     setSaving(true);
     try {
       await linkMediaRelation(picked.id, relation, id);
       await load();
+      return true;
     } catch {
       setSaveError(t("curationSaveFailed"));
+      return false;
     } finally {
       inFlight.current = false;
       setSaving(false);
@@ -460,9 +474,11 @@ function LinkedMediaSection({
   rows: MediaRelationDetail[];
   subjectID: string;
   saving: boolean;
-  onPick: (picked: SearchResultItem) => Promise<void>;
+  onPick: (picked: SearchResultItem) => Promise<boolean>;
 }) {
+  const { t } = useI18n();
   const [adding, setAdding] = useState(false);
+  const excludeIDs = new Set([subjectID, ...rows.map((r) => r.media.id)]);
   return (
     <ManageSection
       title={title}
@@ -470,7 +486,11 @@ function LinkedMediaSection({
       actions={
         <>
           <StatusBadge state="neutral">{rows.length}</StatusBadge>
-          {!adding && (
+          {adding ? (
+            <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>
+              {t("cancel")}
+            </Button>
+          ) : (
             <Button type="button" size="sm" variant="outline" onClick={() => setAdding(true)}>
               {addLabel}
             </Button>
@@ -505,10 +525,10 @@ function LinkedMediaSection({
             actionLabel={actionLabel}
             mediaOnly
             excludeID={subjectID}
+            excludeIDs={excludeIDs}
             disabled={saving}
             onPick={async (picked) => {
-              await onPick(picked);
-              setAdding(false);
+              if (await onPick(picked)) setAdding(false);
             }}
           />
         </div>
@@ -669,7 +689,19 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
         actions={
           <>
             <StatusBadge state="neutral">{rows.length}</StatusBadge>
-            {!adding && (
+            {adding ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setAdding(false);
+                  setNewRelation("");
+                }}
+              >
+                {t("cancel")}
+              </Button>
+            ) : (
               <Button
                 type="button"
                 size="sm"
@@ -762,9 +794,9 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
         )}
         {adding && (
           <div className="mt-3 space-y-3 border-t border-[var(--line-soft)] pt-3">
-            {relationNames.length > 1 && (
-              <div className="max-w-xs space-y-1">
-                <Label htmlFor="curation-member-relation">{t("curationRelationName")}</Label>
+            <div className="max-w-xs space-y-1">
+              <Label htmlFor="curation-member-relation">{t("curationRelationName")}</Label>
+              {relationNames.length > 0 && (
                 <Select value={relation} onValueChange={setNewRelation}>
                   <SelectTrigger id="curation-member-relation">
                     <SelectValue />
@@ -777,21 +809,20 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-            )}
-            {relationNames.length === 0 && (
-              <div className="max-w-xs space-y-1">
-                <Label htmlFor="curation-member-relation">{t("curationRelationName")}</Label>
-                <Input
-                  id="curation-member-relation"
-                  value={newRelation}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(e) => setNewRelation(e.target.value)}
-                />
+              )}
+              <Input
+                id={relationNames.length === 0 ? "curation-member-relation" : undefined}
+                aria-label={t("curationRelationName")}
+                value={newRelation}
+                placeholder={relationNames[0] || undefined}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => setNewRelation(e.target.value)}
+              />
+              {relationNames.length === 0 && (
                 <p className="text-xs text-[var(--text-muted)]">{t("curationRelationNameHint")}</p>
-              </div>
-            )}
+              )}
+            </div>
             {relation ? (
               <ItemSearch
                 id="curation-member"

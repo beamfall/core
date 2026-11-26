@@ -6,7 +6,19 @@ import {
   ManageSection,
   ManageTable,
   StatusBadge,
+  TableSkeletonRows,
 } from "@/components/beamfall/workbench";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { displayString } from "@/lib/display";
@@ -36,7 +49,7 @@ import type {
   NavOverrideInfo,
   SectionOverrideInfo,
 } from "@/lib/graphql/types";
-import { useT } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n";
 import { THEME_DEFAULT_ACCENT } from "@/lib/theme/theme.generated";
 import { formatDateTime } from "../lib/schedule";
 
@@ -93,11 +106,12 @@ function moved<T>(list: T[], index: number, delta: number): T[] {
 }
 
 export function NavOverridePage() {
-  const t = useT();
+  const { t } = useI18n();
   const [manifest, setManifest] = useState<NavigationManifest | null>(null);
   const [override, setOverride] = useState<NavOverrideInfo>(EMPTY_OVERRIDE);
   const [history, setHistory] = useState<NavOverrideHistoryInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -125,14 +139,14 @@ export function NavOverridePage() {
 
   // Apply a patch and refresh local state from the server's response, then
   // re-pull history so a new snapshot row appears. Patches are read-modify-
-  // write over `override`, so one is in flight at a time: a second click
-  // before the first response lands would be computed from stale state and
-  // silently undo the first.
-  const patchInFlight = useRef(false);
+  // write over `override`, so one is in flight at a time.
+  const inFlightRef = useRef(false);
+
   const apply = useCallback(
     async (patch: Parameters<typeof setNavOverride>[0]) => {
-      if (patchInFlight.current) return;
-      patchInFlight.current = true;
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      setSaving(true);
       setError("");
       try {
         setOverride(await setNavOverride(patch));
@@ -140,30 +154,43 @@ export function NavOverridePage() {
       } catch {
         setError(t("navOverrideUnavailable"));
       } finally {
-        patchInFlight.current = false;
+        inFlightRef.current = false;
+        setSaving(false);
       }
     },
     [t],
   );
 
   const onReset = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    setSaving(true);
     setError("");
     try {
       setOverride(await resetNavOverride());
       setHistory(await fetchNavOverrideHistory());
     } catch {
       setError(t("navOverrideUnavailable"));
+    } finally {
+      inFlightRef.current = false;
+      setSaving(false);
     }
   }, [t]);
 
   const onRestore = useCallback(
     async (id: number) => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      setSaving(true);
       setError("");
       try {
         setOverride(await restoreNavOverride(id));
         setHistory(await fetchNavOverrideHistory());
       } catch {
         setError(t("navOverrideUnavailable"));
+      } finally {
+        inFlightRef.current = false;
+        setSaving(false);
       }
     },
     [t],
@@ -182,31 +209,41 @@ export function NavOverridePage() {
   return (
     <div className="space-y-4">
       <ManageSection
+        title={t("navOverrideHeading")}
         actions={
           <div className="flex items-center gap-2">
             {isOverridden && <StatusBadge state="amber">{t("navOverrideActive")}</StatusBadge>}
-            <Button type="button" variant="outline" size="sm" onClick={load}>
+            <Button type="button" variant="outline" size="sm" disabled={saving} onClick={load}>
               {t("refresh")}
             </Button>
           </div>
         }
       >
-        <p className="text-sm text-muted-foreground">{t("manageNavEveryoneNote")}</p>
+        <p className="mb-2 text-sm text-muted-foreground">{t("manageNavEveryoneNote")}</p>
         <NodesPanel
           nodes={manifest?.navigation ?? []}
           override={override}
           loading={loading}
+          saving={saving}
           onApply={apply}
         />
         <ErrorLine message={error} />
       </ManageSection>
 
-      <ThemePanel override={override} onApply={apply} />
+      <ThemePanel override={override} saving={saving} onApply={apply} />
 
-      <SectionsPanel layouts={manifest?.layouts ?? []} override={override} onApply={apply} />
+      <SectionsPanel
+        layouts={manifest?.layouts ?? []}
+        override={override}
+        loading={loading}
+        saving={saving}
+        onApply={apply}
+      />
 
       <HistoryPanel
         history={history}
+        loading={loading}
+        saving={saving}
         canReset={isOverridden}
         onReset={onReset}
         onRestore={onRestore}
@@ -219,14 +256,17 @@ function NodesPanel({
   nodes,
   override,
   loading,
+  saving,
   onApply,
 }: {
   nodes: NavigationNode[];
   override: NavOverrideInfo;
   loading: boolean;
+  saving: boolean;
   onApply: (patch: Parameters<typeof setNavOverride>[0]) => Promise<void>;
 }) {
-  const t = useT();
+  const { t, displayLocale } = useI18n();
+  const locale = (displayLocale || "en").split("-")[0];
   const [editing, setEditing] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
 
@@ -250,19 +290,30 @@ function NodesPanel({
 
   const beginEdit = (node: NavigationNode) => {
     setEditing(node.id);
-    setEditLabel(override.nodeLabelOverrides[node.id]?.en ?? "");
+    const map = override.nodeLabelOverrides[node.id];
+    setEditLabel(map?.[locale] ?? map?.en ?? "");
   };
 
   const saveLabel = (id: string) => {
     const trimmed = editLabel.trim();
     const next = { ...override.nodeLabelOverrides };
-    if (trimmed) next[id] = { ...(next[id] ?? {}), en: trimmed };
-    else delete next[id];
+    if (trimmed) {
+      next[id] = { ...(next[id] ?? {}), [locale]: trimmed };
+    } else if (next[id]) {
+      const updated = { ...next[id] };
+      delete updated[locale];
+      if (Object.keys(updated).length === 0) delete next[id];
+      else next[id] = updated;
+    }
     setEditing(null);
     return onApply({ nodeLabelOverrides: next });
   };
 
-  if (!loading && ordered.length === 0) {
+  if (loading) {
+    return <Skeleton aria-hidden="true" className="h-32 rounded-md" />;
+  }
+
+  if (ordered.length === 0) {
     return <EmptyLine message={t("navOverrideNoNodes")} />;
   }
 
@@ -270,19 +321,29 @@ function NodesPanel({
     <div className="space-y-1">
       {ordered.map((node, index) => {
         const isHidden = hidden.has(node.id);
-        const labelOverride = override.nodeLabelOverrides[node.id]?.en;
+        const labelMap = override.nodeLabelOverrides[node.id];
+        const labelOverride = labelMap?.[locale] ?? labelMap?.en;
         return editing === node.id ? (
           <div key={node.id} className="flex flex-wrap items-end gap-2 py-1">
             <Input
+              autoFocus
               aria-label={t("navOverrideLabelFor")}
               value={editLabel}
               autoComplete="off"
               spellCheck={false}
-              placeholder={displayString(node.title)}
+              placeholder={displayString(node.title, displayLocale)}
               onChange={(e) => setEditLabel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void saveLabel(node.id);
+                } else if (e.key === "Escape") {
+                  setEditing(null);
+                }
+              }}
               className="w-56"
             />
-            <Button type="button" size="sm" onClick={() => saveLabel(node.id)}>
+            <Button type="button" size="sm" disabled={saving} onClick={() => saveLabel(node.id)}>
               {t("navOverrideSaveLabel")}
             </Button>
             <Button type="button" size="sm" variant="outline" onClick={() => setEditing(null)}>
@@ -296,12 +357,13 @@ function NodesPanel({
           >
             <Switch
               checked={!isHidden}
+              disabled={saving}
               onCheckedChange={() => void toggleHidden(node.id)}
-              aria-label={`${t("navOverrideShow")} ${displayString(node.title)}`}
+              aria-label={`${t("navOverrideShow")} ${displayString(node.title, displayLocale)}`}
             />
             <span className="min-w-0 flex-1 text-sm">
               <span className={isHidden ? "text-muted-foreground line-through" : ""}>
-                {labelOverride ?? displayString(node.title)}
+                {labelOverride ?? displayString(node.title, displayLocale)}
               </span>
               <span className="ml-2 text-xs text-muted-foreground">{node.id}</span>
               {labelOverride && (
@@ -316,7 +378,7 @@ function NodesPanel({
                 size="sm"
                 variant="ghost"
                 aria-label={t("navOverrideMoveUp")}
-                disabled={index === 0}
+                disabled={saving || index === 0}
                 onClick={() => void move(index, -1)}
               >
                 ↑
@@ -326,12 +388,18 @@ function NodesPanel({
                 size="sm"
                 variant="ghost"
                 aria-label={t("navOverrideMoveDown")}
-                disabled={index === ordered.length - 1}
+                disabled={saving || index === ordered.length - 1}
                 onClick={() => void move(index, 1)}
               >
                 ↓
               </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => beginEdit(node)}>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={saving}
+                onClick={() => beginEdit(node)}
+              >
                 {t("navOverrideRelabel")}
               </Button>
             </span>
@@ -344,19 +412,22 @@ function NodesPanel({
 
 function ThemePanel({
   override,
+  saving,
   onApply,
 }: {
   override: NavOverrideInfo;
+  saving: boolean;
   onApply: (patch: Parameters<typeof setNavOverride>[0]) => Promise<void>;
 }) {
-  const t = useT();
+  const { t } = useI18n();
   const [accent, setAccent] = useState(override.themeAccentColor);
 
   // Keep the field in sync when the override changes underneath (load/restore).
   useEffect(() => setAccent(override.themeAccentColor), [override.themeAccentColor]);
 
   const effective = override.themeAccentColor || DEFAULT_ACCENT;
-  const valid = /^#[0-9a-fA-F]{6}$/.test(accent.trim());
+  const trimmed = accent.trim();
+  const valid = /^#[0-9a-fA-F]{6}$/.test(trimmed);
 
   return (
     <ManageSection
@@ -374,7 +445,8 @@ function ThemePanel({
         <input
           type="color"
           className="h-9 w-9 shrink-0 cursor-pointer rounded-md border bg-transparent p-0.5"
-          value={(valid ? accent.trim() : effective).toLowerCase()}
+          value={(valid ? trimmed : effective).toLowerCase()}
+          disabled={saving}
           onChange={(e) => setAccent(e.target.value)}
           aria-label={t("manageNavAccentPicker")}
           title={t("manageNavAccentPicker")}
@@ -390,14 +462,22 @@ function ThemePanel({
             autoComplete="off"
             spellCheck={false}
             placeholder={DEFAULT_ACCENT}
+            aria-invalid={trimmed !== "" && !valid}
+            aria-describedby={trimmed !== "" && !valid ? "nav-accent-error" : undefined}
             onChange={(e) => setAccent(e.target.value)}
             className="w-40"
           />
+          {trimmed !== "" && !valid && (
+            <p id="nav-accent-error" role="alert" className="text-xs text-[var(--state-warning)]">
+              {t("manageNavHexInvalid")}
+            </p>
+          )}
         </div>
         <Button
           type="button"
-          disabled={!valid || accent.trim() === override.themeAccentColor}
-          onClick={() => void onApply({ themeAccentColor: accent.trim() })}
+          size="sm"
+          disabled={saving || !valid || trimmed === override.themeAccentColor}
+          onClick={() => void onApply({ themeAccentColor: trimmed })}
         >
           {t("navOverrideApplyAccent")}
         </Button>
@@ -405,7 +485,7 @@ function ThemePanel({
           type="button"
           variant="outline"
           size="sm"
-          disabled={!override.themeAccentColor}
+          disabled={saving || !override.themeAccentColor}
           onClick={() => void onApply({ themeAccentColor: "" })}
         >
           {t("navOverrideUseDefault")}
@@ -418,13 +498,17 @@ function ThemePanel({
 function SectionsPanel({
   layouts,
   override,
+  loading,
+  saving,
   onApply,
 }: {
   layouts: Layout[];
   override: NavOverrideInfo;
+  loading: boolean;
+  saving: boolean;
   onApply: (patch: Parameters<typeof setNavOverride>[0]) => Promise<void>;
 }) {
-  const t = useT();
+  const { t, displayLocale } = useI18n();
   const [layoutID, setLayoutID] = useState("");
 
   // Default the selector to the first Layout once the manifest arrives.
@@ -501,7 +585,9 @@ function SectionsPanel({
         ) : undefined
       }
     >
-      {ordered.length === 0 ? (
+      {loading ? (
+        <Skeleton aria-hidden="true" className="h-24 rounded-md" />
+      ) : ordered.length === 0 ? (
         <EmptyLine message={t("navOverrideNoSections")} />
       ) : (
         <div className="space-y-1" data-setting="manage.navigation.sections">
@@ -514,12 +600,13 @@ function SectionsPanel({
               >
                 <Switch
                   checked={!isHidden}
+                  disabled={saving}
                   onCheckedChange={() => void toggleHidden(section.id)}
-                  aria-label={`${t("navOverrideShow")} ${displayString(section.title)}`}
+                  aria-label={`${t("navOverrideShow")} ${displayString(section.title, displayLocale)}`}
                 />
                 <span className="min-w-0 flex-1 text-sm">
                   <span className={isHidden ? "text-muted-foreground line-through" : ""}>
-                    {displayString(section.title) || section.id}
+                    {displayString(section.title, displayLocale) || section.id}
                   </span>
                   <span className="ml-2 text-xs text-muted-foreground">{section.id}</span>
                 </span>
@@ -529,7 +616,7 @@ function SectionsPanel({
                     size="sm"
                     variant="ghost"
                     aria-label={t("navOverrideMoveUp")}
-                    disabled={index === 0}
+                    disabled={saving || index === 0}
                     onClick={() => void move(index, -1)}
                   >
                     ↑
@@ -539,7 +626,7 @@ function SectionsPanel({
                     size="sm"
                     variant="ghost"
                     aria-label={t("navOverrideMoveDown")}
-                    disabled={index === ordered.length - 1}
+                    disabled={saving || index === ordered.length - 1}
                     onClick={() => void move(index, 1)}
                   >
                     ↓
@@ -556,7 +643,7 @@ function SectionsPanel({
 
 // Summarize an override snapshot for the audit table — counts, not the full
 // blob, so the row stays scannable.
-function summarize(t: ReturnType<typeof useT>, data: NavOverrideInfo): string {
+function summarize(t: ReturnType<typeof useI18n>["t"], data: NavOverrideInfo): string {
   const parts: string[] = [];
   if (data.hiddenNodeIDs.length > 0)
     parts.push(`${data.hiddenNodeIDs.length} ${t("navOverrideHiddenCount")}`);
@@ -571,33 +658,53 @@ function summarize(t: ReturnType<typeof useT>, data: NavOverrideInfo): string {
 
 function HistoryPanel({
   history,
+  loading,
+  saving,
   canReset,
   onReset,
   onRestore,
 }: {
   history: NavOverrideHistoryInfo[];
+  loading: boolean;
+  saving: boolean;
   canReset: boolean;
   onReset: () => Promise<void>;
   onRestore: (id: number) => Promise<void>;
 }) {
-  const t = useT();
+  const { t } = useI18n();
   return (
     <ManageSection
       title={t("navOverrideHistoryHeading")}
       lead={t("navOverrideHistoryLead")}
       actions={
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!canReset}
-          onClick={() => void onReset()}
-        >
-          {t("navOverrideReset")}
-        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button type="button" variant="outline" size="sm" disabled={saving || !canReset}>
+              {t("navOverrideReset")}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("navOverrideReset")}</AlertDialogTitle>
+              <AlertDialogDescription>{t("manageNavEveryoneNote")}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void onReset()}>
+                {t("navOverrideReset")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       }
     >
-      {history.length === 0 ? (
+      {loading ? (
+        <ManageTable>
+          <TableBody>
+            <TableSkeletonRows columns={3} rows={2} />
+          </TableBody>
+        </ManageTable>
+      ) : history.length === 0 ? (
         <EmptyLine message={t("navOverrideNoHistory")} />
       ) : (
         <ManageTable>
@@ -618,6 +725,7 @@ function HistoryPanel({
                     type="button"
                     variant="outline"
                     size="sm"
+                    disabled={saving}
                     onClick={() => void onRestore(entry.id)}
                   >
                     {t("navOverrideRestore")}

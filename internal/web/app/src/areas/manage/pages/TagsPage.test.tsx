@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -234,6 +234,8 @@ describe("TagsPage", () => {
     await user.click(screen.getByRole("combobox", { name: "Tags" }));
     await user.click(await screen.findByRole("option", { name: "Archive" }));
     await user.click(screen.getByRole("button", { name: "Apply" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     expect(bulkAssignTags).toHaveBeenCalledWith(
       ["tag-arc"],

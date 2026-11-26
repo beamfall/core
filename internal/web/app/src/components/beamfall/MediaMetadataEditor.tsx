@@ -3,6 +3,7 @@ import { EmptyLine, ErrorLine, StatusBadge } from "@/components/beamfall/workben
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { uploadMediaArtwork } from "@/lib/api";
 import { displayString } from "@/lib/display";
@@ -26,10 +27,10 @@ import type {
 import { useI18n } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 
-const SLOTS: { slot: string; lock: string; key: StringKey }[] = [
-  { slot: "poster", lock: "artworkPoster", key: "artworkSlotPoster" },
-  { slot: "backdrop", lock: "artworkBackdrop", key: "artworkSlotBackdrop" },
-  { slot: "thumb", lock: "artworkThumb", key: "artworkSlotThumb" },
+const SLOTS: { slot: string; lock: string; key: StringKey; landscape: boolean }[] = [
+  { slot: "poster", lock: "artworkPoster", key: "artworkSlotPoster", landscape: false },
+  { slot: "backdrop", lock: "artworkBackdrop", key: "artworkSlotBackdrop", landscape: true },
+  { slot: "thumb", lock: "artworkThumb", key: "artworkSlotThumb", landscape: true },
 ];
 
 const UPLOAD_ACCEPT = "image/jpeg,image/png";
@@ -68,6 +69,12 @@ export interface MediaMetadataEditorProps {
   currentArtwork?: Partial<Record<string, string>>;
   /** Called after any change is saved, so the host can reload what it shows. */
   onChanged?: () => void;
+  /** Called whenever metadata finishes loading or updates. */
+  onInfoLoaded?: (info: MediaMetadataInfo | null) => void;
+  /** Explicitly lock the artwork slot via setMediaFieldLock when pinning a candidate. */
+  lockArtworkOnPin?: boolean;
+  /** Optional actions rendered beside the Details Save button. */
+  detailsActions?: ReactNode;
 }
 
 // The per-item metadata editor (CORE-1715, CORE-2905), shared by the Manage
@@ -82,6 +89,9 @@ export function MediaMetadataEditor({
   mediaID,
   currentArtwork,
   onChanged,
+  onInfoLoaded,
+  lockArtworkOnPin = false,
+  detailsActions,
 }: MediaMetadataEditorProps) {
   const { t, displayLocale } = useI18n();
   // undefined = loading, null = unavailable.
@@ -98,56 +108,67 @@ export function MediaMetadataEditor({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const loadSeq = useRef(0);
+  const onInfoLoadedRef = useRef(onInfoLoaded);
+  onInfoLoadedRef.current = onInfoLoaded;
 
   const applyInfo = useCallback((next: MediaMetadataInfo) => {
     setInfo(next);
     setDraft(draftOf(next));
+    onInfoLoadedRef.current?.(next);
   }, []);
 
-  const loadFields = useCallback(async (id: string) => {
+  const loadFields = useCallback(async (id: string, seq?: number) => {
     try {
       const next = await fetchMediaFields(id);
+      if (seq !== undefined && seq !== loadSeq.current) return;
       setFields(next);
       setFieldDraft(Object.fromEntries(next.map((f) => [f.name, f.value])));
     } catch {
+      if (seq !== undefined && seq !== loadSeq.current) return;
       setFields([]);
       setFieldDraft({});
     }
   }, []);
 
-  const loadSlot = useCallback(async (id: string, slot: string) => {
+  const loadSlot = useCallback(async (id: string, slot: string, seq?: number) => {
     try {
       const candidates = await fetchArtworkCandidates(id, slot);
+      if (seq !== undefined && seq !== loadSeq.current) return;
       setArtwork((prev) => ({ ...prev, [slot]: candidates }));
     } catch {
+      if (seq !== undefined && seq !== loadSeq.current) return;
       setArtwork((prev) => ({ ...prev, [slot]: null }));
     }
   }, []);
 
   const loadAll = useCallback(
-    async (id: string) => {
-      await Promise.all([loadFields(id), ...SLOTS.map(({ slot }) => loadSlot(id, slot))]);
+    async (id: string, seq?: number) => {
+      await Promise.all([loadFields(id, seq), ...SLOTS.map(({ slot }) => loadSlot(id, slot, seq))]);
     },
     [loadFields, loadSlot],
   );
 
   useEffect(() => {
+    const seq = ++loadSeq.current;
     setStatus("");
     setError("");
     setArtwork({});
     setFields([]);
-    let cancelled = false;
     setInfo(undefined);
     fetchMediaMetadata(mediaID)
       .then((next) => {
-        if (!cancelled) applyInfo(next);
+        if (seq === loadSeq.current) applyInfo(next);
       })
       .catch(() => {
-        if (!cancelled) setInfo(null);
+        if (seq === loadSeq.current) {
+          setInfo(null);
+          onInfoLoadedRef.current?.(null);
+        }
       });
-    void loadAll(mediaID);
+    void loadAll(mediaID, seq);
     return () => {
-      cancelled = true;
+      loadSeq.current += 1;
     };
   }, [mediaID, applyInfo, loadAll]);
 
@@ -175,11 +196,15 @@ export function MediaMetadataEditor({
   };
 
   const onToggleLock = async (field: string) => {
+    if (busy) return;
     begin();
+    setBusy(true);
     try {
       setLocks(await setMediaFieldLock(mediaID, field, !locked(field)));
     } catch {
       setError(t("itemMetadataLockFailed"));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -263,16 +288,23 @@ export function MediaMetadataEditor({
     }
   };
 
-  const onChooseArtwork = async (slot: string, candidate: ArtworkCandidate) => {
+  const onChooseArtwork = async (slot: string, lock: string, candidate: ArtworkCandidate) => {
+    if (busy) return;
     begin();
+    setBusy(true);
     try {
-      // The server locks the slot as part of the pin.
       await pinArtworkCandidate(mediaID, slot, candidate.id);
-      await refreshLocks();
+      if (lockArtworkOnPin) {
+        setLocks(await setMediaFieldLock(mediaID, lock, true));
+      } else {
+        await refreshLocks();
+      }
       await loadSlot(mediaID, slot);
       changed();
     } catch {
       setError(t("couldNotPinArtworkCandidate"));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -321,6 +353,7 @@ export function MediaMetadataEditor({
           type="button"
           variant="outline"
           size="sm"
+          disabled={busy}
           aria-label={t(isLocked ? "itemMetadataUnlockField" : "itemMetadataLockField", {
             field: label,
           })}
@@ -367,10 +400,17 @@ export function MediaMetadataEditor({
     setDraft((prev) => ({ ...prev, [field]: value }));
 
   if (info === null) return <ErrorLine message={t("itemMetadataUnavailable")} />;
-  if (info === undefined) return null;
+  if (info === undefined) return <Skeleton aria-hidden="true" className="h-64 rounded-xl" />;
 
   return (
     <div className="space-y-6">
+      {status ? (
+        <p role="status" className="text-sm font-medium">
+          {status}
+        </p>
+      ) : null}
+      <ErrorLine message={error} />
+
       <section className="space-y-3" aria-labelledby="item-metadata-details">
         <h3 id="item-metadata-details" className="font-medium">
           {t("itemMetadataDetailsHeading")}
@@ -410,12 +450,18 @@ export function MediaMetadataEditor({
             onChange={(e) => setDraftField("summary")(e.target.value)}
           />
         ))}
-        <Button type="button" onClick={onSaveDetails} disabled={busy}>
-          {t("itemMetadataSave")}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={onSaveDetails} disabled={busy}>
+            {t("itemMetadataSave")}
+          </Button>
+          {detailsActions}
+        </div>
       </section>
 
-      <section className="space-y-3" aria-labelledby="item-metadata-fields">
+      <section
+        className="space-y-3 border-t border-[var(--border-subtle)] pt-4"
+        aria-labelledby="item-metadata-fields"
+      >
         <h3 id="item-metadata-fields" className="font-medium">
           {t("itemMetadataFieldsHeading")}
         </h3>
@@ -450,12 +496,15 @@ export function MediaMetadataEditor({
         )}
       </section>
 
-      <section className="space-y-3" aria-labelledby="item-metadata-artwork">
+      <section
+        className="space-y-3 border-t border-[var(--border-subtle)] pt-4"
+        aria-labelledby="item-metadata-artwork"
+      >
         <h3 id="item-metadata-artwork" className="font-medium">
           {t("itemMetadataArtworkHeading")}
         </h3>
         <p className="text-muted-foreground text-sm">{t("itemMetadataArtworkLead")}</p>
-        {SLOTS.map(({ slot, lock, key }) => {
+        {SLOTS.map(({ slot, lock, key, landscape }) => {
           const candidates = artwork[slot];
           const current = currentArtwork?.[slot];
           const slotLabel = t(key);
@@ -512,7 +561,7 @@ export function MediaMetadataEditor({
                         <img
                           src={candidate.previewURL}
                           alt=""
-                          className="h-24 w-auto rounded-md border"
+                          className={`${landscape ? "aspect-video w-40" : "aspect-[2/3] w-20"} rounded-md border object-cover`}
                           onError={() =>
                             setBrokenPreviews((prev) => new Set(prev).add(candidate.id))
                           }
@@ -525,7 +574,8 @@ export function MediaMetadataEditor({
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => onChooseArtwork(slot, candidate)}
+                          disabled={busy}
+                          onClick={() => onChooseArtwork(slot, lock, candidate)}
                         >
                           {t("itemMetadataArtworkChoose")}
                         </Button>
@@ -539,7 +589,10 @@ export function MediaMetadataEditor({
         })}
       </section>
 
-      <section className="space-y-3" aria-labelledby="item-metadata-refresh">
+      <section
+        className="space-y-3 border-t border-[var(--border-subtle)] pt-4"
+        aria-labelledby="item-metadata-refresh"
+      >
         <h3 id="item-metadata-refresh" className="font-medium">
           {t("itemMetadataRefreshHeading")}
         </h3>
@@ -555,13 +608,6 @@ export function MediaMetadataEditor({
           {t("itemMetadataRefresh")}
         </Button>
       </section>
-
-      {status ? (
-        <p role="status" className="text-sm">
-          {status}
-        </p>
-      ) : null}
-      <ErrorLine message={error} />
     </div>
   );
 }

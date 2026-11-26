@@ -9,6 +9,7 @@ import {
   ManageTable,
   PathPickerField,
   PresetSelect,
+  TableSkeletonRows,
 } from "@/components/beamfall/workbench";
 import {
   AlertDialog,
@@ -66,7 +67,10 @@ export function SubscriptionsPage() {
 
   const [libraryID, setLibraryID] = useState("");
   const [subscriptions, setSubscriptions] = useState<SubscriptionInfo[]>([]);
+  const [loading, setLoading] = useState(libraries.length > 0);
+  const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
+  const [addError, setAddError] = useState("");
   const [exportError, setExportError] = useState("");
   const [exporting, setExporting] = useState(false);
   const [feedURL, setFeedURL] = useState("");
@@ -85,13 +89,19 @@ export function SubscriptionsPage() {
     async (id: string) => {
       const generation = ++loadGeneration.current;
       setError("");
-      setSubscriptions([]);
-      if (!id) return;
+      if (!id) {
+        setSubscriptions([]);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
       try {
         const next = await fetchSubscriptions(id);
         if (loadGeneration.current === generation) setSubscriptions(next);
       } catch {
         if (loadGeneration.current === generation) setError(t("subscriptionsUnavailable"));
+      } finally {
+        if (loadGeneration.current === generation) setLoading(false);
       }
     },
     [t],
@@ -114,13 +124,14 @@ export function SubscriptionsPage() {
   );
 
   const onAdd = async () => {
-    setError("");
+    setAddError("");
     const trimmedFeed = feedURL.trim();
     const mutationLibraryID = libraryID;
     if (!mutationLibraryID || !trimmedFeed) {
-      setError(t("pickLibraryFeedRoot"));
+      setAddError(t("pickLibraryFeedRoot"));
       return;
     }
+    setAdding(true);
     try {
       await addSubscription({
         libraryID: mutationLibraryID,
@@ -136,21 +147,29 @@ export function SubscriptionsPage() {
     } catch {
       if (libraryIDRef.current === mutationLibraryID) {
         // Fixed message: the feed URL may carry credentials.
-        setError(t("couldNotAddSubscription"));
+        setAddError(t("couldNotAddSubscription"));
       }
+    } finally {
+      setAdding(false);
     }
   };
 
-  const onSaveRetention = async (sub: SubscriptionInfo, kind: string, n: number | null) => {
+  const onSaveRetention = async (
+    sub: SubscriptionInfo,
+    kind: string,
+    n: number | null,
+  ): Promise<boolean> => {
     const mutationLibraryID = libraryID;
     setError("");
     try {
       await setSubscriptionRetention(sub.id, kind, kind === "keep-last-n" ? n : null);
       await refreshMutationLibrary(mutationLibraryID);
+      return true;
     } catch {
       if (libraryIDRef.current === mutationLibraryID) {
         setError(t("couldNotUpdateRetention"));
       }
+      return false;
     }
   };
 
@@ -225,7 +244,9 @@ export function SubscriptionsPage() {
         }
       >
         <div data-setting="manage.subscriptions.list">
-          {subscriptions.length === 0 ? (
+          {libraries.length === 0 ? (
+            <EmptyLine message={t("manageNoLibraries")} />
+          ) : !loading && subscriptions.length === 0 ? (
             <EmptyLine message={t("noSubscriptions")} />
           ) : (
             <ManageTable>
@@ -245,14 +266,18 @@ export function SubscriptionsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {subscriptions.map((sub) => (
-                  <SubscriptionRow
-                    key={sub.id}
-                    subscription={sub}
-                    onSaveRetention={onSaveRetention}
-                    onRemove={onRemove}
-                  />
-                ))}
+                {loading ? (
+                  <TableSkeletonRows columns={3} />
+                ) : (
+                  subscriptions.map((sub) => (
+                    <SubscriptionRow
+                      key={sub.id}
+                      subscription={sub}
+                      onSaveRetention={onSaveRetention}
+                      onRemove={onRemove}
+                    />
+                  ))
+                )}
               </TableBody>
             </ManageTable>
           )}
@@ -262,46 +287,54 @@ export function SubscriptionsPage() {
       </ManageSection>
 
       <ManageSection title={t("addSubscription")}>
-        <ManageInlineForm>
-          <ManageField id="subscription-feed" label={t("feedURL")}>
-            <Input
-              id="subscription-feed"
-              value={feedURL}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => setFeedURL(e.target.value)}
-              className="w-72"
-            />
-          </ManageField>
-          <div data-setting="manage.subscriptions.downloadFolder">
-            <PathPickerField
-              id="subscription-root"
-              label={t("downloadFolder")}
-              role="downloadDestination"
-              value={root}
-              onChange={setRoot}
-              suppressAppStoreDownload
-              actions={<HelpTip label={t("downloadFolder")} text="manageSubDownloadFolderHelp" />}
-            />
-          </div>
-          <ManageField
-            id="subscription-auth"
-            label={t("authorizationHeader")}
-            tip="manageSubAuthHeaderHelp"
-            setting="manage.subscriptions.authorizationHeader"
-          >
-            <Input
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onAdd();
+          }}
+        >
+          <ManageInlineForm>
+            <ManageField id="subscription-feed" label={t("feedURL")}>
+              <Input
+                id="subscription-feed"
+                value={feedURL}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => setFeedURL(e.target.value)}
+                className="w-72"
+              />
+            </ManageField>
+            <div data-setting="manage.subscriptions.downloadFolder">
+              <PathPickerField
+                id="subscription-root"
+                label={t("downloadFolder")}
+                role="downloadDestination"
+                value={root}
+                onChange={setRoot}
+                suppressAppStoreDownload
+                actions={<HelpTip label={t("downloadFolder")} text="manageSubDownloadFolderHelp" />}
+              />
+            </div>
+            <ManageField
               id="subscription-auth"
-              type="password"
-              value={authHeader}
-              autoComplete="off"
-              onChange={(e) => setAuthHeader(e.target.value)}
-            />
-          </ManageField>
-          <Button type="button" onClick={onAdd}>
-            {t("addSubscription")}
-          </Button>
-        </ManageInlineForm>
+              label={t("authorizationHeader")}
+              tip="manageSubAuthHeaderHelp"
+              setting="manage.subscriptions.authorizationHeader"
+            >
+              <Input
+                id="subscription-auth"
+                type="password"
+                value={authHeader}
+                autoComplete="off"
+                onChange={(e) => setAuthHeader(e.target.value)}
+              />
+            </ManageField>
+            <Button type="submit" disabled={adding || libraries.length === 0}>
+              {adding ? t("loading") : t("addSubscription")}
+            </Button>
+          </ManageInlineForm>
+          <ErrorLine message={addError} />
+        </form>
       </ManageSection>
     </div>
   );
@@ -313,21 +346,69 @@ function SubscriptionRow({
   onRemove,
 }: {
   subscription: SubscriptionInfo;
-  onSaveRetention: (sub: SubscriptionInfo, kind: string, n: number | null) => Promise<void>;
+  onSaveRetention: (sub: SubscriptionInfo, kind: string, n: number | null) => Promise<boolean>;
   onRemove: (sub: SubscriptionInfo) => Promise<void>;
 }) {
   const t = useT();
-  const [kind, setKind] = useState(subscription.retentionKind || "keep-all");
-  const [n, setN] = useState(subscription.retentionN ?? DEFAULT_KEEP_COUNT);
+  const savedKind = subscription.retentionKind || "keep-all";
+  const savedN = subscription.retentionN ?? DEFAULT_KEEP_COUNT;
+  const [kind, setKind] = useState(savedKind);
+  const [n, setN] = useState(savedN);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  useEffect(() => {
+    setKind(savedKind);
+    setN(savedN);
+  }, [savedKind, savedN]);
+
+  const dirty = kind !== savedKind || (kind === "keep-last-n" && n !== savedN);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const ok = await onSaveRetention(subscription, kind, n);
+      if (ok) setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    setRemoving(true);
+    try {
+      await onRemove(subscription);
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   return (
     <TableRow>
-      <TableCell className="manage-cell-primary">
-        {subscription.title || subscription.feedURL}
+      <TableCell>
+        <div className="manage-cell-primary">{subscription.title || subscription.feedURL}</div>
+        {subscription.title && (
+          <div className="break-all font-mono text-xs text-muted-foreground">
+            {subscription.feedURL}
+          </div>
+        )}
+        {subscription.root && (
+          <div className="break-all font-mono text-xs text-muted-foreground">
+            {subscription.root}
+          </div>
+        )}
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2" data-setting="manage.subscriptions.keepDownloads">
-          <Select value={kind} onValueChange={setKind}>
+          <Select
+            value={kind}
+            onValueChange={(v) => {
+              setKind(v);
+              setSaved(false);
+            }}
+          >
             <SelectTrigger
               size="sm"
               className="w-48"
@@ -349,7 +430,10 @@ function SubscriptionRow({
               <PresetSelect
                 value={n}
                 presets={KEEP_COUNT_PRESETS}
-                onChange={setN}
+                onChange={(val) => {
+                  setN(val);
+                  setSaved(false);
+                }}
                 aria-label={t("manageSubDownloadsToKeep")}
                 className="min-w-20"
               />
@@ -359,17 +443,23 @@ function SubscriptionRow({
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => onSaveRetention(subscription, kind, n)}
+            disabled={saving || !dirty}
+            onClick={() => void handleSave()}
           >
-            {t("save")}
+            {saving ? t("loading") : t("save")}
           </Button>
+          {saved && !dirty && (
+            <span role="status" className="text-xs text-muted-foreground">
+              {t("manageSaved")}
+            </span>
+          )}
         </div>
       </TableCell>
       <TableCell className="text-right">
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button type="button" variant="danger" size="sm">
-              {t("remove")}
+            <Button type="button" variant="danger" size="sm" disabled={removing}>
+              {removing ? t("loading") : t("remove")}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
@@ -381,7 +471,7 @@ function SubscriptionRow({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
-              <AlertDialogAction onClick={() => onRemove(subscription)}>
+              <AlertDialogAction onClick={() => void handleRemove()}>
                 {t("remove")}
               </AlertDialogAction>
             </AlertDialogFooter>

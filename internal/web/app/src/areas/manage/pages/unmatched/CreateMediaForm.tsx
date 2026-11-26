@@ -2,13 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   getExpectedProfile,
   getIdentityEpochSignal,
   noteProfileRefusal,
   profileHeaders,
 } from "@/lib/api";
 import { createMediaFromUnmatched } from "@/lib/graphql";
-import type { UnmatchedRecordInfo } from "@/lib/graphql/types";
+import type { LibraryInfo, UnmatchedRecordInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 
 /** The earliest plausible release year, per the approved mockup's rule. */
@@ -75,13 +82,16 @@ function validateYear(raw: string): { year?: number; invalid: boolean } {
 export function CreateMediaForm({
   record,
   libraryID,
+  libraries,
   onCreated,
 }: {
   record: UnmatchedRecordInfo;
   libraryID: string;
+  libraries?: LibraryInfo[];
   onCreated: (title: string) => void;
 }) {
   const t = useT();
+  const [targetLibraryID, setTargetLibraryID] = useState(libraryID);
   const [title, setTitle] = useState(record.candidateTitle || "");
   const [yearText, setYearText] = useState("");
   const [artworkFile, setArtworkFile] = useState<File | null>(null);
@@ -99,6 +109,9 @@ export function CreateMediaForm({
   } | null>(null);
   const retryFileInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
+  useEffect(() => {
+    setTargetLibraryID(libraryID);
+  }, [libraryID]);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -136,7 +149,7 @@ export function CreateMediaForm({
     try {
       const media = await createMediaFromUnmatched({
         recordID: record.id,
-        libraryID,
+        libraryID: targetLibraryID,
         title: trimmedTitle,
         year: parsed.year,
       });
@@ -234,12 +247,37 @@ export function CreateMediaForm({
   }
 
   return (
-    <div className="grid gap-3 rounded-md border border-border bg-card p-3">
+    <form
+      className="grid gap-3 rounded-md border border-border bg-card p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void onSubmit();
+      }}
+    >
       <div>
         <h4 className="text-sm font-semibold text-foreground">{t("unmatchedCreateHeading")}</h4>
         <p className="text-xs text-muted-foreground">{t("unmatchedCreateLead")}</p>
       </div>
       <p className="text-xs font-medium text-foreground">{t("unmatchedCreateNoExternalID")}</p>
+      {libraries && libraries.length > 0 && (
+        <div className="grid gap-1">
+          <label className="text-xs text-muted-foreground" htmlFor="unmatched-create-library">
+            {t("library")}
+          </label>
+          <Select value={targetLibraryID} onValueChange={setTargetLibraryID}>
+            <SelectTrigger id="unmatched-create-library" className="w-56">
+              <SelectValue placeholder={t("library")} />
+            </SelectTrigger>
+            <SelectContent>
+              {libraries.map((lib) => (
+                <SelectItem key={lib.id} value={lib.id}>
+                  {lib.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="grid gap-1">
         <label className="text-xs text-muted-foreground" htmlFor="unmatched-create-title">
           {t("unmatchedCreateTitleLabel")}
@@ -298,9 +336,9 @@ export function CreateMediaForm({
           {saveError}
         </p>
       )}
-      <Button size="sm" disabled={busy} onClick={() => void onSubmit()}>
+      <Button type="submit" size="sm" disabled={busy}>
         {t("unmatchedCreateSubmit")}
       </Button>
-    </div>
+    </form>
   );
 }

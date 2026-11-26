@@ -117,6 +117,8 @@ export function TrashPage() {
   const t = useT();
   const [entries, setEntries] = useState<TrashEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [restoringID, setRestoringID] = useState("");
+  const [activityRefreshKey, setActivityRefreshKey] = useState(0);
   const [error, setError] = useState("");
   const loadGeneration = useRef(0);
 
@@ -142,6 +144,7 @@ export function TrashPage() {
   }, [load]);
 
   const { deleted, merges } = useMemo(() => splitTrash(entries), [entries]);
+  const deletedByID = useMemo(() => new Map(deleted.map((entry) => [entry.id, entry])), [deleted]);
 
   const [duplicatesReload, setDuplicatesReload] = useState(0);
   const onMergeUndone = async () => {
@@ -151,14 +154,23 @@ export function TrashPage() {
 
   const onRestore = async (entry: TrashEntry) => {
     setError("");
+    setRestoringID(entry.id);
     try {
       // restoreMedia returns the updated trash list; reload to reflect the
       // server's retention window after the row leaves.
       await restoreMedia(entry.id);
       await load();
+      setActivityRefreshKey((k) => k + 1);
     } catch {
       setError(t("restoreFailed"));
+    } finally {
+      setRestoringID("");
     }
+  };
+
+  const onPurged = async () => {
+    await load();
+    setActivityRefreshKey((k) => k + 1);
   };
 
   return (
@@ -183,7 +195,7 @@ export function TrashPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>{t("title")}</TableHead>
-                  <TableHead>{t("trash")}</TableHead>
+                  <TableHead>{t("activityPageWhen")}</TableHead>
                   <TableHead className="text-right">{t("restore")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -202,9 +214,10 @@ export function TrashPage() {
                           type="button"
                           variant="outline"
                           size="sm"
+                          disabled={restoringID !== ""}
                           onClick={() => onRestore(entry)}
                         >
-                          {t("restore")}
+                          {restoringID === entry.id ? t("loading") : t("restore")}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -221,9 +234,14 @@ export function TrashPage() {
 
       <DuplicateCopiesSection reloadKey={duplicatesReload} />
 
-      <PurgeSection onPurged={load} />
+      <PurgeSection deleted={deleted} onPurged={onPurged} />
 
-      <ActivitySection />
+      <ActivitySection
+        deletedByID={deletedByID}
+        onRestore={onRestore}
+        restoringID={restoringID}
+        refreshKey={activityRefreshKey}
+      />
     </div>
   );
 }
@@ -318,11 +336,13 @@ function MergedSection({
   );
 }
 
-const sizeFormat = new Intl.NumberFormat(undefined, {
-  style: "unit",
-  unit: "gigabyte",
-  maximumFractionDigits: 2,
-});
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const exp = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const value = bytes / 1024 ** exp;
+  return `${exp === 0 ? String(value) : value.toFixed(1)} ${units[exp]}`;
+}
 
 // DuplicateCopiesSection: read-only list of items holding likely identical
 // files on disk. There is no delete control: the server never deletes files.
@@ -395,7 +415,7 @@ function DuplicateCopiesSection({ reloadKey }: { reloadKey: number }) {
                         <li key={copy.path} className="flex flex-wrap gap-x-3">
                           <span className="manage-mono break-all">{copy.path}</span>
                           <span className="text-muted-foreground">
-                            {sizeFormat.format(copy.sizeBytes / 1e9)}
+                            {formatBytes(copy.sizeBytes)}
                             {copy.label ? ` · ${copy.label}` : ""}
                           </span>
                         </li>
@@ -418,7 +438,13 @@ function DuplicateCopiesSection({ reloadKey }: { reloadKey: number }) {
 // explicit acknowledgement checkbox, which alone enables the button, and (2)
 // confirm in the AlertDialog. The server re-checks Admin-Session + reveal +
 // confirm regardless; this is the affordance, not the authority.
-function PurgeSection({ onPurged }: { onPurged: () => Promise<void> | void }) {
+function PurgeSection({
+  deleted,
+  onPurged,
+}: {
+  deleted: TrashEntry[];
+  onPurged: () => Promise<void> | void;
+}) {
   const t = useT();
   // datetime-local value (no zone); converted to RFC3339 UTC at call time.
   const [before, setBefore] = useState("");
@@ -427,23 +453,33 @@ function PurgeSection({ onPurged }: { onPurged: () => Promise<void> | void }) {
   const [error, setError] = useState("");
   const [purged, setPurged] = useState<number | null>(null);
 
+  const cutoffDate = useMemo(() => {
+    if (!before.trim()) return null;
+    const d = new Date(before);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [before]);
+
+  const matchCount = useMemo(() => {
+    if (!cutoffDate) return null;
+    const cutoffMs = cutoffDate.getTime();
+    return deleted.filter((entry) => {
+      const ts = new Date(entry.trashedAt).getTime();
+      return !Number.isNaN(ts) && ts < cutoffMs;
+    }).length;
+  }, [cutoffDate, deleted]);
+
   const canPurge = acknowledged && before.trim().length > 0 && !busy;
 
   const onConfirm = async () => {
     setError("");
     setPurged(null);
-    if (!before.trim()) {
-      setError(t("purgeNeedCutoff"));
-      return;
-    }
-    const cutoff = new Date(before);
-    if (Number.isNaN(cutoff.getTime())) {
+    if (!cutoffDate) {
       setError(t("purgeNeedCutoff"));
       return;
     }
     setBusy(true);
     try {
-      const result = await purgeTrash(cutoff.toISOString(), true);
+      const result = await purgeTrash(cutoffDate.toISOString(), true);
       setPurged(result.affected);
       setAcknowledged(false);
       setBefore("");
@@ -486,6 +522,11 @@ function PurgeSection({ onPurged }: { onPurged: () => Promise<void> | void }) {
               {t(quick.label)}
             </Button>
           ))}
+          {matchCount !== null && (
+            <StatusBadge state={matchCount > 0 ? "amber" : "neutral"}>
+              {t("managePurgeMatchCount", { count: matchCount })}
+            </StatusBadge>
+          )}
         </div>
 
         <label className="flex items-start gap-2">
@@ -507,11 +548,21 @@ function PurgeSection({ onPurged }: { onPurged: () => Promise<void> | void }) {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>{t("purgeHeading")}</AlertDialogTitle>
-                <AlertDialogDescription>{t("purgeConfirmGate")}</AlertDialogDescription>
+                <AlertDialogDescription>
+                  {t("purgeConfirmGate")}
+                  {cutoffDate
+                    ? ` (${formatDateTime(cutoffDate.toISOString())}${matchCount !== null ? ` · ${t("managePurgeMatchCount", { count: matchCount })}` : ""})`
+                    : ""}
+                </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
-                <AlertDialogAction onClick={onConfirm}>{t("purgeAction")}</AlertDialogAction>
+                <AlertDialogAction
+                  onClick={onConfirm}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {t("purgeAction")}
+                </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -530,11 +581,19 @@ function PurgeSection({ onPurged }: { onPurged: () => Promise<void> | void }) {
 const TRASH_ACTIVITY_LIMIT = 50;
 
 // ActivitySection: the append-only operator feed (latest 50). Reversible rows
-// expose an Undo that jumps to the Retained Trash table where the matching
-// Restore lives; irreversible rows (trash.purge) are flagged with no undo. The
-// feed is read-only — undo is a navigation affordance over the existing
-// recoverable-delete surface, not a new server mutation.
-function ActivitySection() {
+// whose target item is still in Retained Trash expose a direct Undo (restore);
+// irreversible rows (trash.purge) are flagged with no undo.
+function ActivitySection({
+  deletedByID,
+  onRestore,
+  restoringID,
+  refreshKey,
+}: {
+  deletedByID: ReadonlyMap<string, TrashEntry>;
+  onRestore: (entry: TrashEntry) => Promise<void>;
+  restoringID: string;
+  refreshKey: number;
+}) {
   const t = useT();
   const [entries, setEntries] = useState<ActivityRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -554,11 +613,7 @@ function ActivitySection() {
 
   useEffect(() => {
     void load();
-  }, [load]);
-
-  const onUndo = () => {
-    document.getElementById(RETAINED_TRASH_ANCHOR)?.scrollIntoView({ behavior: "smooth" });
-  };
+  }, [load, refreshKey]);
 
   const rows = useMemo(() => entries, [entries]);
 
@@ -566,6 +621,7 @@ function ActivitySection() {
     <ManageSection
       title={t("activityUndoHeading")}
       lead={t("activityUndoLead")}
+      collapsible
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>
           {t("refresh")}
@@ -588,7 +644,10 @@ function ActivitySection() {
               <TableSkeletonRows columns={3} />
             ) : (
               rows.map((entry) => {
-                const reversible = REVERSIBLE_ACTIONS.has(entry.action);
+                const trashEntry =
+                  REVERSIBLE_ACTIONS.has(entry.action) && entry.targetID
+                    ? deletedByID.get(entry.targetID)
+                    : undefined;
                 const irreversible = entry.action === "trash.purge";
                 return (
                   <TableRow key={entry.id}>
@@ -601,9 +660,15 @@ function ActivitySection() {
                       {describeActivity(entry, t).sentence}
                     </TableCell>
                     <TableCell className="text-right">
-                      {reversible ? (
-                        <Button type="button" variant="outline" size="sm" onClick={onUndo}>
-                          {t("activityUndo")}
+                      {trashEntry ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={restoringID !== ""}
+                          onClick={() => void onRestore(trashEntry)}
+                        >
+                          {restoringID === trashEntry.id ? t("loading") : t("activityUndo")}
                         </Button>
                       ) : irreversible ? (
                         <StatusBadge state="red">{t("activityNoUndo")}</StatusBadge>
