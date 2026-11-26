@@ -770,6 +770,7 @@ type OfflinePackService interface {
 	RetryBuild(ctx context.Context, scope auth.Scope, id store.OfflinePackID) (store.OfflinePackBuild, []byte, error)
 	FailBuild(ctx context.Context, id store.OfflinePackID, reason string) error
 	DismissBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error
+	CancelBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error
 	// BuildJobCanceled fails the build an operator-cancelled job was running.
 	BuildJobCanceled(ctx context.Context, payload []byte) error
 }

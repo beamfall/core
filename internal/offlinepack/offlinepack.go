@@ -166,6 +166,7 @@ type Store interface {
 	BuildingOfflinePackIDs(ctx context.Context) ([]store.OfflinePackID, error)
 	RestartOfflinePackBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID, payload []byte, now time.Time) (bool, error)
 	DeleteFailedOfflinePackBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error
+	DeleteOfflinePackBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error
 	OfflinePackBuildByID(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) (store.OfflinePackBuild, error)
 	OfflinePackBuildsForProfile(ctx context.Context, profileID store.ProfileID) ([]store.OfflinePackBuild, error)
 }

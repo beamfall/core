@@ -446,8 +446,9 @@ func (h *Handler) revokeOfflinePack(ctx context.Context, scope auth.Scope, req r
 }
 
 // dismissOfflinePackBuild revokes a pack that never sealed: a failed build is
-// removed from the list and reported revoked; a building one is refused. Any
-// other ID keeps the pack lookup's not-found error.
+// dismissed from the list, and an in-progress build has its live job(s)
+// cancelled and its build row removed. Any other ID keeps the pack lookup's
+// not-found error.
 func (h *Handler) dismissOfflinePackBuild(ctx context.Context, scope auth.Scope, id store.OfflinePackID, notFound error) (OfflinePackInfo, error) {
 	builds, err := h.offlinePacks.Builds(ctx, scope.ProfileID)
 	if err != nil {
@@ -457,11 +458,38 @@ func (h *Handler) dismissOfflinePackBuild(ctx context.Context, scope auth.Scope,
 		if build.PackID != id {
 			continue
 		}
-		if build.State != store.OfflinePackBuildFailed {
-			return OfflinePackInfo{}, clientError("offline pack is still building")
-		}
-		if err := h.offlinePacks.DismissBuild(ctx, id, scope.ProfileID); err != nil {
-			return OfflinePackInfo{}, err
+		if build.State == store.OfflinePackBuildFailed {
+			if err := h.offlinePacks.DismissBuild(ctx, id, scope.ProfileID); err != nil {
+				return OfflinePackInfo{}, err
+			}
+		} else {
+			if h.store != nil {
+				live, err := h.store.ListJobs(ctx, store.JobStatusQueued, store.JobStatusRunning, store.JobStatusYielded)
+				if err != nil {
+					return OfflinePackInfo{}, err
+				}
+				for _, job := range live {
+					if job.Kind != offlinepack.BuildJobKind {
+						continue
+					}
+					var payload offlinepack.BuildJobPayload
+					if json.Unmarshal(job.Payload, &payload) != nil || payload.PackID != id {
+						continue
+					}
+					prior, cancelErr := h.store.CancelJobWithPrior(ctx, job.ID, time.Now().UTC())
+					if cancelErr != nil && !errors.Is(cancelErr, store.ErrJobTerminal) && !errors.Is(cancelErr, store.ErrJobNotFound) {
+						return OfflinePackInfo{}, cancelErr
+					}
+					if cancelErr == nil && prior == store.JobStatusRunning {
+						if canceler, ok := h.jobRunner.(RunningJobCanceler); ok {
+							canceler.CancelRunning(job.ID)
+						}
+					}
+				}
+			}
+			if err := h.offlinePacks.CancelBuild(ctx, id, scope.ProfileID); err != nil {
+				return OfflinePackInfo{}, err
+			}
 		}
 		info := offlinePackBuildInfo(build)
 		info.State = string(store.OfflinePackRevoked)
