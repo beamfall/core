@@ -2549,9 +2549,10 @@ func (s *Store) sourceItemsSQL(ctx context.Context, filter LibraryFilter, fieldF
 	// (CORE-3537): ingest order is not publication order after a backfill or
 	// when feeds are followed in a different order. Subscription Media sort
 	// first by entry time, the rest follow in rowid order.
+	// CROSS JOIN pins the probe to scan subscription_entry (empty or small), never media.
 	var hasEntries bool
 	if err := s.catalogR.QueryRowContext(ctx, `
-		SELECT EXISTS (SELECT 1 FROM subscription_entry e JOIN media m ON m.id = e.media_id
+		SELECT EXISTS (SELECT 1 FROM subscription_entry e CROSS JOIN media m ON m.id = e.media_id
 		               WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`))`, args[:len(visible)]...).Scan(&hasEntries); err != nil {
 		return nil, err
 	}
