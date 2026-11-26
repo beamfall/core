@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"testing"
@@ -25,7 +26,7 @@ func (f *fakeShowStore) UpsertEntity(_ context.Context, e store.Entity) error {
 	f.entities = append(f.entities, e)
 	return nil
 }
-func (f *fakeShowStore) UpsertEntityRelation(_ context.Context, r store.EntityRelation) error {
+func (f *fakeShowStore) UpsertHydratedEntityRelation(_ context.Context, r store.EntityRelation) error {
 	f.relations = append(f.relations, r)
 	return nil
 }
@@ -113,5 +114,36 @@ func TestPublishContainerSkipsPluginWithoutHolderKind(t *testing.T) {
 	p := newSubscriptionContainers(st, fakeBundles{plugin.Bundle{}}, nil, nil, slog.Default())
 	if err := p.PublishContainer(context.Background(), store.Subscription{ID: "s", LibraryID: "l"}, scrape.FeedDocument{Title: "T"}, nil); err != nil || len(st.entities) != 0 {
 		t.Fatalf("err=%v entities=%v", err, st.entities)
+	}
+}
+
+type failingShowFetcher map[string]bool
+
+func (f failingShowFetcher) FetchResource(_ context.Context, u string) ([]byte, error) {
+	if f[u] {
+		return nil, errors.New("fetch failed")
+	}
+	return []byte("SHOW"), nil
+}
+
+func TestPublishContainerRetriesItemArtworkInsteadOfKeepingFallback(t *testing.T) {
+	st := &fakeShowStore{entries: []store.SubscriptionEntry{{MediaID: "m-own", GUID: "own", PublishedAt: time.Unix(200, 0)}}}
+	art := &fakeShowArtwork{entityPoster: map[store.EntityID]bool{}, posters: map[store.MediaID]string{}, thumbs: map[store.MediaID]bool{}}
+	fetcher := failingShowFetcher{"https://x/own.jpg": true}
+	p := newSubscriptionContainers(st, fakeBundles{feedBundle()}, art, fetcher, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	doc := scrape.FeedDocument{Title: "T", ArtworkURL: "https://x/container.jpg", Entries: []scrape.FeedEntry{{GUID: "own", ArtworkURL: "https://x/own.jpg"}}}
+	sub := store.Subscription{ID: "sub-1", LibraryID: "lib-1"}
+	if err := p.PublishContainer(context.Background(), sub, doc, nil); !errors.Is(err, errArtworkIncomplete) {
+		t.Fatalf("err = %v, want errArtworkIncomplete", err)
+	}
+	if _, ok := art.posters["m-own"]; ok {
+		t.Fatalf("item kept the show art as a permanent fallback: %v", art.posters)
+	}
+	fetcher["https://x/own.jpg"] = false
+	if err := p.PublishContainer(context.Background(), sub, doc, nil); err != nil {
+		t.Fatal(err)
+	}
+	if art.posters["m-own"] == "" {
+		t.Fatal("item poster not retried")
 	}
 }

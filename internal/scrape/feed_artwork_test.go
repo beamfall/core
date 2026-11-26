@@ -19,3 +19,16 @@ func TestParseFeedArtwork(t *testing.T) {
 		t.Fatalf("entries = %+v", doc.Entries)
 	}
 }
+
+func TestParseAtomEntryArtwork(t *testing.T) {
+	doc, err := ParseFeed([]byte(`<feed xmlns="http://www.w3.org/2005/Atom" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+<title>Tower</title>
+<entry><id>a</id><title>A</title><itunes:image href="https://x/a.jpg"/><link rel="enclosure" href="https://x/a.mp3" type="audio/mpeg"/></entry>
+</feed>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Entries) != 1 || doc.Entries[0].ArtworkURL != "https://x/a.jpg" {
+		t.Fatalf("entries = %+v", doc.Entries)
+	}
+}

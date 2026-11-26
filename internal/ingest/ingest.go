@@ -80,8 +80,9 @@ type Poller struct {
 }
 
 // ContainerPublisher turns a polled feed into its container container Entity and
-// artwork (CORE-3524). It is best-effort: a failure is logged and the next
-// poll retries.
+// artwork (CORE-3524). It is best-effort: an error (including an incomplete
+// artwork pass) is logged and the poller drops the feed validators so the next
+// poll refetches the full feed and retries.
 type ContainerPublisher interface {
 	PublishContainer(ctx context.Context, subscription store.Subscription, document scrape.FeedDocument, entries []scrape.FeedEntry) error
 }
@@ -270,7 +271,10 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	}
 	if catalogued && p.containers != nil {
 		if err := p.containers.PublishContainer(ctx, subscription, document, catalogueEntries(document)); err != nil {
-			p.logger.Warn("container publication failed", "subscription", subscription.ID, "error", err)
+			p.logger.Warn("container publication incomplete", "subscription", subscription.ID, "error", err)
+			// An unconditional refetch next poll: a 304 would skip the
+			// retry and leave the container or its artwork missing.
+			etag, lastModified = "", ""
 		}
 	}
 	// A Subscription imported without a title takes the feed's own title;

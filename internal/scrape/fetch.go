@@ -477,6 +477,7 @@ func atomEntries(items []*xmlNode) []FeedEntry {
 			Description:     childText(item, "summary"),
 			PublishedAt:     parseFeedTime(childText(item, "published")),
 			DurationSeconds: parseFeedDuration(childText(item, "itunes:duration")),
+			ArtworkURL:      directChildAttr(item, "itunes:image", "href"),
 		}
 		if entry.PublishedAt.IsZero() {
 			entry.PublishedAt = parseFeedTime(childText(item, "updated"))

@@ -24,7 +24,7 @@ const maxItemArtworkPerPoll = 40
 type containerStore interface {
 	LibraryPluginID(ctx context.Context, id store.LibraryID) (string, error)
 	UpsertEntity(ctx context.Context, entity store.Entity) error
-	UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error
+	UpsertHydratedEntityRelation(ctx context.Context, relation store.EntityRelation) error
 	SubscriptionEntries(ctx context.Context, id store.SubscriptionID) ([]store.SubscriptionEntry, error)
 }
 
@@ -136,21 +136,29 @@ func (p *subscriptionContainers) PublishContainer(ctx context.Context, subscript
 		return err
 	}
 	for _, entry := range entries {
-		if err := p.store.UpsertEntityRelation(ctx, store.EntityRelation{
+		if err := p.store.UpsertHydratedEntityRelation(ctx, store.EntityRelation{
 			FromEntityID: id, Name: relation, ToMediaID: entry.MediaID, Cardinality: "one",
 		}); err != nil {
 			return fmt.Errorf("link item: %w", err)
 		}
 	}
-	p.applyArtwork(ctx, id, document, entries)
+	if !p.applyArtwork(ctx, id, document, entries) {
+		return errArtworkIncomplete
+	}
 	return nil
 }
 
+// errArtworkIncomplete reports a best-effort artwork pass that fetched or
+// imported less than it wanted, so the poller retries on a full refetch.
+var errArtworkIncomplete = errors.New("container artwork incomplete")
+
 // applyArtwork is best-effort: a failed fetch is logged and the next poll
-// retries, because artwork already present is never refetched.
-func (p *subscriptionContainers) applyArtwork(ctx context.Context, id store.EntityID, document scrape.FeedDocument, entries []store.SubscriptionEntry) {
+// retries, because artwork already present is never refetched. It reports
+// false when an attempted or budgeted-out fetch left something unfinished.
+func (p *subscriptionContainers) applyArtwork(ctx context.Context, id store.EntityID, document scrape.FeedDocument, entries []store.SubscriptionEntry) bool {
+	complete := true
 	if p.artwork == nil || p.fetcher == nil {
-		return
+		return true
 	}
 	var showArt []byte
 	if url := document.ArtworkURL; url != "" && !p.artwork.HasEntityPoster(id) {
@@ -160,6 +168,7 @@ func (p *subscriptionContainers) applyArtwork(ctx context.Context, id store.Enti
 		}
 		if err != nil {
 			p.logger.Debug("container artwork failed", "entity", string(id), "error", err.Error())
+			complete = false
 		} else {
 			showArt = data
 		}
@@ -189,12 +198,18 @@ func (p *subscriptionContainers) applyArtwork(ctx context.Context, id store.Enti
 		own := false
 		if url := itemArt[entry.GUID]; url != "" && url != document.ArtworkURL {
 			if fetched >= maxItemArtworkPerPoll {
+				complete = false
 				continue
 			}
 			fetched++
-			if fetchedData, err := p.fetcher.FetchResource(ctx, url); err == nil {
-				data, own = fetchedData, true
+			fetchedData, err := p.fetcher.FetchResource(ctx, url)
+			if err != nil {
+				// Never fall back to the container art for an item that has its own:
+				// the fallback would be kept as the poster and stop the retry.
+				complete = false
+				continue
 			}
+			data, own = fetchedData, true
 		}
 		if len(data) == 0 {
 			continue
@@ -206,6 +221,8 @@ func (p *subscriptionContainers) applyArtwork(ctx context.Context, id store.Enti
 		var locked *artwork.SlotLockedError
 		if err != nil && !errors.As(err, &locked) {
 			p.logger.Debug("item artwork failed", "error", err.Error())
+			complete = false
 		}
 	}
+	return complete
 }
