@@ -715,3 +715,21 @@ func wantSegmentMethod(t *testing.T, markers []store.Marker, kind string, start,
 		t.Fatalf("%s = [%v, %v] method=%q, want [%v, %v] method=%q", kind, m.StartSeconds, m.EndSeconds, m.Method, start, end, method)
 	}
 }
+
+// TestSpectralPredecessorPreservedAcrossSlice verifies CORE-3534: slicing a
+// non-zero origin span preserves the predecessor frame before minJ so the first
+// window is not misclassified as held.
+func TestSpectralPredecessorPreservedAcrossSlice(t *testing.T) {
+	frames := func(v uint32, n int) []uint32 {
+		out := make([]uint32, n)
+		for i := range out {
+			out[i] = v
+		}
+		return out
+	}
+	self := join(frames(0xaaaaaaaa, 8), frames(0x55555555, 16), frames(0x33333333, 16), frames(0xaaaaaaaa, 8))
+	origin := join(frames(0xaaaaaaaa, 80), frames(0x55555555, 16), frames(0x33333333, 16), frames(0xaaaaaaaa, 8))
+	if !spectrallyConfirmed(self, origin, reverseMatch{selfStart: 1, selfEnd: 5, originStart: 10}) {
+		t.Fatal("lost predecessor rejected valid held-chord clip")
+	}
+}

@@ -507,8 +507,8 @@ func (s *scanWalkState) containersFor(mediaID store.MediaID) []ContainerEntity {
 }
 
 // hasSoleDirectContainer reports whether the Media is held directly by a single
-// unordered container Entity (for example an album holding tracks, rather than
-// a season nested inside a show).
+// unordered container Entity (rather than nested inside an ordered container
+// hierarchy).
 func (s *scanWalkState) hasSoleDirectContainer(containers []ContainerEntity) bool {
 	return len(containers) == 1 && containers[0].ID != "" && !containers[0].Ordered
 }

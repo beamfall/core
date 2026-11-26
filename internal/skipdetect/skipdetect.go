@@ -689,7 +689,13 @@ func spectrallyConfirmedFrames(self []uint32, origin originSpectralFrames, match
 		if minJ < 0 {
 			continue
 		}
-		spanSlice, ok := origin.slice(minJ, maxJ)
+		sliceStart := max(0, minJ-1)
+		spanSlice, ok := origin.slice(sliceStart, maxJ)
+		relOffset := minJ - sliceStart
+		if !ok && sliceStart < minJ {
+			spanSlice, ok = origin.slice(minJ, maxJ)
+			relOffset = 0
+		}
 		if !ok {
 			continue
 		}
@@ -700,7 +706,7 @@ func spectrallyConfirmedFrames(self []uint32, origin originSpectralFrames, match
 				ok = false
 				break
 			}
-			relJ := k * fpw
+			relJ := relOffset + k*fpw
 			switch _, verdict := spectralWindowDistance(self, spanSlice, i, relJ); verdict {
 			case windowMatches:
 				fresh++
