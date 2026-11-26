@@ -222,7 +222,7 @@ func buildTestAppleAttestation(
 
 func encodeTestCBORMap(m map[string]any) []byte {
 	var out []byte
-	out = append(out, 0xa0|byte(len(m)))
+	out = append(out, 0xa0|byte(len(m))) // #nosec G115 -- test encoder, lengths are small
 	for k, v := range m {
 		out = append(out, encodeTestCBORText(k)...)
 		switch val := v.(type) {
@@ -231,7 +231,7 @@ func encodeTestCBORMap(m map[string]any) []byte {
 		case []byte:
 			out = append(out, encodeTestCBORBytes(val)...)
 		case [][]byte:
-			out = append(out, 0x80|byte(len(val)))
+			out = append(out, 0x80|byte(len(val))) // #nosec G115 -- test encoder, lengths are small
 			for _, elem := range val {
 				out = append(out, encodeTestCBORBytes(elem)...)
 			}
@@ -254,10 +254,10 @@ func encodeTestCBORHeader(major byte, n int) []byte {
 	m := major << 5
 	switch {
 	case n < 24:
-		return []byte{m | byte(n)}
+		return []byte{m | byte(n)} // #nosec G115 -- test encoder, lengths are small
 	case n <= 0xff:
 		return []byte{m | 24, byte(n)}
 	default:
-		return []byte{m | 25, byte(n >> 8), byte(n)}
+		return []byte{m | 25, byte(n >> 8), byte(n)} // #nosec G115 -- bounded input
 	}
 }

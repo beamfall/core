@@ -95,30 +95,30 @@ func (v *AppleAppAttestVerifier) VerifyDeviceKey(_ context.Context, enrollmentID
 	}
 	topMap, ok := root.(map[string]any)
 	if !ok {
-		return errors.New("Apple attestation root must be a CBOR map")
+		return errors.New("apple attestation root must be a CBOR map")
 	}
 	fmtStr, ok := topMap["fmt"].(string)
 	if !ok || fmtStr != "apple-appattest" {
-		return errors.New("Apple attestation fmt must be apple-appattest")
+		return errors.New("apple attestation fmt must be apple-appattest")
 	}
 	authData, ok := topMap["authData"].([]byte)
 	if !ok || len(authData) < 87 {
-		return errors.New("Apple attestation authData is missing or truncated")
+		return errors.New("apple attestation authData is missing or truncated")
 	}
 	attStmt, ok := topMap["attStmt"].(map[string]any)
 	if !ok {
-		return errors.New("Apple attestation attStmt is missing")
+		return errors.New("apple attestation attStmt is missing")
 	}
 	x5cRaw, ok := attStmt["x5c"].([]any)
 	if !ok || len(x5cRaw) < 2 {
-		return errors.New("Apple attestation x5c must contain at least leaf and intermediate certificates")
+		return errors.New("apple attestation x5c must contain at least leaf and intermediate certificates")
 	}
 
 	chain := make([]*x509.Certificate, 0, len(x5cRaw))
 	for i, item := range x5cRaw {
 		der, ok := item.([]byte)
 		if !ok {
-			return fmt.Errorf("Apple attestation x5c[%d] is not a byte string", i)
+			return fmt.Errorf("apple attestation x5c[%d] is not a byte string", i)
 		}
 		cert, err := x509.ParseCertificate(der)
 		if err != nil {
@@ -145,7 +145,7 @@ func (v *AppleAppAttestVerifier) VerifyDeviceKey(_ context.Context, enrollmentID
 		return err
 	}
 	if !bytes.Equal(certNonce, expectedNonce[:]) {
-		return errors.New("Apple attestation nonce does not match device key and enrollment")
+		return errors.New("apple attestation nonce does not match device key and enrollment")
 	}
 	return nil
 }
@@ -183,17 +183,17 @@ func (v *AppleAppAttestVerifier) verifyAuthData(authData []byte, leaf *x509.Cert
 			}
 		}
 		if !matched {
-			return errors.New("Apple attestation rpIdHash does not match any allowed app ID")
+			return errors.New("apple attestation rpIdHash does not match any allowed app ID")
 		}
 	}
 
 	flags := authData[32]
 	if flags&0x40 == 0 {
-		return errors.New("Apple attestation authData missing attested credential data flag")
+		return errors.New("apple attestation authData missing attested credential data flag")
 	}
 	signCount := binary.BigEndian.Uint32(authData[33:37])
 	if signCount != 0 {
-		return errors.New("Apple attestation signCount must be zero")
+		return errors.New("apple attestation signCount must be zero")
 	}
 	var aaguid [16]byte
 	copy(aaguid[:], authData[37:53])
@@ -201,29 +201,29 @@ func (v *AppleAppAttestVerifier) verifyAuthData(authData []byte, leaf *x509.Cert
 	case appleProdAAGUID:
 	case appleDevAAGUID:
 		if !v.opts.AllowDevelopment {
-			return errors.New("Apple development attestation is not allowed")
+			return errors.New("apple development attestation is not allowed")
 		}
 	default:
-		return errors.New("Apple attestation AAGUID is unknown")
+		return errors.New("apple attestation AAGUID is unknown")
 	}
 
 	credIDLen := binary.BigEndian.Uint16(authData[53:55])
 	if credIDLen != 32 || len(authData) < 55+int(credIDLen) {
-		return errors.New("Apple attestation credentialId length must be 32")
+		return errors.New("apple attestation credentialId length must be 32")
 	}
 	credID := authData[55:87]
 
 	leafEC, ok := leaf.PublicKey.(*ecdsa.PublicKey)
 	if !ok || leafEC.Curve != elliptic.P256() {
-		return errors.New("Apple attestation leaf key is not P-256")
+		return errors.New("apple attestation leaf key is not P-256")
 	}
 	ecdhKey, err := leafEC.ECDH()
 	if err != nil {
-		return fmt.Errorf("Apple attestation leaf key: %w", err)
+		return fmt.Errorf("apple attestation leaf key: %w", err)
 	}
 	leafSum := sha256.Sum256(ecdhKey.Bytes())
 	if !bytes.Equal(credID, leafSum[:]) {
-		return errors.New("Apple attestation credentialId does not match leaf public key")
+		return errors.New("apple attestation credentialId does not match leaf public key")
 	}
 	return nil
 }
@@ -245,22 +245,22 @@ func extractAppleNonceExtension(cert *x509.Certificate) ([]byte, error) {
 			var outer asn1.RawValue
 			rest, err := asn1.Unmarshal(ext.Value, &outer)
 			if err != nil || len(rest) != 0 || outer.Class != asn1.ClassUniversal || outer.Tag != asn1.TagSequence || !outer.IsCompound {
-				return nil, errors.New("Apple attestation nonce extension is malformed")
+				return nil, errors.New("apple attestation nonce extension is malformed")
 			}
 			var inner asn1.RawValue
 			rest, err = asn1.Unmarshal(outer.Bytes, &inner)
 			if err != nil || len(rest) != 0 || inner.Class != asn1.ClassContextSpecific || inner.Tag != 1 || !inner.IsCompound {
-				return nil, errors.New("Apple attestation nonce extension missing [1] field")
+				return nil, errors.New("apple attestation nonce extension missing [1] field")
 			}
 			var nonce []byte
 			rest, err = asn1.Unmarshal(inner.Bytes, &nonce)
 			if err != nil || len(rest) != 0 || len(nonce) != sha256.Size {
-				return nil, errors.New("Apple attestation nonce octet string is invalid")
+				return nil, errors.New("apple attestation nonce octet string is invalid")
 			}
 			return nonce, nil
 		}
 	}
-	return nil, errors.New("Apple attestation leaf certificate missing nonce extension")
+	return nil, errors.New("apple attestation leaf certificate missing nonce extension")
 }
 
 // MultiPlatformAttestationVerifier dispatches Android DER certificate chains
@@ -283,12 +283,12 @@ func (m *MultiPlatformAttestationVerifier) VerifyDeviceKey(ctx context.Context, 
 	switch {
 	case attestation[0] == 0x30:
 		if m.android == nil {
-			return errors.New("Android key attestation is not configured")
+			return errors.New("android key attestation is not configured")
 		}
 		return m.android.VerifyDeviceKey(ctx, enrollmentID, publicKey, attestation)
 	case (attestation[0] & 0xe0) == 0xa0:
 		if m.apple == nil {
-			return errors.New("Apple App Attest is not configured")
+			return errors.New("apple App Attest is not configured")
 		}
 		return m.apple.VerifyDeviceKey(ctx, enrollmentID, publicKey, attestation)
 	default:
@@ -381,28 +381,28 @@ func (r *cborReader) readValue(depth int) (any, error) {
 	case 0: // unsigned int
 		return n, nil
 	case 2: // byte string
-		if n > uint64(len(r.data)-r.pos) {
+		if n > uint64(len(r.data)-r.pos) { // #nosec G115 -- n is bounded by the remaining input above
 			return nil, errors.New("CBOR byte string out of bounds")
 		}
-		bs, err := r.readBytes(int(n))
+		bs, err := r.readBytes(int(n)) // #nosec G115 -- n is bounded by the remaining input above
 		if err != nil {
 			return nil, err
 		}
 		return slices.Clone(bs), nil
 	case 3: // text string
-		if n > uint64(len(r.data)-r.pos) {
+		if n > uint64(len(r.data)-r.pos) { // #nosec G115 -- n is bounded by the remaining input above
 			return nil, errors.New("CBOR text string out of bounds")
 		}
-		bs, err := r.readBytes(int(n))
+		bs, err := r.readBytes(int(n)) // #nosec G115 -- n is bounded by the remaining input above
 		if err != nil {
 			return nil, err
 		}
 		return string(bs), nil
 	case 4: // array
-		if n > uint64(len(r.data)-r.pos) {
+		if n > uint64(len(r.data)-r.pos) { // #nosec G115 -- n is bounded by the remaining input above
 			return nil, errors.New("CBOR array too large")
 		}
-		out := make([]any, 0, int(n))
+		out := make([]any, 0, int(n)) // #nosec G115 -- n is bounded by the remaining input above
 		for range n {
 			elem, err := r.readValue(depth + 1)
 			if err != nil {
@@ -412,10 +412,10 @@ func (r *cborReader) readValue(depth int) (any, error) {
 		}
 		return out, nil
 	case 5: // map
-		if n > uint64(len(r.data)-r.pos) {
+		if n > uint64(len(r.data)-r.pos) { // #nosec G115 -- bounded input
 			return nil, errors.New("CBOR map too large")
 		}
-		out := make(map[string]any, int(n))
+		out := make(map[string]any, int(n)) // #nosec G115 -- bounded input
 		for range n {
 			k, err := r.readValue(depth + 1)
 			if err != nil {
