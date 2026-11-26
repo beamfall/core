@@ -104,6 +104,13 @@ type embeddedArtworkReader interface {
 	IsEmbeddedArtwork(id store.MediaID, slot string) bool
 }
 
+// importedAudioThumbClearer removes an unlocked, non-manual provider thumb
+// from audio Media whose poster holds local or embedded artwork;
+// *artwork.Service satisfies it.
+type importedAudioThumbClearer interface {
+	ClearImportedAudioThumb(ctx context.Context, id store.MediaID)
+}
+
 // importedArtworkReader reports artwork stored through ImportArtwork or a
 // manual pick; *artwork.Service satisfies it.
 type importedArtworkReader interface {
@@ -129,13 +136,14 @@ type mediaClassReader interface {
 }
 
 var (
-	_ embeddedArtworkStore    = (*artwork.Service)(nil)
-	_ embeddedArtworkReader   = (*artwork.Service)(nil)
-	_ importedArtworkReader   = (*artwork.Service)(nil)
-	_ conditionalArtworkStore = (*artwork.Service)(nil)
-	_ sidecarLockReader       = (*artwork.Service)(nil)
-	_ appliedCandidateReader  = (*store.Store)(nil)
-	_ mediaClassReader        = (*store.Store)(nil)
+	_ embeddedArtworkStore      = (*artwork.Service)(nil)
+	_ embeddedArtworkReader     = (*artwork.Service)(nil)
+	_ importedAudioThumbClearer = (*artwork.Service)(nil)
+	_ importedArtworkReader     = (*artwork.Service)(nil)
+	_ conditionalArtworkStore   = (*artwork.Service)(nil)
+	_ sidecarLockReader         = (*artwork.Service)(nil)
+	_ appliedCandidateReader    = (*store.Store)(nil)
+	_ mediaClassReader          = (*store.Store)(nil)
 )
 
 // FingerprintStore is the content-identity read seam;
@@ -1575,6 +1583,12 @@ func (s *Service) applyArtworkSlot(ctx context.Context, mediaID store.MediaID, p
 	if slot == artwork.SlotPoster && !s.posterTakesProviderArtwork(ctx, mediaID, video) {
 		return "kept"
 	}
+	if slot == artwork.SlotThumb && s.audioPosterOutranksThumb(ctx, mediaID, true) {
+		if clearer, ok := s.artwork.(importedAudioThumbClearer); ok {
+			clearer.ClearImportedAudioThumb(ctx, mediaID)
+		}
+		return "kept"
+	}
 	data, err := s.fetcher.FetchResource(ctx, rawURL)
 	if err != nil {
 		slog.Debug("identify: artwork fetch failed", "slot", slot, "error", err.Error())
@@ -1592,6 +1606,8 @@ func (s *Service) applyArtworkSlot(ctx context.Context, mediaID store.MediaID, p
 			return s.videoPosterReplaceable(ctx, mediaID)
 		case slot == artwork.SlotPoster:
 			return !s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)
+		case slot == artwork.SlotThumb:
+			return !s.audioPosterOutranksThumb(ctx, mediaID, false)
 		}
 		return true
 	}
@@ -1717,20 +1733,59 @@ func (s *Service) importEmbeddedPoster(ctx context.Context, mediaID store.MediaI
 	return found
 }
 
-// mediaIsVideo reports whether mediaID is video-class Media. A store that
-// cannot say, or a failed read, is treated as not video, which keeps the
-// embedded-cover precedence.
-func (s *Service) mediaIsVideo(ctx context.Context, mediaID store.MediaID) bool {
+// audioPosterOutranksThumb reports whether an audio Media item's poster slot
+// already holds locked local art or an embedded cover picture that outranks a
+// provider thumb (such as Cover Art Archive front-500). When extractEmbedded is
+// true and no poster is settled yet, embedded extraction runs first so pending
+// artwork actions landing out of order cannot populate thumb ahead of poster.
+func (s *Service) audioPosterOutranksThumb(ctx context.Context, mediaID store.MediaID, extractEmbedded bool) bool {
+	if !s.mediaIsAudio(ctx, mediaID) {
+		return false
+	}
+	if s.posterLocked(ctx, mediaID) {
+		return true
+	}
+	if extractEmbedded && (!s.artwork.HasArtwork(mediaID, artwork.SlotPoster) || s.artwork.IsGeneratedArtwork(mediaID, artwork.SlotPoster)) {
+		if s.importEmbeddedPoster(ctx, mediaID) {
+			return true
+		}
+	}
+	embedded, ok := s.artwork.(embeddedArtworkReader)
+	return ok && embedded.IsEmbeddedArtwork(mediaID, artwork.SlotPoster)
+}
+
+func (s *Service) posterLocked(ctx context.Context, mediaID store.MediaID) bool {
+	if s.artworkLocked(ctx, mediaID, artwork.SlotPoster) {
+		return true
+	}
+	locks, ok := s.artwork.(sidecarLockReader)
+	return ok && locks.IsArtworkLocked(mediaID, artwork.SlotPoster)
+}
+
+func (s *Service) mediaClass(ctx context.Context, mediaID store.MediaID) (store.MediaClass, bool) {
 	classes, ok := s.store.(mediaClassReader)
 	if !ok {
-		return false
+		return "", false
 	}
 	class, err := classes.MediaClass(ctx, mediaID)
 	if err != nil {
 		slog.Debug("identify: media class read failed", "media", string(mediaID), "error", err.Error())
-		return false
+		return "", false
 	}
-	return class == store.MediaClassVideo
+	return class, true
+}
+
+// mediaIsVideo reports whether mediaID is video-class Media. A store that
+// cannot say, or a failed read, is treated as not video, which keeps the
+// embedded-cover precedence.
+func (s *Service) mediaIsVideo(ctx context.Context, mediaID store.MediaID) bool {
+	class, ok := s.mediaClass(ctx, mediaID)
+	return ok && class == store.MediaClassVideo
+}
+
+func (s *Service) mediaIsAudio(ctx context.Context, mediaID store.MediaID) bool {
+	class, ok := s.mediaClass(ctx, mediaID)
+	return ok && class == store.MediaClassAudio
 }
 
 // artworkLocked reports whether an admin locked one artwork slot. A failed

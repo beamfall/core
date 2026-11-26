@@ -315,6 +315,11 @@ func (s *Service) IsImportedArtwork(id store.MediaID, slot string) bool {
 // imported before the marker existed have none.
 func importedMarkerPath(path string) string { return path + ".imported" }
 
+// manualMarkerPath marks a slot written through ImportManualArtwork under the
+// directory lock, protecting newly pinned or uploaded picks in the window before
+// store provenance commits (pinArtworkCandidate / upload).
+func manualMarkerPath(path string) string { return path + ".manual" }
+
 // HasEntityPoster reports whether a poster file exists for the Entity.
 func (s *Service) HasEntityPoster(id store.EntityID) bool {
 	_, ok := s.EntityArtworkVersion(id, SlotPoster)
@@ -1007,6 +1012,11 @@ func (s *Service) GeneratePoster(ctx context.Context, id store.MediaID) error {
 	if found {
 		return nil
 	}
+	// Audio streams cannot yield a video frame; no embedded cover means
+	// no generated poster rather than a failing frame grab on every sweep.
+	if media.Class == store.MediaClassAudio {
+		return nil
+	}
 	dst := s.PosterPath(id)
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
@@ -1104,6 +1114,8 @@ func (s *Service) importEmbeddedPoster(ctx context.Context, id store.MediaID, sr
 	if err := os.WriteFile(embeddedMarkerPath(dst), nil, 0o600); err != nil {
 		return false, err
 	}
+	s.recordDominantColor(dst, SlotPoster)
+	s.clearImportedAudioThumbLocked(ctx, id)
 	for bucket := range bucketWidths {
 		_ = os.Remove(filepath.Join(filepath.Dir(dst), SlotPoster+"."+bucket+".jpg"))
 	}
@@ -1217,13 +1229,16 @@ func SweepHandler(service *Service) jobs.Handler {
 			if !service.HasPoster(id) {
 				if err := service.GeneratePoster(ctx, id); err != nil {
 					failed = true
-				} else {
+				} else if service.HasPoster(id) {
 					generated = true
 				}
 			}
 			// Steady state matches ADR-0014: the sweep owns derivative
 			// generation; cache hits make this a stat on later passes.
 			if service.HasPoster(id) {
+				if service.IsEmbeddedArtwork(id, SlotPoster) || service.IsArtworkLocked(id, SlotPoster) {
+					service.ClearImportedAudioThumb(ctx, id)
+				}
 				service.GenerateDerivatives(ctx, id)
 				// Records the colour of a poster that has none, or whose
 				// bytes changed; a current record makes this a small read.
@@ -1335,13 +1350,18 @@ func (s *Service) importMediaArtwork(ctx context.Context, id store.MediaID, slot
 	if err := removeProvenanceMarkers(dst); err != nil {
 		return false, err
 	}
+	if !honourLock {
+		if err := os.WriteFile(manualMarkerPath(dst), nil, 0o600); err != nil {
+			return false, err
+		}
+	}
 	return true, os.WriteFile(importedMarkerPath(dst), nil, 0o600)
 }
 
-// removeProvenanceMarkers drops the generated, embedded and imported markers
-// once new artwork replaces the slot file.
+// removeProvenanceMarkers drops the generated, embedded, imported and manual
+// markers once new artwork replaces or removes the slot file.
 func removeProvenanceMarkers(dst string) error {
-	for _, marker := range []string{generatedMarkerPath(dst), embeddedMarkerPath(dst), importedMarkerPath(dst)} {
+	for _, marker := range []string{generatedMarkerPath(dst), embeddedMarkerPath(dst), importedMarkerPath(dst), manualMarkerPath(dst)} {
 		if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -1465,7 +1485,7 @@ func (s *Service) removeLegacyOverlay(dst, legacy, slot string) {
 	if _, err := os.Lstat(lockMarkerPath(dst)); err != nil {
 		_ = os.Rename(lockMarkerPath(legacy), lockMarkerPath(dst))
 	}
-	for _, path := range []string{legacy, generatedMarkerPath(legacy), embeddedMarkerPath(legacy), importedMarkerPath(legacy), lockMarkerPath(legacy)} {
+	for _, path := range []string{legacy, generatedMarkerPath(legacy), embeddedMarkerPath(legacy), importedMarkerPath(legacy), manualMarkerPath(legacy), lockMarkerPath(legacy)} {
 		_ = os.Remove(path)
 	}
 	for bucket := range bucketWidths {

@@ -1412,3 +1412,69 @@ func TestDerivativeKeepsWiderMediaDerivedBucket(t *testing.T) {
 		t.Fatalf("media-derived bucket removed: %v", err)
 	}
 }
+
+func TestGeneratePosterExtractsEmbeddedCoverForAudioAndSkipsAudioWithoutCover(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	lib, err := st.CreateLibrary(ctx, "Music", false, "music", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	withCoverPath := filepath.Join(dir, "01-with-cover.mp3")
+	plainPath := filepath.Join(dir, "02-plain.mp3")
+	for _, p := range []string{withCoverPath, plainPath} {
+		if err := os.WriteFile(p, []byte("audio"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	withCover, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: lib.ID, Path: withCoverPath, Title: "With Cover",
+		Container: "mp3", Codec: "mp3", Class: store.MediaClassAudio,
+		ContentFingerprint: "fp-audio-cover", SizeBytes: 5, ModTime: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: lib.ID, Path: plainPath, Title: "Plain",
+		Container: "mp3", Codec: "mp3", Class: store.MediaClassAudio,
+		ContentFingerprint: "fp-audio-plain", SizeBytes: 5, ModTime: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	grabber := &perPathEmbeddedGrabber{embeddedPaths: map[string]bool{withCoverPath: true}}
+	svc := NewService(st, grabber, t.TempDir())
+
+	if err := svc.GeneratePoster(ctx, withCover.ID); err != nil {
+		t.Fatalf("GeneratePoster(withCover) = %v", err)
+	}
+	if !svc.HasPoster(withCover.ID) || !svc.IsEmbeddedArtwork(withCover.ID, SlotPoster) || svc.IsGeneratedArtwork(withCover.ID, SlotPoster) {
+		t.Fatalf("withCover poster state wrong: has=%v embedded=%v generated=%v",
+			svc.HasPoster(withCover.ID), svc.IsEmbeddedArtwork(withCover.ID, SlotPoster), svc.IsGeneratedArtwork(withCover.ID, SlotPoster))
+	}
+	if err := svc.GeneratePoster(ctx, plain.ID); err != nil {
+		t.Fatalf("GeneratePoster(plain) = %v, want nil", err)
+	}
+	if svc.HasPoster(plain.ID) || svc.IsGeneratedArtwork(plain.ID, SlotPoster) {
+		t.Fatalf("plain audio unexpectedly got poster/generated mark")
+	}
+	if len(grabber.calls) != 0 {
+		t.Fatalf("FrameGrab called on audio media: %v", grabber.calls)
+	}
+}
+
+type perPathEmbeddedGrabber struct {
+	fakeGrabber
+	embeddedPaths map[string]bool
+}
+
+func (p *perPathEmbeddedGrabber) ExtractEmbeddedArtwork(_ context.Context, src string, _ int, dst string) (bool, error) {
+	p.embeddedCalls = append(p.embeddedCalls, src)
+	if !p.embeddedPaths[src] {
+		return false, nil
+	}
+	return true, os.WriteFile(dst, []byte("embedded jpeg"), 0o600)
+}

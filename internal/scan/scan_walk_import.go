@@ -172,6 +172,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 			return err
 		}
 	}
+	s.applyMediaLocalArtwork(path, media.ID)
 	if err := s.retryAutoIdentify(task, media.ID, stored.ContentFingerprint, parsed); err != nil {
 		return err
 	}
@@ -401,6 +402,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			return err
 		}
 	}
+	s.applyMediaLocalArtwork(path, media.ID)
 	if s.identifier != nil && s.libraryPluginID != "" {
 		s.autoIdentify(path, media.ID, fingerprint, parsed, "scan: auto-identify failed")
 	}

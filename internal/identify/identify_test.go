@@ -7,6 +7,8 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
 )
 
 // fakeEngine returns canned results and records the spec/values it saw.
@@ -1853,4 +1856,156 @@ func TestApplyPosterPrecedenceByMediaClass(t *testing.T) {
 			}
 		})
 	}
+}
+
+type staticAudioGrabber struct{ data []byte }
+
+func (staticAudioGrabber) FrameGrab(context.Context, string, float64, int, string) error {
+	return errors.New("unexpected frame grab on audio")
+}
+
+func (g staticAudioGrabber) ExtractEmbeddedArtwork(_ context.Context, _ string, _ int, dst string) (bool, error) {
+	return true, os.WriteFile(dst, g.data, 0o600)
+}
+
+func TestApplyAudioPosterPrecedenceSkipsProviderThumb(t *testing.T) {
+	const (
+		posterURL = "https://coverartarchive.org/release/rel-1/front"
+		thumbURL  = "https://coverartarchive.org/release/rel-1/front-500"
+	)
+	caaResult := scrape.Result{
+		Fields: map[string]any{"title": "Blue Harvest"},
+		Artwork: map[string]string{
+			artwork.SlotPoster: posterURL,
+			artwork.SlotThumb:  thumbURL,
+		},
+	}
+
+	t.Run("audio embedded poster skips both poster and thumb fetches", func(t *testing.T) {
+		fetcher := &fakeFetcher{data: []byte("caa-art")}
+		art := &fakeArtwork{embedded: true}
+		st := &classStore{class: store.MediaClassAudio}
+		service := identify.NewService(&fakeEngine{lookupResult: caaResult}, demoBundles(plugin.ScraperSpec{ID: "lookup"}), st)
+		service.SetArtwork(fetcher, art)
+		if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+			t.Fatal(err)
+		}
+		if art.embeddedCalls == 0 || fetcher.calls != 0 || art.calls != 0 {
+			t.Fatalf("embedded=%d fetcher=%d imports=%d", art.embeddedCalls, fetcher.calls, art.calls)
+		}
+	})
+
+	t.Run("audio sidecar lock skips both poster and thumb fetches", func(t *testing.T) {
+		fetcher := &fakeFetcher{data: []byte("caa-art")}
+		art := &fakeArtwork{
+			has:           map[string]bool{artwork.SlotPoster: true},
+			sidecarLocked: map[string]bool{artwork.SlotPoster: true},
+		}
+		st := &classStore{class: store.MediaClassAudio}
+		service := identify.NewService(&fakeEngine{lookupResult: caaResult}, demoBundles(plugin.ScraperSpec{ID: "lookup"}), st)
+		service.SetArtwork(fetcher, art)
+		if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+			t.Fatal(err)
+		}
+		if fetcher.calls != 0 || art.calls != 0 {
+			t.Fatalf("sidecar-locked audio fetched CAA: fetcher=%d imports=%d", fetcher.calls, art.calls)
+		}
+	})
+
+	t.Run("video with poster still fetches provider thumb", func(t *testing.T) {
+		fetcher := &fakeFetcher{data: []byte("provider-thumb")}
+		art := &fakeArtwork{
+			has:          map[string]bool{artwork.SlotPoster: true},
+			importedSlot: map[string]bool{artwork.SlotPoster: true},
+		}
+		st := &classStore{class: store.MediaClassVideo}
+		service := identify.NewService(&fakeEngine{lookupResult: caaResult}, demoBundles(plugin.ScraperSpec{ID: "lookup"}), st)
+		service.SetArtwork(fetcher, art)
+		if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+			t.Fatal(err)
+		}
+		if len(art.imports) != 1 || art.imports[0].slot != artwork.SlotThumb {
+			t.Fatalf("imports = %#v, want thumb", art.imports)
+		}
+	})
+
+	t.Run("real action store ordering keeps embedded cover over CAA thumb", func(t *testing.T) {
+		ctx := context.Background()
+		st := storetest.Open(t)
+		lib, err := st.CreateLibrary(ctx, "Music", false, "demo", "profile-default")
+		if err != nil {
+			t.Fatal(err)
+		}
+		audioPath := filepath.Join(t.TempDir(), "01.mp3")
+		if err := os.WriteFile(audioPath, []byte("mp3"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: lib.ID, Path: audioPath, Title: "Track 1",
+			Container: "mp3", Codec: "mp3", Class: store.MediaClassAudio, ContentFingerprint: "fp-track-1",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		art := artwork.NewService(st, staticAudioGrabber{data: []byte{0xFF, 0xD8, 0xFF, 0xE0, 'e', 'm', 'b'}}, t.TempDir())
+		fetcher := &fakeFetcher{data: []byte("caa-bytes")}
+		service := identify.NewService(&fakeEngine{lookupResult: caaResult}, demoBundles(plugin.ScraperSpec{ID: "lookup"}), st)
+		service.SetArtwork(fetcher, art)
+		service.SetArtworkCandidates(st)
+		if err := service.Apply(ctx, media.ID, "demo", "lookup", "42"); err != nil {
+			t.Fatal(err)
+		}
+		if fetcher.calls != 0 {
+			t.Fatalf("CAA fetcher called %d times, want 0", fetcher.calls)
+		}
+		if !art.IsEmbeddedArtwork(media.ID, artwork.SlotPoster) {
+			t.Fatal("embedded poster was not imported")
+		}
+		if art.HasArtwork(media.ID, artwork.SlotThumb) {
+			t.Fatal("CAA thumb unexpectedly populated when audio track had embedded cover")
+		}
+	})
+
+	t.Run("upgrade cleans pre-existing CAA thumb when audio has embedded or manual-protected check", func(t *testing.T) {
+		ctx := context.Background()
+		st := storetest.Open(t)
+		lib, err := st.CreateLibrary(ctx, "Music", false, "demo", "profile-default")
+		if err != nil {
+			t.Fatal(err)
+		}
+		audioPath := filepath.Join(t.TempDir(), "01.mp3")
+		if err := os.WriteFile(audioPath, []byte("mp3"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: lib.ID, Path: audioPath, Title: "Track 1",
+			Container: "mp3", Codec: "mp3", Class: store.MediaClassAudio, ContentFingerprint: "fp-upgrade",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		art := artwork.NewService(st, staticAudioGrabber{data: []byte{0xFF, 0xD8, 0xFF, 0xE0, 'e', 'm', 'b'}}, t.TempDir())
+		if found, err := art.ImportEmbeddedPoster(ctx, media.ID); err != nil || !found {
+			t.Fatalf("ImportEmbeddedPoster = (%v, %v)", found, err)
+		}
+		if err := art.ImportArtwork(ctx, media.ID, artwork.SlotThumb, []byte("old-caa-thumb")); err != nil {
+			t.Fatal(err)
+		}
+		fetcher := &fakeFetcher{data: []byte("new-caa-bytes")}
+		service := identify.NewService(&fakeEngine{lookupResult: caaResult}, demoBundles(plugin.ScraperSpec{ID: "lookup"}), st)
+		service.SetArtwork(fetcher, art)
+		service.SetArtworkCandidates(st)
+		if err := service.Apply(ctx, media.ID, "demo", "lookup", "42"); err != nil {
+			t.Fatal(err)
+		}
+		if fetcher.calls != 0 {
+			t.Fatalf("CAA fetcher called %d times, want 0", fetcher.calls)
+		}
+		if art.HasArtwork(media.ID, artwork.SlotThumb) {
+			t.Fatal("pre-existing CAA thumb survived Apply alongside embedded poster")
+		}
+		if got, ok := art.ResolveSlot(media.ID, artwork.SlotThumb); !ok || got != artwork.SlotPoster {
+			t.Fatalf("ResolveSlot(thumb) = (%q, %v), want (%q, true)", got, ok, artwork.SlotPoster)
+		}
+	})
 }

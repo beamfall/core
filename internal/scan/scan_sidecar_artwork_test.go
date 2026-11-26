@@ -366,3 +366,95 @@ func TestDeferredLocalReleaseSkipsSlotsAnotherPartMatched(t *testing.T) {
 		t.Fatal("deferred release state was not cleared")
 	}
 }
+
+type directAlbumTestIdentifier struct {
+	st                  *store.Store
+	svc                 *artwork.Service
+	identifiedPosterSet map[store.MediaID]bool
+}
+
+func (d *directAlbumTestIdentifier) AutoIdentify(_ context.Context, id store.MediaID, _, _ string, _ ParsedMedia) error {
+	if d.identifiedPosterSet == nil {
+		d.identifiedPosterSet = map[store.MediaID]bool{}
+	}
+	d.identifiedPosterSet[id] = d.svc.IsArtworkLocked(id, artwork.SlotPoster)
+	return nil
+}
+
+func (d *directAlbumTestIdentifier) ContainerEntitiesForMedia(ctx context.Context, id store.MediaID) ([]ContainerEntity, error) {
+	file, err := d.st.PrimaryMediaFile(ctx, id, store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Dir(file.Path)
+	name := filepath.Base(dir)
+	if discSubdirPattern.MatchString(name) {
+		name = filepath.Base(filepath.Dir(dir))
+	}
+	return []ContainerEntity{{ID: store.EntityID("album-" + name), Ordered: false}}, nil
+}
+
+func TestLocalArtworkAlbumCoverReachesContainerAndTracksBeforeIdentify(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, root, "Artist/poster.jpg", jpegBytes("artist poster"))
+	writeScanFile(t, root, "Artist/Album/01.mp3", []byte("track one"))
+	writeScanFile(t, root, "Artist/Album/02.mp3", []byte("track two"))
+	writeScanFile(t, root, "Artist/Album/cover.jpg", jpegBytes("album cover"))
+	writeScanFile(t, root, "Artist/Album/01-poster.png", []byte("\x89PNG\r\n\x1a\ntrack one poster"))
+	writeScanFile(t, root, "Artist/DiscAlbum/CD 1/01.mp3", []byte("disc one"))
+	writeScanFile(t, root, "Artist/DiscAlbum/CD 2/01.mp3", []byte("disc two"))
+	writeScanFile(t, root, "Artist/DiscAlbum/folder.jpg", jpegBytes("disc folder"))
+	writeScanFile(t, root, "Artist/OtherAlbum/01.mp3", []byte("other track"))
+
+	st := storetest.Open(t)
+	lib, err := st.CreateLibrary(context.Background(), "Music", false, "music", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := artwork.NewService(st, &copyingArtworkTools{}, t.TempDir())
+	identifier := &directAlbumTestIdentifier{st: st, svc: svc}
+
+	result, err := ScanWithWorkerGovernor(context.Background(), st, nil, nil, nil, nil, identifier, nil, nil, fixedGovernor(2), Request{
+		LibraryID: lib.ID,
+		Root:      root,
+	}, svc)
+	if err != nil {
+		t.Fatalf("ScanWithWorkerGovernor: %v", err)
+	}
+
+	track1 := mediaIDForPath(t, result, "Artist/Album/01.mp3")
+	track2 := mediaIDForPath(t, result, "Artist/Album/02.mp3")
+	disc1 := mediaIDForPath(t, result, "Artist/DiscAlbum/CD 1/01.mp3")
+	disc2 := mediaIDForPath(t, result, "Artist/DiscAlbum/CD 2/01.mp3")
+	other := mediaIDForPath(t, result, "Artist/OtherAlbum/01.mp3")
+
+	for _, id := range []store.MediaID{track1, track2, disc1, disc2} {
+		locked, called := identifier.identifiedPosterSet[id]
+		if !called || !locked {
+			t.Fatalf("track %s AutoIdentify state called=%v locked=%v, want true, true", id, called, locked)
+		}
+	}
+	if got := slotBytes(t, svc.PosterPath(track1)); got != "\x89PNG\r\n\x1a\ntrack one poster" {
+		t.Fatalf("track1 poster = %q, want 01-poster.png override", got)
+	}
+	if got := slotBytes(t, svc.PosterPath(track2)); got != string(jpegBytes("album cover")) {
+		t.Fatalf("track2 poster = %q, want Album/cover.jpg", got)
+	}
+	if got := slotBytes(t, svc.EntityPosterPath("album-Album")); got != string(jpegBytes("album cover")) {
+		t.Fatalf("album-Album poster = %q, want Album/cover.jpg", got)
+	}
+	if !svc.IsEntityArtworkLocked("album-Album", artwork.SlotPoster) {
+		t.Fatal("album-Album poster is not locally locked")
+	}
+	for _, id := range []store.MediaID{disc1, disc2} {
+		if got := slotBytes(t, svc.PosterPath(id)); got != string(jpegBytes("disc folder")) {
+			t.Fatalf("disc track %s poster = %q, want DiscAlbum/folder.jpg", id, got)
+		}
+	}
+	if got := slotBytes(t, svc.EntityPosterPath("album-DiscAlbum")); got != string(jpegBytes("disc folder")) {
+		t.Fatalf("album-DiscAlbum poster = %q, want DiscAlbum/folder.jpg", got)
+	}
+	if svc.HasPoster(other) || svc.HasEntityPoster("album-OtherAlbum") {
+		t.Fatal("Artist/poster.jpg leaked onto OtherAlbum or its track")
+	}
+}

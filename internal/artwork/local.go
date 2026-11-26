@@ -179,7 +179,7 @@ func (s *Service) removeSlotFiles(ctx context.Context, dst string, markers bool)
 		return err
 	}
 	defer unlock()
-	paths := []string{dst, generatedMarkerPath(dst)}
+	paths := []string{dst}
 	if markers {
 		paths = append(paths, slotLockMarker(dst), lockMarkerPath(dst))
 	}
@@ -188,7 +188,7 @@ func (s *Service) removeSlotFiles(ctx context.Context, dst string, markers bool)
 			return err
 		}
 	}
-	return nil
+	return removeProvenanceMarkers(dst)
 }
 
 // ImportLocalArtwork imports a curated sidecar image file into a Media slot
@@ -211,7 +211,53 @@ func (s *Service) ImportLocalArtwork(ctx context.Context, id store.MediaID, slot
 	if s.store != nil {
 		operatorOwned = func() (bool, error) { return s.store.ArtworkSlotManual(ctx, id, slot) }
 	}
-	return s.importLocal(ctx, s.ArtworkPath(id, slot), string(id), slot, root, path, operatorOwned)
+	changed, err := s.importLocal(ctx, s.ArtworkPath(id, slot), string(id), slot, root, path, operatorOwned)
+	if err == nil && slot == SlotPoster {
+		s.ClearImportedAudioThumb(ctx, id)
+	}
+	return changed, err
+}
+
+// ClearImportedAudioThumb removes an unlocked, non-manual provider-imported
+// thumb on an audio Media when its poster slot holds local or embedded artwork,
+// so thumb lookups fall back to the winning poster instead of serving stale
+// Cover Art Archive imagery.
+func (s *Service) ClearImportedAudioThumb(ctx context.Context, id store.MediaID) {
+	if s.store == nil || !s.IsImportedArtwork(id, SlotThumb) {
+		return
+	}
+	dst := s.ArtworkPath(id, SlotThumb)
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
+	if err != nil {
+		return
+	}
+	defer unlock()
+	s.clearImportedAudioThumbLocked(ctx, id)
+}
+
+// clearImportedAudioThumbLocked runs with the Media's artwork directory lock held.
+func (s *Service) clearImportedAudioThumbLocked(ctx context.Context, id store.MediaID) {
+	if s.store == nil {
+		return
+	}
+	dst := s.ArtworkPath(id, SlotThumb)
+	if _, locked := readSlotLock(dst); locked || regularFileExists(manualMarkerPath(dst)) || !regularFileExists(importedMarkerPath(dst)) {
+		return
+	}
+	media, err := s.store.Media(ctx, id, store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil || media.Class != store.MediaClassAudio {
+		return
+	}
+	manual, err := s.store.ArtworkSlotManual(ctx, id, SlotThumb)
+	if err != nil || manual {
+		return
+	}
+	_ = os.Remove(dst)
+	_ = removeProvenanceMarkers(dst)
+	for bucket := range bucketWidths {
+		_ = os.Remove(filepath.Join(filepath.Dir(dst), SlotThumb+"."+bucket+filepath.Ext(dst)))
+	}
+	s.versions.forget(dst)
 }
 
 // ReleaseLocalArtwork removes a Media slot's local lock when no sidecar

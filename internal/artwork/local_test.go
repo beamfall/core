@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -395,5 +396,164 @@ func TestRevertManualArtwork(t *testing.T) {
 	}
 	if svc.IsArtworkLocked(media.ID, SlotBackdrop) {
 		t.Fatal("backdrop still locked after revert")
+	}
+}
+
+func TestImportLocalPosterClearsProviderImportedThumbForAudioOnly(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	libraryDir := t.TempDir()
+	library, err := st.CreateLibrary(ctx, "Music", false, "music", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetLibraryRoots(ctx, library.ID, []string{libraryDir}); err != nil {
+		t.Fatal(err)
+	}
+	audio, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: filepath.Join(libraryDir, "01.mp3"), Title: "Track",
+		Container: "mp3", Codec: "mp3", Class: store.MediaClassAudio, ContentFingerprint: "fp-audio",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manualAudio, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: filepath.Join(libraryDir, "02.mp3"), Title: "Manual",
+		Container: "mp3", Codec: "mp3", Class: store.MediaClassAudio, ContentFingerprint: "fp-manual",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	video, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: filepath.Join(libraryDir, "clip.mkv"), Title: "Clip",
+		Container: "mkv", Codec: "h264", Class: store.MediaClassVideo, ContentFingerprint: "fp-video",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetMediaFieldLock(ctx, manualAudio.ID, store.ArtworkLockField(SlotThumb), true, store.LibraryFilter{Revealed: true, AllLibraries: true}); err != nil {
+		t.Fatal(err)
+	}
+	cover := writeSidecar(t, libraryDir, "cover.jpg", testJPEG)
+	svc := NewService(st, &fakeGrabber{}, t.TempDir())
+	for _, id := range []store.MediaID{audio.ID, manualAudio.ID, video.ID} {
+		if err := svc.ImportArtwork(ctx, id, SlotThumb, []byte("caa-thumb")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.ImportLocalArtwork(ctx, id, SlotPoster, libraryDir, cover); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if svc.HasArtwork(audio.ID, SlotThumb) {
+		t.Fatal("stale provider thumb survived local poster import on audio track")
+	}
+	if !svc.HasArtwork(manualAudio.ID, SlotThumb) {
+		t.Fatal("manual thumb was unexpectedly removed")
+	}
+	if !svc.HasArtwork(video.ID, SlotThumb) {
+		t.Fatal("video thumb was unexpectedly removed")
+	}
+}
+
+func TestClearImportedAudioThumbRechecksManualLockUnderLockAndRunsInSweep(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(ctx, "Music", false, "music", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	racingPath := filepath.Join(dir, "01.mp3")
+	upgradedPath := filepath.Join(dir, "02.mp3")
+	for _, p := range []string{racingPath, upgradedPath} {
+		if err := os.WriteFile(p, []byte("audio"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	racing, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: racingPath, Title: "Racing",
+		Container: "mp3", Codec: "mp3", Class: store.MediaClassAudio, ContentFingerprint: "fp-racing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgraded, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: upgradedPath, Title: "Upgraded",
+		Container: "mp3", Codec: "mp3", Class: store.MediaClassAudio, ContentFingerprint: "fp-upgraded",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewService(st, &perPathEmbeddedGrabber{embeddedPaths: map[string]bool{upgradedPath: true}}, t.TempDir())
+	if err := svc.ImportArtwork(ctx, racing.ID, SlotThumb, testJPEG); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := svc.lockDerivative(ctx, filepath.Dir(svc.ArtworkPath(racing.ID, SlotThumb)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		svc.ClearImportedAudioThumb(ctx, racing.ID)
+	}()
+	// Wait until ClearImportedAudioThumb is parked on lockDerivative, then set
+	// the manual lock before releasing the directory lock.
+	time.Sleep(25 * time.Millisecond)
+	if _, err := st.SetMediaFieldLock(ctx, racing.ID, store.ArtworkLockField(SlotThumb), true, store.LibraryFilter{Revealed: true, AllLibraries: true}); err != nil {
+		unlock()
+		t.Fatal(err)
+	}
+	unlock()
+	<-done
+	if !svc.HasArtwork(racing.ID, SlotThumb) {
+		t.Fatal("ClearImportedAudioThumb deleted a thumb locked manually while waiting for the directory lock")
+	}
+
+	// Simulate an existing library that already had an embedded poster and a
+	// prior CAA thumb on disk: the sweep clears the stale CAA thumb so thumb
+	// resolves to poster.
+	if found, err := svc.ImportEmbeddedPoster(ctx, upgraded.ID); err != nil || !found {
+		t.Fatalf("ImportEmbeddedPoster = (%v, %v)", found, err)
+	}
+	if err := svc.ImportArtwork(ctx, upgraded.ID, SlotThumb, testJPEG); err != nil {
+		t.Fatal(err)
+	}
+	if !svc.HasArtwork(upgraded.ID, SlotThumb) {
+		t.Fatal("pre-existing CAA thumb missing before sweep")
+	}
+	if job, err := NewSweepJob(time.Unix(200, 0).UTC()); err != nil {
+		t.Fatal(err)
+	} else if _, err := st.EnqueueJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	registry := jobs.NewRegistry(st, "worker")
+	registry.Register(SweepJobKind, SweepHandler(svc))
+	if _, err := registry.RunOne(ctx, nil, time.Unix(200, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if svc.HasArtwork(upgraded.ID, SlotThumb) {
+		t.Fatal("sweep left stale CAA thumb on upgraded audio track with embedded poster")
+	}
+	if got, ok := svc.ResolveSlot(upgraded.ID, SlotThumb); !ok || got != SlotPoster {
+		t.Fatalf("ResolveSlot(thumb) = (%q, %v), want (%q, true)", got, ok, SlotPoster)
+	}
+
+	// Simulate the pinArtworkCandidate window where ImportManualArtwork has
+	// published bytes before SetMediaFieldLock commits: ClearImportedAudioThumb
+	// must still preserve the manual pick until RevertManualArtwork.
+	if err := svc.ImportManualArtwork(ctx, upgraded.ID, SlotThumb, []byte("pinned-thumb")); err != nil {
+		t.Fatal(err)
+	}
+	svc.ClearImportedAudioThumb(ctx, upgraded.ID)
+	if got := readSlot(t, svc.ArtworkPath(upgraded.ID, SlotThumb)); got != "pinned-thumb" {
+		t.Fatalf("thumb after cleanup = %q, want pinned-thumb preserved before DB lock commits", got)
+	}
+	if err := svc.RevertManualArtwork(ctx, upgraded.ID, SlotThumb); err != nil {
+		t.Fatal(err)
+	}
+	if svc.HasArtwork(upgraded.ID, SlotThumb) {
+		t.Fatal("manual thumb survived RevertManualArtwork")
 	}
 }
