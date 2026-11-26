@@ -175,6 +175,9 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 			return err
 		}
 	}
+	if err := s.recordLocalAttempt(media.ID, task); err != nil {
+		return err
+	}
 	s.applyMediaLocalArtwork(path, media.ID)
 	if err := s.retryAutoIdentify(task, media.ID, stored.ContentFingerprint, parsed); err != nil {
 		return err
@@ -393,6 +396,9 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
 			return err
 		}
+	}
+	if err := s.recordLocalAttempt(media.ID, task); err != nil {
+		return err
 	}
 	if err := s.hydrateMetadata(media, path, fingerprint, probeTags, probeSucceeded, pathChanged); err != nil {
 		return err

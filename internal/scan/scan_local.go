@@ -11,20 +11,53 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
+const localAttemptMarkerField = "capture-date"
+
 func extractLocalMetadata(ctx context.Context, class store.MediaClass, root, path string, extractors []LocalExtractor) []LocalMetadata {
+	metadata, _ := extractLocalMetadataChecked(ctx, class, root, path, extractors)
+	return metadata
+}
+
+func extractLocalMetadataChecked(ctx context.Context, class store.MediaClass, root, path string, extractors []LocalExtractor) ([]LocalMetadata, bool) {
 	metadata := make([]LocalMetadata, 0, len(extractors))
+	clean := true
 	for _, extractor := range extractors {
 		if extractor == nil {
 			continue
 		}
 		value, err := extractor.ExtractLocal(ctx, string(class), root, path)
 		if err != nil {
+			clean = false
 			slog.Debug("scan: local metadata extraction failed", "path", path, "error", err.Error())
 			continue
 		}
 		metadata = append(metadata, value)
 	}
-	return metadata
+	return metadata, clean
+}
+
+func localMetadataWritesField(metadata []LocalMetadata, field string) bool {
+	for _, entry := range metadata {
+		for _, f := range mediaFieldsFromLocalMetadata(entry) {
+			if f.Name == field {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s *scanWalkState) recordLocalAttempt(mediaID store.MediaID, task *workerTask) error {
+	if len(s.localExtractors) == 0 || imageClassForPath(task.path) || !task.probe.succeeded {
+		return nil
+	}
+	if task.probe.hasVideo && !task.localClean {
+		return nil
+	}
+	if localMetadataWritesField(task.local, localAttemptMarkerField) {
+		return nil
+	}
+	return s.st.MarkMediaFieldAttempted(s.ctx, mediaID, localAttemptMarkerField)
 }
 
 // localMetadataClass is the class a file's local extractors see: still images
