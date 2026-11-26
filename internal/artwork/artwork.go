@@ -11,6 +11,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log/slog"
 	"os"
@@ -408,7 +411,7 @@ func (s *Service) ResolveEntitySlot(id store.EntityID, slot string) (string, boo
 // the same token; any change to the bytes changes it — the cache-busting
 // content-address contract.
 func contentVersion(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- caller-supplied artwork path under the data dir.
 	if err != nil {
 		return "", err
 	}
@@ -679,6 +682,15 @@ func (s *Service) derivative(ctx context.Context, original, owner, slot, bucket 
 	dst := filepath.Join(filepath.Dir(original), slot+"."+bucket+filepath.Ext(original))
 	origInfo, err := os.Stat(original)
 	if err != nil || !origInfo.Mode().IsRegular() {
+		return original, nil
+	}
+	// A bucket at least as wide as the source can only be a same-size copy of
+	// it (scalers never upscale): serve the original and drop any copy an
+	// earlier version wrote (CORE-3528).
+	if w, ok := sourceWidth(original); ok && width >= w {
+		if _, err := os.Lstat(dst); err == nil {
+			_ = os.Remove(dst)
+		}
 		return original, nil
 	}
 	// A cached derivative is fresh only when it is at least as new as its
@@ -1456,4 +1468,20 @@ func (s *Service) removeLegacyOverlay(dst, legacy, slot string) {
 		_ = os.Remove(filepath.Join(filepath.Dir(legacy), slot+"."+bucket+".jpg"))
 	}
 	s.versions.forget(legacy)
+}
+
+// sourceWidth reports the pixel width of a JPEG or PNG at path from its
+// header alone. Other or undecodable sources report false and keep the
+// scaler's behaviour.
+func sourceWidth(path string) (int, bool) {
+	f, err := os.Open(path) // #nosec G304 -- caller-supplied artwork path under the data dir.
+	if err != nil {
+		return 0, false
+	}
+	defer f.Close()
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return 0, false
+	}
+	return cfg.Width, true
 }

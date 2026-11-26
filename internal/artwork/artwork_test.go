@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1353,5 +1355,43 @@ func TestKeepUploadedCandidateSkipsSealedAndEncryptedMedia(t *testing.T) {
 				t.Fatalf("plaintext upload kept for %s media: %v", tc.name, err)
 			}
 		})
+	}
+}
+
+func writeJPEG(t *testing.T, path string, w int) {
+	t.Helper()
+	f, err := os.Create(path) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := jpeg.Encode(f, image.NewRGBA(image.Rect(0, 0, w, w)), nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDerivativeSkipsBucketsAtOrAboveSourceWidth(t *testing.T) {
+	scaler := &fakeScaler{}
+	svc := NewService(storetest.Open(t), scaler, t.TempDir())
+	writePoster(t, svc, "media-narrow")
+	orig := svc.PosterPath("media-narrow")
+	writeJPEG(t, orig, 500)
+	stale := filepath.Join(filepath.Dir(orig), "poster.w1280.jpg")
+	if err := os.WriteFile(stale, []byte("old copy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := svc.PosterDerivative(context.Background(), "media-narrow", "w1280")
+	if err != nil || got != orig {
+		t.Fatalf("w1280 = %q, %v; want original %q", got, err, orig)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("redundant copy still present: %v", err)
+	}
+	if len(scaler.scaleCalls) != 0 {
+		t.Fatalf("scaleCalls = %v, want none", scaler.scaleCalls)
+	}
+	if got, err = svc.PosterDerivative(context.Background(), "media-narrow", "w320"); err != nil || got == orig {
+		t.Fatalf("w320 = %q, %v; want a generated derivative", got, err)
 	}
 }
