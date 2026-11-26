@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-const legacySubscriptionSecret = "feed-marker-7d21" // #nosec G101 -- a test leak marker, not a credential
+const legacySubscriptionMarker = "feed-marker-7d21"
 
 // strandLegacySubscriptionRows writes Subscription, entry, collision, seen and
 // item-state import rows for an Encrypted Library straight into catalog.db,
@@ -21,7 +21,7 @@ func strandLegacySubscriptionRows(t *testing.T, st *Store, libraryID LibraryID, 
 		t.Fatal(err)
 	}
 	defer func() { _ = conn.Close() }()
-	secret := legacySubscriptionSecret
+	secret := legacySubscriptionMarker
 	stmts := []struct {
 		query string
 		args  []any
@@ -123,7 +123,7 @@ func TestEncryptedUnsealEvacuatesLegacySubscriptionRows(t *testing.T) {
 		t.Fatalf("pending key after evacuation = %v, %v", set, err)
 	}
 	var auth string
-	if err := plane.QueryRowContext(ctx, `SELECT auth_header FROM subscription WHERE id = 'sub-legacy'`).Scan(&auth); err != nil || auth != "Bearer "+legacySubscriptionSecret {
+	if err := plane.QueryRowContext(ctx, `SELECT auth_header FROM subscription WHERE id = 'sub-legacy'`).Scan(&auth); err != nil || auth != "Bearer "+legacySubscriptionMarker {
 		t.Fatalf("plane auth header = %q, %v", auth, err)
 	}
 
@@ -202,7 +202,7 @@ func TestEncryptedUnsealEvacuationSurvivesCrashBetweenCommits(t *testing.T) {
 
 func assertNoLegacySubscriptionSecret(t *testing.T, st *Store) {
 	t.Helper()
-	pattern := "%" + legacySubscriptionSecret + "%"
+	pattern := "%" + legacySubscriptionMarker + "%"
 	n := identificationRowCount(t, st.catalogR, `
 		SELECT (SELECT COUNT(*) FROM subscription WHERE feed_url LIKE ?1 OR title LIKE ?1 OR auth_header LIKE ?1 OR root LIKE ?1)
 		     + (SELECT COUNT(*) FROM subscription_seen_entry WHERE guid LIKE ?1 OR path LIKE ?1)
