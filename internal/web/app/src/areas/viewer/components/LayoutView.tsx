@@ -216,11 +216,22 @@ export function LayoutView({
     const markInteraction = () => {
       interactedDuringHydrationRef.current = true;
     };
+    // Input/programmatic focus moves (for example HeaderSearch) fire focusin without
+    // pointerdown or keydown; treat external focus during hydration as user intent,
+    // without blocking pre-existing navigation focus (such as a clicked sidebar link).
+    const markExternalFocus = (event: FocusEvent) => {
+      const target = event.target as Node | null;
+      if (target && !rootRef.current?.contains(target)) {
+        interactedDuringHydrationRef.current = true;
+      }
+    };
     document.addEventListener("pointerdown", markInteraction, { passive: true });
     document.addEventListener("keydown", markInteraction);
+    document.addEventListener("focusin", markExternalFocus);
     return () => {
       document.removeEventListener("pointerdown", markInteraction);
       document.removeEventListener("keydown", markInteraction);
+      document.removeEventListener("focusin", markExternalFocus);
     };
   }, []);
 
@@ -235,10 +246,17 @@ export function LayoutView({
     ) {
       return;
     }
-    // Never yank focus back into a late-hydrating Layout after the user has
-    // already chosen another target. Their interaction itself satisfies the
-    // no-focus-less-screen guarantee.
-    if (interactedDuringHydrationRef.current) {
+    // Never yank focus back into a late-hydrating Layout if the user moved
+    // focus during hydration or is already typing in an external search/input control.
+    const active = document.activeElement;
+    const typingElsewhere =
+      active instanceof HTMLElement &&
+      !rootRef.current.contains(active) &&
+      (active.matches(
+        "input, textarea, select, [contenteditable='true'], [role='combobox'], [role='searchbox']",
+      ) ||
+        Boolean(active.closest("[role='search']")));
+    if (interactedDuringHydrationRef.current || typingElsewhere) {
       focusAppliedRef.current = true;
       return;
     }

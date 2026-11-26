@@ -1,4 +1,4 @@
-import { routeSyntheticAlbum, TEST_TRACKS } from "./lib/synthetic-audio";
+import { blockAutoplay, routeSyntheticAlbum, TEST_TRACKS } from "./lib/synthetic-audio";
 import { expect, type Locator, type Page, test } from "./lib/test";
 
 // Audio playback across the viewer (CORE-1633). The player projects' testMatch
@@ -9,20 +9,37 @@ const position = (video: Locator) =>
   video.evaluate((element: HTMLVideoElement) => element.currentTime);
 const paused = (video: Locator) => video.evaluate((element: HTMLVideoElement) => element.paused);
 
+// Block the service worker so Playwright intercepts synthetic audio routes without
+// sw.js registration/caching overhead.
+test.use({ serviceWorkers: "block" });
+
 async function startTrackOne(page: Page): Promise<Locator> {
+  await page.addInitScript(blockAutoplay);
   await routeSyntheticAlbum(page);
   await page.goto(`/web/watch/${TEST_TRACKS[0].id}`);
   const video = page.locator("video");
-  await expect(page.getByRole("heading", { name: "Track One", level: 2 })).toBeVisible();
-  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.duration)).toBe(30);
-  if (await paused(video)) await page.getByRole("button", { name: "Play", exact: true }).click();
-  await expect.poll(() => position(video)).toBeGreaterThan(0.2);
+  // Under parallel worker load, initial route chunks + WAV range probing can exceed
+  // Playwright's 5s default expect timeout.
+  await expect(page.getByRole("heading", { name: "Track One", level: 2 })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect
+    .poll(() => video.evaluate((element: HTMLVideoElement) => element.duration), {
+      timeout: 20_000,
+    })
+    .toBe(30);
+  // Autoplay stays blocked until the real pointerdown gesture on Play so canplay
+  // cannot flip the button to Pause mid-click and toggle playback off.
+  await expect(video).toHaveJSProperty("paused", true, { timeout: 15_000 });
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect.poll(() => position(video), { timeout: 15_000 }).toBeGreaterThan(0.2);
   return video;
 }
 
 test("audio keeps playing in the mini player while browsing to search and back", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const video = await startTrackOne(page);
 
   // Back to Browse, then to search, all in-app: playback must never stop.
@@ -31,16 +48,17 @@ test("audio keeps playing in the mini player while browsing to search and back",
   const backButton = page.getByRole("button", { name: "Back", exact: true });
   await backButton.focus();
   await backButton.click();
-  await expect(page).toHaveURL(/\/web\/?$/);
+  await expect(page).toHaveURL(/\/web\/?$/, { timeout: 15_000 });
   const search = page
     .getByRole("searchbox", { name: "Search" })
     .or(page.getByRole("combobox", { name: "Search" }));
+  await expect(search.first()).toBeVisible({ timeout: 10_000 });
   await search.first().fill("Track");
   await search.first().press("Enter");
-  await expect(page).toHaveURL(/\/web\/search/);
+  await expect(page).toHaveURL(/\/web\/search/, { timeout: 15_000 });
 
   const mini = page.getByRole("region", { name: "Now playing" });
-  await expect(mini).toBeVisible();
+  await expect(mini).toBeVisible({ timeout: 15_000 });
   await expect(mini.getByText("Track One")).toBeVisible();
   await expect(mini.getByText("Test Artist")).toBeVisible();
   await expect(mini.getByRole("slider", { name: "Playback position" })).toBeVisible();
@@ -48,17 +66,19 @@ test("audio keeps playing in the mini player while browsing to search and back",
   await expect(mini.getByRole("button", { name: "Next" })).toBeEnabled();
   expect(await paused(video)).toBe(false);
   const onSearch = await position(video);
-  await expect.poll(() => position(video)).toBeGreaterThan(onSearch + 0.5);
+  await expect.poll(() => position(video), { timeout: 10_000 }).toBeGreaterThan(onSearch + 0.5);
 
   // Keyboard: the Open player control is a focusable native button.
   const open = mini.getByRole("button", { name: "Open player" });
   await open.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(new RegExp(`/web/watch/${TEST_TRACKS[0].id}`));
-  await expect(mini).toBeHidden();
-  await expect(page.getByRole("heading", { name: "Track One", level: 2 })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/web/watch/${TEST_TRACKS[0].id}`), { timeout: 15_000 });
+  await expect(mini).toBeHidden({ timeout: 10_000 });
+  await expect(page.getByRole("heading", { name: "Track One", level: 2 })).toBeVisible({
+    timeout: 15_000,
+  });
   expect(await paused(video)).toBe(false);
   const back = await position(video);
   expect(back).toBeGreaterThan(onSearch);
-  await expect.poll(() => position(video)).toBeGreaterThan(back + 0.3);
+  await expect.poll(() => position(video), { timeout: 10_000 }).toBeGreaterThan(back + 0.3);
 });

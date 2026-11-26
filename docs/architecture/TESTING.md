@@ -321,6 +321,31 @@ Other repositories share the slot by starting their gate through core's script
 (`python3 <core>/script/gate-slot.py -- make gate`). `script/gate_slot_test.py` proves the order,
 the refusal, the reclaim of a dead holder and the coordinator's use of the slot.
 
+## 10. Web UI E2E goldens
+
+`internal/web/app/e2e/goldens/` holds the live macOS-rendered Playwright screenshots verified by
+`make web-ui-e2e-smoke`. The separate pre-migration archive under
+`artifacts/techdur-web-2/visual-baselines/` is immutable and SHA-256 pinned in
+`internal/web/app/e2e/lib/required-visual-parity-states.mjs`.
+
+Because `expectArchivedVisualParity` rejects ad-hoc `--update-snapshots` runs so the archive
+cannot be overwritten, refresh live web goldens on macOS with the supported entrypoint instead:
+
+```sh
+make web-e2e-rerecord-goldens
+# or scope to one spec/project:
+make web-e2e-rerecord-goldens ARGS='--project=manage e2e/manage.spec.ts'
+# or directly from internal/web/app:
+npm --prefix internal/web/app run e2e:rerecord-goldens -- --project=manage e2e/manage.spec.ts
+```
+
+`script/web-ui-e2e-rerecord-goldens.sh` sets `BEAMFALL_UPDATE_WEB_GOLDENS=1`,
+`BEAMFALL_WEB_E2E_RENDER_PHASE=1`, `LANG=en_US.UTF-8`, `LC_ALL=en_US.UTF-8`, and `TZ=UTC`, so live
+`toHaveScreenshot` goldens update deterministically with `workers=1` while archived baselines remain
+SHA-256 checked read-only (never written). Both `BEAMFALL_UPDATE_WEB_GOLDENS` and
+`internal/web/app/e2e/goldens` are guarded during `make gate` by `script/gate-fixture-guard.py`.
+
+
 **Workspace root.** The consumer pin freshness and cross-repository conformance steps need the
 private multi-repo workspace: the directory that holds `workspace-repos.json` and
 `contracts/registry.json`. They find it in this order:

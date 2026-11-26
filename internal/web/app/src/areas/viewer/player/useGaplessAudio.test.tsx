@@ -7,6 +7,7 @@ import {
   decodableStream,
   heardTime,
   MAX_DECODED_SECONDS,
+  START_LOOKAHEAD_SECONDS,
   START_WAIT_SECONDS,
   skipJoin,
   trimWindow,
@@ -307,7 +308,7 @@ describe("useGaplessAudio", () => {
     expect(sources).toHaveLength(0);
     hook.result.current("m2");
     expect(sources).toHaveLength(1);
-    expect(sources[0].start.mock.calls[0][0]).toBe(5);
+    expect(sources[0].start.mock.calls[0][0]).toBe(5 + START_LOOKAHEAD_SECONDS);
   });
 
   it("cancels a scheduled catalog successor when the player enters server queue mode", async () => {
@@ -354,12 +355,12 @@ describe("useGaplessAudio", () => {
     expect(element.muted).toBe(true);
     expect(listenerMuted(element)).toBe(false);
     await vi.waitFor(() => expect(sources).toHaveLength(1));
-    // m1 from where the element starts, now; then m2 chained after it.
-    expect(sources[0].start).toHaveBeenCalledWith(5, 0, 2);
+    // m1 from where the element starts, plus lookahead; then m2 chained after it.
+    expect(sources[0].start).toHaveBeenCalledWith(5 + START_LOOKAHEAD_SECONDS, 0, 2);
     act(() => {
       element.dispatchEvent(new Event("timeupdate"));
     });
-    expect(sources[1].start).toHaveBeenCalledWith(7, 0, 2);
+    expect(sources[1].start).toHaveBeenCalledWith(5 + START_LOOKAHEAD_SECONDS + 2, 0, 2);
   });
 
   it("stops the decoded track on pause and starts it again where the element resumes", async () => {
@@ -374,8 +375,8 @@ describe("useGaplessAudio", () => {
     element.currentTime = 1.25;
     play();
     // m1 from where the element resumes, m2 chained after it.
-    expect(sources.at(-2)?.start).toHaveBeenCalledWith(5, 1.25, 0.75);
-    expect(sources.at(-1)?.start).toHaveBeenCalledWith(5.75, 0, 2);
+    expect(sources.at(-2)?.start).toHaveBeenCalledWith(5 + START_LOOKAHEAD_SECONDS, 1.25, 0.75);
+    expect(sources.at(-1)?.start).toHaveBeenCalledWith(5 + START_LOOKAHEAD_SECONDS + 0.75, 0, 2);
     expect(element.muted).toBe(true);
   });
 
@@ -393,7 +394,7 @@ describe("useGaplessAudio", () => {
     act(() => {
       element.dispatchEvent(new Event("seeked"));
     });
-    expect(sources.at(-1)?.start).toHaveBeenCalledWith(5, 0.5, 1.5);
+    expect(sources.at(-1)?.start).toHaveBeenCalledWith(5 + START_LOOKAHEAD_SECONDS, 0.5, 1.5);
     expect(element.muted).toBe(true);
   });
 
@@ -426,7 +427,7 @@ describe("useGaplessAudio", () => {
     expect(sources).toHaveLength(0);
     expect(element.muted).toBe(true);
     act(() => contexts[0].run());
-    expect(sources[0].start).toHaveBeenCalledWith(5, 0, 2);
+    expect(sources[0].start).toHaveBeenCalledWith(5 + START_LOOKAHEAD_SECONDS, 0, 2);
   });
 
   it("restarts the wait where the listener seeks while the track still decodes", async () => {
@@ -444,7 +445,7 @@ describe("useGaplessAudio", () => {
     });
     answer();
     await vi.waitFor(() => expect(sources).toHaveLength(1));
-    expect(sources[0].start).toHaveBeenCalledWith(5, 0.5, 1.5);
+    expect(sources[0].start).toHaveBeenCalledWith(5 + START_LOOKAHEAD_SECONDS, 0.5, 1.5);
     expect(element.muted).toBe(true);
   });
 
