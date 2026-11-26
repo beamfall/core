@@ -45,49 +45,52 @@ func clampPollInterval(interval time.Duration) time.Duration {
 	return min(max(interval, MinPollInterval), MaxPollInterval)
 }
 
-func (p *Poller) nextPollInterval(ctx context.Context, subscription store.Subscription, result scrape.FeedResult, document scrape.FeedDocument, now time.Time) (time.Duration, error) {
-	prevState, hasState, err := p.store.SubscriptionPollState(ctx, subscription.ID)
-	if err != nil {
-		return 0, err
+func pollStateMatchesSubscription(state store.SubscriptionPollState, hasState bool, subscription store.Subscription) bool {
+	return hasState &&
+		state.FeedURLHash != "" &&
+		state.FeedURLHash == store.PollFeedURLHash(subscription.FeedURL) &&
+		state.ETag == subscription.ETag &&
+		state.LastModified == subscription.LastModified
+}
+
+func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscription, prevState store.SubscriptionPollState, stateBound bool, result scrape.FeedResult, document scrape.FeedDocument, now time.Time) (time.Duration, *store.SubscriptionPollState, error) {
+	if result.NotModified && stateBound {
+		nextState := prevState
+		if result.HasCacheControl {
+			nextState.MaxAge = result.MaxAge
+		}
+		pubDates := pollStatePubDates(nextState.Entries)
+		cachedDoc := scrape.FeedDocument{
+			Complete:       nextState.Complete,
+			UpdateInterval: nextState.UpdateInterval,
+		}
+		return adaptivePollInterval(cachedDoc, nextState.MaxAge, pubDates, now), &nextState, nil
 	}
-	entries, err := p.store.SubscriptionEntries(ctx, subscription.ID)
+
+	loadEntries := p.store.SubscriptionEntryPollDates
+	if p.testLoadEntryPollDates != nil {
+		loadEntries = p.testLoadEntryPollDates
+	}
+	entries, err := loadEntries(ctx, subscription.ID)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if !result.NotModified {
 		retained, pubDates := mergeFeedEntryDates(document, entries, prevState.Entries)
-		state := store.SubscriptionPollState{
+		state := &store.SubscriptionPollState{
 			Complete:       document.Complete,
 			UpdateInterval: document.UpdateInterval,
 			MaxAge:         result.MaxAge,
 			Entries:        retained,
 		}
-		if err := p.store.SaveSubscriptionPollState(ctx, subscription.ID, state, now); err != nil {
-			return 0, err
-		}
-		return adaptivePollInterval(document, result.MaxAge, pubDates, now), nil
-	}
-	if hasState {
-		maxAge := prevState.MaxAge
-		if result.HasCacheControl {
-			maxAge = result.MaxAge
-		}
-		if maxAge != prevState.MaxAge {
-			prevState.MaxAge = maxAge
-			if err := p.store.SaveSubscriptionPollState(ctx, subscription.ID, prevState, now); err != nil {
-				return 0, err
-			}
-		}
-		pubDates := mergedStoredAndStatePubDates(entries, prevState.Entries)
-		cachedDoc := scrape.FeedDocument{
-			Complete:       prevState.Complete,
-			UpdateInterval: prevState.UpdateInterval,
-		}
-		return adaptivePollInterval(cachedDoc, maxAge, pubDates, now), nil
+		return adaptivePollInterval(document, result.MaxAge, pubDates, now), state, nil
 	}
 	pubDates := storedEntryPubDates(entries)
 	if isFeedDormant(pubDates, now) {
-		return MaxPollInterval, nil
+		state := &store.SubscriptionPollState{
+			Entries: retainPollEntryDates(storedPollEntryDates(entries)),
+		}
+		return MaxPollInterval, state, nil
 	}
 	fallbackNoTTL := adaptivePollInterval(scrape.FeedDocument{}, 0, pubDates, now)
 	var cachedDoc scrape.FeedDocument
@@ -97,17 +100,15 @@ func (p *Poller) nextPollInterval(ctx context.Context, subscription store.Subscr
 		// (<ttl>) and continues to take precedence over HTTP max-age.
 		cachedDoc.UpdateInterval = prev
 	}
+	var nextState *store.SubscriptionPollState
 	if cachedDoc.UpdateInterval > 0 || result.HasCacheControl {
-		state := store.SubscriptionPollState{
+		nextState = &store.SubscriptionPollState{
 			UpdateInterval: cachedDoc.UpdateInterval,
 			MaxAge:         result.MaxAge,
 			Entries:        retainPollEntryDates(storedPollEntryDates(entries)),
 		}
-		if err := p.store.SaveSubscriptionPollState(ctx, subscription.ID, state, now); err != nil {
-			return 0, err
-		}
 	}
-	return adaptivePollInterval(cachedDoc, result.MaxAge, pubDates, now), nil
+	return adaptivePollInterval(cachedDoc, result.MaxAge, pubDates, now), nextState, nil
 }
 
 // adaptivePollInterval chooses the healthy poll interval in
@@ -149,7 +150,7 @@ func mergeFeedEntryDates(document scrape.FeedDocument, stored []store.Subscripti
 	seen := make(map[string]bool, len(document.Entries)+len(document.UnguidedPubDates)+len(stored)+len(prev))
 	merged := make([]store.SubscriptionPollEntryDate, 0, len(document.Entries)+len(document.UnguidedPubDates)+len(stored))
 	for _, entry := range document.Entries {
-		if entry.GUID == "" {
+		if entry.GUID == "" || entry.PublishedAt.IsZero() {
 			continue
 		}
 		key := pollEntryKey(entry.GUID)
@@ -157,9 +158,7 @@ func mergeFeedEntryDates(document scrape.FeedDocument, stored []store.Subscripti
 			continue
 		}
 		seen[key] = true
-		if !entry.PublishedAt.IsZero() {
-			merged = append(merged, store.SubscriptionPollEntryDate{Key: key, PublishedAt: entry.PublishedAt.UTC()})
-		}
+		merged = append(merged, store.SubscriptionPollEntryDate{Key: key, PublishedAt: entry.PublishedAt.UTC()})
 	}
 	for _, ts := range document.UnguidedPubDates {
 		if ts.IsZero() {
@@ -174,7 +173,7 @@ func mergeFeedEntryDates(document scrape.FeedDocument, stored []store.Subscripti
 		merged = append(merged, store.SubscriptionPollEntryDate{Key: key, PublishedAt: utc})
 	}
 	for _, entry := range stored {
-		if entry.GUID == "" {
+		if entry.GUID == "" || entry.PublishedAt.IsZero() {
 			continue
 		}
 		key := pollEntryKey(entry.GUID)
@@ -182,22 +181,21 @@ func mergeFeedEntryDates(document scrape.FeedDocument, stored []store.Subscripti
 			continue
 		}
 		seen[key] = true
-		if !entry.PublishedAt.IsZero() {
-			merged = append(merged, store.SubscriptionPollEntryDate{Key: key, PublishedAt: entry.PublishedAt.UTC()})
-		}
+		merged = append(merged, store.SubscriptionPollEntryDate{Key: key, PublishedAt: entry.PublishedAt.UTC()})
 	}
 	for _, entry := range prev {
+		if entry.PublishedAt.IsZero() {
+			continue
+		}
 		key := entry.Key
-		if key == "" && !entry.PublishedAt.IsZero() {
+		if key == "" {
 			key = unguidedPollEntryKey(entry.PublishedAt)
 		}
 		if key == "" || seen[key] {
 			continue
 		}
 		seen[key] = true
-		if !entry.PublishedAt.IsZero() {
-			merged = append(merged, store.SubscriptionPollEntryDate{Key: key, PublishedAt: entry.PublishedAt.UTC()})
-		}
+		merged = append(merged, store.SubscriptionPollEntryDate{Key: key, PublishedAt: entry.PublishedAt.UTC()})
 	}
 	retained := retainPollEntryDates(merged)
 	pubDates := make([]time.Time, len(merged))
@@ -205,6 +203,16 @@ func mergeFeedEntryDates(document scrape.FeedDocument, stored []store.Subscripti
 		pubDates[i] = entry.PublishedAt
 	}
 	return retained, pubDates
+}
+
+func pollStatePubDates(entries []store.SubscriptionPollEntryDate) []time.Time {
+	dates := make([]time.Time, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.PublishedAt.IsZero() {
+			dates = append(dates, entry.PublishedAt.UTC())
+		}
+	}
+	return dates
 }
 
 func retainPollEntryDates(merged []store.SubscriptionPollEntryDate) []store.SubscriptionPollEntryDate {
@@ -236,40 +244,6 @@ func retainPollEntryDates(merged []store.SubscriptionPollEntryDate) []store.Subs
 		return b.PublishedAt.Compare(a.PublishedAt)
 	})
 	return retained
-}
-
-func mergedStoredAndStatePubDates(stored []store.SubscriptionEntry, stateEntries []store.SubscriptionPollEntryDate) []time.Time {
-	seen := make(map[string]bool, len(stateEntries)+len(stored))
-	dates := make([]time.Time, 0, len(stateEntries)+len(stored))
-	for _, entry := range stateEntries {
-		key := entry.Key
-		if key == "" && !entry.PublishedAt.IsZero() {
-			key = unguidedPollEntryKey(entry.PublishedAt)
-		}
-		if key != "" {
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-		}
-		if !entry.PublishedAt.IsZero() {
-			dates = append(dates, entry.PublishedAt)
-		}
-	}
-	for _, entry := range stored {
-		if entry.GUID == "" {
-			continue
-		}
-		key := pollEntryKey(entry.GUID)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		if !entry.PublishedAt.IsZero() {
-			dates = append(dates, entry.PublishedAt)
-		}
-	}
-	return dates
 }
 
 func storedPollEntryDates(entries []store.SubscriptionEntry) []store.SubscriptionPollEntryDate {

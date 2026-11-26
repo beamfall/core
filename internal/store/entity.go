@@ -147,13 +147,7 @@ func (s *Store) UpsertEntityKeepTitle(ctx context.Context, entity Entity) error 
 	return s.upsertEntity(ctx, entity, true)
 }
 
-func (s *Store) upsertEntity(ctx context.Context, entity Entity, keepTitle bool) error {
-	// Authority face: an Entity is a catalog-identity row. An
-	// Attached node identifies locally (probe/parse — byte-local), but the
-	// row-authoring side-effect of Identification is main-only; it index-pushes.
-	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
-		return err
-	}
+func validateEntity(entity Entity) error {
 	if entity.ID == "" {
 		return errors.New("entity ID is required")
 	}
@@ -185,6 +179,19 @@ func (s *Store) upsertEntity(ctx context.Context, entity Entity, keepTitle bool)
 			return errors.New("unknown entity field type " + string(field.Type))
 		}
 	}
+	return nil
+}
+
+func (s *Store) upsertEntity(ctx context.Context, entity Entity, keepTitle bool) error {
+	// Authority face: an Entity is a catalog-identity row. An
+	// Attached node identifies locally (probe/parse — byte-local), but the
+	// row-authoring side-effect of Identification is main-only; it index-pushes.
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	if err := validateEntity(entity); err != nil {
+		return err
+	}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -201,6 +208,20 @@ func (s *Store) upsertEntity(ctx context.Context, entity Entity, keepTitle bool)
 		return err
 	}
 	defer tx.Rollback()
+	title, err := s.upsertEntityTx(ctx, tx, entity, keepTitle)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if !plane.encrypted {
+		s.titleFolds.note(entity.LibraryID, entity.Kind, entity.ID, title)
+	}
+	return nil
+}
+
+func (s *Store) upsertEntityTx(ctx context.Context, tx *sql.Tx, entity Entity, keepTitle bool) (string, error) {
 	titleUpdate := "excluded.title"
 	if keepTitle {
 		titleUpdate = "entity.title"
@@ -212,17 +233,17 @@ func (s *Store) upsertEntity(ctx context.Context, entity Entity, keepTitle bool)
 		  kind = excluded.kind,
 		  title = `+titleUpdate+`
 	`, entity.ID, entity.LibraryID, entity.Kind, entity.Title); err != nil {
-		return err
+		return "", err
 	}
 	if keepTitle {
 		// The search document and title fold below index the stored title.
 		if err := tx.QueryRowContext(ctx, `SELECT title FROM entity WHERE id = ?`, entity.ID).Scan(&entity.Title); err != nil {
-			return err
+			return "", err
 		}
 	}
 	for _, table := range entityFieldTables {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE entity_id = ?`, entity.ID); err != nil {
-			return err
+			return "", err
 		}
 	}
 	for _, field := range entity.Fields {
@@ -245,7 +266,7 @@ func (s *Store) upsertEntity(ctx context.Context, entity Entity, keepTitle bool)
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO `+table+`(entity_id, kind, field, field_type, `+column+`) VALUES (?, ?, ?, ?, ?)
 		`, entity.ID, entity.Kind, field.Name, field.Type, value); err != nil {
-			return err
+			return "", err
 		}
 	}
 	// Entity FTS sync (the upsert half — deletion is the entity_fts_delete
@@ -254,22 +275,16 @@ func (s *Store) upsertEntity(ctx context.Context, entity Entity, keepTitle bool)
 	// FullTextSearchable carry an FTS row (the KIND-level seam); a non-opted
 	// kind is delete-only so it never surfaces in SearchEntities.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM entity_fts WHERE entity_id = ?`, entity.ID); err != nil {
-		return err
+		return "", err
 	}
 	if s.entityKindFullTextSearchableLocked(entity.Kind) {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO entity_fts(entity_id, title, fields) VALUES (?, ?, ?)
 		`, entity.ID, entity.Title, s.entitySearchTextLocked(entity)); err != nil {
-			return err
+			return "", err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	if !plane.encrypted {
-		s.titleFolds.note(entity.LibraryID, entity.Kind, entity.ID, entity.Title)
-	}
-	return nil
+	return entity.Title, nil
 }
 
 // EnsureEntity creates an Entity when no row carries its ID and otherwise

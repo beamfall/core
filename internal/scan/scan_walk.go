@@ -87,12 +87,17 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 			state.tagHints = resolver.PluginEmbeddedTagHints(pluginID)
 		}
 		state.localExtractors = localExtractors[pluginID]
-		if len(state.localExtractors) > 0 && prober != nil && allowsVideo {
-			localBackfill, err := st.LibraryFilePathsWithoutFieldOrAttempt(ctx, req.LibraryID, store.MediaClassVideo, localAttemptMarkerField)
-			if err != nil {
+		if len(state.localExtractors) > 0 {
+			if err := st.ReconcileStandaloneLibraryMedia(ctx, req.LibraryID); err != nil {
 				return Result{}, err
 			}
-			state.localBackfillPaths = localBackfill
+			if prober != nil && allowsVideo {
+				localBackfill, err := st.LibraryFilePathsWithoutLocalExtraction(ctx, req.LibraryID, store.MediaClassVideo)
+				if err != nil {
+					return Result{}, err
+				}
+				state.localBackfillPaths = localBackfill
+			}
 		}
 		if pluginID != "" {
 			state.parser = parsers[pluginID]

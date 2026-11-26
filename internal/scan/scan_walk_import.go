@@ -171,12 +171,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	if err := s.refreshParserFields(media.ID, refresh); err != nil {
 		return err
 	}
-	if len(task.local) > 0 {
-		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
-			return err
-		}
-	}
-	if err := s.recordLocalAttempt(media.ID, task); err != nil {
+	if err := s.applyLocalExtraction(media.ID, stored.ContentFingerprint, task); err != nil {
 		return err
 	}
 	s.applyMediaLocalArtwork(path, media.ID)
@@ -394,12 +389,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	}
 	s.committed = path
 	s.rememberVersionAnchor(versionKey, media.ID, fingerprint, parsed)
-	if len(task.local) > 0 {
-		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
-			return err
-		}
-	}
-	if err := s.recordLocalAttempt(media.ID, task); err != nil {
+	if err := s.applyLocalExtraction(media.ID, fingerprint, task); err != nil {
 		return err
 	}
 	if err := s.hydrateMetadata(media, path, fingerprint, probeTags, probeSucceeded, pathChanged); err != nil {

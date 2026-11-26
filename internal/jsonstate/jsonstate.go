@@ -59,5 +59,18 @@ func Save(path string, state any) error {
 		_ = os.Remove(tmpName)
 		return err
 	}
-	return nil
+	return syncDir(filepath.Dir(path))
+}
+
+func syncDir(dir string) error {
+	d, err := os.Open(dir) //nolint:gosec // G304: dir is filepath.Dir of caller state path already prepared by Save.
+	if err != nil {
+		return err
+	}
+	syncErr := d.Sync()
+	closeErr := d.Close()
+	if syncErr != nil {
+		return syncErr
+	}
+	return closeErr
 }

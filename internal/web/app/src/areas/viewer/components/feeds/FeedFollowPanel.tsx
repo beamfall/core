@@ -10,9 +10,11 @@ import {
 import { useT } from "@/lib/i18n";
 import {
   asFeedURL,
+  canDiscoverFeedURL,
   DEFAULT_LATEST_N,
   errorClassKey,
   FOLLOW_POLICIES,
+  feedSearchErrorMessage,
   followErrorClass,
   policyHintKey,
   policyLabelKey,
@@ -21,7 +23,7 @@ import {
 type SearchState =
   | { kind: "idle" }
   | { kind: "searching" }
-  | { kind: "failed" }
+  | { kind: "failed"; message?: string }
   | { kind: "results"; query: string; results: FeedSearchResult[] }
   | { kind: "address"; feedURL: string };
 
@@ -52,16 +54,20 @@ export function FeedFollowPanel({
     if (!value) return;
     setFollowFailed(null);
     const feedURL = asFeedURL(value);
-    if (feedURL) {
+    if (feedURL && !canDiscoverFeedURL(feedURL)) {
       setState({ kind: "address", feedURL });
       return;
     }
     setState({ kind: "searching" });
     try {
-      const results = await searchFeeds(value);
+      const results = await searchFeeds(feedURL ?? value);
+      if (feedURL && results.length === 0) {
+        setState({ kind: "address", feedURL });
+        return;
+      }
       setState({ kind: "results", query: value, results });
-    } catch {
-      setState({ kind: "failed" });
+    } catch (err) {
+      setState({ kind: "failed", message: feedSearchErrorMessage(err) });
     }
   }
 
@@ -146,7 +152,7 @@ export function FeedFollowPanel({
         )}
         {state.kind === "failed" && (
           <p role="alert" className="m-0 text-sm text-[var(--state-danger)]">
-            {t("feedsSearchFailed")}
+            {state.message || t("feedsSearchFailed")}
           </p>
         )}
         {state.kind === "results" && state.results.length === 0 && (

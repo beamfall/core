@@ -167,26 +167,96 @@ describe("FeedFollowPanel", () => {
     expect(await screen.findByRole("button", { name: "Following" })).toBeDisabled();
   });
 
-  it("follows a pasted feed address without searching, with the picked policy", async () => {
+  it("follows HTTP and credentialed feed addresses directly without calling discovery", async () => {
     const user = userEvent.setup();
     vi.mocked(followFeed).mockResolvedValue(subscription({ downloadPolicy: "stream-only" }));
     wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: "Stream only" }));
     expect(screen.queryByRole("radio", { name: "Everything" })).not.toBeInTheDocument();
-    await user.type(screen.getByRole("searchbox"), "https://example.org/feed.xml{Enter}");
+    await user.type(screen.getByRole("searchbox"), "http://example.org/feed.xml{Enter}");
 
     expect(searchFeeds).not.toHaveBeenCalled();
     await user.click(await screen.findByRole("button", { name: "Follow Feed address" }));
-    expect(followFeed).toHaveBeenCalledWith("https://example.org/feed.xml", {
+    expect(followFeed).toHaveBeenCalledWith("http://example.org/feed.xml", {
       libraryID: "lib-1",
       downloadPolicy: "stream-only",
       latestN: undefined,
     });
+
+    const userinfoURL = new URL("https://example.org/private.xml");
+    userinfoURL.username = "user";
+    userinfoURL.password = "pass";
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), `${userinfoURL.toString()}{Enter}`);
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(
+      screen.getByRole("searchbox"),
+      "https://example.org/private.xml?token=abc{Enter}",
+    );
+    expect(searchFeeds).not.toHaveBeenCalled();
+  });
+
+  it("runs discovery for clean HTTPS addresses and falls back to direct follow when none match", async () => {
+    const user = userEvent.setup();
+    vi.mocked(searchFeeds)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          title: "Daily Apple",
+          feedURL: "https://feeds.example.org/daily.xml",
+        },
+      ]);
+    vi.mocked(followFeed).mockResolvedValue(subscription());
+    wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
+
+    await user.type(screen.getByRole("searchbox"), "https://example.org/feed.xml{Enter}");
+    expect(searchFeeds).toHaveBeenCalledWith("https://example.org/feed.xml");
+    await user.click(await screen.findByRole("button", { name: "Follow Feed address" }));
+    expect(followFeed).toHaveBeenCalledWith("https://example.org/feed.xml", {
+      libraryID: "lib-1",
+      downloadPolicy: "latest",
+      latestN: 3,
+    });
+
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(
+      screen.getByRole("searchbox"),
+      "https://podcasts.apple.com/ca/podcast/daily/id1234{Enter}",
+    );
+    expect(await screen.findByText("Daily Apple")).toBeInTheDocument();
+  });
+
+  it("surfaces server-localized THROTTLED and INVALID errors from feed search", async () => {
+    const user = userEvent.setup();
+    vi.mocked(searchFeeds)
+      .mockRejectedValueOnce(
+        new ApiError("Limite de recherche atteinte.", 200, {
+          errors: [{ message: "Limite de recherche atteinte.", extensions: { code: "THROTTLED" } }],
+        }),
+      )
+      .mockRejectedValueOnce(
+        new ApiError("Saisissez une URL de site web valide.", 200, {
+          errors: [
+            { message: "Saisissez une URL de site web valide.", extensions: { code: "INVALID" } },
+          ],
+        }),
+      );
+    wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
+
+    await user.type(screen.getByRole("searchbox"), "daily{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Limite de recherche atteinte.");
+
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), "https://example.org/bad{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Saisissez une URL de site web valide.",
+    );
   });
 
   it("says so when a follow fails", async () => {
     const user = userEvent.setup();
+    vi.mocked(searchFeeds).mockResolvedValue([]);
     vi.mocked(followFeed).mockRejectedValue(new ApiError("followFeed unavailable", 200));
     wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
     await user.type(screen.getByRole("searchbox"), "https://example.org/feed.xml{Enter}");
@@ -196,6 +266,7 @@ describe("FeedFollowPanel", () => {
 
   it("names the cause when the server classified a refused follow", async () => {
     const user = userEvent.setup();
+    vi.mocked(searchFeeds).mockResolvedValue([]);
     vi.mocked(followFeed).mockRejectedValue(new ApiError("feed could not be read: http-4xx", 200));
     wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
     await user.type(screen.getByRole("searchbox"), "https://example.org/feed.xml{Enter}");

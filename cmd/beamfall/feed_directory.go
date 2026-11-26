@@ -87,7 +87,11 @@ func (s *feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) (
 	if err != nil || !link.IsAbs() || link.Hostname() == "" {
 		text := strings.Join(strings.Fields(query), " ")
 		key := strings.ToLower(text)
-		if strings.HasPrefix(key, "https:") || strings.HasPrefix(key, "http:") {
+		if strings.HasPrefix(key, "https:") ||
+			strings.HasPrefix(key, "http:") ||
+			strings.HasPrefix(key, "//") ||
+			strings.Contains(key, "://") ||
+			(err == nil && (link.Host != "" || link.User != nil)) {
 			return nil, graph.ErrFeedSearchInvalidURL
 		}
 		return s.searchCached(ctx, key, func(ctx context.Context) ([]graph.FeedSearchResult, error) {
@@ -196,29 +200,54 @@ func (s *feedDirectorySearcher) admitRequest() error {
 	defer s.budgetMu.Unlock()
 	if !s.budgetLoaded {
 		// Load lazily so a read failure is retried by the next request
-		// instead of disabling search until restart. A file that does not
-		// decode is replaced: it can refund at most one minute of requests.
+		// instead of disabling search until restart. A corrupt or truncated
+		// file cannot refund quota: lock the current 1-minute window instead.
 		var saved []time.Time
 		found, err := jsonstate.Load(s.budgetFile, &saved)
 		if err != nil && !found {
 			return fmt.Errorf("load feed request budget: %w", err)
 		}
 		if err != nil {
-			saved = nil
+			deadline := s.now().Add(time.Minute)
+			saved = make([]time.Time, feedRequestsPerMin)
+			for i := range saved {
+				saved[i] = deadline
+			}
+			if saveErr := jsonstate.Save(s.budgetFile, saved); saveErr != nil {
+				return fmt.Errorf("persist feed request budget: %w", saveErr)
+			}
 		}
 		s.reserved, s.budgetLoaded = saved, true
 	}
 	// Each token refills one minute after use. Persist the new deadline
 	// before admission so a restart cannot refund a request already sent.
-	// A deadline beyond one minute comes from a clock that moved back.
+	// Deadlines beyond one minute come from a clock moving back; clamp them
+	// to now+1m rather than dropping them so clock skew cannot refund quota.
 	now := s.now()
-	active := slices.DeleteFunc(slices.Clone(s.reserved), func(deadline time.Time) bool {
-		return !now.Before(deadline) || deadline.After(now.Add(time.Minute))
-	})
+	maxDeadline := now.Add(time.Minute)
+	active := make([]time.Time, 0, len(s.reserved)+1)
+	changed := false
+	for _, deadline := range s.reserved {
+		if !now.Before(deadline) {
+			changed = true
+			continue
+		}
+		if deadline.After(maxDeadline) {
+			deadline = maxDeadline
+			changed = true
+		}
+		active = append(active, deadline)
+	}
 	if len(active) >= feedRequestsPerMin {
+		if changed {
+			if err := jsonstate.Save(s.budgetFile, active); err != nil {
+				return fmt.Errorf("persist feed request budget: %w", err)
+			}
+			s.reserved = active
+		}
 		return graph.ErrFeedSearchThrottled
 	}
-	active = append(active, now.Add(time.Minute))
+	active = append(active, maxDeadline)
 	if err := jsonstate.Save(s.budgetFile, active); err != nil {
 		return fmt.Errorf("persist feed request budget: %w", err)
 	}

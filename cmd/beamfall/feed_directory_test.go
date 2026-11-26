@@ -362,8 +362,41 @@ func TestFeedDirectoryRetriesBudgetLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	searcher = newFeedDirectorySearcher(searcher.engine, nil, server.URL, "/search?term={query}", budgetFile, func() time.Time { return now })
-	if _, err := searcher.SearchFeeds(t.Context(), "corrupt"); err != nil || requests.Load() != 2 {
-		t.Fatalf("corrupt budget = %v, %d requests", err, requests.Load())
+	if _, err := searcher.SearchFeeds(t.Context(), "corrupt"); !errors.Is(err, graph.ErrFeedSearchThrottled) || requests.Load() != 1 {
+		t.Fatalf("corrupt budget = %v, %d requests, want ErrFeedSearchThrottled", err, requests.Load())
+	}
+	// Reloading immediately still enforces the 1-minute cooldown written on corruption.
+	searcher = newFeedDirectorySearcher(searcher.engine, nil, server.URL, "/search?term={query}", budgetFile, func() time.Time { return now.Add(30 * time.Second) })
+	if _, err := searcher.SearchFeeds(t.Context(), "corrupt-again"); !errors.Is(err, graph.ErrFeedSearchThrottled) || requests.Load() != 1 {
+		t.Fatalf("corrupt budget after restart = %v, %d requests", err, requests.Load())
+	}
+	// Advancing past the cooldown window restores budget capacity.
+	searcher = newFeedDirectorySearcher(searcher.engine, nil, server.URL, "/search?term={query}", budgetFile, func() time.Time { return now.Add(time.Minute) })
+	if _, err := searcher.SearchFeeds(t.Context(), "after-cooldown"); err != nil || requests.Load() != 2 {
+		t.Fatalf("after cooldown = %v, %d requests", err, requests.Load())
+	}
+
+	// Backward clock skew clamps future deadlines rather than refunding them.
+	skewed := make([]time.Time, feedRequestsPerMin)
+	for i := range skewed {
+		skewed[i] = now.Add(2 * time.Hour)
+	}
+	if err := jsonstate.Save(budgetFile, skewed); err != nil {
+		t.Fatal(err)
+	}
+	searcher = newFeedDirectorySearcher(searcher.engine, nil, server.URL, "/search?term={query}", budgetFile, func() time.Time { return now })
+	if _, err := searcher.SearchFeeds(t.Context(), "clock-back"); !errors.Is(err, graph.ErrFeedSearchThrottled) || requests.Load() != 2 {
+		t.Fatalf("clock-back budget = %v, %d requests", err, requests.Load())
+	}
+	// Re-checking 30s later (with a restarted searcher reading clamped deadlines) stays throttled.
+	searcher = newFeedDirectorySearcher(searcher.engine, nil, server.URL, "/search?term={query}", budgetFile, func() time.Time { return now.Add(30 * time.Second) })
+	if _, err := searcher.SearchFeeds(t.Context(), "clock-back-30s"); !errors.Is(err, graph.ErrFeedSearchThrottled) || requests.Load() != 2 {
+		t.Fatalf("clock-back 30s = %v, %d requests", err, requests.Load())
+	}
+	// After 1 minute from clamp time, the clamped deadlines expire.
+	searcher = newFeedDirectorySearcher(searcher.engine, nil, server.URL, "/search?term={query}", budgetFile, func() time.Time { return now.Add(time.Minute) })
+	if _, err := searcher.SearchFeeds(t.Context(), "clock-back-recovered"); err != nil || requests.Load() != 3 {
+		t.Fatalf("clock-back recovered = %v, %d requests", err, requests.Load())
 	}
 }
 
@@ -411,12 +444,12 @@ func TestFeedDirectoryExtendedCredentialsAndUserAgent(t *testing.T) {
 	now := func() time.Time { return time.Unix(100, 0) }
 	engine := scrape.New(scrape.WithInsecureLoopback(), scrape.WithReleaseVersion("v9.8.7"))
 	fetcher := directoryTestFetcher{Engine: engine, extendedURL: server.URL + "/extended"}
-	withoutKey := newTestFeedDirectorySearcher(t, fetcher, directoryTestSecrets{"podcast-index-secret": "operator-secret"}, server.URL, "/search?term={query}", now)
+	withoutKey := newTestFeedDirectorySearcher(t, fetcher, directoryTestSecrets{"podcast-index-secret": "test-secret"}, server.URL, "/search?term={query}", now)
 	results, err := withoutKey.SearchFeeds(t.Context(), "one")
 	if err != nil || len(results) != 1 || primary.Load() != 1 || extended.Load() != 0 {
 		t.Fatalf("search without key = %v, %v, primary=%d extended=%d", results, err, primary.Load(), extended.Load())
 	}
-	withKey := newTestFeedDirectorySearcher(t, fetcher, directoryTestSecrets{"podcast-index-key": "operator-key", "podcast-index-secret": "operator-secret"}, server.URL, "/search?term={query}", now)
+	withKey := newTestFeedDirectorySearcher(t, fetcher, directoryTestSecrets{"podcast-index-key": "operator-key", "podcast-index-secret": "test-secret"}, server.URL, "/search?term={query}", now)
 	for i := range 7 {
 		results, err := withKey.SearchFeeds(t.Context(), fmt.Sprintf("signed %d", i))
 		if err != nil || len(results) != 2 || results[1].Title != "Extra" {
@@ -442,7 +475,7 @@ func TestFeedDirectoryRejectsMalformedURLLocally(t *testing.T) {
 	defer server.Close()
 	engine := scrape.New(scrape.WithInsecureLoopback())
 	fetcher := directoryTestFetcher{Engine: engine, extendedURL: server.URL + "/extended"}
-	secrets := directoryTestSecrets{"podcast-index-key": "operator-key", "podcast-index-secret": "operator-secret"}
+	secrets := directoryTestSecrets{"podcast-index-key": "operator-key", "podcast-index-secret": "test-secret"}
 	searcher := newTestFeedDirectorySearcher(t, fetcher, secrets, server.URL, "/search?term={query}", time.Now)
 	for _, query := range []string{"https:/example.org/feed?token=x", " HTTP:example.org/feed ", "https://:443/feed", "https://exa mple.org/feed", "https://example.org/feed?q=%"} {
 		if _, err := searcher.SearchFeeds(t.Context(), query); !errors.Is(err, graph.ErrFeedSearchInvalidURL) {
@@ -488,19 +521,20 @@ func TestFeedDirectoryMalformedQueryReturnsLocalizedGraphError(t *testing.T) {
 
 func TestFeedDirectoryFiltersUnsafeHitsBeforeCaching(t *testing.T) {
 	var requests atomic.Int32
+	userinfoFeed := (&url.URL{Scheme: "https", User: url.UserPassword("user", "pass"), Host: "example.com", Path: "/feed.xml"}).String()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		switch r.URL.Path {
 		case "/search":
-			_, _ = io.WriteString(w, `{"results":[
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"results":[
 			  {"collectionName":"Plain HTTP","feedUrl":"http://example.com/feed.xml"},
-			  {"collectionName":"Userinfo","feedUrl":"https://user:pass@example.com/feed.xml"},
+			  {"collectionName":"Userinfo","feedUrl":%q},
 			  {"collectionName":"Token","feedUrl":"https://example.com/feed.xml?token=x"},
 			  {"collectionName":"API token","feedUrl":"https://example.com/feed.xml?api_token=x"},
 			  {"collectionName":"Relative","feedUrl":"/feed.xml"},
 			  {"collectionName":"Invalid","feedUrl":"https://bad host/feed.xml"},
 			  {"collectionName":"Daily","feedUrl":"https://example.com/feed.xml?lang=en"}
-			]}`)
+			]}`, userinfoFeed))
 		case "/extended":
 			_, _ = io.WriteString(w, `{"feeds":[
 			  {"title":"API key","url":"https://example.com/extra.xml?%41PI-Key=x"},
@@ -510,7 +544,7 @@ func TestFeedDirectoryFiltersUnsafeHitsBeforeCaching(t *testing.T) {
 	}))
 	defer server.Close()
 	fetcher := directoryTestFetcher{Engine: scrape.New(scrape.WithInsecureLoopback()), extendedURL: server.URL + "/extended"}
-	secrets := directoryTestSecrets{"podcast-index-key": "operator-key", "podcast-index-secret": "operator-secret"}
+	secrets := directoryTestSecrets{"podcast-index-key": "operator-key", "podcast-index-secret": "test-secret"}
 	searcher := newTestFeedDirectorySearcher(t, fetcher, secrets, server.URL, "/search?term={query}", time.Now)
 	want := []graph.FeedSearchResult{
 		{Title: "Daily", FeedURL: "https://example.com/feed.xml?lang=en"},
@@ -720,5 +754,52 @@ func TestFeedDirectoryPreservesUnicodeIDNAHostname(t *testing.T) {
 	}
 	if len(fetcher.seenURLs) != 2 || fetcher.seenURLs[0] != "https://xn--ixample-6he.com/" || fetcher.seenURLs[1] != "https://ixample.com/" {
 		t.Fatalf("fetched URLs = %v, want distinct punycode vs ascii hosts", fetcher.seenURLs)
+	}
+}
+
+func TestFeedDirectoryRejectsURLShapesAndAllowsPlainPunctuatedText(t *testing.T) {
+	var primary, extended atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/search":
+			primary.Add(1)
+			_, _ = io.WriteString(w, directoryFixture)
+		case "/extended":
+			extended.Add(1)
+			_, _ = io.WriteString(w, `{"status":true,"feeds":[]}`)
+		}
+	}))
+	defer server.Close()
+
+	secrets := directoryTestSecrets{
+		"podcast-index-key":    "k",
+		"podcast-index-secret": "s",
+	}
+	engine := directoryTestFetcher{Engine: scrape.New(scrape.WithInsecureLoopback()), extendedURL: server.URL + "/extended"}
+	searcher := newTestFeedDirectorySearcher(t, engine, secrets, server.URL, "/search?term={query}", time.Now)
+
+	for _, rejected := range []string{
+		"//host/feed?token=x",
+		"//" + "user:pass@host/feed",
+		"feed://host/feed?token=x",
+		"feed://bad host/feed?token=x",
+		"https://" + "user" + ":pass@host/feed",
+		"http:host/feed?token=x",
+	} {
+		if _, err := searcher.SearchFeeds(t.Context(), rejected); !errors.Is(err, graph.ErrFeedSearchInvalidURL) {
+			t.Fatalf("SearchFeeds(%q) err = %v, want ErrFeedSearchInvalidURL", rejected, err)
+		}
+	}
+	if primary.Load() != 0 || extended.Load() != 0 {
+		t.Fatalf("rejected URL inputs hit directories: primary=%d extended=%d", primary.Load(), extended.Load())
+	}
+
+	for _, allowed := range []string{"Re:Zero", "AC/DC"} {
+		if _, err := searcher.SearchFeeds(t.Context(), allowed); err != nil {
+			t.Fatalf("SearchFeeds(%q) err = %v, want text search success", allowed, err)
+		}
+	}
+	if primary.Load() != 2 || extended.Load() != 2 {
+		t.Fatalf("plain text searches primary=%d extended=%d, want 2/2", primary.Load(), extended.Load())
 	}
 }

@@ -221,3 +221,191 @@ func TestScanLocalExtractorVideoGroupingParityAcrossPaths(t *testing.T) {
 		t.Fatalf("after fast rescan media count = %d, want %d", got, len(files))
 	}
 }
+
+type failingSecondaryExtractor struct {
+	err error
+}
+
+func (e failingSecondaryExtractor) ExtractLocal(_ context.Context, _, _, _ string) (LocalMetadata, error) {
+	return LocalMetadata{}, e.err
+}
+
+type richLocalExtractor struct {
+	dateByBase map[string]string
+	albumTitle string
+}
+
+func (e *richLocalExtractor) ExtractLocal(_ context.Context, _, _, path string) (LocalMetadata, error) {
+	date := e.dateByBase[filepath.Base(path)]
+	md := LocalMetadata{
+		Fields: map[string]any{},
+		Entities: []LocalEntity{
+			{Kind: "album", Title: e.albumTitle, Relation: "contains"},
+		},
+	}
+	if date != "" {
+		md.Fields["capture_date"] = date
+	}
+	return md, nil
+}
+
+// TestScanUpgradesGroupedLocalVideoClipsToStandalone checks that pre-existing
+// multi-part and multi-version Media rows in a local-extractor library are
+// split transactionally into standalone clips on upgrade, keeping collections
+// while extracting each clip's own capture-date and duration.
+func TestScanUpgradesGroupedLocalVideoClipsToStandalone(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	files := []string{"roll-pt1.mov", "roll-pt2.mov", "trip-1080p.mov", "trip-720p.mov"}
+	for i, name := range files {
+		writeScanFile(t, root, name, []byte("grouped legacy clip "+name+string(rune('0'+i))))
+	}
+	st := storetest.Open(t)
+	libraryID, resolver := imageRuleLibrary(t, st, []store.MediaClass{store.MediaClassImage, store.MediaClassVideo})
+	req := Request{LibraryID: libraryID, Root: root}
+	prober := &countingProber{probe: ffmpeg.Probe{
+		Container: "mov", VideoCodec: "hevc", DurationSeconds: 11, HasVideo: true,
+	}}
+	parsers := map[string]FilenameParser{imageRuleFixturePlugin: groupableCameraParser{}}
+
+	// Seed BEFORE local extractors are active so files group as Parts + Versions.
+	initial, err := ScanWithLocalExtractors(ctx, st, prober, nil, parsers, nil, resolver, nil, req)
+	if err != nil {
+		t.Fatalf("legacy grouped scan: %v", err)
+	}
+	if initial.MediaImported != 2 || len(initial.Files) != 4 {
+		t.Fatalf("legacy grouped scan imported=%d files=%d, want 2/4", initial.MediaImported, len(initial.Files))
+	}
+
+	col, err := st.CreateCollection(ctx, store.Collection{LibraryID: libraryID, Name: "Camera Roll"}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedFiles, err := st.MediaFilesForLibrary(ctx, libraryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seenInitial := map[store.MediaID]bool{}
+	var groupedIDs []store.MediaID
+	for _, f := range seedFiles {
+		if !seenInitial[f.MediaID] {
+			seenInitial[f.MediaID] = true
+			groupedIDs = append(groupedIDs, f.MediaID)
+		}
+	}
+	if _, err := st.AddCollectionMedia(ctx, col.ID, groupedIDs, store.LibraryFilter{AllLibraries: true}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	d1 := "2025-05-01T10:00:00Z"
+	d2 := "2025-05-02T11:00:00Z"
+	d3 := "2025-05-03T12:00:00Z"
+	d4 := "2025-05-04T13:00:00Z"
+	extractors := map[string][]LocalExtractor{
+		imageRuleFixturePlugin: {&richLocalExtractor{
+			albumTitle: "Spring Roll",
+			dateByBase: map[string]string{
+				"roll-pt1.mov":   d1,
+				"roll-pt2.mov":   d2,
+				"trip-1080p.mov": d3,
+				"trip-720p.mov":  d4,
+			},
+		}},
+	}
+
+	// Fast upgrade scan must split all 4 clips, preserve collection links,
+	// re-probe each clip individually, and extract distinct capture-dates.
+	upgraded, err := ScanWithLocalExtractors(ctx, st, prober, nil, parsers, nil, resolver, extractors, req)
+	if err != nil {
+		t.Fatalf("upgrade scan: %v", err)
+	}
+	if len(upgraded.Files) != 4 {
+		t.Fatalf("upgrade scan files = %d, want 4", len(upgraded.Files))
+	}
+	wantDates := map[string]string{
+		"roll-pt1.mov":   d1,
+		"roll-pt2.mov":   d2,
+		"trip-1080p.mov": d3,
+		"trip-720p.mov":  d4,
+	}
+	upgradedFiles, err := st.MediaFilesForLibrary(ctx, libraryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(upgradedFiles) != 4 {
+		t.Fatalf("upgraded media files = %d, want 4", len(upgradedFiles))
+	}
+	members, err := st.CollectionMemberMediaIDs(ctx, col.ID, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 4 {
+		t.Fatalf("collection members after split = %d, want 4", len(members))
+	}
+	seenIDs := map[store.MediaID]bool{}
+	for _, f := range upgradedFiles {
+		if seenIDs[f.MediaID] {
+			t.Fatalf("file %s still grouped under %s", f.Path, f.MediaID)
+		}
+		seenIDs[f.MediaID] = true
+		fields, err := st.MediaFields(ctx, f.MediaID, store.LibraryFilter{AllLibraries: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantDate, _ := time.Parse(time.RFC3339, wantDates[filepath.Base(f.Path)])
+		if got := mediaFieldMap(fields)["capture-date"].Date; !got.Equal(wantDate) {
+			t.Fatalf("%s capture-date = %v, want %v", filepath.Base(f.Path), got, wantDate)
+		}
+	}
+}
+
+// TestScanMultiExtractorPartialFailureLeavesNoPartialWrites checks that when
+// one local extractor succeeds and a second errors, no partial fields,
+// entities, or completion markers are written so the next scan retries cleanly.
+func TestScanMultiExtractorPartialFailureLeavesNoPartialWrites(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	writeScanFile(t, root, "clip.mov", []byte("partial extractor clip"))
+	st := storetest.Open(t)
+	libraryID, resolver := imageRuleLibrary(t, st, []store.MediaClass{store.MediaClassImage, store.MediaClassVideo})
+	req := Request{LibraryID: libraryID, Root: root}
+	prober := &countingProber{probe: ffmpeg.Probe{
+		Container: "mov", VideoCodec: "hevc", DurationSeconds: 9, HasVideo: true,
+	}}
+
+	good := &richLocalExtractor{
+		albumTitle: "Trip",
+		dateByBase: map[string]string{"clip.mov": "2025-06-15T09:30:00Z"},
+	}
+	failing := failingSecondaryExtractor{err: errors.New("exiftool crashed")}
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, map[string][]LocalExtractor{
+		imageRuleFixturePlugin: {good, failing},
+	}, req); err != nil {
+		t.Fatalf("partial scan: %v", err)
+	}
+
+	files, err := st.MediaFilesForLibrary(ctx, libraryID)
+	if err != nil || len(files) != 1 {
+		t.Fatalf("files = %+v (%v)", files, err)
+	}
+	mediaID := files[0].MediaID
+	if fields, err := st.MediaFields(ctx, mediaID, store.LibraryFilter{AllLibraries: true}); err != nil || len(fields) != 0 {
+		t.Fatalf("partial scan left fields %+v (%v), want empty", fields, err)
+	}
+	if entities, err := st.EntitiesForMedia(ctx, mediaID, "", store.LibraryFilter{AllLibraries: true}); err != nil || len(entities) != 0 {
+		t.Fatalf("partial scan left entities %+v (%v), want empty", entities, err)
+	}
+
+	// Clean retry with failing extractor fixed must persist both fields & entity once.
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, map[string][]LocalExtractor{
+		imageRuleFixturePlugin: {good},
+	}, req); err != nil {
+		t.Fatalf("retry scan: %v", err)
+	}
+	if fields, err := st.MediaFields(ctx, mediaID, store.LibraryFilter{AllLibraries: true}); err != nil || len(fields) != 1 {
+		t.Fatalf("retry fields = %+v (%v), want 1", fields, err)
+	}
+	if entities, err := st.EntitiesForMedia(ctx, mediaID, "", store.LibraryFilter{AllLibraries: true}); err != nil || len(entities) != 1 {
+		t.Fatalf("retry entities = %+v (%v), want 1", entities, err)
+	}
+}

@@ -1,0 +1,434 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"strings"
+
+	"github.com/beamfall/core/internal/serverrole"
+)
+
+const localExtractionProvenancePrefix = "local-extract:"
+
+// LocalExtractionEntity pairs an Entity and its Media-target relation for one
+// atomic local-extraction commit.
+type LocalExtractionEntity struct {
+	Entity   Entity
+	Relation EntityRelation
+}
+
+// LocalExtractionInput carries the fields, entities/relations, and optional
+// per-fingerprint completion marker produced by running local extractors on one
+// Media file.
+type LocalExtractionInput struct {
+	LibraryID          LibraryID
+	MediaID            MediaID
+	ContentFingerprint string
+	FieldBatches       [][]MediaField
+	Entities           []LocalExtractionEntity
+	MarkComplete       bool
+	AttemptField       string
+}
+
+type validatedLocalEntity struct {
+	entity     Entity
+	relation   EntityRelation
+	attributes any
+	sortOrder  any
+}
+
+// ApplyLocalExtraction persists locally extracted fields, entities/relations,
+// and the per-fingerprint completion marker inside one transaction so a partial
+// write or crash leaves nothing half-applied and never suppresses retries.
+func (s *Store) ApplyLocalExtraction(ctx context.Context, in LocalExtractionInput) error {
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	if in.LibraryID == "" || in.MediaID == "" {
+		return errors.New("library ID and media ID are required")
+	}
+	if in.MarkComplete && in.ContentFingerprint == "" {
+		return errors.New("content fingerprint is required when marking local extraction complete")
+	}
+	for _, batch := range in.FieldBatches {
+		if len(batch) == 0 {
+			continue
+		}
+		if err := validateMediaFields(batch); err != nil {
+			return err
+		}
+	}
+	validatedEntities := make([]validatedLocalEntity, 0, len(in.Entities))
+	for _, item := range in.Entities {
+		if err := validateEntity(item.Entity); err != nil {
+			return err
+		}
+		if item.Entity.LibraryID != in.LibraryID {
+			return errors.New("local entity library mismatch")
+		}
+		if item.Relation.FromEntityID != item.Entity.ID || item.Relation.Name == "" || item.Relation.ToMediaID != in.MediaID || item.Relation.ToEntityID != "" {
+			return errors.New("invalid local entity relation")
+		}
+		switch item.Relation.Cardinality {
+		case "", "one", "many":
+		default:
+			return errors.New("unknown relation cardinality " + item.Relation.Cardinality)
+		}
+		attributes, sortOrder, err := entityRelationRowValues(item.Relation)
+		if err != nil {
+			return err
+		}
+		validatedEntities = append(validatedEntities, validatedLocalEntity{
+			entity:     item.Entity,
+			relation:   item.Relation,
+			attributes: attributes,
+			sortOrder:  sortOrder,
+		})
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, in.LibraryID)
+	if err != nil {
+		return err
+	}
+
+	tx, err := plane.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, batch := range in.FieldBatches {
+		if len(batch) == 0 {
+			continue
+		}
+		if _, err := upsertMediaFieldsTx(ctx, tx, in.MediaID, batch, MutationSourceScan, false); err != nil {
+			return err
+		}
+	}
+	if s.testLocalExtractAfterFieldsHook != nil {
+		if err := s.testLocalExtractAfterFieldsHook(); err != nil {
+			return err
+		}
+	}
+
+	noted := make([]Entity, 0, len(validatedEntities))
+	for _, item := range validatedEntities {
+		title, err := s.upsertEntityTx(ctx, tx, item.entity, false)
+		if err != nil {
+			return err
+		}
+		blocked, err := hydrationRelationBlocked(ctx, tx, item.relation)
+		if err != nil {
+			return err
+		}
+		if !blocked {
+			if item.relation.Cardinality == "one" {
+				if _, err := tx.ExecContext(ctx, `
+					DELETE FROM entity_relation
+					WHERE relation = ? AND to_media_id = ? AND from_entity_id <> ?
+					  AND operator_locked_at_ms IS NULL
+				`, item.relation.Name, item.relation.ToMediaID, item.relation.FromEntityID); err != nil {
+					return err
+				}
+			}
+			if err := insertMediaRelationTx(ctx, tx, item.relation, item.attributes, item.sortOrder); err != nil {
+				return err
+			}
+		}
+		if !plane.encrypted {
+			e := item.entity
+			e.Title = title
+			noted = append(noted, e)
+		}
+	}
+
+	if in.MarkComplete {
+		marker := localExtractionProvenancePrefix + in.ContentFingerprint
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, ?)
+			ON CONFLICT(media_id, field) DO NOTHING
+		`, in.MediaID, marker, string(MutationSourceScan)); err != nil {
+			return err
+		}
+		if in.AttemptField != "" {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, ?)
+				ON CONFLICT(media_id, field) DO NOTHING
+			`, in.MediaID, in.AttemptField, string(MutationSourceScan)); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	for _, entity := range noted {
+		s.titleFolds.note(entity.LibraryID, entity.Kind, entity.ID, entity.Title)
+	}
+	return nil
+}
+
+type reconcileGroupedFile struct {
+	mediaID            MediaID
+	mediaClass         string
+	extra              int
+	titleIdentified    int
+	fileID             string
+	contentFingerprint string
+	path               string
+	versionLabel       string
+	partOrdinal        int
+}
+
+type reconcileMediaGroup struct {
+	mediaID         MediaID
+	mediaClass      string
+	extra           int
+	titleIdentified int
+	files           []reconcileGroupedFile
+}
+
+// ReconcileStandaloneLibraryMedia splits any live Media row in libraryID that
+// previously grouped multiple Parts/Versions (or carries a non-default
+// version_label / part_ordinal) into one standalone Media per file while
+// preserving curator collection/tag/entity links (CORE-3029).
+func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID LibraryID) error {
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	if libraryID == "" {
+		return errors.New("library ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return err
+	}
+
+	const groupedQuery = `
+		SELECT m.id, m.media_class, m.extra, m.title_identified,
+		       f.id, f.content_fingerprint, f.path, f.version_label, f.part_ordinal
+		FROM media m
+		JOIN media_file f ON f.media_id = m.id
+		WHERE m.library_id = ?
+		  AND m.trashed_at_ms IS NULL
+		  AND (
+			(SELECT COUNT(*) FROM media_file allf WHERE allf.media_id = m.id) > 1
+			OR EXISTS (
+			  SELECT 1 FROM media_file gf
+			  WHERE gf.media_id = m.id AND (gf.version_label <> '' OR gf.part_ordinal <> 0)
+			)
+		  )
+		ORDER BY m.id,
+		         CASE WHEN f.missing_at_ms IS NULL THEN 0 ELSE 1 END,
+		         f.version_label, f.part_ordinal, f.path, f.id
+	`
+
+	var preCount int
+	if err := plane.reader.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM media m
+		JOIN media_file f ON f.media_id = m.id
+		WHERE m.library_id = ?
+		  AND m.trashed_at_ms IS NULL
+		  AND (
+			f.version_label <> '' OR f.part_ordinal <> 0
+			OR (SELECT COUNT(*) FROM media_file allf WHERE allf.media_id = m.id) > 1
+		  )
+	`, libraryID).Scan(&preCount); err != nil {
+		return err
+	}
+	if preCount == 0 {
+		return nil
+	}
+
+	// Pre-allocate encrypted IDs before taking the writer transaction because
+	// allocateEncryptedMediaIDLocked queries plane readers.
+	var preAllocatedEncryptedIDs []MediaID
+	if plane.encrypted {
+		preAllocatedEncryptedIDs = make([]MediaID, 0, preCount)
+		for range preCount {
+			id, err := s.allocateEncryptedMediaIDLocked(ctx)
+			if err != nil {
+				return err
+			}
+			preAllocatedEncryptedIDs = append(preAllocatedEncryptedIDs, id)
+		}
+	}
+
+	tx, err := plane.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	groups, err := loadGroupedMediaForReconcile(ctx, tx, groupedQuery, libraryID)
+	if err != nil {
+		return err
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+
+	encIdx := 0
+	for _, group := range groups {
+		primary := group.files[0]
+		if primary.versionLabel != "" || primary.partOrdinal != 0 {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE media_file SET version_label = '', part_ordinal = 0 WHERE id = ?
+			`, primary.fileID); err != nil {
+				return err
+			}
+		}
+		if len(group.files) > 1 {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE media
+				SET duration_seconds = 0, container = '', codec = '', video_width = 0, video_height = 0,
+				    title = CASE WHEN title_identified = 1 THEN title ELSE ? END
+				WHERE id = ?
+			`, standaloneMediaTitle(primary.path), group.mediaID); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `
+				DELETE FROM media_field_provenance
+				WHERE media_id = ? AND field LIKE ? AND field <> ?
+			`, group.mediaID, localExtractionProvenancePrefix+"%", localExtractionProvenancePrefix+primary.contentFingerprint); err != nil {
+				return err
+			}
+		}
+
+		for _, file := range group.files[1:] {
+			var newID MediaID
+			if plane.encrypted {
+				if encIdx < len(preAllocatedEncryptedIDs) {
+					newID = preAllocatedEncryptedIDs[encIdx]
+					encIdx++
+				} else {
+					var err error
+					newID, err = s.randomEncryptedMediaIDLocked()
+					if err != nil {
+						return err
+					}
+				}
+			} else {
+				newID = mediaIDForFingerprint(file.contentFingerprint)
+				for salt := 0; ; salt++ {
+					var existing int
+					qErr := tx.QueryRowContext(ctx, `SELECT 1 FROM media WHERE id = ?`, newID).Scan(&existing)
+					if errors.Is(qErr, sql.ErrNoRows) {
+						break
+					}
+					if qErr != nil {
+						return qErr
+					}
+					newID = mediaIDForFingerprint(HashMediaFilePath(fmt.Sprintf("%s\x00split\x00%s\x00%d", file.contentFingerprint, group.mediaID, salt)))
+				}
+			}
+
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO media(id, library_id, title, duration_seconds, container, codec, video_width, video_height, media_class, mutated_by, extra)
+				VALUES (?, ?, ?, 0, '', '', 0, 0, ?, 'scan', ?)
+			`, newID, libraryID, standaloneMediaTitle(file.path), group.mediaClass, group.extra); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE media_file SET media_id = ?, version_label = '', part_ordinal = 0 WHERE id = ?
+			`, newID, file.fileID); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT OR IGNORE INTO collection_media(collection_id, media_id, sort_order, added_at_ms)
+				SELECT collection_id, ?, sort_order, added_at_ms
+				FROM collection_media
+				WHERE media_id = ?
+			`, newID, group.mediaID); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT OR IGNORE INTO entity_relation(
+					from_entity_id, relation, to_media_id, attributes, sort_order, writer,
+					operator_locked_at_ms, operator_lock_activity_id, operator_lock_one
+				)
+				SELECT from_entity_id, relation, ?, attributes, sort_order, writer,
+				       operator_locked_at_ms, operator_lock_activity_id, operator_lock_one
+				FROM entity_relation
+				WHERE to_media_id = ?
+			`, newID, group.mediaID); err != nil {
+				return err
+			}
+			if !plane.encrypted {
+				if _, err := tx.ExecContext(ctx, `
+					INSERT OR IGNORE INTO media_tag(media_id, tag_id)
+					SELECT ?, tag_id FROM media_tag WHERE media_id = ?
+				`, newID, group.mediaID); err != nil {
+					return err
+				}
+				if _, err := tx.ExecContext(ctx, `
+					INSERT OR IGNORE INTO access_grant(id, profile_id, media_id, request_id, actor_profile_id, created_at_ms, updated_at_ms)
+					SELECT id || ':' || ?, profile_id, ?, request_id, actor_profile_id, created_at_ms, updated_at_ms
+					FROM access_grant
+					WHERE media_id = ?
+				`, string(newID), newID, group.mediaID); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+func loadGroupedMediaForReconcile(ctx context.Context, tx *sql.Tx, query string, libraryID LibraryID) ([]reconcileMediaGroup, error) {
+	rows, err := tx.QueryContext(ctx, query, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groups []reconcileMediaGroup
+	byMedia := map[MediaID]int{}
+	for rows.Next() {
+		var r reconcileGroupedFile
+		if err := rows.Scan(
+			&r.mediaID, &r.mediaClass, &r.extra, &r.titleIdentified,
+			&r.fileID, &r.contentFingerprint, &r.path, &r.versionLabel, &r.partOrdinal,
+		); err != nil {
+			return nil, err
+		}
+		idx, ok := byMedia[r.mediaID]
+		if !ok {
+			idx = len(groups)
+			byMedia[r.mediaID] = idx
+			groups = append(groups, reconcileMediaGroup{
+				mediaID:         r.mediaID,
+				mediaClass:      r.mediaClass,
+				extra:           r.extra,
+				titleIdentified: r.titleIdentified,
+			})
+		}
+		groups[idx].files = append(groups[idx].files, r)
+	}
+	return groups, rows.Err()
+}
+
+func standaloneMediaTitle(path string) string {
+	base := filepath.Base(path)
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	if stem != "" {
+		return stem
+	}
+	return base
+}

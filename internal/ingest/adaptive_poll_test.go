@@ -778,3 +778,150 @@ func TestAdaptivePollLoad500FeedsReducesRequestsByAtLeastHalf(t *testing.T) {
 			gotRequests, maxAllowed, fixedHourlyRequests)
 	}
 }
+
+func TestAdaptivePollRefetchesUnconditionallyOnPollStateMismatchOrURLChange(t *testing.T) {
+	ctx := context.Background()
+	start := time.Date(2026, 11, 22, 0, 0, 0, 0, time.UTC)
+	var seenIfNoneMatch []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		inm := r.Header.Get("If-None-Match")
+		seenIfNoneMatch = append(seenIfNoneMatch, inm)
+		if inm == `"v2"` {
+			w.Header().Set("ETag", `"v2"`)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"v2"`)
+		_, _ = w.Write([]byte(rssWithDates(`<ttl>20</ttl>`, start.Add(-time.Hour))))
+	}))
+	t.Cleanup(server.Close)
+
+	st := storetest.Open(t)
+	sub := addHealthSubscription(t, st, server.URL+"/feed-a.xml")
+	clock := &testClock{now: start}
+	poller := healthPoller(st, scrape.New(scrape.WithInsecureLoopback()), clock)
+
+	// Poll 1 populates poll_state bound to "v2" and feed-a.xml.
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+
+	// Simulate rollback/drift where subscription.ETag differs from poll_state's ETag.
+	if err := st.SaveSubscriptionPollState(ctx, sub.ID, store.SubscriptionPollState{
+		FeedURLHash:    store.PollFeedURLHash(sub.FeedURL),
+		ETag:           `"old-v1"`,
+		UpdateInterval: time.Hour,
+	}, start); err != nil {
+		t.Fatal(err)
+	}
+	clock.now = start.Add(20 * time.Minute)
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	if len(seenIfNoneMatch) != 2 || seenIfNoneMatch[1] != "" {
+		t.Fatalf("ETag mismatch sent If-None-Match=%q, want unconditional empty header", seenIfNoneMatch)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+
+	// Steady bound poll sends If-None-Match="v2" and hits 304 cleanly.
+	clock.now = clock.now.Add(20 * time.Minute)
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	if len(seenIfNoneMatch) != 3 || seenIfNoneMatch[2] != `"v2"` {
+		t.Fatalf("bound poll sent %v, want If-None-Match=\"v2\"", seenIfNoneMatch)
+	}
+
+	// Changing FeedURL without clearing subscription.ETag also forces unconditional refetch.
+	sub.FeedURL = server.URL + "/feed-b.xml"
+	clock.now = clock.now.Add(20 * time.Minute)
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	if len(seenIfNoneMatch) != 4 || seenIfNoneMatch[3] != "" {
+		t.Fatalf("FeedURL change sent If-None-Match=%q, want empty", seenIfNoneMatch)
+	}
+}
+
+func TestAdaptivePollUndatedFeedEntryDoesNotMaskStoredDate(t *testing.T) {
+	now := time.Date(2026, 11, 22, 0, 0, 0, 0, time.UTC)
+	pub1 := now.Add(-10 * 24 * time.Hour)
+	pub2 := now.Add(-20 * 24 * time.Hour)
+
+	doc := scrape.FeedDocument{
+		Entries: []scrape.FeedEntry{
+			{GUID: "ep-1"}, // later response omitted pubDate
+			{GUID: "ep-2", PublishedAt: pub2},
+		},
+	}
+	stored := []store.SubscriptionEntry{
+		{GUID: "ep-1", PublishedAt: pub1},
+		{GUID: "ep-2", PublishedAt: pub2},
+	}
+	retained, pubDates := mergeFeedEntryDates(doc, stored, nil)
+	if len(retained) != 2 || len(pubDates) != 2 {
+		t.Fatalf("retained=%+v pubDates=%v, want ep-1 date preserved from stored", retained, pubDates)
+	}
+	foundPub1 := false
+	for _, r := range retained {
+		if r.PublishedAt.Equal(pub1) {
+			foundPub1 = true
+			break
+		}
+	}
+	if !foundPub1 {
+		t.Fatalf("undated ep-1 shadowed stored timestamp %v: got %+v", pub1, retained)
+	}
+}
+
+func TestAdaptivePollSteady304UsesPollStateWithoutQueryingEntries(t *testing.T) {
+	ctx := context.Background()
+	start := time.Date(2026, 11, 22, 0, 0, 0, 0, time.UTC)
+	const etag = `"v1"`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		// 6-day cadence => 3-day adaptive interval (distinct from DefaultPollInterval=1h and MaxPollInterval=24h? Wait clamped to 24h; let's use 4h cadence => 2h interval).
+		_, _ = w.Write([]byte(rssWithDates("", start.Add(-2*time.Hour), start.Add(-6*time.Hour), start.Add(-10*time.Hour))))
+	}))
+	t.Cleanup(server.Close)
+
+	st := storetest.Open(t)
+	sub := addHealthSubscription(t, st, server.URL+"/feed.xml")
+	clock := &testClock{now: start}
+	poller := healthPoller(st, scrape.New(scrape.WithInsecureLoopback()), clock)
+	var entryLoads atomic.Int32
+	poller.testLoadEntryPollDates = func(ctx context.Context, id store.SubscriptionID) ([]store.SubscriptionEntry, error) {
+		entryLoads.Add(1)
+		return st.SubscriptionEntryPollDates(ctx, id)
+	}
+
+	// Poll 1: 200 seeds poll_state with 2h observed cadence (loads poll dates once).
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+	if got := sub.Health.NextPollAt.Sub(start); got != 2*time.Hour {
+		t.Fatalf("Poll 1 interval = %v, want 2h", got)
+	}
+	if entryLoads.Load() != 1 {
+		t.Fatalf("Poll 1 entry loads = %d, want 1", entryLoads.Load())
+	}
+
+	// Poll 2: bound 304 must use poll_state directly with zero subscription_entry queries.
+	clock.now = start.Add(2 * time.Hour)
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+	if got := sub.Health.NextPollAt.Sub(clock.now); got != 2*time.Hour {
+		t.Fatalf("steady 304 interval = %v, want 2h from poll_state", got)
+	}
+	if entryLoads.Load() != 1 {
+		t.Fatalf("steady 304 queried subscription_entry %d extra times, want 0", entryLoads.Load()-1)
+	}
+}

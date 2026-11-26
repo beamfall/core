@@ -72,3 +72,19 @@ describe("account menu viewport scroll", () => {
     expect(phoneRule).toMatch(/max-height:\s*calc\(100dvh - 68px/);
   });
 });
+
+describe("folder list wrapping for reduced motion and touch pointers", () => {
+  it("wraps .bf-folder-name instead of animating marquee truncation", () => {
+    const marker = "@media (prefers-reduced-motion: reduce), (pointer: coarse) {";
+    const at = css.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    const blockEnd = css.indexOf("\n}\n", at);
+    const block = css.slice(at, blockEnd > at ? blockEnd : undefined);
+    expect(block).toMatch(/\[data-register="viewer"\]\s+\.bf-folder-name/);
+    expect(block).toMatch(/white-space:\s*normal;/);
+    expect(block).toMatch(/overflow:\s*visible;/);
+    expect(block).toMatch(/text-overflow:\s*clip;/);
+    expect(block).toMatch(/overflow-wrap:\s*anywhere;/);
+    expect(block).toMatch(/animation:\s*none;/);
+  });
+});

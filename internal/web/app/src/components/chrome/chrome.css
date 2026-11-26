@@ -2709,6 +2709,16 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce), (pointer: coarse) {
+  [data-register="viewer"] .bf-folder-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    animation: none;
+  }
+}
+
 /* ============================================================ *
  *  Letter rail (Viewer, CORE-1685) — a sticky column of title
  *  initials beside a title-sorted Library grid (approved board:

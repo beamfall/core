@@ -1195,10 +1195,11 @@ type Store struct {
 	// snapshotSealer is the app-injected Backup Set encryption/verification
 	// seam. The store owns snapshot consistency and publication, while the
 	// backup package owns envelope cryptography. Set once at composition.
-	snapshotSealer       SnapshotSealer
-	testEncryptedMediaID MediaID
-	allowedRoots         []string
-	mountCapabilityProbe *mountCapabilityProbe
+	snapshotSealer                  SnapshotSealer
+	testEncryptedMediaID            MediaID
+	testLocalExtractAfterFieldsHook func() error
+	allowedRoots                    []string
+	mountCapabilityProbe            *mountCapabilityProbe
 	// role is the process authority posture, set once at Open.
 	// Main (the zero value) authors freely; Attached refuses catalog-identity
 	// authoring and engagement-projection writes via guardAuthority.
@@ -3401,6 +3402,48 @@ func (s *Store) LibraryFilePathsWithoutFieldOrAttempt(ctx context.Context, libra
 		  AND NOT EXISTS (SELECT 1 FROM media_field_real r WHERE r.media_id = m.id AND r.field = ?)
 		  AND NOT EXISTS (SELECT 1 FROM media_field_provenance p WHERE p.media_id = m.id AND p.field = ?)
 	`, libraryID, string(class), string(class), field, field, field, field, field)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]struct{}{}
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		out[path] = struct{}{}
+	}
+	return out, rows.Err()
+}
+
+// LibraryFilePathsWithoutLocalExtraction returns available file paths of the
+// Library's Media of class (or any class when empty) whose active content
+// fingerprint has not yet completed local extraction on its Media row.
+func (s *Store) LibraryFilePathsWithoutLocalExtraction(ctx context.Context, libraryID LibraryID, class MediaClass) (map[string]struct{}, error) {
+	if libraryID == "" {
+		return nil, errors.New("library ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT f.path
+		FROM media m
+		JOIN media_file f ON f.media_id = m.id AND f.missing_at_ms IS NULL
+		WHERE m.library_id = ? AND m.trashed_at_ms IS NULL
+		  AND (? = '' OR m.media_class = ?)
+		  AND NOT EXISTS (
+			SELECT 1 FROM media_field_provenance p
+			WHERE p.media_id = m.id AND p.field = 'local-extract:' || f.content_fingerprint
+		  )
+	`, libraryID, string(class), string(class))
 	if err != nil {
 		return nil, err
 	}

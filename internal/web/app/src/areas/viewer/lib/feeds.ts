@@ -160,6 +160,42 @@ export function isForbidden(err: unknown): boolean {
   return graphqlErrorCode(err) === "FORBIDDEN";
 }
 
+const CREDENTIAL_QUERY_KEYS = new Set([
+  "token",
+  "accesstoken",
+  "refreshtoken",
+  "authtoken",
+  "bearertoken",
+  "idtoken",
+  "apitoken",
+  "oauthtoken",
+  "securitytoken",
+  "sessiontoken",
+  "jwt",
+  "auth",
+  "authorization",
+  "credential",
+  "credentials",
+  "apikey",
+  "key",
+  "accesskey",
+  "accesskeyid",
+  "subscriptionkey",
+  "secret",
+  "clientsecret",
+  "oauthtokensecret",
+  "password",
+  "passwd",
+  "sessionid",
+  "sig",
+  "signature",
+  "xamzcredential",
+  "xamzsecuritytoken",
+  "xamzsignature",
+  "xgoogcredential",
+  "xgoogsignature",
+]);
+
 /** A typed search box value that is a feed address rather than search words. */
 export function asFeedURL(input: string): string | null {
   const value = input.trim();
@@ -170,6 +206,32 @@ export function asFeedURL(input: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Whether a parsed feed address is safe to pass to feed discovery before direct follow. */
+export function canDiscoverFeedURL(feedURL: string): boolean {
+  try {
+    const url = new URL(feedURL);
+    if (url.protocol !== "https:" || url.username !== "" || url.password !== "") {
+      return false;
+    }
+    for (const key of url.searchParams.keys()) {
+      const normalized = key.toLowerCase().replace(/[-_.]/g, "");
+      if (CREDENTIAL_QUERY_KEYS.has(normalized)) {
+        return false;
+      }
+    }
+    return Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Server-localized message when searchFeeds rejects with THROTTLED or INVALID. */
+export function feedSearchErrorMessage(err: unknown): string | undefined {
+  const code = graphqlErrorCode(err);
+  if (code !== "THROTTLED" && code !== "INVALID") return undefined;
+  return err instanceof ApiError && err.message.trim() !== "" ? err.message.trim() : undefined;
 }
 
 // Whether each Library has any followed feed, behind its Following pivot.

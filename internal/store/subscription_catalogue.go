@@ -563,6 +563,42 @@ func (s *Store) SubscriptionEntries(ctx context.Context, id SubscriptionID) ([]S
 	return entries, rows.Err()
 }
 
+// SubscriptionEntryPollDates reads only the GUIDs and publication timestamps
+// needed for adaptive polling cadence and dormancy decisions.
+func (s *Store) SubscriptionEntryPollDates(ctx context.Context, id SubscriptionID) ([]SubscriptionEntry, error) {
+	if id == "" {
+		return nil, errors.New("subscription ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT guid, published_at_ms
+		FROM subscription_entry
+		WHERE subscription_id = ? AND published_at_ms > 0
+		ORDER BY published_at_ms DESC, guid
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	entries := []SubscriptionEntry{}
+	for rows.Next() {
+		var guid string
+		var publishedMS int64
+		if err := rows.Scan(&guid, &publishedMS); err != nil {
+			return nil, err
+		}
+		entries = append(entries, SubscriptionEntry{
+			GUID:        guid,
+			PublishedAt: optionalUnixMilli(publishedMS),
+		})
+	}
+	return entries, rows.Err()
+}
+
 // SubscriptionEntryForMedia returns the entry and Subscription a Media
 // represents; ok is false when the Media is not a feed entry.
 func (s *Store) SubscriptionEntryForMedia(ctx context.Context, mediaID MediaID) (SubscriptionEntry, Subscription, bool, error) {
