@@ -393,6 +393,7 @@ func (s *Store) RemoveSubscription(ctx context.Context, id SubscriptionID) (Subs
 	if _, err := s.catalogW.ExecContext(ctx, `DELETE FROM subscription WHERE id = ?`, id); err != nil {
 		return Subscription{}, err
 	}
+	_, _ = s.catalogW.ExecContext(ctx, `DELETE FROM server_config WHERE key = ?`, subscriptionPollStateKey(id))
 	return removed, nil
 }
 

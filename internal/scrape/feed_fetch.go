@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // FeedResult is one Subscription feed fetch. PermanentURL is the destination
@@ -16,6 +18,13 @@ type FeedResult struct {
 	ConditionalResult
 	PermanentURL          string
 	RedirectedTemporarily bool
+	// MaxAge is the positive Cache-Control max-age directive from the feed
+	// response (0 when absent, non-positive, invalid, or suppressed by
+	// no-cache/no-store).
+	MaxAge time.Duration
+	// HasCacheControl reports whether the response carried a non-empty
+	// Cache-Control header.
+	HasCacheControl bool
 }
 
 // FetchFeed fetches a Subscription feed with conditional-GET validators and
@@ -111,8 +120,15 @@ func redirectTarget(current *url.URL, resp *http.Response) (*url.URL, bool) {
 }
 
 func (e *Engine) readFeedResponse(current *url.URL, resp *http.Response, etag, lastModified string, temporary bool) (FeedResult, error) {
+	ccValues := resp.Header.Values("Cache-Control")
+	hasCacheControl := hasNonEmptyCacheControl(ccValues)
+	maxAge := parseCacheControlMaxAge(ccValues)
 	if resp.StatusCode == http.StatusNotModified {
-		return FeedResult{ConditionalResult: ConditionalResult{ETag: etag, LastModified: lastModified, NotModified: true}}, nil
+		return FeedResult{
+			ConditionalResult: ConditionalResult{ETag: etag, LastModified: lastModified, NotModified: true},
+			MaxAge:            maxAge,
+			HasCacheControl:   hasCacheControl,
+		}, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return FeedResult{}, &statusError{host: current.Hostname(), code: resp.StatusCode, temporaryFeedRedirect: temporary}
@@ -124,11 +140,116 @@ func (e *Engine) readFeedResponse(current *url.URL, resp *http.Response, etag, l
 	if int64(len(data)) > e.maxResponseBytes {
 		return FeedResult{}, fmt.Errorf("%w: response from %s exceeds the %d-byte cap", ErrResponseTooLarge, current.Hostname(), e.maxResponseBytes)
 	}
-	return FeedResult{ConditionalResult: ConditionalResult{
-		Data:         data,
-		ETag:         resp.Header.Get("ETag"),
-		LastModified: resp.Header.Get("Last-Modified"),
-	}}, nil
+	return FeedResult{
+		ConditionalResult: ConditionalResult{
+			Data:         data,
+			ETag:         resp.Header.Get("ETag"),
+			LastModified: resp.Header.Get("Last-Modified"),
+		},
+		MaxAge:          maxAge,
+		HasCacheControl: hasCacheControl,
+	}, nil
+}
+
+const maxParsedPollInterval = 365 * 24 * time.Hour
+
+func hasNonEmptyCacheControl(values []string) bool {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func parseCacheControlMaxAge(values []string) time.Duration {
+	var maxAge time.Duration
+	for _, header := range values {
+		for _, raw := range splitCacheControlDirectives(header) {
+			directive := strings.TrimSpace(raw)
+			if directive == "" {
+				continue
+			}
+			name, value, hasValue := strings.Cut(directive, "=")
+			name = strings.ToLower(strings.TrimSpace(name))
+			switch name {
+			case "no-cache", "no-store":
+				return 0
+			case "max-age":
+				if !hasValue {
+					continue
+				}
+				var ok bool
+				value, ok = unquoteCacheDirectiveValue(strings.TrimSpace(value))
+				if !ok {
+					continue
+				}
+				seconds, err := strconv.ParseInt(value, 10, 64)
+				if err != nil || seconds <= 0 {
+					continue
+				}
+				var parsed time.Duration
+				if seconds >= int64(maxParsedPollInterval/time.Second) {
+					parsed = maxParsedPollInterval
+				} else {
+					parsed = time.Duration(seconds) * time.Second
+				}
+				if maxAge == 0 || parsed < maxAge {
+					maxAge = parsed
+				}
+			}
+		}
+	}
+	return maxAge
+}
+
+func unquoteCacheDirectiveValue(value string) (string, bool) {
+	if !strings.HasPrefix(value, `"`) {
+		return value, true
+	}
+	if len(value) < 2 || value[len(value)-1] != '"' {
+		return "", false
+	}
+	var b strings.Builder
+	b.Grow(len(value) - 2)
+	for i := 1; i < len(value)-1; i++ {
+		if value[i] == '\\' {
+			if i+1 >= len(value)-1 {
+				return "", false
+			}
+			i++
+			b.WriteByte(value[i])
+			continue
+		}
+		if value[i] == '"' {
+			return "", false
+		}
+		b.WriteByte(value[i])
+	}
+	return b.String(), true
+}
+
+func splitCacheControlDirectives(header string) []string {
+	var parts []string
+	start := 0
+	inQuotes := false
+	for i := 0; i < len(header); i++ {
+		if inQuotes && header[i] == '\\' {
+			i++
+			continue
+		}
+		switch header[i] {
+		case '"':
+			inQuotes = !inQuotes
+		case ',':
+			if !inQuotes {
+				parts = append(parts, header[start:i])
+				start = i + 1
+			}
+		}
+	}
+	parts = append(parts, header[start:])
+	return parts
 }
 
 // ErrResponseTooLarge marks a response body past the engine's size cap.

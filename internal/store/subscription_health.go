@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -264,6 +265,9 @@ func (s *Store) RecordSubscriptionMoveObservation(ctx context.Context, id Subscr
 		}
 		return false, tx.Commit()
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM server_config WHERE key = ?`, subscriptionPollStateKey(id)); err != nil {
+		return false, err
+	}
 	return true, tx.Commit()
 }
 
@@ -345,4 +349,81 @@ func (s *Store) RequestAllSubscriptionsRefresh(ctx context.Context, filter Libra
 	}
 	affected, err := result.RowsAffected()
 	return int(affected), err
+}
+
+const subscriptionPollStatePrefix = "subscription.poll_state:"
+
+func subscriptionPollStateKey(id SubscriptionID) string {
+	return subscriptionPollStatePrefix + string(id)
+}
+
+// SubscriptionPollEntryDate pairs an opaque entry key (never a raw GUID or
+// URL) with its parsed publication timestamp for cadence and dormancy checks.
+type SubscriptionPollEntryDate struct {
+	Key         string    `json:"k,omitempty"`
+	PublishedAt time.Time `json:"t"`
+}
+
+// SubscriptionPollState retains the feed-level poll hints and observed
+// publication timestamps from the most recent full feed fetch in server_config
+// so 304 responses and rolling single-entry feeds evaluate the full adaptive
+// poll rules without schema changes.
+type SubscriptionPollState struct {
+	Complete       bool                        `json:"complete,omitempty"`
+	UpdateInterval time.Duration               `json:"update_interval_ns,omitempty"`
+	MaxAge         time.Duration               `json:"max_age_ns,omitempty"`
+	Entries        []SubscriptionPollEntryDate `json:"entries,omitempty"`
+}
+
+// SubscriptionPollState returns the persisted adaptive-poll state for id, if any.
+func (s *Store) SubscriptionPollState(ctx context.Context, id SubscriptionID) (SubscriptionPollState, bool, error) {
+	if id == "" {
+		return SubscriptionPollState{}, false, errors.New("subscription ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return SubscriptionPollState{}, false, err
+	}
+	var raw string
+	err := s.catalogR.QueryRowContext(ctx, `SELECT value FROM server_config WHERE key = ?`, subscriptionPollStateKey(id)).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SubscriptionPollState{}, false, nil
+	}
+	if err != nil {
+		return SubscriptionPollState{}, false, err
+	}
+	var state SubscriptionPollState
+	if err := json.Unmarshal([]byte(raw), &state); err != nil {
+		return SubscriptionPollState{}, false, nil
+	}
+	for i := range state.Entries {
+		if !state.Entries[i].PublishedAt.IsZero() {
+			state.Entries[i].PublishedAt = state.Entries[i].PublishedAt.UTC()
+		}
+	}
+	return state, true, nil
+}
+
+// SaveSubscriptionPollState persists the adaptive-poll state for id when the
+// Subscription row still exists.
+func (s *Store) SaveSubscriptionPollState(ctx context.Context, id SubscriptionID, state SubscriptionPollState, now time.Time) error {
+	if id == "" {
+		return errors.New("subscription ID is required")
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err = s.catalogW.ExecContext(ctx, `
+		INSERT INTO server_config(key, value, updated_at_ms)
+		SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM subscription WHERE id = ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at_ms = excluded.updated_at_ms
+	`, subscriptionPollStateKey(id), string(data), now.UTC().UnixMilli(), id)
+	return err
 }

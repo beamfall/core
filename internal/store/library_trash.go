@@ -245,6 +245,9 @@ func (s *Store) purgeLibraryLocked(ctx context.Context, id LibraryID, trashedBef
 	if _, err := tx.ExecContext(ctx, `DELETE FROM server_config WHERE key = ?`, libraryIconConfigPrefix+string(id)); err != nil {
 		return LibraryPurge{}, false, err
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM server_config WHERE key IN (SELECT ? || id FROM subscription WHERE library_id = ?)`, subscriptionPollStatePrefix, id); err != nil {
+		return LibraryPurge{}, false, err
+	}
 	// Grants, root folders and every other per-Library table cascade from here.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM library WHERE id = ?`, id); err != nil {
 		return LibraryPurge{}, false, err
