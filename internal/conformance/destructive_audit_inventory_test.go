@@ -11,6 +11,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"HomeConfig":                            {},
 	"FirstMediaForEntity":                   {},
 	"SubscriptionEntryForMedia":             {},
+	"ContainerMediaCounts":                  {},
 	"APITokens":                             {},
 	"AccessGrantsForProfile":                {},
 	"AccessRequestByID":                     {},

@@ -214,7 +214,7 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 	minted := []MediaID{}
 	feedTitle := ""
 	// Insert oldest first so rowid DESC (the recently-added order) lists the
-	// newest episode first; feeds publish newest-first, so ties keep feed order.
+	// newest entry first; feeds publish newest-first, so ties keep feed order.
 	ordered := slices.Clone(entries)
 	slices.SortStableFunc(ordered, func(a, b FeedCatalogEntry) int {
 		if c := a.PublishedAt.Compare(b.PublishedAt); c != 0 {

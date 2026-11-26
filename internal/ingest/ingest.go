@@ -74,20 +74,20 @@ type Poller struct {
 	// certification resolves a follower's ceilings when new entries are
 	// routed to its Play Queue; nil disables routing.
 	certification func([]store.ProfileCertificationCeiling) []store.CertificationConstraint
-	// shows publishes the feed's show container and artwork after each
+	// containers publishes the feed's container container and artwork after each
 	// catalogue upsert; nil disables it.
-	shows ShowPublisher
+	containers ContainerPublisher
 }
 
-// ShowPublisher turns a polled feed into its show container Entity and
+// ContainerPublisher turns a polled feed into its container container Entity and
 // artwork (CORE-3524). It is best-effort: a failure is logged and the next
 // poll retries.
-type ShowPublisher interface {
-	PublishShow(ctx context.Context, subscription store.Subscription, document scrape.FeedDocument, entries []scrape.FeedEntry) error
+type ContainerPublisher interface {
+	PublishContainer(ctx context.Context, subscription store.Subscription, document scrape.FeedDocument, entries []scrape.FeedEntry) error
 }
 
-// SetShowPublisher wires the show publisher. Call before polling starts.
-func (p *Poller) SetShowPublisher(shows ShowPublisher) { p.shows = shows }
+// SetContainerPublisher wires the container publisher. Call before polling starts.
+func (p *Poller) SetContainerPublisher(containers ContainerPublisher) { p.containers = containers }
 
 // SetCertificationResolver wires the resolver used when new entries are
 // routed to followers' Play Queues (CORE-2958). Call before polling starts.
@@ -268,9 +268,9 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if err != nil {
 		return published, err
 	}
-	if catalogued && p.shows != nil {
-		if err := p.shows.PublishShow(ctx, subscription, document, catalogueEntries(document)); err != nil {
-			p.logger.Warn("show publication failed", "subscription", subscription.ID, "error", err)
+	if catalogued && p.containers != nil {
+		if err := p.containers.PublishContainer(ctx, subscription, document, catalogueEntries(document)); err != nil {
+			p.logger.Warn("container publication failed", "subscription", subscription.ID, "error", err)
 		}
 	}
 	// A Subscription imported without a title takes the feed's own title;

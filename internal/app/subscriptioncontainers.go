@@ -15,20 +15,20 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
-// maxEpisodeArtworkPerPoll bounds the artwork fetches one poll spends on
-// episodes; the rest are picked up by later polls.
-const maxEpisodeArtworkPerPoll = 40
+// maxItemArtworkPerPoll bounds the artwork fetches one poll spends on
+// items; the rest are picked up by later polls.
+const maxItemArtworkPerPoll = 40
 
-// showStore is the store surface the show publisher needs; *store.Store
+// containerStore is the store surface the container publisher needs; *store.Store
 // satisfies it.
-type showStore interface {
+type containerStore interface {
 	LibraryPluginID(ctx context.Context, id store.LibraryID) (string, error)
 	UpsertEntity(ctx context.Context, entity store.Entity) error
 	UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error
 	SubscriptionEntries(ctx context.Context, id store.SubscriptionID) ([]store.SubscriptionEntry, error)
 }
 
-type showArtwork interface {
+type containerArtwork interface {
 	HasEntityPoster(id store.EntityID) bool
 	ImportEntityPoster(ctx context.Context, id store.EntityID, data []byte) error
 	HasPoster(id store.MediaID) bool
@@ -37,35 +37,35 @@ type showArtwork interface {
 	ImportArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error
 }
 
-type showFetcher interface {
+type containerFetcher interface {
 	FetchResource(ctx context.Context, rawURL string) ([]byte, error)
 }
 
-// subscriptionShows publishes one container Entity per feed Subscription
+// subscriptionContainers publishes one container Entity per feed Subscription
 // (CORE-3524): the outermost container kind of the Library's plugin that holds
 // Media through a single-holder relation, titled by the feed, with the channel
-// art as its poster and the feed's episodes as the held Media. Episodes
-// without their own art inherit the show's. Kind and relation come from the
+// art as its poster and the feed's items as the held Media. Items
+// without their own art inherit the container's. Kind and relation come from the
 // plugin bundle, so core names no domain vocabulary; a plugin declaring no
-// such kind gets no show.
-type subscriptionShows struct {
-	store   showStore
+// such kind gets no container.
+type subscriptionContainers struct {
+	store   containerStore
 	bundles interface {
 		Bundle(id plugin.ID) (plugin.Bundle, bool)
 	}
-	artwork showArtwork
-	fetcher showFetcher
+	artwork containerArtwork
+	fetcher containerFetcher
 	logger  *slog.Logger
 }
 
-func newSubscriptionShows(st showStore, bundles interface {
+func newSubscriptionContainers(st containerStore, bundles interface {
 	Bundle(id plugin.ID) (plugin.Bundle, bool)
-}, art showArtwork, fetcher showFetcher, logger *slog.Logger) *subscriptionShows {
-	return &subscriptionShows{store: st, bundles: bundles, artwork: art, fetcher: fetcher, logger: logger}
+}, art containerArtwork, fetcher containerFetcher, logger *slog.Logger) *subscriptionContainers {
+	return &subscriptionContainers{store: st, bundles: bundles, artwork: art, fetcher: fetcher, logger: logger}
 }
 
 // feedContainerKind finds the container kind and holder relation a feed's
-// episodes hang off, or "" when the bundle declares none.
+// items hang off, or "" when the bundle declares none.
 func feedContainerKind(bundle plugin.Bundle) (kind plugin.EntityKind, relation string, ok bool) {
 	outermost := identify.OutermostContainerKinds(bundle)
 	for _, candidate := range bundle.EntityKinds {
@@ -81,11 +81,11 @@ func feedContainerKind(bundle plugin.Bundle) (kind plugin.EntityKind, relation s
 	return plugin.EntityKind{}, "", false
 }
 
-func showEntityID(library store.LibraryID, kind string, id store.SubscriptionID) store.EntityID {
+func containerEntityID(library store.LibraryID, kind string, id store.SubscriptionID) store.EntityID {
 	return identify.EntityIDForName(library, kind, "subscription:"+string(id))
 }
 
-func (p *subscriptionShows) PublishShow(ctx context.Context, subscription store.Subscription, document scrape.FeedDocument, _ []scrape.FeedEntry) error {
+func (p *subscriptionContainers) PublishContainer(ctx context.Context, subscription store.Subscription, document scrape.FeedDocument, _ []scrape.FeedEntry) error {
 	pluginID, err := p.store.LibraryPluginID(ctx, subscription.LibraryID)
 	if err != nil || pluginID == "" {
 		return err
@@ -105,7 +105,7 @@ func (p *subscriptionShows) PublishShow(ctx context.Context, subscription store.
 	if title == "" {
 		return nil
 	}
-	id := showEntityID(subscription.LibraryID, kind.Name, subscription.ID)
+	id := containerEntityID(subscription.LibraryID, kind.Name, subscription.ID)
 	entity := store.Entity{ID: id, LibraryID: subscription.LibraryID, Kind: kind.Name, Title: title}
 	declared := map[string]string{}
 	for _, field := range kind.Fields {
@@ -129,7 +129,7 @@ func (p *subscriptionShows) PublishShow(ctx context.Context, subscription store.
 		entity.Fields = append(entity.Fields, store.EntityField{Name: "serial", Type: store.EntityFieldFlag, Flag: true})
 	}
 	if err := p.store.UpsertEntity(ctx, entity); err != nil {
-		return fmt.Errorf("upsert show: %w", err)
+		return fmt.Errorf("upsert container: %w", err)
 	}
 	entries, err := p.store.SubscriptionEntries(ctx, subscription.ID)
 	if err != nil {
@@ -139,7 +139,7 @@ func (p *subscriptionShows) PublishShow(ctx context.Context, subscription store.
 		if err := p.store.UpsertEntityRelation(ctx, store.EntityRelation{
 			FromEntityID: id, Name: relation, ToMediaID: entry.MediaID, Cardinality: "one",
 		}); err != nil {
-			return fmt.Errorf("link episode: %w", err)
+			return fmt.Errorf("link item: %w", err)
 		}
 	}
 	p.applyArtwork(ctx, id, document, entries)
@@ -148,7 +148,7 @@ func (p *subscriptionShows) PublishShow(ctx context.Context, subscription store.
 
 // applyArtwork is best-effort: a failed fetch is logged and the next poll
 // retries, because artwork already present is never refetched.
-func (p *subscriptionShows) applyArtwork(ctx context.Context, id store.EntityID, document scrape.FeedDocument, entries []store.SubscriptionEntry) {
+func (p *subscriptionContainers) applyArtwork(ctx context.Context, id store.EntityID, document scrape.FeedDocument, entries []store.SubscriptionEntry) {
 	if p.artwork == nil || p.fetcher == nil {
 		return
 	}
@@ -159,7 +159,7 @@ func (p *subscriptionShows) applyArtwork(ctx context.Context, id store.EntityID,
 			err = p.artwork.ImportEntityPoster(ctx, id, data)
 		}
 		if err != nil {
-			p.logger.Debug("show artwork failed", "entity", string(id), "error", err.Error())
+			p.logger.Debug("container artwork failed", "entity", string(id), "error", err.Error())
 		} else {
 			showArt = data
 		}
@@ -176,7 +176,7 @@ func (p *subscriptionShows) applyArtwork(ctx context.Context, id store.EntityID,
 			pending = append(pending, entry)
 		}
 	}
-	// Newest episodes first: they are the ones on the shelves.
+	// Newest items first: they are the ones on the shelves.
 	sort.SliceStable(pending, func(i, j int) bool { return pending[i].PublishedAt.After(pending[j].PublishedAt) })
 	if showArt == nil && document.ArtworkURL != "" && len(pending) > 0 {
 		if data, err := p.fetcher.FetchResource(ctx, document.ArtworkURL); err == nil {
@@ -188,7 +188,7 @@ func (p *subscriptionShows) applyArtwork(ctx context.Context, id store.EntityID,
 		data := showArt
 		own := false
 		if url := itemArt[entry.GUID]; url != "" && url != document.ArtworkURL {
-			if fetched >= maxEpisodeArtworkPerPoll {
+			if fetched >= maxItemArtworkPerPoll {
 				continue
 			}
 			fetched++
@@ -205,7 +205,7 @@ func (p *subscriptionShows) applyArtwork(ctx context.Context, id store.EntityID,
 		}
 		var locked *artwork.SlotLockedError
 		if err != nil && !errors.As(err, &locked) {
-			p.logger.Debug("episode artwork failed", "error", err.Error())
+			p.logger.Debug("item artwork failed", "error", err.Error())
 		}
 	}
 }

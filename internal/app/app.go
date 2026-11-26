@@ -926,7 +926,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	subscriptionPoller := ingest.NewPoller(st, scrapeEngine)
 	subscriptionPoller.SetCertificationResolver(authService.CertificationConstraints)
 	subscriptionPoller.SetLogger(logger)
-	subscriptionPoller.SetShowPublisher(newSubscriptionShows(st, executablePlugins, artworkService, scrapeEngine, logger))
+	subscriptionPoller.SetContainerPublisher(newSubscriptionContainers(st, executablePlugins, artworkService, scrapeEngine, logger))
 	pollHandler := ingest.Handler(subscriptionPoller)
 	jobRegistry.Register(ingest.PollJobKind, pollHandler)
 	// qBittorrent ingest: a poll job pulls completed downloads,
@@ -3812,7 +3812,7 @@ type qbittorrentIngestAdapter struct {
 
 func (a qbittorrentIngestAdapter) Config(ctx context.Context) (graph.QBittorrentConfig, bool) {
 	// An inert ingestor (no endpoint configured) reports unconfigured even
-	// though it exists, so the Console read shows "ingest disabled" honestly
+	// though it exists, so the Console read containers "ingest disabled" honestly
 	// until setQBittorrentIngest sets an endpoint.
 	if a.ingestor == nil || !a.ingestor.Configured() {
 		return graph.QBittorrentConfig{}, false
