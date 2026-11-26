@@ -163,13 +163,15 @@ func (s *Store) copyPlaintextEncryptedLibraryRowsLocked(ctx context.Context, pla
 		if err != nil {
 			return evacuationPlan{}, err
 		}
+		if group.pendingKey != "" {
+			// Nothing left to move still ends the pending state; leaving the
+			// key would add a stray metadata row to every migrated plane.
+			clearKeys = append(clearKeys, group.pendingKey)
+		}
 		if rows == nil {
 			continue
 		}
 		pending = append(pending, rows...)
-		if group.pendingKey != "" {
-			clearKeys = append(clearKeys, group.pendingKey)
-		}
 	}
 	var plan evacuationPlan
 	if len(pending) > 0 {
