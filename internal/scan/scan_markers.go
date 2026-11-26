@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
@@ -46,7 +47,7 @@ func parsedMediaTitle(parser FilenameParser, path string, probe ParseProbe, pars
 // of permanently skipping the synthesis. A change in Part membership clears
 // both derived sets in the import transaction itself (groupMarkerMethods,
 // CORE-3093), so a regrouped Media always takes that re-probe path.
-func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prober, parts []parsedPartImport, mediaID store.MediaID, observedAt time.Time) error {
+func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prober, parser FilenameParser, parts []parsedPartImport, mediaID store.MediaID, mediaDuration int, observedAt time.Time) error {
 	anyProbed := false
 	for _, part := range parts {
 		if part.probed {
@@ -55,21 +56,66 @@ func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prob
 		}
 	}
 	if !anyProbed {
+		hintTotal, allHintsKnown := summedPartImportDuration(parts)
 		existing, err := st.MarkersForMedia(ctx, mediaID, store.LibraryFilter{AllLibraries: true})
 		if err != nil {
 			return err
 		}
 		partMarkers := 0
 		embeddedMarkers := 0
+		partEnd := 0
+		chapterEnd := 0
 		for _, marker := range existing {
+			endSec := 0
+			if marker.EndSeconds != nil {
+				endSec = int(math.Round(*marker.EndSeconds))
+			}
 			switch marker.Method {
 			case partBoundaryMarkerMethod:
 				partMarkers++
+				if endSec > partEnd {
+					partEnd = endSec
+				}
 			case "chapter-import":
 				embeddedMarkers++
+				if endSec > chapterEnd {
+					chapterEnd = endSec
+				}
 			}
 		}
-		if partMarkers == len(parts) || embeddedMarkers > 0 {
+		switch {
+		case embeddedMarkers > 0:
+			if allHintsKnown && hintTotal > 0 {
+				if mediaDuration != hintTotal {
+					if _, err := st.SetMultiPartMediaDuration(ctx, mediaID, hintTotal); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			if mediaDuration > 0 && (chapterEnd == 0 || mediaDuration >= chapterEnd) {
+				return nil
+			}
+			if prober == nil {
+				if chapterEnd > mediaDuration {
+					if _, err := st.SetMultiPartMediaDuration(ctx, mediaID, chapterEnd); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+		case partMarkers == len(parts):
+			target := 0
+			if allHintsKnown && hintTotal > 0 {
+				target = hintTotal
+			} else if partEnd > mediaDuration {
+				target = partEnd
+			}
+			if target > 0 && mediaDuration != target {
+				if _, err := st.SetMultiPartMediaDuration(ctx, mediaID, target); err != nil {
+					return err
+				}
+			}
 			return nil
 		}
 	}
@@ -91,6 +137,12 @@ func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prob
 			}
 			part.imported.DurationSecondsHint = probe.DurationSeconds
 			part.probeChapters = append([]ffmpeg.ProbeChapter(nil), probe.Chapters...)
+			part.markerTitle = partMarkerTitle(parser, part.imported.Path, ParseProbe{
+				HasVideo:        probe.HasVideo,
+				HasAudio:        probe.AudioCodec != "",
+				DurationSeconds: probe.DurationSeconds,
+				Tags:            probe.Tags,
+			})
 			part.probed = true
 		}
 		if len(part.probeChapters) > 0 {
@@ -100,9 +152,14 @@ func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prob
 			return nil
 		}
 	}
+	if totalDuration, allKnown := summedPartImportDuration(prepared); allKnown && totalDuration > 0 && totalDuration != mediaDuration {
+		if _, err := st.SetMultiPartMediaDuration(ctx, mediaID, totalDuration); err != nil {
+			return err
+		}
+	}
 	filter := store.LibraryFilter{AllLibraries: true}
 	if hasEmbeddedChapters {
-		// Embedded chapter atoms are authoritative for the grouped book. Clear
+		// Embedded chapter atoms are authoritative for the grouped item. Clear
 		// only this synthesizer's old rows, then import all embedded chapters
 		// with each Part's duration folded into the canonical Media timeline.
 		if err := st.ReplaceDetectedMarkers(ctx, mediaID, partBoundaryMarkerMethod, nil, filter, observedAt); err != nil {
@@ -110,7 +167,7 @@ func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prob
 		}
 		return st.ReplaceDetectedMarkers(ctx, mediaID, "chapter-import", markersFromPartProbeChapters(prepared), filter, observedAt)
 	}
-	// A changed grouped book may lose its embedded chapter atoms. Remove stale
+	// A changed grouped item may lose its embedded chapter atoms. Remove stale
 	// chapter-import rows before installing the deterministic Part boundaries.
 	if err := st.ReplaceDetectedMarkers(ctx, mediaID, "chapter-import", nil, filter, observedAt); err != nil {
 		return err
@@ -128,6 +185,20 @@ func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prob
 		start = end
 	}
 	return st.ReplaceDetectedMarkers(ctx, mediaID, partBoundaryMarkerMethod, markers, filter, observedAt)
+}
+
+func summedPartImportDuration(parts []parsedPartImport) (int, bool) {
+	if len(parts) == 0 {
+		return 0, false
+	}
+	total := 0
+	for _, part := range parts {
+		if part.imported.DurationSecondsHint <= 0 {
+			return 0, false
+		}
+		total += part.imported.DurationSecondsHint
+	}
+	return total, true
 }
 
 func markersFromPartProbeChapters(parts []parsedPartImport) []store.Marker {

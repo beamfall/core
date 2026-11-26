@@ -97,6 +97,35 @@ describe("useChromeAutoHide (CORE-2322)", () => {
     fireEvent.pointerMove(getByTestId("stage"));
     expect(getByTestId("stage").dataset.hidden).toBe("false");
   });
+
+  it("reveals hidden chrome when focus or pointer interaction hits the sibling player bar", () => {
+    function PlayerLayout() {
+      const stageRef = useRef<HTMLDivElement>(null);
+      const videoRef = useRef<HTMLVideoElement>(null);
+      const { chromeHidden } = useChromeAutoHide({ stageRef, videoRef, menuOpen: false });
+      return (
+        <main>
+          <div className="bf-player-bar">
+            <button type="button">Back</button>
+          </div>
+          <div ref={stageRef} data-testid="stage" data-hidden={String(chromeHidden)}>
+            <video ref={videoRef} />
+          </div>
+        </main>
+      );
+    }
+    const { container, getByRole, getByTestId } = render(<PlayerLayout />);
+    const video = playingVideo(container);
+    act(() => {
+      video.dispatchEvent(new Event("play"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(3500);
+    });
+    expect(getByTestId("stage").dataset.hidden).toBe("true");
+    fireEvent.focusIn(getByRole("button", { name: "Back" }));
+    expect(getByTestId("stage").dataset.hidden).toBe("false");
+  });
 });
 
 // CORE-3351: the music stage dims instead of hiding when idle.

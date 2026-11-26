@@ -241,3 +241,62 @@ func TestDrillRefusedWhileStagedRestorePending(t *testing.T) {
 		t.Fatalf("staged restore after refused drill: %v %v", staged, err)
 	}
 }
+
+// CORE-3516 #18: when the drill runs its assertions and detects corruption/
+// incompatibility, it records LastDrill{Verified:false} and returns the completed
+// report with nil error so callers display the failed drill instead of keeping
+// a stale green result.
+func TestDrillFailedAssertionsReturnsCompletedReport(t *testing.T) {
+	ctx := context.Background()
+	f := newStageFixture(t)
+	if okRep, err := New(f.dataDir, f.store).Drill(ctx, f.envelope, f.key, DrillGuards{}); err != nil || !okRep.Verified {
+		t.Fatalf("baseline drill: %+v, %v", okRep, err)
+	}
+	incompatible := resealWithNewerSchema(t, f)
+	report, err := New(f.dataDir, f.store).Drill(ctx, incompatible, f.key, DrillGuards{})
+	if err != nil {
+		t.Fatalf("failed drill returned err=%v, want completed report with nil err", err)
+	}
+	if report.Verified || report.Reason != "restore-assertions-failed" || report.Set != "newer-set" {
+		t.Fatalf("failed drill report = %+v, want Verified=false Reason=restore-assertions-failed Set=newer-set", report)
+	}
+	status, err := backupcore.LoadStatus(f.dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastDrill == nil || status.LastDrill.Verified || status.LastDrill.Reason != "restore-assertions-failed" || status.LastDrill.Set != "newer-set" {
+		t.Fatalf("persisted LastDrill = %+v", status.LastDrill)
+	}
+}
+
+// CORE-3516 follow-up: when RecordDrill fails after a failed assertion, the
+// persistence error must propagate rather than returning nil over stale green state.
+func TestDrillFailedAssertionsDoesNotMaskRecordDrillError(t *testing.T) {
+	ctx := context.Background()
+	f := newStageFixture(t)
+	stager := New(f.dataDir, f.store)
+	if okRep, err := stager.Drill(ctx, f.envelope, f.key, DrillGuards{}); err != nil || !okRep.Verified {
+		t.Fatalf("baseline drill: %+v, %v", okRep, err)
+	}
+	incompatible := resealWithNewerSchema(t, f)
+	statusFile := filepath.Join(f.dataDir, "backup-status.json")
+	if err := os.Chmod(statusFile, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(statusFile, 0o600) }()
+
+	report, err := stager.Drill(ctx, incompatible, f.key, DrillGuards{})
+	if err == nil || !strings.Contains(err.Error(), "record restore drill") {
+		t.Fatalf("failed drill with unwritable status: report=%+v err=%v, want record restore drill error", report, err)
+	}
+	if err := os.Chmod(statusFile, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	status, err := backupcore.LoadStatus(f.dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastDrill == nil || !status.LastDrill.Verified {
+		t.Fatalf("persisted baseline LastDrill = %+v, want prior green state untouched", status.LastDrill)
+	}
+}

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -244,5 +246,48 @@ func TestScheduledBackupFiresUnderControlledClock(t *testing.T) {
 	}
 	if got := backupJobs(); got != 2 {
 		t.Fatalf("night after the backup completed: %d database-backup jobs, want 2", got)
+	}
+}
+
+type corruptVerifySealer struct {
+	backupcore.DirectorySealer
+}
+
+func (corruptVerifySealer) VerifyEnvelopeStructure(io.Reader) error {
+	return errors.New("simulated envelope verification failure")
+}
+
+// CORE-3516 #15: scheduled integrity failures preserve the created Backup Set
+// name in LastIntegrityFailure and backup.integrity_failed outbox events.
+func TestDatabaseBackupHandlerIntegrityFailureRecordsCreatedSetName(t *testing.T) {
+	ctx := context.Background()
+	dest := t.TempDir()
+	dataDir := t.TempDir()
+	st, err := store.Open(ctx, dataDir, store.Options{SeedDevelopmentData: true, AllowedRoots: []string{dest}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	st.SetSnapshotSealer(corruptVerifySealer{DirectorySealer: backupcore.NewDirectorySealer(dataDir)})
+
+	handler := databaseBackupHandler(st, dataDir, dest, nil)
+	if _, err := handler(ctx, store.Job{ID: "j-int", Kind: databaseBackupJobKind}); err == nil || classifyBackupError(err) != BackupFailureIntegrity {
+		t.Fatalf("err = %v, want integrity failure", err)
+	}
+	entries, err := os.ReadDir(dest)
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("read backup dest: %+v, %v", entries, err)
+	}
+	wantSet := filepath.Base(entries[0].Name())
+	status, err := backupcore.LoadStatus(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastIntegrityFailure == nil || status.LastIntegrityFailure.Set != wantSet {
+		t.Fatalf("LastIntegrityFailure = %+v, want Set=%q", status.LastIntegrityFailure, wantSet)
+	}
+	events := backupOutboxEvents(t, st, store.BackupEventIntegrityFailed)
+	if len(events) != 1 || events[0].AggregateID != wantSet {
+		t.Fatalf("integrity failed events = %+v, want AggregateID=%q", events, wantSet)
 	}
 }

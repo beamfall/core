@@ -3534,6 +3534,11 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 	}
 
 	primary := ordered[0].File
+	mediaPrimary := primary
+	totalDuration, allDurationKnown := sumPartDurationHints(ordered)
+	if allDurationKnown {
+		mediaPrimary.DurationSecondsHint = totalDuration
+	}
 	keepProbeFacts := false
 	if primary.KeepProbeFacts {
 		first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
@@ -3542,9 +3547,15 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 		}
 		keepProbeFacts = first == primary.ContentFingerprint
 	}
-	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, primary, plane.encrypted, false, keepProbeFacts)
+	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, mediaPrimary, plane.encrypted, false, keepProbeFacts)
 	if err != nil {
 		return Media{}, nil, false, err
+	}
+	if allDurationKnown && totalDuration > 0 && media.DurationSeconds != totalDuration {
+		if _, err := tx.ExecContext(ctx, `UPDATE media SET duration_seconds = ? WHERE id = ?`, totalDuration, media.ID); err != nil {
+			return Media{}, nil, false, err
+		}
+		media.DurationSeconds = totalDuration
 	}
 	if !created && len(resetMethods) > 0 {
 		changed, err := mediaPartsDifferTx(ctx, tx, mediaID, ordered)
@@ -4139,4 +4150,18 @@ func (s *Store) randomItemsSQL(ctx context.Context, filter LibraryFilter, seed s
 		items = append(items, c.item)
 	}
 	return items, nil
+}
+
+func sumPartDurationHints(parts []ImportMediaFilePart) (int, bool) {
+	if len(parts) == 0 {
+		return 0, false
+	}
+	total := 0
+	for _, part := range parts {
+		if part.File.DurationSecondsHint <= 0 {
+			return 0, false
+		}
+		total += part.File.DurationSecondsHint
+	}
+	return total, true
 }

@@ -96,8 +96,14 @@ function useEpochRequest() {
   }, []);
 }
 
+function isEncryptedSet(entry: BackupHistoryEntry): boolean {
+  return (
+    Boolean(entry.keyFingerprint) || entry.keyState === "current" || entry.keyState === "archived"
+  );
+}
+
 function manifestPath(entry: BackupHistoryEntry): string {
-  return `${entry.directory}/${MANIFEST_BASENAME}`;
+  return `${entry.directory}/${isEncryptedSet(entry) ? ENVELOPE_BASENAME : MANIFEST_BASENAME}`;
 }
 
 function formatBytes(bytes: number): string {
@@ -115,6 +121,7 @@ export function BackupExportPage() {
   const [dest, setDest] = useState("");
   const [entries, setEntries] = useState<BackupHistoryEntry[]>([]);
   const [selected, setSelected] = useState<BackupHistoryEntry | null>(null);
+  const [statusRefresh, setStatusRefresh] = useState(0);
 
   return (
     <div className="space-y-4">
@@ -122,6 +129,7 @@ export function BackupExportPage() {
       <BackupOpsSection
         envelope={selected ? `${selected.directory}/${ENVELOPE_BASENAME}` : ""}
         setName={selected ? setLabel(selected.directory) : ""}
+        statusRefresh={statusRefresh}
       />
       <BackupHistorySection
         dest={dest}
@@ -130,6 +138,7 @@ export function BackupExportPage() {
         setEntries={setEntries}
         selected={selected}
         setSelected={setSelected}
+        onStatusChanged={() => setStatusRefresh((n) => n + 1)}
       />
       <ManifestSection selected={selected} />
       <RestoreSection selected={selected} />
@@ -145,6 +154,7 @@ function BackupHistorySection({
   setEntries,
   selected,
   setSelected,
+  onStatusChanged,
 }: {
   dest: string;
   setDest: (v: string) => void;
@@ -152,6 +162,7 @@ function BackupHistorySection({
   setEntries: (v: BackupHistoryEntry[]) => void;
   selected: BackupHistoryEntry | null;
   setSelected: (v: BackupHistoryEntry | null) => void;
+  onStatusChanged: () => void;
 }) {
   const t = useT();
   const [loading, setLoading] = useState(false);
@@ -205,6 +216,7 @@ function BackupHistorySection({
     setRunning(true);
     try {
       await runBackup(trimmed);
+      onStatusChanged();
       // Reload so the newly published set appears in the run record.
       await loadHistory();
     } catch {
@@ -231,6 +243,7 @@ function BackupHistorySection({
           e.directory === entry.directory ? { ...e, valid: result.ok, error: result.error } : e,
         ),
       );
+      onStatusChanged();
     } catch {
       setError(t("backupHistoryUnavailable"));
     } finally {

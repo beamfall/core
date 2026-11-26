@@ -47,19 +47,9 @@ entities removed.
 
 A purge SHALL remove, in one catalog transaction, the Library, its Media and their file records,
 external ids, embeddings and artwork candidates, its entities, its profile grants, root-folder
-records and scan schedule. It SHALL then remove the engagement records and server-generated artwork
-of the removed Media and entities. It SHALL NOT delete, move or modify any file under the Library's
-root folders.
-
-#### Scenario: An encrypted Library's private database is purged after the commit
-
-- **WHEN** an encrypted Library is purged
-- **THEN** nothing is removed before the catalog transaction commits, so a failure up to the commit
-  leaves the Library restorable
-- **AND** after the commit the plaintext working copy with its WAL and SHM files, the ciphertext and
-  the pre-migration backups are removed and the Library's key material is destroyed
-- **AND** a step that fails is retried by the next retention sweep or server start until all have
-  succeeded, so the Library is never left half deleted
+records and scan schedule. It SHALL then remove the watch history, progress and other engagement
+records of the removed Media and the server-generated artwork of the removed Media and entities. It
+SHALL NOT delete, move or modify any file under the Library's root folders.
 
 #### Scenario: Files on disk survive a purge
 
@@ -70,6 +60,16 @@ root folders.
 
 - **WHEN** an admin purges "Films" after a profile recorded playback progress on one of its Media
 - **THEN** that progress record no longer exists
+
+## ADDED Requirements
+
+### Requirement: Purging an encrypted Library removes its private database and keys
+
+Before the catalog transaction commits, purging an encrypted Library SHALL remove nothing so a
+failure leaves it restorable; the private database is server state, not a root-folder file. After
+the commit it SHALL remove the plaintext working copy (including WAL and SHM files), ciphertext,
+and pre-migration backups, and destroy its key material, retrying any failed step on each retention
+sweep or server start until all succeed.
 
 #### Scenario: An interrupted encrypted purge is finished later
 

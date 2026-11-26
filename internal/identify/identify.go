@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -103,6 +104,13 @@ type embeddedArtworkReader interface {
 	IsEmbeddedArtwork(id store.MediaID, slot string) bool
 }
 
+// importedAudioThumbClearer removes an unlocked, non-manual provider thumb
+// from audio Media whose poster holds local or embedded artwork;
+// *artwork.Service satisfies it.
+type importedAudioThumbClearer interface {
+	ClearImportedAudioThumb(ctx context.Context, id store.MediaID)
+}
+
 // importedArtworkReader reports artwork stored through ImportArtwork or a
 // manual pick; *artwork.Service satisfies it.
 type importedArtworkReader interface {
@@ -128,13 +136,14 @@ type mediaClassReader interface {
 }
 
 var (
-	_ embeddedArtworkStore    = (*artwork.Service)(nil)
-	_ embeddedArtworkReader   = (*artwork.Service)(nil)
-	_ importedArtworkReader   = (*artwork.Service)(nil)
-	_ conditionalArtworkStore = (*artwork.Service)(nil)
-	_ sidecarLockReader       = (*artwork.Service)(nil)
-	_ appliedCandidateReader  = (*store.Store)(nil)
-	_ mediaClassReader        = (*store.Store)(nil)
+	_ embeddedArtworkStore      = (*artwork.Service)(nil)
+	_ embeddedArtworkReader     = (*artwork.Service)(nil)
+	_ importedAudioThumbClearer = (*artwork.Service)(nil)
+	_ importedArtworkReader     = (*artwork.Service)(nil)
+	_ conditionalArtworkStore   = (*artwork.Service)(nil)
+	_ sidecarLockReader         = (*artwork.Service)(nil)
+	_ appliedCandidateReader    = (*store.Store)(nil)
+	_ mediaClassReader          = (*store.Store)(nil)
 )
 
 // FingerprintStore is the content-identity read seam;
@@ -613,9 +622,21 @@ func (s *Service) ApplyFixMatchRequest(ctx context.Context, req FixMatchRequest)
 
 func (s *Service) applyFixMatch(ctx context.Context, req FixMatchRequest, atomic bool) error {
 	mediaID, pluginID, scraperID, candidateID := req.MediaID, req.PluginID, req.ScraperID, req.CandidateID
+	if mediaID == "" {
+		return errors.New("identify: media ID is required")
+	}
+	if strings.TrimSpace(candidateID) == "" {
+		return errors.New("identify: candidate ID is required")
+	}
 	clearLocks, ordinal, actor := req.ClearLocks, req.Ordinal, req.Actor
 	unlock := s.writes.lock(mediaID)
 	defer unlock()
+	if replayed, disposition, err := s.replayCommittedFixMatch(ctx, req); err != nil {
+		return err
+	} else if replayed {
+		slog.Info("identify: fixed match", "operatorOrdinal", disposition, "replayed", true)
+		return nil
+	}
 	clearOrdinal, err := s.shouldClearOrdinal(ctx, mediaID, candidateID, clearLocks, ordinal)
 	if err != nil {
 		return err
@@ -656,6 +677,120 @@ func (s *Service) shouldClearOrdinal(ctx context.Context, mediaID store.MediaID,
 	}
 	current, _, err := reader.MediaMetadataProvenance(ctx, mediaID)
 	return current.CandidateID != candidateID, err
+}
+
+type identificationRevisionReader interface {
+	MediaIdentificationRevisions(context.Context, store.MediaID) ([]store.IdentificationRevision, error)
+}
+
+type mediaVisibilityChecker interface {
+	Media(context.Context, store.MediaID, store.LibraryFilter) (store.Media, error)
+}
+
+func fixMatchIntentDigest(req FixMatchRequest) string {
+	payload, _ := json.Marshal(struct {
+		MediaID       store.MediaID
+		PluginID      string
+		ScraperID     string
+		CandidateID   string
+		ClearLocks    []string
+		HasClearLocks bool
+		Ordinal       *store.MediaOrdinal
+		Actor         store.ProfileID
+	}{
+		MediaID:       req.MediaID,
+		PluginID:      req.PluginID,
+		ScraperID:     req.ScraperID,
+		CandidateID:   req.CandidateID,
+		ClearLocks:    req.ClearLocks,
+		HasClearLocks: req.ClearLocks != nil,
+		Ordinal:       req.Ordinal,
+		Actor:         req.Actor,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+// replayCommittedFixMatch resolves an already-committed RequestID against the
+// operator's immutable intent before consulting the scraper, resuming only
+// persisted post-commit artwork actions so mutable provider changes never
+// turn an identical retry into an idempotency conflict.
+func (s *Service) replayCommittedFixMatch(ctx context.Context, req FixMatchRequest) (replayed bool, disposition string, err error) {
+	if req.RequestID == "" || req.MediaID == "" {
+		return false, "", nil
+	}
+	reader, ok := s.store.(identificationRevisionReader)
+	if !ok {
+		return false, "", nil
+	}
+	revisions, err := reader.MediaIdentificationRevisions(ctx, req.MediaID)
+	if err != nil {
+		// Let CommitFixMatch validate/report missing, sealed, or invisible Media.
+		return false, "", nil
+	}
+	if len(revisions) == 0 {
+		return false, "", nil
+	}
+	latestRev := revisions[len(revisions)-1].Revision
+	for _, rev := range revisions {
+		if rev.RequestID != req.RequestID {
+			continue
+		}
+		if checker, ok := s.store.(mediaVisibilityChecker); ok {
+			if _, err := checker.Media(ctx, req.MediaID, req.Filter); err != nil {
+				return false, "", err
+			}
+		}
+		var audit store.FixMatchAudit
+		if err := json.Unmarshal([]byte(rev.DetailJSON), &audit); err != nil {
+			return false, "", store.ErrIdentificationRequestConflict
+		}
+		if rev.Kind != store.IdentificationKindFixMatch ||
+			rev.PluginID != req.PluginID || rev.ScraperID != req.ScraperID ||
+			rev.CandidateID != req.CandidateID || rev.ActorID != req.Actor {
+			return false, "", store.ErrIdentificationRequestConflict
+		}
+		wantDigest := fixMatchIntentDigest(req)
+		if audit.IntentDigest != "" {
+			if audit.IntentDigest != wantDigest {
+				return false, "", store.ErrIdentificationRequestConflict
+			}
+		} else {
+			if req.Ordinal != nil || req.ClearLocks != nil || audit.Ordinal == "set" || len(audit.ClearedLocks) != 0 {
+				return false, "", store.ErrIdentificationRequestConflict
+			}
+		}
+		if s.entities != nil && rev.Revision == latestRev {
+			if _, spec, specErr := s.spec(req.PluginID, req.ScraperID); specErr == nil && len(spec.EntityMaps) > 0 {
+				bundle, spec, result, lookupErr := s.lookup(ctx, req.PluginID, req.ScraperID, req.CandidateID, req.MediaID, audit.OperatorOrdinal, audit.Ordinal == "cleared")
+				if lookupErr != nil {
+					return false, "", lookupErr
+				}
+				manual := s.effectiveOperatorOrdinal(ctx, req.MediaID, store.MediaMetadata{
+					OperatorOrdinal: audit.OperatorOrdinal,
+					ClearOrdinal:    audit.Ordinal == "cleared",
+				})
+				if err := s.applyEntities(ctx, req.MediaID, bundle, spec, result, manual); err != nil {
+					return false, "", err
+				}
+			}
+		}
+		if actions, ok := s.artworkActions(); ok {
+			pending, err := actions.PendingArtworkActionsForMedia(ctx, req.MediaID)
+			if err != nil {
+				return false, "", err
+			}
+			for _, action := range pending {
+				s.completeArtworkAction(ctx, actions, action)
+			}
+		}
+		disposition = audit.Ordinal
+		if disposition == "" {
+			disposition = "kept"
+		}
+		return true, disposition, nil
+	}
+	return false, "", nil
 }
 
 // ClearMediaOrdinal serializes unlock with lookups and writes for the same Media.
@@ -721,7 +856,8 @@ func (s *Service) applyCommit(ctx context.Context, mediaID store.MediaID, plugin
 			IdentificationCommit: store.IdentificationCommit{
 				RequestID: fix.RequestID, Metadata: metadata, Provenance: provenance, Fields: fields,
 			},
-			Filter: fix.Filter,
+			Filter:       fix.Filter,
+			IntentDigest: fixMatchIntentDigest(*fix),
 		}); err != nil {
 			return err
 		}
@@ -1383,6 +1519,16 @@ func (s *Service) committedArtwork(result scrape.Result) map[string]string {
 	return out
 }
 
+func artworkActionStillPending(ctx context.Context, actions ArtworkActionStore, target store.ArtworkAction) (bool, error) {
+	current, err := actions.PendingArtworkActionsForMedia(ctx, target.MediaID)
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(current, func(action store.ArtworkAction) bool {
+		return action.Revision == target.Revision && action.Slot == target.Slot
+	}), nil
+}
+
 func (s *Service) completeArtworkAction(ctx context.Context, actions ArtworkActionStore, action store.ArtworkAction) bool {
 	outcome := s.applyArtworkSlot(ctx, action.MediaID, action.PluginID, action.ScraperID, action.Slot, action.SourceURL)
 	done, err := actions.CompleteArtworkAction(ctx, action, outcome)
@@ -1409,7 +1555,8 @@ func (s *Service) ReplayArtworkActions(ctx context.Context) (int, error) {
 		progressed := false
 		for _, action := range pending {
 			unlock := s.writes.lock(action.MediaID)
-			if s.completeArtworkAction(ctx, actions, action) {
+			stillPending, err := artworkActionStillPending(ctx, actions, action)
+			if err == nil && stillPending && s.completeArtworkAction(ctx, actions, action) {
 				completed++
 				progressed = true
 			}
@@ -1436,6 +1583,12 @@ func (s *Service) applyArtworkSlot(ctx context.Context, mediaID store.MediaID, p
 	if slot == artwork.SlotPoster && !s.posterTakesProviderArtwork(ctx, mediaID, video) {
 		return "kept"
 	}
+	if slot == artwork.SlotThumb && s.audioPosterOutranksThumb(ctx, mediaID, true) {
+		if clearer, ok := s.artwork.(importedAudioThumbClearer); ok {
+			clearer.ClearImportedAudioThumb(ctx, mediaID)
+		}
+		return "kept"
+	}
 	data, err := s.fetcher.FetchResource(ctx, rawURL)
 	if err != nil {
 		slog.Debug("identify: artwork fetch failed", "slot", slot, "error", err.Error())
@@ -1453,6 +1606,8 @@ func (s *Service) applyArtworkSlot(ctx context.Context, mediaID store.MediaID, p
 			return s.videoPosterReplaceable(ctx, mediaID)
 		case slot == artwork.SlotPoster:
 			return !s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)
+		case slot == artwork.SlotThumb:
+			return !s.audioPosterOutranksThumb(ctx, mediaID, false)
 		}
 		return true
 	}
@@ -1578,20 +1733,59 @@ func (s *Service) importEmbeddedPoster(ctx context.Context, mediaID store.MediaI
 	return found
 }
 
-// mediaIsVideo reports whether mediaID is video-class Media. A store that
-// cannot say, or a failed read, is treated as not video, which keeps the
-// embedded-cover precedence.
-func (s *Service) mediaIsVideo(ctx context.Context, mediaID store.MediaID) bool {
+// audioPosterOutranksThumb reports whether an audio Media item's poster slot
+// already holds locked local art or an embedded cover picture that outranks a
+// provider thumb (such as Cover Art Archive front-500). When extractEmbedded is
+// true and no poster is settled yet, embedded extraction runs first so pending
+// artwork actions landing out of order cannot populate thumb ahead of poster.
+func (s *Service) audioPosterOutranksThumb(ctx context.Context, mediaID store.MediaID, extractEmbedded bool) bool {
+	if !s.mediaIsAudio(ctx, mediaID) {
+		return false
+	}
+	if s.posterLocked(ctx, mediaID) {
+		return true
+	}
+	if extractEmbedded && (!s.artwork.HasArtwork(mediaID, artwork.SlotPoster) || s.artwork.IsGeneratedArtwork(mediaID, artwork.SlotPoster)) {
+		if s.importEmbeddedPoster(ctx, mediaID) {
+			return true
+		}
+	}
+	embedded, ok := s.artwork.(embeddedArtworkReader)
+	return ok && embedded.IsEmbeddedArtwork(mediaID, artwork.SlotPoster)
+}
+
+func (s *Service) posterLocked(ctx context.Context, mediaID store.MediaID) bool {
+	if s.artworkLocked(ctx, mediaID, artwork.SlotPoster) {
+		return true
+	}
+	locks, ok := s.artwork.(sidecarLockReader)
+	return ok && locks.IsArtworkLocked(mediaID, artwork.SlotPoster)
+}
+
+func (s *Service) mediaClass(ctx context.Context, mediaID store.MediaID) (store.MediaClass, bool) {
 	classes, ok := s.store.(mediaClassReader)
 	if !ok {
-		return false
+		return "", false
 	}
 	class, err := classes.MediaClass(ctx, mediaID)
 	if err != nil {
 		slog.Debug("identify: media class read failed", "media", string(mediaID), "error", err.Error())
-		return false
+		return "", false
 	}
-	return class == store.MediaClassVideo
+	return class, true
+}
+
+// mediaIsVideo reports whether mediaID is video-class Media. A store that
+// cannot say, or a failed read, is treated as not video, which keeps the
+// embedded-cover precedence.
+func (s *Service) mediaIsVideo(ctx context.Context, mediaID store.MediaID) bool {
+	class, ok := s.mediaClass(ctx, mediaID)
+	return ok && class == store.MediaClassVideo
+}
+
+func (s *Service) mediaIsAudio(ctx context.Context, mediaID store.MediaID) bool {
+	class, ok := s.mediaClass(ctx, mediaID)
+	return ok && class == store.MediaClassAudio
 }
 
 // artworkLocked reports whether an admin locked one artwork slot. A failed

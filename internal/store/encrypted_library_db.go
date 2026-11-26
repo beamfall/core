@@ -434,6 +434,22 @@ func (s *Store) reconcileEncryptedLibraryDBs(ctx context.Context) error {
 
 func (s *Store) repairEncryptedLibraryPlaintextQuarantineLocked(ctx context.Context, libraryID LibraryID, cipher EncryptedLibraryDBCipher) error {
 	paths := s.encryptedLibraryDBPaths(libraryID)
+	switch _, err := os.Stat(paths.working); {
+	case err == nil:
+		// Recover and checkpoint any committed WAL frames before sealing so a
+		// crash between a protected-plane commit and cleanup cannot lose data.
+		writer, err := openEncryptedLibrarySQLiteWriter(paths.working)
+		if err != nil {
+			return fmt.Errorf("%w: %s: %v", ErrEncryptedLibraryDBQuarantined, encryptedLibraryLeftoverQuarantine, err)
+		}
+		_, checkpointErr := writer.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
+		closeErr := writer.Close()
+		if err := errors.Join(checkpointErr, closeErr); err != nil {
+			return fmt.Errorf("%w: %s: %v", ErrEncryptedLibraryDBQuarantined, encryptedLibraryLeftoverQuarantine, err)
+		}
+	case !os.IsNotExist(err):
+		return fmt.Errorf("%w: %s: %v", ErrEncryptedLibraryDBQuarantined, encryptedLibraryLeftoverQuarantine, err)
+	}
 	if err := cipher.SealDBFile(ctx, libraryID, paths.working, paths.ciphertext); err != nil {
 		return fmt.Errorf("%w: %s: %v", ErrEncryptedLibraryDBQuarantined, encryptedLibraryLeftoverQuarantine, err)
 	}

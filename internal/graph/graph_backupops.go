@@ -3,6 +3,8 @@ package graph
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,10 +26,33 @@ type BackupOps interface {
 	Status() (backupcore.Status, error)
 	AcknowledgeBanner(banner backupcore.Banner) (backupcore.Status, error)
 	SetUpgradeGate(gate string) (backupcore.Status, error)
+	RecordRun(run backupcore.RunRecord, integrity bool) (backupcore.Status, error)
 	Drill(ctx context.Context, envelope, backupKey string) (restorestage.DrillReport, error)
 	// CurrentKeyFingerprint is the fingerprint of the wrap key new sets are
 	// sealed to; empty when none is provisioned.
 	CurrentKeyFingerprint() (string, error)
+}
+
+func (h *Handler) recordManualBackupVerified(manifestPath string) {
+	if h.backupOps == nil {
+		return
+	}
+	set := filepath.Base(filepath.Dir(manifestPath))
+	run := backupcore.RunRecord{At: time.Now().UTC(), Set: set, IntegrityVerified: true}
+	if _, err := h.backupOps.RecordRun(run, false); err != nil {
+		slog.Warn("backup status write failed", "error", err)
+	}
+}
+
+func (h *Handler) recordManualBackupIntegrityFailure(manifestPath string) {
+	if h.backupOps == nil {
+		return
+	}
+	set := filepath.Base(filepath.Dir(manifestPath))
+	run := backupcore.RunRecord{At: time.Now().UTC(), FailureClass: "integrity", Set: set}
+	if _, err := h.backupOps.RecordRun(run, true); err != nil {
+		slog.Warn("backup status write failed", "error", err)
+	}
 }
 
 // SetBackupOps wires the scheduled-backup state and drill runner.

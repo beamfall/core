@@ -230,8 +230,9 @@ const CLIP_UTILITY =
 // adds `truncate` on the singer and the song (+2); the stage ticker's joined `truncate` line
 // becomes per-entry parts that wrap (-1). CSS ellipsis inside `min-w-0` rows; the full
 // text stays in the DOM text node for AT.
-// 2026-11-26 (core-p1-stack7): +8 → 60 from origin/main's sidebar group and player chapter/queue commits (564214807, 0feafca3d), not from this stack; CSS ellipsis only.
-const CLIP_BASELINE = 60;
+// 2026-11-26 (core-p1-stack7): +8 in origin/main were HomeEditor.tsx (2) and HomeShelfInspector.tsx (6); sidebar group and player chapter/queue (564214807, 0feafca3d) use CSS classes instead.
+// 2026-11-26 (CORE-3514): -3 -> 57 after removing summary truncation in HomeEditor.tsx and whitespace-nowrap on HomeShelfInspector.tsx switches so labels wrap; the 5 remaining sites carry title attributes for graceful truncation.
+const CLIP_BASELINE = 57;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

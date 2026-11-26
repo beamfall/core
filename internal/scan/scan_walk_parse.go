@@ -15,15 +15,57 @@ import (
 )
 
 type contextualDirectoryPreflight struct {
-	probes   map[string]ParseProbe
-	parsed   map[string]ParsedMedia
-	accepted map[string]bool
-	refused  bool
-	refusal  ParsedMedia
+	probes        map[string]ParseProbe
+	parsed        map[string]ParsedMedia
+	accepted      map[string]bool
+	fromDirectory bool
+	refused       bool
+	refusal       ParsedMedia
+	refusalReason string
 	// audioParts reports that the plugin accepted an audio-only sibling as a
 	// numbered part, so the folder is a parts folder and a still image in it
 	// is never an item (CORE-1833).
 	audioParts bool
+}
+
+func (s *scanWalkState) dirHasNonImageMedia(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		candidate := filepath.Join(dir, entry.Name())
+		if imageClassForPath(candidate) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if s.isSupportedMediaFile(candidate, info) {
+			return true
+		}
+	}
+	return false
+}
+
+func contextRefusalReason(parser FilenameParser, path string, probe ParseProbe, parseContext ParseContext) string {
+	if reasoner, ok := parser.(ContextRefusalReasoner); ok {
+		if reason := strings.TrimSpace(reasoner.ContextRefusalReason(path, probe, parseContext)); reason != "" {
+			return reason
+		}
+	}
+	return store.UnmatchedReasonAmbiguous
+}
+
+func firstNonEmptyRefusalReason(reason string) string {
+	if trimmed := strings.TrimSpace(reason); trimmed != "" {
+		return trimmed
+	}
+	return store.UnmatchedReasonAmbiguous
 }
 
 func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPreflight, error) {
@@ -31,8 +73,9 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 	if cached := s.directoryPreflights[dir]; cached != nil {
 		return cached, nil
 	}
-	contextual, ok := s.parser.(ContextFilenameParser)
-	if !ok || s.directoryContext(path).DirectoryMediaFileCount != DirectoryMediaFileCountMultiple {
+	contextual, hasContext := s.parser.(ContextFilenameParser)
+	dirParser, hasDirParser := s.parser.(DirectoryFilenameParser)
+	if (!hasContext && !hasDirParser) || s.directoryContext(path).DirectoryMediaFileCount != DirectoryMediaFileCountMultiple {
 		return nil, nil
 	}
 	decision := &contextualDirectoryPreflight{
@@ -49,9 +92,16 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 	// refusal refuses the folder only when no probed sibling was accepted
 	// (CORE-1710).
 	var imageRefusal ParsedMedia
-	imageRefusalPath, refusalPath, otherAccepted := "", "", false
+	imageRefusalPath, imageRefusalReason, refusalPath, otherAccepted := "", "", "", false
+	hasMediaSubdirs := false
 	var candidates []string
 	for _, entry := range entries {
+		if entry.IsDir() {
+			if skipExcludedScanDirectory(entry.Name(), true) == nil && s.dirHasNonImageMedia(filepath.Join(dir, entry.Name())) {
+				hasMediaSubdirs = true
+			}
+			continue
+		}
 		info, err := entry.Info()
 		if err != nil {
 			return nil, err
@@ -62,36 +112,87 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 		}
 	}
 	probes := s.probeSiblings(candidates)
+	nonImageProbes := make(map[string]ParseProbe, len(candidates))
+	nonImageFirst := ""
 	for i, candidate := range candidates {
-		isImage := imageClassForPath(candidate)
-		parseProbe := probes[i]
-		decision.probes[candidate] = parseProbe
-		legacy, legacyOK := s.parser.Parse(candidate, parseProbe)
-		parsed, accepted := contextual.ParseWithContext(candidate, parseProbe, s.directoryContext(candidate))
-		decision.parsed[candidate], decision.accepted[candidate] = parsed, accepted
-		if !isImage && s.isParsedPart(parsed, accepted) && parseProbe.HasAudio && !parseProbe.HasVideo {
-			decision.audioParts = true
-		}
-		switch {
-		case accepted && !isImage:
-			otherAccepted = true
-		case !legacyOK || accepted:
-		case isImage:
-			if imageRefusalPath == "" {
-				imageRefusal, imageRefusalPath = legacy, candidate
+		decision.probes[candidate] = probes[i]
+		if !imageClassForPath(candidate) {
+			nonImageProbes[candidate] = probes[i]
+			if nonImageFirst == "" {
+				nonImageFirst = candidate
 			}
-		case !decision.refused:
-			decision.refused, decision.refusal, refusalPath = true, legacy, candidate
 		}
 	}
-	if !decision.refused && imageRefusalPath != "" && !otherAccepted {
-		decision.refused, decision.refusal, refusalPath = true, imageRefusal, imageRefusalPath
+	if dirParser != nil && len(nonImageProbes) >= 2 && !hasMediaSubdirs {
+		dirParsed, dirReason, handled := dirParser.ParseDirectory(dir, nonImageProbes, hasMediaSubdirs)
+		if handled {
+			decision.fromDirectory = true
+			if dirReason != "" {
+				decision.refused = true
+				decision.refusalReason = strings.TrimSpace(dirReason)
+				refusalPath = nonImageFirst
+				if refusalPath != "" {
+					legacy, _ := s.parser.Parse(refusalPath, decision.probes[refusalPath])
+					decision.refusal = legacy
+				}
+				if decision.refusal.Title == "" {
+					decision.refusal.Title = titleFromPath(dir)
+				}
+			} else {
+				for _, candidate := range candidates {
+					parseProbe := decision.probes[candidate]
+					if imageClassForPath(candidate) {
+						continue
+					}
+					parsed, accepted := dirParsed[candidate]
+					decision.parsed[candidate], decision.accepted[candidate] = parsed, accepted
+					if s.isParsedPart(parsed, accepted) && parseProbe.HasAudio && !parseProbe.HasVideo {
+						decision.audioParts = true
+					}
+				}
+			}
+		}
+	}
+	if !decision.fromDirectory {
+		if !hasContext {
+			return nil, nil
+		}
+		for i, candidate := range candidates {
+			isImage := imageClassForPath(candidate)
+			parseProbe := probes[i]
+			parseCtx := s.directoryContext(candidate)
+			legacy, legacyOK := s.parser.Parse(candidate, parseProbe)
+			parsed, accepted := contextual.ParseWithContext(candidate, parseProbe, parseCtx)
+			decision.parsed[candidate], decision.accepted[candidate] = parsed, accepted
+			if !isImage && s.isParsedPart(parsed, accepted) && parseProbe.HasAudio && !parseProbe.HasVideo {
+				decision.audioParts = true
+			}
+			switch {
+			case accepted && !isImage:
+				otherAccepted = true
+			case !legacyOK || accepted:
+			case isImage:
+				if imageRefusalPath == "" {
+					imageRefusal, imageRefusalPath = legacy, candidate
+					imageRefusalReason = contextRefusalReason(s.parser, candidate, parseProbe, parseCtx)
+				}
+			case !decision.refused:
+				decision.refused, decision.refusal, refusalPath = true, legacy, candidate
+				decision.refusalReason = contextRefusalReason(s.parser, candidate, parseProbe, parseCtx)
+			}
+		}
+		if !decision.refused && imageRefusalPath != "" && !otherAccepted {
+			decision.refused, decision.refusal, refusalPath = true, imageRefusal, imageRefusalPath
+			decision.refusalReason = imageRefusalReason
+		}
 	}
 	if decision.refused {
+		reason := firstNonEmptyRefusalReason(decision.refusalReason)
+		decision.refusalReason = reason
 		// The folder goes to the Unmatched queue; say why in the scan log
 		// too, once per folder, so it is never silently missing.
 		slog.Warn("scan: library plugin refused a file in a multi-file folder; folder queued as unmatched",
-			"folder", dir, "file", refusalPath, "plugin", s.libraryPluginID, "reason", store.UnmatchedReasonAmbiguous)
+			"folder", dir, "file", refusalPath, "plugin", s.libraryPluginID, "reason", reason)
 	}
 	s.directoryPreflights[dir] = decision
 	return decision, nil
@@ -151,13 +252,17 @@ func (s *scanWalkState) parseFilename(path string, probe ParseProbe) (ParsedMedi
 
 func (s *scanWalkState) parseFilenameOnly(path string, probe ParseProbe) (ParsedMedia, bool, bool) {
 	legacy, legacyOK := s.parser.Parse(path, probe)
-	contextual, ok := s.parser.(ContextFilenameParser)
-	if !ok {
+	contextual, hasContext := s.parser.(ContextFilenameParser)
+	_, hasDirParser := s.parser.(DirectoryFilenameParser)
+	if !hasContext && !hasDirParser {
 		return legacy, legacyOK, false
 	}
 	parseContext := s.directoryContext(path)
 	if decision := s.directoryPreflights[filepath.Dir(path)]; decision != nil {
 		return decision.parsed[path], decision.accepted[path], false
+	}
+	if !hasContext {
+		return legacy, legacyOK, false
 	}
 	parsed, parsedOK := contextual.ParseWithContext(path, probe, parseContext)
 	refused := parseContext.DirectoryMediaFileCount == DirectoryMediaFileCountMultiple && legacyOK && !parsedOK
@@ -269,7 +374,7 @@ func (s *scanWalkState) flushPendingParts() error {
 	if err := s.refreshParserFields(media.ID, first.refresh); err != nil {
 		return err
 	}
-	if err := ensurePartBoundaryMarkers(s.ctx, s.st, s.prober, parts, media.ID, now()); err != nil {
+	if err := ensurePartBoundaryMarkers(s.ctx, s.st, s.prober, s.parser, parts, media.ID, media.DurationSeconds, now()); err != nil {
 		return err
 	}
 	// A multi-part Media hydrates from its first part's tags and path under
@@ -333,10 +438,17 @@ func (s *scanWalkState) flushPendingParts() error {
 }
 
 func appendParsedStructuralMediaFields(fields []store.MediaField, parsed ParsedMedia) []store.MediaField {
+	skipGroupIndex := parsed.PartGroup != ""
+	filtered := make([]store.MediaField, 0, len(fields))
 	seen := make(map[string]bool, len(fields)+4)
 	for _, field := range fields {
+		if skipGroupIndex && (field.Name == "index" || field.Name == "index-end") {
+			continue
+		}
+		filtered = append(filtered, field)
 		seen[field.Name] = true
 	}
+	fields = filtered
 	add := func(field store.MediaField) {
 		if !seen[field.Name] {
 			seen[field.Name] = true
@@ -351,11 +463,16 @@ func appendParsedStructuralMediaFields(fields []store.MediaField, parsed ParsedM
 	if sequence, err := strconv.ParseFloat(strings.TrimSpace(parsed.Sequence), 64); err == nil && sequence >= 0 {
 		add(store.MediaField{Name: "sequence", Type: store.EntityFieldNumber, Number: sequence})
 	}
-	if parsed.Index > 0 {
-		add(store.MediaField{Name: "index", Type: store.EntityFieldNumber, Number: float64(parsed.Index)})
-	}
-	if parsed.IndexEnd > 0 {
-		add(store.MediaField{Name: "index-end", Type: store.EntityFieldNumber, Number: float64(parsed.IndexEnd)})
+	// Grouped multi-part items store per-part ordering in media_file.part_ordinal,
+	// so writing part 1's ordinal or part-total onto the grouped item would
+	// misreport an item-level index on the grouped row itself.
+	if !skipGroupIndex {
+		if parsed.Index > 0 {
+			add(store.MediaField{Name: "index", Type: store.EntityFieldNumber, Number: float64(parsed.Index)})
+		}
+		if parsed.IndexEnd > 0 {
+			add(store.MediaField{Name: "index-end", Type: store.EntityFieldNumber, Number: float64(parsed.IndexEnd)})
+		}
 	}
 	return fields
 }
@@ -381,7 +498,7 @@ func (s *scanWalkState) queueParsedPart(imported store.ImportMediaFile, parsed P
 	return nil
 }
 
-func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia) error {
+func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia, reason string) error {
 	// A refused file directly in a pending group's folder does not split the
 	// group (see flushPendingPartsUnlessInGroup); its resume point is held
 	// below the group like a completion's.
@@ -397,7 +514,7 @@ func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia) err
 		ImporterID:     s.libraryPluginID,
 		SourceHandle:   filepath.Clean(filepath.Dir(path)),
 		CandidateTitle: parsed.Title,
-		FailureReason:  store.UnmatchedReasonAmbiguous,
+		FailureReason:  firstNonEmptyRefusalReason(reason),
 	})
 	if err != nil {
 		return err
@@ -462,6 +579,9 @@ func (s *scanWalkState) parserFieldRefresh(path string, probe ParseProbe, parsed
 		out = appendParsedStructuralMediaFields(out, parsed)
 	}
 	refresh := store.ParserFieldRefresh{Fields: out, Authoritative: authoritative}
+	if parsedOK && parsed.PartGroup != "" {
+		refresh.ClearParserFields = map[string]bool{"index": true, "index-end": true}
+	}
 	s.vouchForLegacyScanValues(&refresh, path)
 	if parseProbeEmpty(probe) {
 		return refresh
@@ -494,6 +614,10 @@ func (s *scanWalkState) parserFieldRefresh(path string, probe ParseProbe, parsed
 			refresh.ProbeDependent = map[string]bool{}
 		}
 		refresh.ProbeDependent[field.Name] = true
+	}
+	if parsedOK && parsed.PartGroup != "" {
+		delete(absent, "index")
+		delete(absent, "index-end")
 	}
 	// What is left the parse without the probe emits and this one does not:
 	// the probe decided its absence.

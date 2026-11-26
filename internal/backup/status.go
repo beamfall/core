@@ -76,7 +76,8 @@ func (s Status) EffectiveUpgradeGate() string {
 }
 
 // BannerActive reports whether a failure banner is displayed: its failure exists and
-// is neither superseded by a later verified backup nor acknowledged.
+// is neither superseded by a later verified backup (or later success for non-integrity
+// job failures) nor acknowledged.
 func (s Status) BannerActive(b Banner) bool {
 	failure, ack := s.LastFailure, s.BackupFailedAckAt
 	if b == BannerIntegrityFailed {
@@ -85,7 +86,11 @@ func (s Status) BannerActive(b Banner) bool {
 	if failure == nil {
 		return false
 	}
-	if s.LastSuccess != nil && s.LastSuccess.At.After(failure.At) {
+	if b == BannerIntegrityFailed {
+		if s.LastIntegrityPass != nil && s.LastIntegrityPass.At.After(failure.At) {
+			return false
+		}
+	} else if s.LastSuccess != nil && s.LastSuccess.At.After(failure.At) {
 		return false
 	}
 	return ack == nil || ack.Before(failure.At)

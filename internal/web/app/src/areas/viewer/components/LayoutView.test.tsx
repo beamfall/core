@@ -174,4 +174,81 @@ describe("LayoutView state isolation and empty-card stability", () => {
       view.unmount();
     }
   });
+
+  it("does not steal focus from an external control when late hydration completes", async () => {
+    let resolveItems!: (items: { id: string; kind: string; title: string }[]) => void;
+    vi.mocked(fetchSectionItems).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveItems = resolve;
+        }),
+    );
+    mockSession.mockReturnValue({ manifest: { libraries: [] }, isManager: false });
+    const shelf: Section = {
+      id: "recent",
+      kind: "shelf",
+      title: { en: "Recently Added" },
+      artworkSlot: "poster",
+      source: { kind: "recent" } as Section["source"],
+    };
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <input aria-label="Search" />
+          <LayoutView
+            layout={{ id: "browse", sections: [shelf] }}
+            libraryID=""
+            navigationID="home"
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    const search = screen.getByRole("textbox", { name: "Search" });
+    search.focus();
+    expect(search).toHaveFocus();
+
+    resolveItems([{ id: "m1", kind: "media", title: "Sample Media" }]);
+    expect(await screen.findByText("Sample Media")).toBeInTheDocument();
+    expect(search).toHaveFocus();
+  });
+
+  it("still focuses the first card when focus sat on an external nav link before navigation", async () => {
+    vi.mocked(fetchSectionItems).mockResolvedValue([
+      { id: "m1", kind: "media", title: "Alpha", artwork: { poster: "" } },
+    ]);
+    mockSession.mockReturnValue({ manifest: { libraries: [] }, isManager: false });
+    const shelf: Section = {
+      id: "recent",
+      kind: "shelf",
+      title: { en: "Recently Added" },
+      artworkSlot: "poster",
+      source: { kind: "recent" } as Section["source"],
+    };
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <nav>
+            <a href="/n/lib1">Library One</a>
+          </nav>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    const navLink = screen.getByRole("link", { name: "Library One" });
+    navLink.focus();
+    expect(navLink).toHaveFocus();
+
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LayoutView
+            layout={{ id: "lib1", sections: [shelf] }}
+            libraryID="lib1"
+            navigationID="lib1"
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    const card = await screen.findByRole("link", { name: "Alpha" });
+    await waitFor(() => expect(card).toHaveFocus());
+  });
 });

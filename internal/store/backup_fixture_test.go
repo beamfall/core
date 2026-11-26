@@ -432,6 +432,9 @@ func verifyMigratedFixture(ctx context.Context, databases map[string]*sql.DB, ex
 		if err := relocateEvacuatedFixtureRows(ctx, databases, expected.columns, actual.Tables, unchanged); err != nil {
 			return err
 		}
+		if err := reconcilePendingEvacuationMarkers(ctx, databases, expected.columns, actual.Tables, unchanged); err != nil {
+			return err
+		}
 		if err := narrowAdditiveFixtureMigration(ctx, databases, expected.columns, actual.Tables, unchanged); err != nil {
 			return err
 		}
@@ -1118,11 +1121,78 @@ func quoteFixtureIdentifiers(names []string) string {
 
 // fixtureTableChecksum hashes the selected values of a table's rows, ordered by
 // the order columns. selected is "*" or an identifier-quoted column list.
+// reconcilePendingEvacuationMarkers accounts for a retained
+// legacy_subscription_evacuation='pending' row on an encrypted Library plane
+// when legacy subscription evacuation remains blocked on unmigrated media
+// (CORE-3516). It verifies the catalog still holds subscription rows for the
+// library and that the remaining encrypted_library_metadata rows match the
+// historical checksum exactly.
+func reconcilePendingEvacuationMarkers(ctx context.Context, databases map[string]*sql.DB, before map[string][]fixtureSelectedColumn, actual, unchanged map[string]fixtureTableExpectation) error {
+	for key, got := range actual {
+		if !strings.HasPrefix(key, "encrypted:") || !strings.HasSuffix(key, ".encrypted_library_metadata") {
+			continue
+		}
+		want, tracked := unchanged[key]
+		old, hadColumns := before[key]
+		if !tracked || !hadColumns || got.Rows != want.Rows+1 {
+			continue
+		}
+		dbLabel := strings.TrimSuffix(key, ".encrypted_library_metadata")
+		libraryID := strings.TrimPrefix(dbLabel, "encrypted:")
+		planeDB := databases[dbLabel]
+		catalogDB := databases["catalog"]
+		if planeDB == nil || catalogDB == nil {
+			continue
+		}
+		var markerCount int
+		if err := planeDB.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM encrypted_library_metadata WHERE key = 'legacy_subscription_evacuation' AND value = 'pending'`,
+		).Scan(&markerCount); err != nil {
+			return err
+		}
+		if markerCount != 1 {
+			continue
+		}
+		var subCount int
+		if err := catalogDB.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM subscription WHERE library_id = ?`, libraryID,
+		).Scan(&subCount); err != nil {
+			return err
+		}
+		if subCount == 0 {
+			return fmt.Errorf("%s kept pending evacuation marker without catalog subscriptions", key)
+		}
+		names := make([]string, len(old))
+		for index, column := range old {
+			names[index] = column.name
+		}
+		cols := quoteFixtureIdentifiers(names)
+		query := "SELECT " + cols + ` FROM "encrypted_library_metadata" WHERE "key" <> 'legacy_subscription_evacuation' ORDER BY ` + cols //nolint:gosec // G202: columns are quoted schema names from the test fixture.
+		rows, err := planeDB.QueryContext(ctx, query)
+		if err != nil {
+			return err
+		}
+		filtered, err := fixtureRowsChecksum(rows)
+		if err != nil {
+			return err
+		}
+		if filtered != want {
+			return fmt.Errorf("%s after excluding pending evacuation marker: got %+v, want %+v", key, filtered, want)
+		}
+		actual[key] = want
+	}
+	return nil
+}
+
 func fixtureTableChecksum(ctx context.Context, db *sql.DB, table, selected string, order []string) (fixtureTableExpectation, error) {
 	rows, err := db.QueryContext(ctx, "SELECT "+selected+" FROM "+quoteFixtureIdentifier(table)+" ORDER BY "+quoteFixtureIdentifiers(order)) //nolint:gosec // G202: table and columns are identifier-quoted names from the test fixture's local SQLite schema.
 	if err != nil {
 		return fixtureTableExpectation{}, err
 	}
+	return fixtureRowsChecksum(rows)
+}
+
+func fixtureRowsChecksum(rows *sql.Rows) (fixtureTableExpectation, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return fixtureTableExpectation{}, errors.Join(err, rows.Close())

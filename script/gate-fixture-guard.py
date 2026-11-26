@@ -16,10 +16,12 @@ WRITER_ENV = (
     "BEAMFALL_UPDATE_AUDIOFRAME_GOLDENS",
     "BEAMFALL_UPDATE_GOLDEN",
     "BEAMFALL_UPDATE_VISUAL_DIRECTOR_PACK",
+    "BEAMFALL_UPDATE_WEB_GOLDENS",
     "BEAMFALL_UPDATE_WRAP_VECTORS",
 )
 SCOPES = (
     "internal/conformance/testdata",
+    "internal/web/app/e2e/goldens",
     "tools/visualsync/contract/testdata",
 )
 CAPACITY_LOCK_FD = "BEAMFALL_GATE_CAPACITY_FD"

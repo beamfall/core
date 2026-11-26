@@ -134,13 +134,24 @@ func (s *Stager) Drill(ctx context.Context, envelope, backupKey string, guards D
 	} else {
 		report.Verified = true
 	}
-	if _, recErr := backupcore.RecordDrill(s.dataDir, backupcore.DrillRecord{
+	_, recErr := backupcore.RecordDrill(s.dataDir, backupcore.DrillRecord{
 		At: s.now(), Verified: report.Verified, Set: report.Set, Reason: report.Reason,
-	}); recErr != nil && err == nil {
-		err = fmt.Errorf("record restore drill: %w", recErr)
+	})
+	if recErr != nil {
+		recErr = fmt.Errorf("record restore drill: %w", recErr)
+		if report.Reason == "timeout" {
+			return report, errors.Join(ErrDrillTimeout, recErr)
+		}
+		return report, recErr
 	}
 	if report.Reason == "timeout" {
 		return report, ErrDrillTimeout
+	}
+	if !report.Verified && report.Reason == "restore-assertions-failed" {
+		// Completed failed drills return their recorded DrillReport cleanly once
+		// persisted so GraphQL callers receive {verified: false, reason} instead
+		// of treating an assertion failure as a transport refusal.
+		return report, nil
 	}
 	return report, err
 }

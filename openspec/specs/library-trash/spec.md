@@ -89,12 +89,18 @@ entities removed.
 - **WHEN** an admin calls `purgeLibrary` with `confirm: true` for a Library that is not deleted
 - **THEN** the mutation returns an error and the Library and its Media are unchanged
 
+#### Scenario: An encrypted Library can be purged
+
+- **WHEN** an admin calls `purgeLibrary` with `confirm: true` for a deleted encrypted Library
+- **THEN** the Library is in neither `libraries` nor `trashedLibraries`, its private database files
+  and key material no longer exist, and the activity log has a `library.purge` record
+
 #### Scenario: An encrypted Library cannot be purged
 
-- **WHEN** an admin calls `purgeLibrary` with `confirm: true` for a deleted encrypted Library, whose
-  catalog lives in a separate database that a purge does not remove
-- **THEN** the mutation returns an error, the retention sweep leaves it alone, and it stays listed
-  as not purgeable
+- **WHEN** an admin calls `purgeLibrary` with `confirm: true` for a deleted encrypted Library while
+  the server cannot erase its key material
+- **THEN** the mutation returns an error, nothing is removed, and the Library is still listed in
+  `trashedLibraries` and can be restored
 
 #### Scenario: A Custodial Library cannot be purged
 
@@ -240,3 +246,18 @@ Library to the trash SHALL NOT remove its derivatives.
 
 - **WHEN** an admin deletes an encrypted Library without purging it
 - **THEN** its derivative caches are unchanged and restoring the Library needs no regeneration
+
+### Requirement: Purging an encrypted Library removes its private database and keys
+
+Before the catalog transaction commits, purging an encrypted Library SHALL remove nothing so a
+failure leaves it restorable; the private database is server state, not a root-folder file. After
+the commit it SHALL remove the plaintext working copy (including WAL and SHM files), ciphertext,
+and pre-migration backups, and destroy its key material, retrying any failed step on each retention
+sweep or server start until all succeed.
+
+#### Scenario: An interrupted encrypted purge is finished later
+
+- **WHEN** the purge of a deleted encrypted Library commits but removing its private database or
+  its keys fails
+- **THEN** the Library stays purged and the next retention sweep or server start removes what is
+  left

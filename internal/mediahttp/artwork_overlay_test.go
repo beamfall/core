@@ -58,9 +58,9 @@ func newOverlayArtworkTestHandler(t *testing.T) (*Handler, *artwork.Service) {
 // right half is opaque red.
 func transparentTestPNG(t *testing.T) []byte {
 	t.Helper()
-	img := image.NewNRGBA(image.Rect(0, 0, 16, 8))
+	img := image.NewNRGBA(image.Rect(0, 0, 2000, 8))
 	for y := range 8 {
-		for x := 8; x < 16; x++ {
+		for x := 1000; x < 2000; x++ {
 			img.SetNRGBA(x, y, color.NRGBA{R: 255, A: 255})
 		}
 	}
@@ -95,7 +95,7 @@ func TestArtworkServesOverlaySlotsAsPNGWithAlphaAtEveryBucket(t *testing.T) {
 			if _, _, _, a := img.At(1, 1).RGBA(); a != 0 {
 				t.Fatalf("%s%s: transparent source pixel served with alpha %#x", slot, query, a)
 			}
-			if _, _, _, a := img.At(14, 1).RGBA(); a != 0xffff {
+			if _, _, _, a := img.At(1990, 1).RGBA(); a != 0xffff {
 				t.Fatalf("%s%s: opaque source pixel served with alpha %#x", slot, query, a)
 			}
 		}
@@ -145,7 +145,7 @@ func TestArtworkServesOpaqueSlotsAsUnchangedJPEG(t *testing.T) {
 func TestArtworkServesLegacyJPEGOverlay(t *testing.T) {
 	handler, svc := newOverlayArtworkTestHandler(t)
 	var legacy bytes.Buffer
-	if err := jpeg.Encode(&legacy, image.NewRGBA(image.Rect(0, 0, 16, 8)), nil); err != nil {
+	if err := jpeg.Encode(&legacy, image.NewRGBA(image.Rect(0, 0, 2000, 8)), nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, slot := range []string{artwork.SlotLogo, artwork.SlotClearart, artwork.SlotDisc} {

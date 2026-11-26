@@ -4,15 +4,9 @@
 
 While the page has nothing to paint it SHALL show a skeleton marked busy with the stage's shape:
 backdrop space, poster frame, title, facts, actions and overview. When the server reports the item
-unknown or not visible to the Profile, the page SHALL show the generic "not available" state without
-revealing which. When the request fails for another reason, the page SHALL show an error with a
-retry control.
-
-#### Scenario: Loading does not move painted content
-
-- **WHEN** the page is painted from the opening card
-- **THEN** the backdrop, facts and overview space stay reserved until the item arrives
-- **AND** the Details section renders before rows that load on their own
+unknown or not visible to the Profile, the page SHALL show the generic "not available" state
+without revealing which. When the request fails for another reason, the page SHALL show an error
+with a retry control.
 
 #### Scenario: Unknown item
 
@@ -31,6 +25,17 @@ retry control.
   the actions and overview lines
 
 ## ADDED Requirements
+
+### Requirement: Stage layout does not shift while loading
+
+A page painted from the opening card SHALL reserve the backdrop, facts and overview space until
+the item arrives, and the Details section SHALL render before rows that load on their own, so
+loading does not move what is already painted.
+
+#### Scenario: Opening card reserves space and renders Details first
+
+- **WHEN** the page opens from an opening card while the item and independent rows load
+- **THEN** backdrop, facts and overview space stay reserved and Details renders before async rows
 
 ### Requirement: Details lists the item's credits
 

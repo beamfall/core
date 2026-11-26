@@ -200,7 +200,10 @@ export function HomeShelfInspector({
       <div className="flex h-full w-full max-w-2xl flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-2xl">
         {/* Sticky Header */}
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-6 py-4">
-          <h3 className="truncate text-lg font-semibold tracking-tight">
+          <h3
+            className="min-w-0 truncate text-lg font-semibold tracking-tight"
+            title={draft.title || "Edit shelf"}
+          >
             {draft.title || "Edit shelf"}
           </h3>
           <div className="flex shrink-0 items-center gap-2">
@@ -474,8 +477,9 @@ export function HomeShelfInspector({
                 </select>
               </label>
 
-              <label className="flex items-center gap-2.5 self-end pb-2 text-xs whitespace-nowrap">
+              <label className="flex items-center gap-2.5 self-end pb-2 text-xs">
                 <Switch
+                  className="shrink-0"
                   checked={draft.source.sort?.desc ?? true}
                   onCheckedChange={(desc) =>
                     setDraft({
@@ -598,11 +602,12 @@ export function HomeShelfInspector({
                 />
               </label>
 
-              <label className="flex items-center justify-between gap-3 pt-2 text-xs whitespace-nowrap sm:justify-end">
+              <label className="flex items-center justify-between gap-3 pt-2 text-xs sm:justify-end">
                 <span className="font-medium text-[var(--text-secondary)]">
                   {t("homeShelfHideEmpty")}
                 </span>
                 <Switch
+                  className="shrink-0"
                   checked={draft.hideWhenEmpty}
                   onCheckedChange={(hideWhenEmpty) => setDraft({ ...draft, hideWhenEmpty })}
                 />
@@ -657,6 +662,7 @@ export function HomeShelfInspector({
                         "w-full overflow-hidden rounded-lg bg-[var(--bg-raised)] shadow-sm " +
                         previewAspectClass(draft.display.artworkSlot)
                       }
+                      title={item.artwork?.poster ? undefined : item.title}
                     >
                       {item.artwork?.poster ? (
                         <img
@@ -665,14 +671,19 @@ export function HomeShelfInspector({
                           className="h-full w-full object-cover"
                         />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center px-2 text-center text-[10px] text-[var(--text-muted)]">
+                        <div className="flex h-full w-full items-center justify-center px-2 text-center text-[10px] break-words text-[var(--text-muted)]">
                           {item.title}
                         </div>
                       )}
                     </div>
-                    <span className="truncate text-xs font-medium">{item.title}</span>
+                    <span className="truncate text-xs font-medium" title={item.title}>
+                      {item.title}
+                    </span>
                     {item.summary && (
-                      <span className="truncate text-[11px] text-[var(--text-muted)]">
+                      <span
+                        className="truncate text-[11px] text-[var(--text-muted)]"
+                        title={item.summary}
+                      >
                         {item.summary}
                       </span>
                     )}

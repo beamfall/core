@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   ControlRow,
   ErrorState,
@@ -79,11 +79,61 @@ export function backupGateState(status: BackupStatusInfo | null): {
   };
 }
 
-function BackupUpdateGate() {
+function BackupUpdateGate({
+  backup,
+}: {
+  backup: {
+    data: BackupStatusInfo | null;
+    loading: boolean;
+    failed: boolean;
+    refresh: () => Promise<void>;
+  };
+}) {
   const t = useT();
-  const backup = useAsync(fetchBackupStatus);
-  if (backup.loading && !backup.data) return null;
+  const [latchedFailure, setLatchedFailure] = useState(false);
+  const wasLoading = useRef(backup.loading);
+  useEffect(() => {
+    const finishedSuccess =
+      wasLoading.current && !backup.loading && !backup.failed && backup.data != null;
+    if (backup.failed) {
+      setLatchedFailure(true);
+    } else if (finishedSuccess) {
+      setLatchedFailure(false);
+    }
+    wasLoading.current = backup.loading;
+  }, [backup.failed, backup.loading, backup.data]);
+  if (backup.failed || latchedFailure || (!backup.loading && !backup.data)) {
+    return (
+      <section
+        aria-label={t("updateBackupGateHeading")}
+        data-backup-gate="unavailable"
+        data-backup-gate-clear="false"
+        className="space-y-2 rounded-md border px-3 py-3 text-sm"
+      >
+        <p className="m-0 font-semibold">{t("updateBackupGateHeading")}</p>
+        <p className="m-0">
+          <StatusChip tone="red">{t("backupOpsUnavailable")}</StatusChip>
+        </p>
+        <p className="m-0 text-muted-foreground">{t("updateBackupGateUnavailable")}</p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={backup.loading}
+          onClick={() => {
+            setLatchedFailure(true);
+            void backup.refresh();
+          }}
+        >
+          <RefreshCw className="console-nav-icon" aria-hidden />
+          {t("jobRetryAction")}
+        </Button>
+      </section>
+    );
+  }
+  if (!backup.data) return null;
   const gate = backupGateState(backup.data);
+  const verifiedAt = backup.data.lastIntegrityPass?.at || backup.data.lastSuccess?.at || "";
   const steps: [string, StringKey, GateStepState][] = [
     ["boundary", "updateBackupGateStepBoundary", "done"],
     ["backup", "updateBackupGateStepBackup", gate.steps.backup],
@@ -110,7 +160,7 @@ function BackupUpdateGate() {
         <StatusChip tone={tone}>
           {gate.clear
             ? t("updateBackupGateClear", {
-                time: new Date(backup.data?.lastSuccess?.at ?? "").toLocaleString(),
+                time: verifiedAt ? new Date(verifiedAt).toLocaleString() : "",
               })
             : gate.policy === "hard"
               ? t("updateBackupGateBlocked")
@@ -243,6 +293,7 @@ export function UpdateAwareness() {
   const t = useT();
   const config = useAsync(fetchConsoleConfig);
   const status = useAsync(fetchUpdateStatus);
+  const backup = useAsync(fetchBackupStatus);
   const [enabled, setEnabled] = useState(false);
   const [channel, setChannel] = useState("stable");
 
@@ -252,6 +303,10 @@ export function UpdateAwareness() {
     setChannel(config.data.updateCheckChannel || "stable");
   }, [config.data]);
 
+  function refreshAll() {
+    return Promise.all([status.refresh(), backup.refresh()]);
+  }
+
   async function onSave(e: FormEvent) {
     e.preventDefault();
     const next = await setConsoleConfig({
@@ -259,7 +314,7 @@ export function UpdateAwareness() {
       updateCheckChannel: channel,
     });
     config.setData(next);
-    await status.refresh();
+    await refreshAll();
   }
 
   const latest = status.data?.latestVersion || t("updateStatusNoneKnown");
@@ -276,7 +331,7 @@ export function UpdateAwareness() {
       heading="updateAwarenessHeading"
       lead="updateAwarenessLead"
       actions={
-        <Button variant="outline" size="sm" onClick={() => void status.refresh()}>
+        <Button variant="outline" size="sm" onClick={() => void refreshAll()}>
           <RefreshCw className="console-nav-icon" aria-hidden />
           {t("updateStatusRefresh")}
         </Button>
@@ -330,7 +385,7 @@ export function UpdateAwareness() {
                   currentVersion={availableUpdate.currentVersion}
                   latestVersion={availableUpdate.latestVersion}
                 />
-                <BackupUpdateGate />
+                <BackupUpdateGate backup={backup} />
               </>
             )}
             {checkFailed && (

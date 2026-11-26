@@ -118,6 +118,45 @@ func TestVerifyBackupSetRejectsManifestOutsideAllowlist(t *testing.T) {
 	}
 	if err := st.VerifyBackupSet(ctx, rogue); err == nil {
 		t.Fatal("VerifyBackupSet accepted a manifest outside the allowlist")
+	} else if IsConfinedBackupIntegrityError(err) {
+		t.Fatalf("outside-allowlist error was classified as confined integrity error: %v", err)
+	}
+
+	// A symlink inside a sanctioned backup root pointing outside the allowlist
+	// must also be rejected as an allowlist refusal, never recorded as an
+	// integrity failure.
+	symlinkDir := filepath.Join(dest, "symlink-escape")
+	if err := os.MkdirAll(symlinkDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	escapedManifest := filepath.Join(symlinkDir, backupManifestBasename)
+	if err := os.Symlink(rogue, escapedManifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.VerifyBackupSet(ctx, escapedManifest); err == nil {
+		t.Fatal("VerifyBackupSet accepted a manifest symlink escaping the allowlist")
+	} else if IsConfinedBackupIntegrityError(err) {
+		t.Fatalf("allowlist-escape symlink was misclassified as confined integrity error: %v", err)
+	}
+
+	// A symlink inside a sanctioned backup root pointing to a differently named
+	// file outside the allowlist must also be rejected as an allowlist refusal.
+	outsideOther := filepath.Join(filepath.Dir(rogue), "other.json")
+	if err := os.WriteFile(outsideOther, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	symlinkOtherDir := filepath.Join(dest, "symlink-other-escape")
+	if err := os.MkdirAll(symlinkOtherDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	escapedOther := filepath.Join(symlinkOtherDir, backupManifestBasename)
+	if err := os.Symlink(outsideOther, escapedOther); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.VerifyBackupSet(ctx, escapedOther); err == nil {
+		t.Fatal("VerifyBackupSet accepted a differently named symlink escaping the allowlist")
+	} else if IsConfinedBackupIntegrityError(err) {
+		t.Fatalf("differently named allowlist-escape symlink was misclassified as confined integrity error: %v", err)
 	}
 }
 

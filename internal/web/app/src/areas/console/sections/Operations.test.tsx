@@ -326,4 +326,96 @@ describe("update backup gate (CORE-0778)", () => {
     expect(gate.steps.verify).toBe("pending");
     expect(backupGateState({ ...acknowledged, upgradeGate: "hard" }).steps.install).toBe("blocked");
   });
+
+  // CORE-3516 #16: when fetchBackupStatus fails, never fall back to "soft"
+  // warn-and-permit copy; render unavailable with Retry instead.
+  it("renders unavailable state and Retry when backup status fetch rejects", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchBackupStatus).mockRejectedValueOnce(new Error("network"));
+    renderUpdates();
+    const gate = await screen.findByRole("region", { name: "Backup before update" });
+    expect(gate).toHaveAttribute("data-backup-gate", "unavailable");
+    expect(gate).toHaveAttribute("data-backup-gate-clear", "false");
+    expect(gate).toHaveTextContent("Backup health could not be loaded");
+    expect(gate.querySelector('[data-backup-gate="soft"]')).toBeNull();
+    expect(screen.queryByText(/warn, then permit/)).toBeNull();
+
+    vi.mocked(fetchBackupStatus).mockResolvedValueOnce({ ...VERIFIED_BACKUP, upgradeGate: "hard" });
+    await user.click(within(gate).getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Backup before update" })).toHaveAttribute(
+        "data-backup-gate",
+        "hard",
+      ),
+    );
+    expect(screen.getByRole("region", { name: "Backup before update" })).toHaveAttribute(
+      "data-backup-gate-clear",
+      "true",
+    );
+  });
+
+  // CORE-3516 #17: clicking Check now refreshes both update status and backup
+  // clearance state together.
+  it("re-fetches backup clearance when Check now is clicked", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchBackupStatus).mockResolvedValueOnce({ ...NO_BACKUP, upgradeGate: "hard" });
+    renderUpdates();
+    const gate = await screen.findByRole("region", { name: "Backup before update" });
+    expect(gate).toHaveAttribute("data-backup-gate", "hard");
+    expect(gate).toHaveAttribute("data-backup-gate-clear", "false");
+
+    vi.mocked(fetchBackupStatus).mockResolvedValueOnce({ ...VERIFIED_BACKUP, upgradeGate: "hard" });
+    await user.click(screen.getByRole("button", { name: "Check now" }));
+    await waitFor(() => expect(gate).toHaveAttribute("data-backup-gate-clear", "true"));
+  });
+
+  it("keeps unavailable card mounted across Retry even when stale green data is retained", async () => {
+    const user = userEvent.setup();
+    let resolveRetry!: (v: BackupStatusInfo) => void;
+    vi.mocked(fetchBackupStatus)
+      .mockResolvedValueOnce({ ...VERIFIED_BACKUP, upgradeGate: "hard" })
+      .mockRejectedValueOnce(new Error("transient outage"))
+      .mockImplementationOnce(
+        () =>
+          new Promise<BackupStatusInfo>((resolve) => {
+            resolveRetry = resolve;
+          }),
+      );
+    renderUpdates();
+    const gate = await screen.findByRole("region", { name: "Backup before update" });
+    expect(gate).toHaveAttribute("data-backup-gate-clear", "true");
+
+    await user.click(screen.getByRole("button", { name: "Check now" }));
+    const unavailable = await screen.findByRole("region", { name: "Backup before update" });
+    expect(unavailable).toHaveAttribute("data-backup-gate", "unavailable");
+
+    await user.click(within(unavailable).getByRole("button", { name: "Retry" }));
+    // Stale cached green data must NOT flash while the retry request is in flight.
+    expect(screen.getByRole("region", { name: "Backup before update" })).toHaveAttribute(
+      "data-backup-gate",
+      "unavailable",
+    );
+    expect(screen.getByRole("region", { name: "Backup before update" })).toHaveAttribute(
+      "data-backup-gate-clear",
+      "false",
+    );
+
+    resolveRetry({
+      ...VERIFIED_BACKUP,
+      upgradeGate: "hard",
+      integrityFailedBanner: true,
+      lastIntegrityFailure: { at: "2026-07-04T02:10:00Z", failureClass: "integrity", set: "" },
+      updateGateClear: false,
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Backup before update" })).toHaveAttribute(
+        "data-backup-gate",
+        "hard",
+      ),
+    );
+    expect(screen.getByRole("region", { name: "Backup before update" })).toHaveAttribute(
+      "data-backup-gate-clear",
+      "false",
+    );
+  });
 });

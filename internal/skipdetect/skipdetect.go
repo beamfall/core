@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -170,6 +171,12 @@ type Detector interface {
 type spectralFingerprinter interface {
 	SpectralFingerprint(ctx context.Context, src string, seconds int) ([]uint32, error)
 	SpectralFingerprintTail(ctx context.Context, src string, seconds, durationSeconds int) ([]uint32, error)
+}
+
+// spectralRangeFingerprinter decodes bounded [startSeconds, startSeconds+seconds)
+// regions so long prior siblings never exceed the single-spawn PCM capture limit.
+type spectralRangeFingerprinter interface {
+	SpectralFingerprintRange(ctx context.Context, src string, startSeconds, seconds int) ([]uint32, error)
 }
 
 // openingTextCueDetector is optional so chapter/fingerprint-only adapters keep
@@ -520,17 +527,142 @@ func (s *Service) reverseFingerprint(ctx context.Context, spectral spectralFinge
 		if err != nil {
 			continue
 		}
-		frames, err := spectral.SpectralFingerprint(ctx, file.Path, windowCount)
-		if err != nil {
+		candidates, spans := backwardRMSCandidates(opening.loudness, full, siblingID, minMatchWindows)
+		if len(spans) == 0 {
 			continue
 		}
-		for _, match := range backwardMatches(opening.loudness, full, siblingID, minMatchWindows) {
-			if spectrallyConfirmed(opening.frames, frames, match) {
-				matches = append(matches, match)
-			}
+		frames, ok := readSpectralCandidateSpans(ctx, spectral, file.Path, windowCount, spans)
+		if !ok {
+			continue
 		}
+		matches = append(matches, confirmedReverseMatches(opening.frames, frames, candidates)...)
 	}
 	return recapFromMatches(matches, len(opening.loudness), cue)
+}
+
+type spectralSpan struct {
+	start, end int
+	frames     []uint32
+}
+
+type originSpectralFrames struct {
+	spans []spectralSpan
+}
+
+func (f originSpectralFrames) slice(startFrame, endFrame int) ([]uint32, bool) {
+	for _, span := range f.spans {
+		base := span.start * spectralFramesPerWindow
+		if startFrame >= base && endFrame <= base+len(span.frames) {
+			return span.frames[startFrame-base : endFrame-base], true
+		}
+	}
+	return nil, false
+}
+
+// backwardRMSCandidates collects every RMS match at each selfStart (longest
+// run first) together with the coalesced origin window intervals needed to
+// spectrally confirm them without decoding full long files.
+func backwardRMSCandidates(opening, origin []float64, siblingID store.MediaID, minMatchWindows int) ([][]reverseMatch, []spectralSpan) {
+	bySelf := make([][]reverseMatch, len(opening))
+	var rawSpans []spectralSpan
+	for selfStart := range opening {
+		var list []reverseMatch
+		for originStart := range origin {
+			windows := matchingWindows(opening[selfStart:], origin[originStart:], reverseMatchMaxWindows, reverseWindowMatchTolerance)
+			if windows < minMatchWindows {
+				continue
+			}
+			list = append(list, reverseMatch{
+				selfStart: selfStart, selfEnd: selfStart + windows,
+				originStart: originStart, siblingID: siblingID,
+			})
+			spanStart := max(0, originStart-1)
+			spanEnd := min(len(origin), originStart+windows+1)
+			rawSpans = append(rawSpans, spectralSpan{start: spanStart, end: spanEnd})
+		}
+		sort.SliceStable(list, func(i, j int) bool {
+			wi := list[i].selfEnd - list[i].selfStart
+			wj := list[j].selfEnd - list[j].selfStart
+			if wi != wj {
+				return wi > wj
+			}
+			return list[i].originStart < list[j].originStart
+		})
+		bySelf[selfStart] = list
+	}
+	if len(rawSpans) == 0 {
+		return bySelf, nil
+	}
+	sort.Slice(rawSpans, func(i, j int) bool {
+		if rawSpans[i].start != rawSpans[j].start {
+			return rawSpans[i].start < rawSpans[j].start
+		}
+		return rawSpans[i].end < rawSpans[j].end
+	})
+	const maxSpanGapWindows = 4
+	merged := []spectralSpan{rawSpans[0]}
+	for _, sp := range rawSpans[1:] {
+		last := &merged[len(merged)-1]
+		if sp.start <= last.end+maxSpanGapWindows && max(last.end, sp.end)-last.start <= ffmpeg.SpectralFingerprintMaxSeconds {
+			last.end = max(last.end, sp.end)
+			continue
+		}
+		if sp.end > last.end {
+			merged = append(merged, sp)
+		}
+	}
+	return bySelf, merged
+}
+
+func readSpectralCandidateSpans(ctx context.Context, spectral spectralFingerprinter, path string, windowCount int, spans []spectralSpan) (originSpectralFrames, bool) {
+	if ranger, ok := spectral.(spectralRangeFingerprinter); ok {
+		loaded := make([]spectralSpan, 0, len(spans))
+		for _, sp := range spans {
+			dur := sp.end - sp.start
+			if dur <= 0 {
+				continue
+			}
+			frames, err := ranger.SpectralFingerprintRange(ctx, path, sp.start, dur)
+			if err != nil {
+				if ctx.Err() != nil {
+					return originSpectralFrames{}, false
+				}
+				continue
+			}
+			loaded = append(loaded, spectralSpan{start: sp.start, end: sp.end, frames: frames})
+		}
+		return originSpectralFrames{spans: loaded}, len(loaded) > 0
+	}
+	frames, err := spectral.SpectralFingerprint(ctx, path, windowCount)
+	if err != nil {
+		return originSpectralFrames{}, false
+	}
+	return originSpectralFrames{spans: []spectralSpan{{start: 0, end: windowCount, frames: frames}}}, true
+}
+
+// confirmedReverseMatches chooses at each selfStart the longest spectrally
+// confirmed RMS match and advances past it; an unconfirmed loudness decoy
+// advances by only one window so a genuine match starting inside or after it is
+// never masked.
+func confirmedReverseMatches(opening []uint32, origin originSpectralFrames, bySelf [][]reverseMatch) []reverseMatch {
+	var matches []reverseMatch
+	for selfStart := 0; selfStart < len(bySelf); {
+		var chosen *reverseMatch
+		for i := range bySelf[selfStart] {
+			cand := bySelf[selfStart][i]
+			if spectrallyConfirmedFrames(opening, origin, cand) {
+				chosen = &cand
+				break
+			}
+		}
+		if chosen == nil {
+			selfStart++
+			continue
+		}
+		matches = append(matches, *chosen)
+		selfStart = chosen.selfEnd
+	}
+	return matches
 }
 
 // spectrallyConfirmed reports whether a loudness match is the same sound in
@@ -541,6 +673,10 @@ func (s *Service) reverseFingerprint(ctx context.Context, spectral spectralFinge
 // must match on fresh frames. Equal loudness with a different sound, and
 // shared silence, are therefore never recap evidence.
 func spectrallyConfirmed(self, origin []uint32, match reverseMatch) bool {
+	return spectrallyConfirmedFrames(self, originSpectralFrames{spans: []spectralSpan{{start: 0, frames: origin}}}, match)
+}
+
+func spectrallyConfirmedFrames(self []uint32, origin originSpectralFrames, match reverseMatch) bool {
 	const fpw = spectralFramesPerWindow
 	windows := match.selfEnd - match.selfStart
 	if windows <= 0 {
@@ -548,20 +684,38 @@ func spectrallyConfirmed(self, origin []uint32, match reverseMatch) bool {
 	}
 	need := (windows + 1) / 2
 	for shift := -(fpw - 1); shift < fpw; shift++ {
-		fresh, ok := 0, true
-		for k := 0; k < windows && ok; k++ {
+		minJ := match.originStart*fpw + shift
+		maxJ := (match.originStart+windows-1)*fpw + shift + fpw
+		if minJ < 0 {
+			continue
+		}
+		sliceStart := max(0, minJ-1)
+		spanSlice, ok := origin.slice(sliceStart, maxJ)
+		relOffset := minJ - sliceStart
+		if !ok && sliceStart < minJ {
+			spanSlice, ok = origin.slice(minJ, maxJ)
+			relOffset = 0
+		}
+		if !ok {
+			continue
+		}
+		fresh := 0
+		for k := range windows {
 			i := (match.selfStart + k) * fpw
-			j := (match.originStart+k)*fpw + shift
-			if i < 0 || j < 0 || i+fpw > len(self) || j+fpw > len(origin) {
+			if i < 0 || i+fpw > len(self) {
 				ok = false
 				break
 			}
-			switch _, verdict := spectralWindowDistance(self, origin, i, j); verdict {
+			relJ := relOffset + k*fpw
+			switch _, verdict := spectralWindowDistance(self, spanSlice, i, relJ); verdict {
 			case windowMatches:
 				fresh++
 			case windowSustains:
 			default:
 				ok = false
+			}
+			if !ok {
+				break
 			}
 		}
 		if ok && fresh >= need {
@@ -569,29 +723,6 @@ func spectrallyConfirmed(self, origin []uint32, match reverseMatch) bool {
 		}
 	}
 	return false
-}
-
-func backwardMatches(opening, origin []float64, siblingID store.MediaID, minMatchWindows int) []reverseMatch {
-	var matches []reverseMatch
-	for selfStart := 0; selfStart < len(opening); {
-		bestOrigin, bestWindows := -1, 0
-		for originStart := 0; originStart < len(origin); originStart++ {
-			windows := matchingWindows(opening[selfStart:], origin[originStart:], reverseMatchMaxWindows, reverseWindowMatchTolerance)
-			if windows > bestWindows {
-				bestOrigin, bestWindows = originStart, windows
-			}
-		}
-		if bestWindows < minMatchWindows {
-			selfStart++
-			continue
-		}
-		matches = append(matches, reverseMatch{
-			selfStart: selfStart, selfEnd: selfStart + bestWindows,
-			originStart: bestOrigin, siblingID: siblingID,
-		})
-		selfStart += bestWindows
-	}
-	return matches
 }
 
 // matchingWindows counts the leading windows of a and b whose loudness agrees

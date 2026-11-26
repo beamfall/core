@@ -622,3 +622,114 @@ func TestSpectralThemeAtHeadBoundaryKeepsIntro(t *testing.T) {
 	)
 	wantSegment(t, markers, "intro", 0, 24)
 }
+
+// CORE-3516 #12: long prior siblings (> 1,048 s single-spawn spectral capture
+// limit) still feed reverse recap detection by decoding bounded candidate spans.
+func TestReverseFingerprintLongSourcesWithinCaptureLimit(t *testing.T) {
+	st := storetest.Open(t)
+	enable(t, st, "library-local")
+	const dur = 2700 // 45 min > ffmpeg.SpectralFingerprintMaxSeconds (1048s)
+	clip1 := repeat(0.41, 6)
+	clip2 := repeat(0.67, 6)
+	spec1 := noise(201, 6)
+	spec2 := noise(202, 6)
+
+	loudEp1 := append(repeat(0.22, 1300), append(clip1, repeat(0.22, dur-1306)...)...)
+	loudEp2 := append(repeat(0.25, 1900), append(clip2, repeat(0.25, dur-1906)...)...)
+	loudEp3 := append(append(clip1, clip2...), repeat(0.31, dur-12)...)
+
+	specEp1 := join(noise(203, 1300), spec1, noise(204, dur-1306))
+	specEp2 := join(noise(205, 1900), spec2, noise(206, dur-1906))
+	specEp3 := join(jitter(207, spec1), jitter(208, spec2), noise(209, dur-12))
+
+	ep1, p1 := seedVideo(t, st, "library-local", "Ep 1", dur)
+	ep2, p2 := seedVideo(t, st, "library-local", "Ep 2", dur)
+	ep3, p3 := seedVideo(t, st, "library-local", "Ep 3", dur)
+	linkOrderedContainer(t, st, "library-local", "container-long-recap", ep1.ID, ep2.ID, ep3.ID)
+
+	det := &fakeDetector{
+		chaptersByPath:     map[string][]ffmpeg.Chapter{},
+		fingerprintByPath:  map[string][]float64{p1: loudEp1, p2: loudEp2, p3: loudEp3},
+		framesByPath:       map[string][]uint32{p1: specEp1, p2: specEp2, p3: specEp3},
+		maxSpectralSeconds: ffmpeg.SpectralFingerprintMaxSeconds,
+	}
+	svc := &Service{store: st, detector: det, now: fixedClock()}
+	if err := svc.DetectForMedia(context.Background(), ep3.ID); err != nil {
+		t.Fatalf("DetectForMedia on 45m sources: %v", err)
+	}
+	wantSegmentMethod(t, markersOf(t, st, ep3.ID), "recap", 0, 12, MethodReverseFingerprint)
+}
+
+// CORE-3516 #13: an equal-loudness unrelated passage (decoy) earlier in the
+// prior sibling must never mask a genuine spectral match later in the file.
+func TestReverseFingerprintDecoyDoesNotMaskSpectralMatch(t *testing.T) {
+	st := storetest.Open(t)
+	enable(t, st, "library-local")
+	const dur = 600
+	clip1 := repeat(0.42, 6)
+	clip2 := repeat(0.68, 6)
+	spec1 := noise(301, 6)
+	spec2 := noise(302, 6)
+
+	// ep1 has a decoy with IDENTICAL loudness clip1 at 50s (unrelated audio!)
+	// and the genuine match at 250s. Without spectral-during-selection, backwardMatches
+	// picks origin=50, advances past selfStart=0..6, and misses origin=250.
+	loudEp1 := make([]float64, dur)
+	for i := range loudEp1 {
+		loudEp1[i] = 0.20
+	}
+	copy(loudEp1[50:], clip1)
+	copy(loudEp1[250:], clip1)
+
+	loudEp2 := append(repeat(0.25, 300), append(clip2, repeat(0.25, dur-306)...)...)
+	loudEp3 := append(append(clip1, clip2...), repeat(0.30, dur-12)...)
+
+	specEp1 := join(noise(303, 250), spec1, noise(304, dur-256))
+	specEp2 := join(noise(305, 300), spec2, noise(306, dur-306))
+	specEp3 := join(jitter(307, spec1), jitter(308, spec2), noise(309, dur-12))
+
+	ep1, p1 := seedVideo(t, st, "library-local", "Ep 1", dur)
+	ep2, p2 := seedVideo(t, st, "library-local", "Ep 2", dur)
+	ep3, p3 := seedVideo(t, st, "library-local", "Ep 3", dur)
+	linkOrderedContainer(t, st, "library-local", "container-decoy-recap", ep1.ID, ep2.ID, ep3.ID)
+
+	det := &fakeDetector{
+		chaptersByPath:    map[string][]ffmpeg.Chapter{},
+		fingerprintByPath: map[string][]float64{p1: loudEp1, p2: loudEp2, p3: loudEp3},
+		framesByPath:      map[string][]uint32{p1: specEp1, p2: specEp2, p3: specEp3},
+	}
+	svc := &Service{store: st, detector: det, now: fixedClock()}
+	if err := svc.DetectForMedia(context.Background(), ep3.ID); err != nil {
+		t.Fatalf("DetectForMedia with decoy: %v", err)
+	}
+	wantSegmentMethod(t, markersOf(t, st, ep3.ID), "recap", 0, 12, MethodReverseFingerprint)
+}
+
+func wantSegmentMethod(t *testing.T, markers []store.Marker, kind string, start, end float64, method string) {
+	t.Helper()
+	m, ok := segmentOfKind(markers, kind)
+	if !ok {
+		t.Fatalf("no %s segment; markers = %+v", kind, markers)
+	}
+	if m.EndSeconds == nil || m.StartSeconds != start || *m.EndSeconds != end || m.Method != method {
+		t.Fatalf("%s = [%v, %v] method=%q, want [%v, %v] method=%q", kind, m.StartSeconds, m.EndSeconds, m.Method, start, end, method)
+	}
+}
+
+// TestSpectralPredecessorPreservedAcrossSlice verifies CORE-3534: slicing a
+// non-zero origin span preserves the predecessor frame before minJ so the first
+// window is not misclassified as held.
+func TestSpectralPredecessorPreservedAcrossSlice(t *testing.T) {
+	frames := func(v uint32, n int) []uint32 {
+		out := make([]uint32, n)
+		for i := range out {
+			out[i] = v
+		}
+		return out
+	}
+	self := join(frames(0xaaaaaaaa, 8), frames(0x55555555, 16), frames(0x33333333, 16), frames(0xaaaaaaaa, 8))
+	origin := join(frames(0xaaaaaaaa, 80), frames(0x55555555, 16), frames(0x33333333, 16), frames(0xaaaaaaaa, 8))
+	if !spectrallyConfirmed(self, origin, reverseMatch{selfStart: 1, selfEnd: 5, originStart: 10}) {
+		t.Fatal("lost predecessor rejected valid held-chord clip")
+	}
+}

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page, Route } from "@playwright/test";
@@ -28,19 +28,22 @@ export const TEST_TRACKS: SyntheticTrack[] = [
 ];
 
 const cacheDir = join(tmpdir(), "beamfall-e2e-synthetic-audio");
+const wavMemoryCache = new Map<string, Buffer>();
 
 /**
  * A mono 44.1 kHz WAV of the track's tone (wrapped in its declared silence),
- * rendered once per machine and cached.
+ * rendered once per machine and cached in memory per Playwright worker.
  */
 export function syntheticToneWAV(
   track: Pick<SyntheticTrack, "frequency" | "seconds" | "gapless">,
 ): Buffer {
-  mkdirSync(cacheDir, { recursive: true });
   const silence = track.gapless
     ? `-pad${track.gapless.delaySamples}-${track.gapless.paddingSamples}`
     : "";
   const file = join(cacheDir, `sine-${track.frequency}hz-${track.seconds}s${silence}.wav`);
+  const cached = wavMemoryCache.get(file);
+  if (cached) return cached;
+  mkdirSync(cacheDir, { recursive: true });
   const filter = track.gapless
     ? [
         "-af",
@@ -48,24 +51,36 @@ export function syntheticToneWAV(
       ]
     : [];
   if (!existsSync(file)) {
-    execFileSync("ffmpeg", [
-      "-hide_banner",
-      "-loglevel",
-      "error",
-      "-y",
-      "-f",
-      "lavfi",
-      "-i",
-      `sine=frequency=${track.frequency}:sample_rate=44100:duration=${track.seconds}`,
-      ...filter,
-      "-ac",
-      "1",
-      "-c:a",
-      "pcm_s16le",
-      file,
-    ]);
+    const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+    try {
+      execFileSync("ffmpeg", [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        `sine=frequency=${track.frequency}:sample_rate=44100:duration=${track.seconds}`,
+        ...filter,
+        "-ac",
+        "1",
+        "-c:a",
+        "pcm_s16le",
+        "-f",
+        "wav",
+        tmp,
+      ]);
+      // Publish atomically so concurrent cold-cache workers never read or
+      // memoize partially written WAV bytes.
+      renameSync(tmp, file);
+    } finally {
+      rmSync(tmp, { force: true });
+    }
   }
-  return readFileSync(file);
+  const bytes = readFileSync(file);
+  wavMemoryCache.set(file, bytes);
+  return bytes;
 }
 
 /** The URL a track's stream is served at. */
@@ -75,7 +90,14 @@ export function syntheticStreamURL(track: SyntheticTrack): string {
 
 function fulfilBytes(route: Route, body: Buffer, contentType: string) {
   const range = route.request().headers().range;
-  if (!range) return route.fulfill({ body, contentType, headers: { "Accept-Ranges": "bytes" } });
+  const cacheControl = "public, max-age=3600";
+  if (!range) {
+    return route.fulfill({
+      body,
+      contentType,
+      headers: { "Accept-Ranges": "bytes", "Cache-Control": cacheControl },
+    });
+  }
   const [startText, endText] = range.replace("bytes=", "").split("-");
   const start = Number(startText);
   const end = endText ? Math.min(Number(endText), body.length - 1) : body.length - 1;
@@ -84,6 +106,7 @@ function fulfilBytes(route: Route, body: Buffer, contentType: string) {
     body: body.subarray(start, end + 1),
     headers: {
       "Accept-Ranges": "bytes",
+      "Cache-Control": cacheControl,
       "Content-Range": `bytes ${start}-${end}/${body.length}`,
       "Content-Type": contentType,
     },
@@ -164,4 +187,22 @@ export async function routeSyntheticAlbum(
     if (!track) return route.fulfill({ status: 404 });
     return fulfilBytes(route, syntheticToneWAV(track), "audio/wav");
   });
+}
+
+// Refuses media playback until the first pointer press, so a browser that
+// allows autoplay cannot start before the spec's gesture on Play (or race with it).
+export function blockAutoplay() {
+  const play = HTMLMediaElement.prototype.play;
+  let activated = false;
+  document.addEventListener(
+    "pointerdown",
+    () => {
+      activated = true;
+    },
+    true,
+  );
+  HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+    if (activated) return play.call(this);
+    return Promise.reject(new DOMException("No gesture yet", "NotAllowedError"));
+  };
 }

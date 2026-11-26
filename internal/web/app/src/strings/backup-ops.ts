@@ -51,6 +51,8 @@ export const backupOpsStrings = {
     updateBackupGateWarn:
       "No verified Backup Set is on record. Take and verify a backup before installing.",
     updateBackupGateClear: "A verified Backup Set from {time} is on record.",
+    updateBackupGateUnavailable:
+      "Backup health could not be loaded. Retry before installing an update.",
     // History "Key" column: the wrap key each set was sealed to (BKUP-14).
     backupColKey: "Key",
     backupKeyCurrent: "Key {fingerprint}",
@@ -109,6 +111,8 @@ export const backupOpsStrings = {
     updateBackupGateWarn:
       "Aucun jeu de sauvegarde vérifié n’est enregistré. Faites et vérifiez une sauvegarde avant d’installer.",
     updateBackupGateClear: "Un jeu de sauvegarde vérifié du {time} est enregistré.",
+    updateBackupGateUnavailable:
+      "L’état des sauvegardes n’a pas pu être chargé. Réessayez avant d’installer une mise à jour.",
     backupColKey: "Clé",
     backupKeyCurrent: "Clé {fingerprint}",
     backupKeyArchived: "Clé archivée {fingerprint}",
@@ -167,6 +171,8 @@ export const backupOpsStrings = {
     updateBackupGateWarn:
       "Es ist kein geprüfter Backup-Satz verzeichnet. Erstellen und prüfen Sie vor der Installation ein Backup.",
     updateBackupGateClear: "Ein geprüfter Backup-Satz vom {time} ist verzeichnet.",
+    updateBackupGateUnavailable:
+      "Der Backup-Zustand konnte nicht geladen werden. Versuchen Sie es erneut, bevor Sie ein Update installieren.",
     backupColKey: "Schlüssel",
     backupKeyCurrent: "Schlüssel {fingerprint}",
     backupKeyArchived: "Archivierter Schlüssel {fingerprint}",
@@ -224,6 +230,8 @@ export const backupOpsStrings = {
     updateBackupGateWarn:
       "No hay ningún conjunto de copias verificado registrado. Haz y verifica una copia antes de instalar.",
     updateBackupGateClear: "Hay registrado un conjunto de copias verificado del {time}.",
+    updateBackupGateUnavailable:
+      "No se pudo cargar el estado de las copias de seguridad. Reintenta antes de instalar una actualización.",
     backupColKey: "Clave",
     backupKeyCurrent: "Clave {fingerprint}",
     backupKeyArchived: "Clave archivada {fingerprint}",
@@ -281,6 +289,8 @@ export const backupOpsStrings = {
     updateBackupGateWarn:
       "Nenhum conjunto de backup verificado está registrado. Faça e verifique um backup antes de instalar.",
     updateBackupGateClear: "Há um conjunto de backup verificado de {time} registrado.",
+    updateBackupGateUnavailable:
+      "Não foi possível carregar a saúde dos backups. Tente novamente antes de instalar uma atualização.",
     backupColKey: "Chave",
     backupKeyCurrent: "Chave {fingerprint}",
     backupKeyArchived: "Chave arquivada {fingerprint}",

@@ -109,10 +109,11 @@ func backupScheduleTrigger(intn func(int) int) schedulepkg.Trigger {
 // and appended to the event outbox for webhooks.
 func databaseBackupHandler(st *store.Store, dataDir, dest string, encryptedBackupCipher func() store.EncryptedLibraryDBCipher) jobs.Handler {
 	return func(ctx context.Context, job store.Job) (jobs.Result, error) {
+		var createdSet string
 		fail := func(err error) (jobs.Result, error) {
 			class := classifyBackupError(err)
 			slog.ErrorContext(ctx, "scheduled backup failed", "backup_failure_class", string(class), "dest", dest, "error", err)
-			reportBackupOutcome(ctx, st, dataDir, class, "")
+			reportBackupOutcome(ctx, st, dataDir, class, createdSet)
 			var classed *backupClassedError
 			if errors.As(err, &classed) {
 				return jobs.Result{}, err
@@ -134,6 +135,7 @@ func databaseBackupHandler(st *store.Store, dataDir, dest string, encryptedBacku
 		if err != nil {
 			return fail(err)
 		}
+		createdSet = result.Directory
 		if err := st.VerifyBackupSet(ctx, result.Manifest); err != nil {
 			return fail(&backupClassedError{class: BackupFailureIntegrity, err: err})
 		}

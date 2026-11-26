@@ -92,6 +92,17 @@ func TestArtworkActionsCommitWithRevisionAndCompleteOnce(t *testing.T) {
 		if !encrypted && shared != 3 {
 			t.Fatalf("shared catalog artwork actions = %d, want 3", shared)
 		}
+		// CORE-3516 #10: an artwork-free identification supersedes older pending
+		// artwork actions rather than leaving them active across a restart.
+		if _, err := st.CommitMediaIdentification(ctx, media.ID, IdentificationCommit{
+			Metadata:   MediaMetadata{Title: &next},
+			Provenance: MediaMetadataProvenance{PluginID: "fixture", ScraperID: "scraper", CandidateID: "c-no-art"},
+		}); err != nil {
+			t.Fatalf("encrypted=%v artwork-free commit: %v", encrypted, err)
+		}
+		if afterClear, err := st.PendingArtworkActionsForMedia(ctx, media.ID); err != nil || len(afterClear) != 0 {
+			t.Fatalf("encrypted=%v pending after artwork-free replacement = %+v, %v", encrypted, afterClear, err)
+		}
 		_ = st.Close()
 	}
 }

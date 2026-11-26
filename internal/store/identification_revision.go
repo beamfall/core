@@ -64,18 +64,23 @@ func (s *Store) CommitMediaIdentification(ctx context.Context, id MediaID, commi
 }
 
 // FixMatchCommit is a Fix Match: the identification plus the match pin and
-// Unmatched-queue resolution, visible under Filter.
+// Unmatched-queue resolution, visible under Filter. IntentDigest captures the
+// immutable operator request parameters so replays stay idempotent across
+// provider metadata changes.
 type FixMatchCommit struct {
 	IdentificationCommit
-	Filter LibraryFilter
+	Filter       LibraryFilter
+	IntentDigest string
 }
 
 // FixMatchAudit is the detail_json of a fix-match revision.
 type FixMatchAudit struct {
-	ClearedLocks     []string `json:"clearedLocks"`
-	Ordinal          string   `json:"ordinal"`
-	PinnedFiles      int64    `json:"pinnedFiles"`
-	UnmatchedCleared bool     `json:"unmatchedCleared"`
+	ClearedLocks     []string      `json:"clearedLocks"`
+	Ordinal          string        `json:"ordinal"`
+	OperatorOrdinal  *MediaOrdinal `json:"operatorOrdinal,omitempty"`
+	IntentDigest     string        `json:"intentDigest,omitempty"`
+	PinnedFiles      int64         `json:"pinnedFiles"`
+	UnmatchedCleared bool          `json:"unmatchedCleared"`
 }
 
 // CommitFixMatch applies a Fix Match in one transaction on the Media's own
@@ -87,10 +92,16 @@ func (s *Store) CommitFixMatch(ctx context.Context, id MediaID, commit FixMatchC
 	metadata := commit.Metadata
 	return s.commitIdentification(ctx, id, commit.IdentificationCommit, IdentificationKindFixMatch, &commit.Filter,
 		func(ctx context.Context, tx *sql.Tx) (string, error) {
-			audit := FixMatchAudit{ClearedLocks: append([]string{}, metadata.ClearLocks...), Ordinal: "kept"}
+			audit := FixMatchAudit{
+				ClearedLocks: append([]string{}, metadata.ClearLocks...),
+				Ordinal:      "kept",
+				IntentDigest: commit.IntentDigest,
+			}
 			switch {
 			case metadata.OperatorOrdinal != nil:
 				audit.Ordinal = "set"
+				ord := *metadata.OperatorOrdinal
+				audit.OperatorOrdinal = &ord
 			case metadata.ClearOrdinal:
 				audit.Ordinal = "cleared"
 			}

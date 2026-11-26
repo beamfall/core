@@ -7,36 +7,37 @@ Integrity rules of the store: one identity per managed file's content, valid JSO
 
 ### Requirement: Managed file identity comes from file content
 
-Managed import and managed convert SHALL fingerprint each admitted file with a SHA-256 digest of its
-whole content, and SHALL NOT derive the fingerprint from the file's path.
-
-Managed import and managed convert SHALL refuse, with a validation error, a file whose content
-fingerprint is cataloged, live or missing (including trashed), at a different path or in a different library, and
-SHALL leave the existing media file unchanged.
+Managed staging SHALL compute both digests and store `sample1:` on new rows. Either digest matching
+a row at another path or Library SHALL fail validation and leave the existing file and Media intact,
+including missing or trashed rows. The first scan SHALL reuse the identity, record stats and OSHash
+even if probing fails, and attempt stream and attachment inventory.
 
 #### Scenario: Same bytes at two paths
 
-- **WHEN** a file is imported and a second file with identical content is then imported into the
-  same plaintext library at a different path
-- **THEN** the second import fails with a validation error, no file is left at the second path, and
-  the first media file keeps its path, library and Media
+- **WHEN** bytes cataloged with a sampled or legacy fingerprint are imported at a second path
+- **THEN** the import fails with a validation error and leaves no file at the second path
 
 #### Scenario: Same bytes as a trashed file
 
-- **WHEN** a managed file is deleted to managed trash and a file with identical content is then
-  imported at a different path
-- **THEN** the import fails with a validation error, no file is left at the new path, and restoring
-  the trashed file revives its original media file at its original path
+- **WHEN** a managed file is deleted to managed trash and identical content is imported
+- **THEN** the import fails with a validation error and restoring revives the original Media
 
 #### Scenario: New bytes at a reused path
 
-- **WHEN** a managed file is deleted and a file with different content is imported at the same path
-- **THEN** the new media file carries a different content fingerprint and a different Media
+- **WHEN** a different sampled identity is admitted at a deleted file's path
+- **THEN** the replacement gets a different Media
 
 #### Scenario: Converted artifact
 
 - **WHEN** managed convert admits a converted artifact
-- **THEN** the artifact's media file carries the SHA-256 digest of the artifact's content
+- **THEN** its row carries the sampled identity of the artifact's bytes
+
+#### Scenario: Managed reimport at an existing legacy path
+
+- **WHEN** the staged full digest matches a legacy row at the same path and Library after external removal
+- **THEN** admission preserves the legacy fingerprint, Media ID, watch state, and match pins, including
+  for missing files and soft-trashed Media, which retain their trash timestamp and remain restorable
+- **AND** it keeps matching stats and clears stale stats for the next scan to verify and record once
 
 ### Requirement: Job and outbox JSON is validated before it is stored
 
@@ -93,3 +94,85 @@ SHALL change nothing, leaving the batch not undone.
 - **WHEN** an entity merge batch whose journal item has no winner id is undone
 - **THEN** the undo fails with a validation error, no relation row changes, the loser stays
   trashed, and the batch is not marked undone
+
+### Requirement: Scans bound the reads used for content identity
+
+`sample1:` SHALL prefix the lowercase SHA-256 hex digest of the unsigned 8-byte big-endian size
+followed by the sampled bytes. Files up to 917,504 bytes SHALL contribute all bytes. Larger files
+SHALL contribute 14 chunks of 65,536 bytes at floor(i × (size − 65,536) / 13) in order for i = 0…13.
+Deduplication and moves SHALL compare exact fingerprints. Equal sizes and samples share an identity.
+Mtime comparisons SHALL round Unix nanoseconds toward zero to milliseconds.
+
+#### Scenario: First scan of a large file
+
+- **WHEN** a new large file is scanned
+- **THEN** fingerprinting reads 917,504 bytes and duplicate samples resolve to one file identity
+
+#### Scenario: Unchanged legacy file
+
+- **WHEN** the path, recorded size and recorded mtime match a legacy row
+- **THEN** the existing public catalog fast path reuses the legacy identity without reading bytes for fingerprinting
+
+#### Scenario: Legacy file known only to an encrypted Library
+
+- **WHEN** a legacy fingerprint exists only in an encrypted catalog
+- **THEN** the scan retains the existing public catalog routing and probe behavior
+- **AND** a legacy identity can be replaced by a sampled identity, including if both catalogs share the path
+
+#### Scenario: Legacy file at the same path with incomplete stats
+
+- **WHEN** the public catalog lookup finds an available legacy row with an unrecorded size or mtime
+  and its recorded stats still match
+- **THEN** the scan compares the full digest once at that path, the sole full-digest scan case, using the sampled descriptor and verifying the path still names that inode after the comparison
+- **AND** a match keeps the identity and records stats that survive reopening, including a verified
+  Unix-epoch mtime, while a mismatch uses the sampled identity
+
+#### Scenario: A scan cannot verify a file
+
+- **WHEN** sampling fails, the path no longer names the sampled inode, or the legacy comparison hits an I/O error
+- **THEN** an existing row in the scanned Library follows the unchanged-file path using its recorded stats and fingerprint, including ordinary unchanged probing, seen counts and Part grouping
+- **AND** a new file is left for the next scan
+
+#### Scenario: Legacy file moved, changed, or returns after a missing mark
+
+- **WHEN** a legacy file moves, changes recorded stats, or returns after a missing mark
+- **THEN** it gets a sampled identity even if unchanged or small enough to sample whole. It cannot
+  recover legacy watch state or matches by fingerprint. Part and Version grouping still applies.
+
+### Requirement: Sampled Media IDs distinguish the fingerprint scheme
+
+A Media ID derived from a sample SHALL use `media-sample1-` and the first 17 lowercase hex digest
+digits. Legacy Media IDs SHALL retain their existing scheme and length.
+
+#### Scenario: First admission of sampled content
+
+- **WHEN** the catalog derives a new Media ID from a sample
+- **THEN** the ID has the sampled prefix and the first 17 digest digits
+
+### Requirement: Duplicate checks recognize both fingerprint schemes
+
+Proxy promotion and qBittorrent ingest SHALL check both digests among live public files, excluding
+trashed Media and Libraries. Promotion SHALL recheck in its publication transaction and verify
+ownership with a bounded lookup before keeping a duplicate archive. The opened tee SHALL match
+the completed tee's inode, size and mtime before and after fingerprinting. Ingest SHALL reject a
+changed payload before lookup or relocation. Proxy archives SHALL use the sampled identity.
+
+#### Scenario: Duplicate in either scheme
+
+- **WHEN** either digest matches a live row, including a sample with different unsampled bytes
+- **THEN** the existing Media and file remain intact, without publishing another file
+
+#### Scenario: Concurrent sampled admission during promotion
+
+- **WHEN** a matching sample is cataloged before the promotion transaction starts
+- **THEN** promotion skips the duplicate and keeps the existing file, even at the archive destination
+
+### Requirement: Export manifests verify complete originals
+
+The photo export manifest SHALL record `sha256:` followed by the SHA-256 digest of the full
+plaintext written for each original.
+
+#### Scenario: Export of sampled content
+
+- **WHEN** a photo export writes an original from a row with a sampled identity
+- **THEN** the manifest digest verifies the complete exported bytes

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { withAdminEpoch } from "@/areas/console/adminEpoch";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,15 @@ function refusalMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError && err.message ? err.message : fallback;
 }
 
-export function BackupOpsSection({ envelope, setName }: { envelope: string; setName: string }) {
+export function BackupOpsSection({
+  envelope,
+  setName,
+  statusRefresh = 0,
+}: {
+  envelope: string;
+  setName: string;
+  statusRefresh?: number;
+}) {
   const t = useT();
   const [status, setStatus] = useState<BackupStatusInfo | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -37,19 +45,30 @@ export function BackupOpsSection({ envelope, setName }: { envelope: string; setN
   const [error, setError] = useState("");
   const [backupKey, setBackupKey] = useState("");
   const [drill, setDrill] = useState<BackupDrillInfo | null>(null);
+  const unmountRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+    unmountRef.current = controller;
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    void statusRefresh;
     const controller = new AbortController();
     const signal = withAdminEpoch(controller.signal);
     fetchBackupStatus(signal)
       .then((next) => {
-        if (!signal.aborted) setStatus(next);
+        if (!signal.aborted) {
+          setLoadFailed(false);
+          setStatus(next);
+        }
       })
       .catch(() => {
         if (!signal.aborted) setLoadFailed(true);
       });
     return () => controller.abort();
-  }, []);
+  }, [statusRefresh]);
 
   const onAcknowledge = async (banner: BackupBanner) => {
     setError("");
@@ -97,6 +116,17 @@ export function BackupOpsSection({ envelope, setName }: { envelope: string; setN
       );
     } catch (err) {
       setError(refusalMessage(err, t("backupOpsVerifyFailed")));
+      // Reload status best-effort in case the server recorded a failure (e.g.
+      // timeout) so lastDrill does not keep an older passing badge.
+      const parentSignal = unmountRef.current?.signal;
+      if (!parentSignal?.aborted) {
+        const signal = withAdminEpoch(parentSignal ?? new AbortController().signal);
+        fetchBackupStatus(signal)
+          .then((next) => {
+            if (!signal.aborted) setStatus(next);
+          })
+          .catch(() => {});
+      }
     } finally {
       setBackupKey("");
       setBusy("");

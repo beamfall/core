@@ -85,10 +85,13 @@ export async function expectArchivedVisualParity(
   testInfo: TestInfo,
   state: string,
 ): Promise<void> {
-  expect(
-    testInfo.config.updateSnapshots,
-    "archived visual baselines are immutable; snapshot updates must stay disabled",
-  ).toBe("none");
+  const updatingWebGoldens = process.env.BEAMFALL_UPDATE_WEB_GOLDENS === "1";
+  if (!updatingWebGoldens) {
+    expect(
+      testInfo.config.updateSnapshots,
+      "archived visual baselines are immutable; run `make web-e2e-rerecord-goldens` (or `npm --prefix internal/web/app run e2e:rerecord-goldens`) instead of --update-snapshots",
+    ).toBe("none");
+  }
   expect(
     testInfo.project.ignoreSnapshots,
     "archived visual comparisons cannot run with --ignore-snapshots",
@@ -135,8 +138,22 @@ export async function expectArchivedVisualParity(
     ).toBe(approvedDelta.normalizedSHA256);
   }
 
+  const maxDiffPixels = approvedDelta?.differentPixels ?? 0;
+  // When rerecording live web goldens (`BEAMFALL_UPDATE_WEB_GOLDENS=1`), `config.updateSnapshots`
+  // is `"all"` so `toHaveScreenshot` writes e2e/goldens/. Avoid `toMatchSnapshot()` here because
+  // `snapshotPathTemplate` targets the immutable archived PNGs; verify parity read-only instead.
+  if (updatingWebGoldens) {
+    const comparator = playwrightUtils.getComparator("image/png");
+    const comparison = comparator(current, archived, { maxDiffPixels, threshold: 0.2 });
+    expect(
+      comparison?.errorMessage ?? comparison?.diff,
+      `${state}: screenshot diverged from immutable archived baseline during golden rerecord`,
+    ).toBeUndefined();
+    return;
+  }
+
   await expect(current).toMatchSnapshot(fileName, {
-    maxDiffPixels: approvedDelta?.differentPixels ?? 0,
+    maxDiffPixels,
     threshold: 0.2,
   });
 }

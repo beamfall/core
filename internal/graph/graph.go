@@ -4359,8 +4359,12 @@ func (h *Handler) verifyBackup(ctx context.Context, req request) (VerifyBackupIn
 		return VerifyBackupInfo{}, clientError("manifest is required")
 	}
 	if err := h.store.VerifyBackupSet(ctx, manifestPath); err != nil {
+		if store.IsConfinedBackupIntegrityError(err) {
+			h.recordManualBackupIntegrityFailure(manifestPath)
+		}
 		return VerifyBackupInfo{OK: false, Error: err.Error()}, nil
 	}
+	h.recordManualBackupVerified(manifestPath)
 	return VerifyBackupInfo{OK: true}, nil
 }
 

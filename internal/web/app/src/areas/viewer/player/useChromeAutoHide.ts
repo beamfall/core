@@ -70,25 +70,30 @@ export function useChromeAutoHide({
     const stage = stageRef.current;
     const video = videoRef.current;
     if (!mounted || !stage || !video) return;
+    // The top bar (.bf-player-bar) sits inside <main> beside .bf-player-stage;
+    // listen on the parent container so keyboard focus or taps on Back wake it too.
+    const parent = stage.parentElement;
+    const target =
+      parent && parent !== document.body && parent !== document.documentElement ? parent : stage;
     reveal();
     const onActivity = () => reveal();
     const onPause = () => {
       setChromeHidden(false);
       clearTimer();
     };
-    stage.addEventListener("pointermove", onActivity);
+    target.addEventListener("pointermove", onActivity);
     // A click with no move before it (the pointer parked where a control sat
     // when the chrome faded, or a tap) must also bring the chrome back
     // (CORE-2322); capture runs it before the control's own handler.
-    stage.addEventListener("pointerdown", onActivity, true);
-    stage.addEventListener("focusin", onActivity);
+    target.addEventListener("pointerdown", onActivity, true);
+    target.addEventListener("focusin", onActivity);
     window.addEventListener("keydown", onActivity);
     video.addEventListener("play", onActivity);
     video.addEventListener("pause", onPause);
     return () => {
-      stage.removeEventListener("pointermove", onActivity);
-      stage.removeEventListener("pointerdown", onActivity, true);
-      stage.removeEventListener("focusin", onActivity);
+      target.removeEventListener("pointermove", onActivity);
+      target.removeEventListener("pointerdown", onActivity, true);
+      target.removeEventListener("focusin", onActivity);
       window.removeEventListener("keydown", onActivity);
       video.removeEventListener("play", onActivity);
       video.removeEventListener("pause", onPause);

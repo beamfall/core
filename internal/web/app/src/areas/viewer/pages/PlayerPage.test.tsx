@@ -62,7 +62,12 @@ import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { attachCaptionElements, captionElement, showCaptionElement } from "../player/streamTracks";
-import { rejoinSkip, skipJoin, useGaplessAudio } from "../player/useGaplessAudio";
+import {
+  rejoinSkip,
+  START_LOOKAHEAD_SECONDS,
+  skipJoin,
+  useGaplessAudio,
+} from "../player/useGaplessAudio";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
 import {
@@ -2120,7 +2125,7 @@ describe("PlayerPage server Play Queue", () => {
           }),
         );
         if (keepCurrent) {
-          expect(start).toHaveBeenCalledExactlyOnceWith(6, 0, 2);
+          expect(start).toHaveBeenCalledExactlyOnceWith(6 + START_LOOKAHEAD_SECONDS, 0, 2);
           expect(location.pathname).toBe(`/watch/${c.id}`);
         } else {
           expect(start).not.toHaveBeenCalled();
