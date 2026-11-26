@@ -74,7 +74,20 @@ type Poller struct {
 	// certification resolves a follower's ceilings when new entries are
 	// routed to its Play Queue; nil disables routing.
 	certification func([]store.ProfileCertificationCeiling) []store.CertificationConstraint
+	// shows publishes the feed's show container and artwork after each
+	// catalogue upsert; nil disables it.
+	shows ShowPublisher
 }
+
+// ShowPublisher turns a polled feed into its show container Entity and
+// artwork (CORE-3524). It is best-effort: a failure is logged and the next
+// poll retries.
+type ShowPublisher interface {
+	PublishShow(ctx context.Context, subscription store.Subscription, document scrape.FeedDocument, entries []scrape.FeedEntry) error
+}
+
+// SetShowPublisher wires the show publisher. Call before polling starts.
+func (p *Poller) SetShowPublisher(shows ShowPublisher) { p.shows = shows }
 
 // SetCertificationResolver wires the resolver used when new entries are
 // routed to followers' Play Queues (CORE-2958). Call before polling starts.
@@ -254,6 +267,11 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	selected, catalogued, err := p.catalogue(ctx, subscription, document, now)
 	if err != nil {
 		return published, err
+	}
+	if catalogued && p.shows != nil {
+		if err := p.shows.PublishShow(ctx, subscription, document, catalogueEntries(document)); err != nil {
+			p.logger.Warn("show publication failed", "subscription", subscription.ID, "error", err)
+		}
 	}
 	// A Subscription imported without a title takes the feed's own title;
 	// a stored title is never overwritten.

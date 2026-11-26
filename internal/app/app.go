@@ -926,6 +926,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	subscriptionPoller := ingest.NewPoller(st, scrapeEngine)
 	subscriptionPoller.SetCertificationResolver(authService.CertificationConstraints)
 	subscriptionPoller.SetLogger(logger)
+	subscriptionPoller.SetShowPublisher(newSubscriptionShows(st, executablePlugins, artworkService, scrapeEngine, logger))
 	pollHandler := ingest.Handler(subscriptionPoller)
 	jobRegistry.Register(ingest.PollJobKind, pollHandler)
 	// qBittorrent ingest: a poll job pulls completed downloads,

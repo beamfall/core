@@ -283,6 +283,8 @@ type FeedEntry struct {
 	PublishedAt time.Time
 	// DurationSeconds is itunes:duration as seconds (0 when absent).
 	DurationSeconds int64
+	// ArtworkURL is the entry's own itunes:image ("" when absent).
+	ArtworkURL string
 }
 
 // FeedDocument is a parsed feed: channel metadata plus its entries in
@@ -296,6 +298,14 @@ type FeedDocument struct {
 	// new-feed-url or newFeedUrl in any namespace: the iTunes and Index
 	// extensions), "" when absent. Secret class: never logged.
 	NewFeedURL string
+	// Description is the channel summary, Link its website and Author its
+	// itunes:author ("" when absent).
+	Description string
+	Link        string
+	Author      string
+	// ArtworkURL is the channel's itunes:image, else its RSS image url
+	// ("" when absent).
+	ArtworkURL string
 	Entries    []FeedEntry
 }
 
@@ -332,6 +342,13 @@ func ParseFeed(data []byte) (FeedDocument, error) {
 		channel = feeds[0]
 	}
 	document.Title = directChildText(channel, "title")
+	document.Description = directChildText(channel, "description")
+	if document.Description == "" {
+		document.Description = directChildText(channel, "itunes:summary")
+	}
+	document.Link = directChildText(channel, "link")
+	document.Author = directChildText(channel, "itunes:author")
+	document.ArtworkURL = channelArtworkURL(channel)
 	document.Serial = strings.EqualFold(directChildText(channel, "itunes:type"), "serial")
 	for _, child := range channel.children {
 		local := child.name[strings.LastIndexByte(child.name, ':')+1:]
@@ -349,6 +366,33 @@ func ParseFeed(data []byte) (FeedDocument, error) {
 	// <entry> lookup returns the empty list for both.
 	document.Entries = atomEntries(findElements([]*xmlNode{root}, "entry"))
 	return document, nil
+}
+
+// channelArtworkURL is the channel's itunes:image href, else its RSS
+// <image><url>.
+func channelArtworkURL(channel *xmlNode) string {
+	if href := directChildAttr(channel, "itunes:image", "href"); href != "" {
+		return href
+	}
+	for _, child := range channel.children {
+		if child.name == "image" {
+			if u := directChildText(child, "url"); u != "" {
+				return u
+			}
+		}
+	}
+	return ""
+}
+
+func directChildAttr(scope *xmlNode, name, attr string) string {
+	for _, child := range scope.children {
+		if child.name == name {
+			if value := strings.TrimSpace(child.attrs[attr]); value != "" {
+				return value
+			}
+		}
+	}
+	return ""
 }
 
 // directChildText is the trimmed text of scope's first direct child named
@@ -401,6 +445,7 @@ func rssEntries(items []*xmlNode) []FeedEntry {
 			Description:     childText(item, "description"),
 			PublishedAt:     parseFeedTime(childText(item, "pubDate")),
 			DurationSeconds: parseFeedDuration(childText(item, "itunes:duration")),
+			ArtworkURL:      directChildAttr(item, "itunes:image", "href"),
 		}
 		if entry.Description == "" {
 			entry.Description = childText(item, "itunes:summary")

@@ -1,0 +1,3 @@
+- [x] Parse channel and entry artwork in `scrape.ParseFeed`
+- [x] `ingest.ShowPublisher` hook after catalogue upsert
+- [x] `app.subscriptionShows` publisher and tests
