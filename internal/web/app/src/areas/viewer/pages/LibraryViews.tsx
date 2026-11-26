@@ -262,7 +262,7 @@ export function LibraryViewSwitcher({
 }) {
   const t = useT();
   return (
-    <div role="group" aria-label={t("libraryViewSwitchLabel")} className="flex flex-wrap gap-2">
+    <div role="group" aria-label={t("libraryViewSwitchLabel")} className="bf-view-switch">
       {views.map((view) => (
         <button
           key={view.id}
