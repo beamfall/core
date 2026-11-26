@@ -3,9 +3,11 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"maps"
 	"os"
 	"os/exec"
@@ -895,5 +897,34 @@ func TestLandlockNVIDIAGrantEnforced(t *testing.T) {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Errorf("--nvidia=%s child: %v %s", withNVIDIA, err, out)
 		}
+	}
+}
+
+func TestWarnIfFFmpegLandlockUnavailable(t *testing.T) {
+	prev := ffmpegLandlockABI
+	t.Cleanup(func() { ffmpegLandlockABI = prev })
+
+	for _, tc := range []struct {
+		name     string
+		abi      int
+		wantWarn bool
+	}{
+		{name: "no landlock", abi: 0, wantWarn: true},
+		{name: "partial landlock abi 2", abi: 2, wantWarn: true},
+		{name: "required landlock abi 3", abi: 3, wantWarn: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ffmpegLandlockABI = func() int { return tc.abi }
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, nil))
+			warnIfFFmpegLandlockUnavailable(logger)
+			got := buf.String()
+			if tc.wantWarn && !strings.Contains(got, "level=WARN") {
+				t.Fatalf("expected WARN log for abi=%d, got %q", tc.abi, got)
+			}
+			if !tc.wantWarn && got != "" {
+				t.Fatalf("expected no log for abi=%d, got %q", tc.abi, got)
+			}
+		})
 	}
 }

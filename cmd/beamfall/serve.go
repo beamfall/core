@@ -36,6 +36,7 @@ func serve(ctx context.Context, args []string) error {
 	// empty so a test binary never re-execs itself. The hardware probes take the
 	// same shim, so they certify the confinement a transcode will run under.
 	cfg.FFmpegHardeningShimPath = ffmpeg.DefaultShimPath()
+	warnIfFFmpegLandlockUnavailable(slog.Default())
 	ffmpeg.SetProbeHardeningShim(cfg.FFmpegHardeningShimPath)
 	cfg.IntegrationWorkerHardeningShimPath = integrationhost.DefaultShimPath()
 	beamfall, release, err := startServer(ctx, cfg)

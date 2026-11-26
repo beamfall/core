@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,6 +56,32 @@ var errLandlockRequired = errors.New("landlock confinement is required but unava
 // ffmpegLandlockABI is the kernel-support probe for the ffmpeg shim, held as a
 // seam so the required-confinement refusal is testable on a landlock kernel.
 var ffmpegLandlockABI = landlockABI
+
+// warnIfFFmpegLandlockUnavailable logs a startup warning on Linux hosts whose
+// kernel cannot enforce Landlock ABI >= requiredLandlockMinABI. Ordinary media
+// jobs fall back to rlimits (or a partial Landlock ruleset), while
+// encrypted-library pipe transcodes remain refused.
+func warnIfFFmpegLandlockUnavailable(logger *slog.Logger) {
+	if logger == nil {
+		return
+	}
+	abi := ffmpegLandlockABI()
+	if abi < 1 {
+		logger.Warn(
+			"ffmpeg landlock confinement unavailable on this kernel; ordinary media jobs will run with rlimits only while encrypted-library pipe transcodes remain refused",
+			"landlock_abi", abi,
+			"required_abi", requiredLandlockMinABI,
+		)
+		return
+	}
+	if !requiredLandlockEnforceable(abi) {
+		logger.Warn(
+			"ffmpeg landlock kernel ABI below required minimum; ordinary media jobs use partial landlock ruleset while encrypted-library pipe transcodes remain refused",
+			"landlock_abi", abi,
+			"required_abi", requiredLandlockMinABI,
+		)
+	}
+}
 
 func applyFFmpegConfinement(roPaths, rwPaths []string, binary string, gpu gpuGrant, required bool) error {
 	abi := ffmpegLandlockABI()

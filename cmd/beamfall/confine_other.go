@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"runtime"
 
 	"github.com/beamfall/core/internal/integrationhost"
@@ -36,3 +37,5 @@ func applyLocalInferenceConfinement(_, _ []string, _ string) error {
 	return fmt.Errorf("%w: no landlock enforcement on %s",
 		integrationhost.ErrLocalInferenceConfinementUnavailable, runtime.GOOS)
 }
+
+func warnIfFFmpegLandlockUnavailable(_ *slog.Logger) {}

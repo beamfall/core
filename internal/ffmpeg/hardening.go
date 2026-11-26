@@ -189,12 +189,19 @@ func DefaultShimPath() string {
 // LoopbackPort, when non-zero, is the one loopback TCP port the macOS profile
 // lets the child reach (the encrypted-library pipe). Landlock does not fence
 // TCP at the ABI the shim requires, so Linux ignores it.
+//
+// RequireLandlock makes Linux Landlock ABI >= 3 mandatory (--require-landlock)
+// instead of best-effort. Encrypted-library pipe transcodes set it because
+// they read decrypted bytes; ordinary transcodes and probes leave it false so
+// Linux kernels compiled without Landlock (such as Unraid) still run on
+// rlimits.
 type confinement struct {
-	ReadOnly     []string
-	ReadWrite    []string
-	DRI          bool
-	NVIDIA       bool
-	LoopbackPort int
+	ReadOnly        []string
+	ReadWrite       []string
+	DRI             bool
+	NVIDIA          bool
+	LoopbackPort    int
+	RequireLandlock bool
 }
 
 // withGPU returns a copy carrying the GPU grants a job whose encode or

@@ -44,12 +44,30 @@ func fakeSandboxExec(t *testing.T) string {
 
 var spawnTestConf = confinement{ReadOnly: []string{"/media/in"}, ReadWrite: []string{"/var/out"}}
 
-// TestSpawnSeamLinuxRequiresLandlock: on Linux every shimmed spawn tells the
-// shim landlock is mandatory, so a kernel that cannot fence the job refuses
-// it instead of running FFmpeg on rlimits alone.
-func TestSpawnSeamLinuxRequiresLandlock(t *testing.T) {
+// TestSpawnSeamLinuxBestEffortForNormalJobs: on Linux ordinary shimmed spawns
+// run through the shim with best-effort Landlock (no --require-landlock), so
+// non-Landlock kernels such as Unraid still run transcodes under rlimits.
+func TestSpawnSeamLinuxBestEffortForNormalJobs(t *testing.T) {
 	pinSpawnPlatform(t, "linux")
 	cmd := shimCommand(context.Background(), "/opt/beamfall", "/usr/bin/ffmpeg", spawnTestConf, []string{"-i", "in.mkv"})
+	if cmd.Err != nil {
+		t.Fatalf("linux spawn refused: %v", cmd.Err)
+	}
+	want := []string{"/opt/beamfall", shimSubcommand,
+		"--ro", "/media/in", "--rw", "/var/out", "--", "/usr/bin/ffmpeg", "-i", "in.mkv"}
+	if !reflect.DeepEqual(cmd.Args, want) {
+		t.Fatalf("linux argv:\n got %q\nwant %q", cmd.Args, want)
+	}
+}
+
+// TestSpawnSeamLinuxRequiresLandlockWhenRequested: when RequireLandlock is set
+// (encrypted-library pipe transcodes), the Linux seam passes --require-landlock
+// so a kernel without Landlock ABI 3+ refuses the launch.
+func TestSpawnSeamLinuxRequiresLandlockWhenRequested(t *testing.T) {
+	pinSpawnPlatform(t, "linux")
+	conf := spawnTestConf
+	conf.RequireLandlock = true
+	cmd := shimCommand(context.Background(), "/opt/beamfall", "/usr/bin/ffmpeg", conf, []string{"-i", "in.mkv"})
 	if cmd.Err != nil {
 		t.Fatalf("linux spawn refused: %v", cmd.Err)
 	}
