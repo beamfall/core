@@ -1395,3 +1395,20 @@ func TestDerivativeSkipsBucketsAtOrAboveSourceWidth(t *testing.T) {
 		t.Fatalf("w320 = %q, %v; want a generated derivative", got, err)
 	}
 }
+
+func TestDerivativeKeepsWiderMediaDerivedBucket(t *testing.T) {
+	svc := NewService(storetest.Open(t), &fakeScaler{}, t.TempDir())
+	writePoster(t, svc, "media-photo")
+	orig := svc.PosterPath("media-photo")
+	writeJPEG(t, orig, 500)
+	wide := filepath.Join(filepath.Dir(orig), "poster.w1920.jpg")
+	writeJPEG(t, wide, 1900)
+
+	got, err := svc.PosterDerivative(context.Background(), "media-photo", "w1920")
+	if err != nil || got != wide {
+		t.Fatalf("w1920 = %q, %v; want kept %q", got, err, wide)
+	}
+	if _, err := os.Stat(wide); err != nil {
+		t.Fatalf("media-derived bucket removed: %v", err)
+	}
+}

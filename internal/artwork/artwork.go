@@ -686,12 +686,16 @@ func (s *Service) derivative(ctx context.Context, original, owner, slot, bucket 
 	}
 	// A bucket at least as wide as the source can only be a same-size copy of
 	// it (scalers never upscale): serve the original and drop any copy an
-	// earlier version wrote (CORE-3528).
+	// earlier version wrote (CORE-3528). A stored bucket wider than the
+	// source was built from the media file (DeriveImage), so it stays.
 	if w, ok := sourceWidth(original); ok && width >= w {
-		if _, err := os.Lstat(dst); err == nil {
-			_ = os.Remove(dst)
+		redundant, err := s.dropRedundantDerivative(ctx, original, dst, width)
+		if err != nil {
+			return original, err
 		}
-		return original, nil
+		if redundant {
+			return original, nil
+		}
 	}
 	// A cached derivative is fresh only when it is at least as new as its
 	// original; a rewritten original (replaced artwork — the URL's ?v changes
@@ -1479,9 +1483,34 @@ func sourceWidth(path string) (int, bool) {
 		return 0, false
 	}
 	defer f.Close()
-	cfg, _, err := image.DecodeConfig(f)
-	if err != nil {
+	cfg, format, err := image.DecodeConfig(f)
+	if err != nil || (format != "jpeg" && format != "png") {
 		return 0, false
 	}
 	return cfg.Width, true
+}
+
+// dropRedundantDerivative reports whether the bucket at dst adds nothing over
+// original, removing a stored same-size copy. It decides under the directory
+// lock, so a concurrent import or generation cannot lose a valid derivative.
+func (s *Service) dropRedundantDerivative(ctx context.Context, original, dst string, width int) (bool, error) {
+	if _, err := os.Lstat(dst); err != nil {
+		return true, nil
+	}
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(original))
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	srcW, ok := sourceWidth(original)
+	if !ok || width < srcW {
+		return false, nil
+	}
+	if dstW, ok := sourceWidth(dst); ok && dstW > srcW {
+		return false, nil
+	}
+	if err := os.Remove(dst); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	return true, nil
 }
