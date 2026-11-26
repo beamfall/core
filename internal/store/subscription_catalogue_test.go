@@ -475,3 +475,42 @@ func TestUpsertSubscriptionCatalogInsertsNewestLast(t *testing.T) {
 		t.Fatalf("newest rowid %d <= oldest rowid %d; recently-added would list oldest first", newest, oldest)
 	}
 }
+
+func TestRecentlyAddedOrdersFeedMediaByPublicationTime(t *testing.T) {
+	st, subA, now := catalogueFixture(t)
+	ctx := context.Background()
+	subB, err := st.AddSubscription(ctx, Subscription{
+		LibraryID: "library-local",
+		FeedURL:   "https://feeds.example.com/other.xml",
+		Root:      "/media/local/incoming",
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := func(guid string, published time.Time) FeedCatalogEntry {
+		return FeedCatalogEntry{GUID: guid, Title: guid, PublishedAt: published, DurationSeconds: 60,
+			EnclosureURL: "https://cdn.example.com/" + guid + ".mp3", EnclosureType: "audio/mpeg", FeedTitle: "Feed"}
+	}
+	day := func(d int) time.Time { return time.Date(2026, 11, d, 0, 0, 0, 0, time.UTC) }
+	// Feed A is ingested first and holds the newest episode; feed B is ingested
+	// later but only holds older ones, so rowid order and publication order differ.
+	if _, err := st.UpsertSubscriptionCatalog(ctx, subA.ID, []FeedCatalogEntry{entry("a-old", day(2)), entry("a-new", day(20))}, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertSubscriptionCatalog(ctx, subB.ID, []FeedCatalogEntry{entry("b-mid", day(10)), entry("b-old", day(1))}, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	items, err := st.SourceItems(ctx, LibraryFilter{Revealed: true, AllowedIDs: []LibraryID{"library-local"}}, SourceQuery{Kind: "recently-added", Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, item := range items {
+		got = append(got, item.Title)
+	}
+	want := []string{"a-new", "b-mid", "a-old", "b-old"}
+	// Seeded Media without a subscription entry follows the feed Media.
+	if len(got) < len(want) || fmt.Sprint(got[:len(want)]) != fmt.Sprint(want) {
+		t.Fatalf("recently-added order = %v, want %v", got, want)
+	}
+}

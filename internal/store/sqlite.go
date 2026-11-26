@@ -2545,14 +2545,29 @@ func (s *Store) sourceItemsSQL(ctx context.Context, filter LibraryFilter, fieldF
 	// turning a 50-row page into an 80k-row sort (~36ms on the bench fixture vs
 	// ~0.1ms here). rowid cannot be indexed by a secondary index, so the scan is
 	// the only plan that streams the ORDER BY and short-circuits at LIMIT.
+	// Libraries holding feed-catalogue Media order by publication time instead
+	// (CORE-3537): ingest order is not publication order after a backfill or
+	// when feeds are followed in a different order. Subscription Media sort
+	// first by entry time, the rest follow in rowid order.
+	var hasEntries bool
+	if err := s.catalogR.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM subscription_entry e JOIN media m ON m.id = e.media_id
+		               WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`))`, args[:len(visible)]...).Scan(&hasEntries); err != nil {
+		return nil, err
+	}
+	fromClause, orderClause := "media m NOT INDEXED", "m.rowid DESC"
+	if hasEntries {
+		fromClause = "media m"
+		orderClause = "(SELECT MAX(" + subscriptionEntryTimeSQL + ") FROM subscription_entry e WHERE e.media_id = m.id) DESC NULLS LAST, m.rowid DESC"
+	}
 	rows, err := s.catalogR.QueryContext(ctx, `
 		SELECT m.id, m.title, m.library_id, m.duration_seconds
-		FROM media m NOT INDEXED
+		FROM `+fromClause+`
 		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
 		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+`
 		  AND (NOT EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id)
 		       OR EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id AND f.missing_at_ms IS NULL))`+filterClause+entityClause+certClause+`
-		ORDER BY m.rowid DESC
+		ORDER BY `+orderClause+`
 		LIMIT ? OFFSET ?
 	`, args...)
 	if err != nil {
