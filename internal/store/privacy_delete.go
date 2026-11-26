@@ -340,7 +340,7 @@ func (s *Store) deleteProfileCatalogAndSaveStateLocked(ctx context.Context, stat
 }
 
 func deleteMyCatalogFootprintTx(ctx context.Context, tx *sql.Tx, profileID ProfileID) error {
-	for _, table := range []string{"saved_filter", "saved_station", "offline_pack", "offline_pack_build", "access_request", "access_grant"} {
+	for _, table := range []string{"saved_filter", "saved_station", "offline_pack", "offline_pack_build", "access_request", "access_grant", "item_state_import"} {
 		// #nosec G202 -- table is drawn from the closed literal list above.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE profile_id = ?`, profileID); err != nil {
 			return err
@@ -420,13 +420,17 @@ type planeErasure struct {
 	key       string
 	LibraryID LibraryID `json:"libraryID"`
 	ProfileID ProfileID `json:"profileID"`
-	// CutoffMS bounds the erase to rows created before the delete, so rows the
+	// CutoffMS bounds footprint rows created before the erase, so rows the
 	// Profile creates later in a still-sealed plane survive its next unseal.
 	CutoffMS int64 `json:"cutoffMS"`
 	// ProfileDeleted marks a whole-Profile deletion rather than a footprint
 	// erase: the plane also drops the Profile's Channels, as the catalog's
-	// ON DELETE CASCADE does for shared ones.
-	ProfileDeleted bool `json:"profileDeleted,omitempty"`
+	// ON DELETE CASCADE does for shared ones. ProfileDeletedCutoffMS preserves
+	// that cutoff separately so a later footprint erase after the Profile ID is
+	// reused neither clears ProfileDeleted nor widens channel deletion onto the
+	// recreated Profile's channels.
+	ProfileDeleted         bool  `json:"profileDeleted,omitempty"`
+	ProfileDeletedCutoffMS int64 `json:"profileDeletedCutoffMS,omitempty"`
 }
 
 func planeErasurePrefix(libraryID LibraryID) string {
@@ -450,14 +454,51 @@ func recordPlaneErasuresTx(ctx context.Context, tx *sql.Tx, profileID ProfileID,
 		return err
 	}
 	for _, libraryID := range libraries {
-		raw, err := json.Marshal(planeErasure{LibraryID: libraryID, ProfileID: profileID, CutoffMS: cutoffMS, ProfileDeleted: profileDeleted})
+		key := planeErasurePrefix(libraryID) + string(profileID)
+		next := planeErasure{
+			LibraryID: libraryID,
+			ProfileID: profileID,
+			CutoffMS:  cutoffMS,
+		}
+		if profileDeleted {
+			next.ProfileDeleted = true
+			next.ProfileDeletedCutoffMS = cutoffMS
+		}
+		var existingRaw string
+		switch err := tx.QueryRowContext(ctx, `SELECT value FROM server_config WHERE key = ?`, key).Scan(&existingRaw); {
+		case err == nil:
+			var prev planeErasure
+			if err := json.Unmarshal([]byte(existingRaw), &prev); err != nil {
+				return fmt.Errorf("decode plane erasure %q: %w", key, err)
+			}
+			if prev.CutoffMS > next.CutoffMS {
+				next.CutoffMS = prev.CutoffMS
+			}
+			if prev.ProfileDeleted {
+				prevDeletedCutoff := prev.ProfileDeletedCutoffMS
+				if prevDeletedCutoff == 0 {
+					prevDeletedCutoff = prev.CutoffMS
+				}
+				if !next.ProfileDeleted || prevDeletedCutoff > next.ProfileDeletedCutoffMS {
+					next.ProfileDeletedCutoffMS = prevDeletedCutoff
+				}
+				next.ProfileDeleted = true
+			}
+		case !errors.Is(err, sql.ErrNoRows):
+			return err
+		}
+		updatedAt := next.CutoffMS
+		if next.ProfileDeletedCutoffMS > updatedAt {
+			updatedAt = next.ProfileDeletedCutoffMS
+		}
+		raw, err := json.Marshal(next)
 		if err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO server_config(key, value, updated_at_ms) VALUES (?, ?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at_ms = excluded.updated_at_ms`,
-			planeErasurePrefix(libraryID)+string(profileID), string(raw), cutoffMS); err != nil {
+			key, string(raw), updatedAt); err != nil {
 			return err
 		}
 	}
@@ -509,26 +550,38 @@ func (s *Store) applyPlaneErasuresLocked(ctx context.Context, plane catalogPlane
 	defer tx.Rollback()
 	keys := make([]string, 0, len(erasures))
 	for _, e := range erasures {
+		footprintCutoff := e.CutoffMS
+		if e.ProfileDeleted && e.ProfileDeletedCutoffMS > footprintCutoff {
+			footprintCutoff = e.ProfileDeletedCutoffMS
+		}
 		for _, table := range []string{"saved_filter", "saved_station"} {
 			// #nosec G202 -- table is drawn from the closed literal list above.
-			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE profile_id = ? AND created_at_ms <= ?`, e.ProfileID, e.CutoffMS); err != nil {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE profile_id = ? AND created_at_ms <= ?`, e.ProfileID, footprintCutoff); err != nil {
 				return nil, err
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM item_state_import WHERE profile_id = ? AND imported_at_ms <= ?`, e.ProfileID, footprintCutoff); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE smart_collection SET created_by_profile_id = NULL
-			WHERE created_by_profile_id = ? AND created_at_ms <= ?`, e.ProfileID, e.CutoffMS); err != nil {
+			WHERE created_by_profile_id = ? AND created_at_ms <= ?`, e.ProfileID, footprintCutoff); err != nil {
 			return nil, err
 		}
 		// Identification commits record the ordinal's actor on the Media's own
 		// plane (CORE-0706); the catalog clears its copy in the footprint erase.
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE media_operator_ordinal SET actor_profile_id = NULL
-			WHERE actor_profile_id = ? AND set_at_ms <= ?`, e.ProfileID, e.CutoffMS); err != nil {
+			WHERE actor_profile_id = ? AND set_at_ms <= ?`, e.ProfileID, footprintCutoff); err != nil {
 			return nil, err
 		}
 		if e.ProfileDeleted {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM channel WHERE profile_id = ? AND created_at_ms <= ?`, e.ProfileID, e.CutoffMS); err != nil {
+			channelCutoff := e.ProfileDeletedCutoffMS
+			if channelCutoff == 0 {
+				channelCutoff = e.CutoffMS
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM channel WHERE profile_id = ? AND created_at_ms <= ?`, e.ProfileID, channelCutoff); err != nil {
 				return nil, err
 			}
 		}

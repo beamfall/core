@@ -22,14 +22,17 @@ type ArtworkAction struct {
 // pending actions of its revision, superseding the Media's older pending
 // actions, inside the identification transaction.
 func enqueueArtworkActionsTx(ctx context.Context, tx *sql.Tx, id MediaID, revision int64, commit IdentificationCommit, now time.Time) error {
-	if len(commit.Metadata.Artwork) == 0 {
-		return nil
-	}
 	ms := now.UnixMilli()
+	// Always supersede older pending artwork actions, even when the new
+	// identification carries no artwork slots, so crash replay cannot later
+	// import artwork from the replaced match.
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE media_artwork_action SET state = 'superseded', completed_at_ms = ?
 		WHERE media_id = ? AND state = 'pending'`, ms, id); err != nil {
 		return err
+	}
+	if len(commit.Metadata.Artwork) == 0 {
+		return nil
 	}
 	slots := make([]string, 0, len(commit.Metadata.Artwork))
 	for slot, url := range commit.Metadata.Artwork {

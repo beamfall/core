@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -1606,5 +1607,67 @@ func TestWipeOrRemoveFileSurfacesOpenErrorButStillRemoves(t *testing.T) {
 	}
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 		t.Fatalf("file must still be removed despite failed wipe, stat err=%v", statErr)
+	}
+}
+
+const walCrashHelperEnv = "BEAMFALL_TEST_WAL_CRASH_DIR"
+
+// TestHelperEncryptedWALCrash opens the encrypted working DB in WAL mode,
+// commits a row without closing or checkpointing, and exits abruptly so the
+// committed row sits solely in working.db-wal.
+func TestHelperEncryptedWALCrash(t *testing.T) {
+	dir := os.Getenv(walCrashHelperEnv)
+	if dir == "" {
+		return
+	}
+	w, err := openEncryptedLibrarySQLiteWriter(filepath.Join(dir, "working.db"))
+	if err != nil {
+		t.Fatalf("open writer: %v", err)
+	}
+	if _, err := w.Exec(`PRAGMA wal_autocheckpoint = 0; CREATE TABLE wal_crash_marker (id TEXT PRIMARY KEY); INSERT INTO wal_crash_marker(id) VALUES ('from-wal')`); err != nil {
+		t.Fatalf("seed wal: %v", err)
+	}
+	os.Exit(0)
+}
+
+// CORE-3516 #1: quarantine repair recovers and checkpoints committed WAL
+// frames before sealing so an abrupt crash leaves no evacuated rows behind.
+func TestEncryptedLibraryQuarantineRepairCheckpointsUnclosedWAL(t *testing.T) {
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	libraryID := LibraryID("library-crash-wal")
+	workingDir := filepath.Join(dataDir, "db", "encrypted-library-working", string(libraryID))
+	if err := os.MkdirAll(workingDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperEncryptedWALCrash$") // #nosec G204 G702 -- re-runs this test binary
+	cmd.Env = append(os.Environ(), walCrashHelperEnv+"="+workingDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("wal crash helper: %v\n%s", err, out)
+	}
+	walInfo, err := os.Stat(filepath.Join(workingDir, "working.db-wal"))
+	if err != nil || walInfo.Size() == 0 {
+		t.Fatalf("working.db-wal after abrupt exit = %+v, err=%v", walInfo, err)
+	}
+	st, err := Open(ctx, dataDir, Options{EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer st.Close()
+	if _, ok := st.EncryptedLibraryDBQuarantine(libraryID); !ok {
+		t.Fatal("leftover WAL was not quarantined at startup")
+	}
+	if err := st.RepairEncryptedLibraryDBQuarantine(ctx, libraryID, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatalf("RepairEncryptedLibraryDBQuarantine: %v", err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, libraryID, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatalf("UnsealEncryptedLibraryDB: %v", err)
+	}
+	var marker string
+	if err := st.encryptedDBs[libraryID].reader.QueryRowContext(ctx, `SELECT id FROM wal_crash_marker`).Scan(&marker); err != nil {
+		t.Fatalf("query recovered WAL row: %v", err)
+	}
+	if marker != "from-wal" {
+		t.Fatalf("recovered marker = %q, want from-wal", marker)
 	}
 }

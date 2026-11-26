@@ -33,6 +33,10 @@ func (o backupOps) SetUpgradeGate(gate string) (backupcore.Status, error) {
 	return backupcore.SetUpgradeGate(o.dataDir, gate)
 }
 
+func (o backupOps) RecordRun(run backupcore.RunRecord, integrity bool) (backupcore.Status, error) {
+	return backupcore.RecordRun(o.dataDir, run, integrity)
+}
+
 // Drill runs "Verify my backup now" under the ADR-0192 §5 L3 guardrails: the
 // data directory's free space, the idle check, one drill at a time and the
 // default hard timeout.

@@ -1149,6 +1149,25 @@ func (s *Store) EncryptedLibraryBackupRotationArtifacts(ctx context.Context, lib
 	return artifacts, nil
 }
 
+var errBackupOutsideAllowlist = errors.New("backup set is outside the sanctioned path allowlist")
+
+type confinedIntegrityError struct{ err error }
+
+func (e confinedIntegrityError) Error() string { return e.err.Error() }
+func (e confinedIntegrityError) Unwrap() error { return e.err }
+
+// IsConfinedBackupIntegrityError reports whether err from VerifyBackupSet
+// reflects a failed check against a backup set inside the store's sanctioned
+// allowlist (rather than an invalid input, allowlist refusal, or context
+// cancellation).
+func IsConfinedBackupIntegrityError(err error) bool {
+	if errors.Is(err, errBackupOutsideAllowlist) {
+		return false
+	}
+	var target confinedIntegrityError
+	return errors.As(err, &target)
+}
+
 func summarizeBackupSet(ctx context.Context, s *Store, setDir string) BackupSetSummary {
 	summary := BackupSetSummary{Directory: setDir}
 	if size, err := dirSizeBytes(setDir); err == nil {
@@ -1159,7 +1178,7 @@ func summarizeBackupSet(ctx context.Context, s *Store, setDir string) BackupSetS
 	if receiptErr == nil {
 		summary.CreatedAt, _ = time.Parse(time.RFC3339Nano, receipt.CreatedAt)
 		summary.KeyFingerprint = receipt.KeyFingerprint
-	} else {
+	} else if _, statErr := os.Lstat(envelopePath); statErr != nil {
 		manifest, err := readManifestFile(filepath.Join(setDir, backupManifestBasename))
 		if err == nil {
 			summary.CreatedAt, _ = time.Parse(time.RFC3339Nano, manifest.CreatedAt)
@@ -1187,35 +1206,46 @@ func (s *Store) VerifyBackupSet(ctx context.Context, manifestPath string) error 
 	}
 	setDir, err := s.resolveBackupSetDir(manifestPath)
 	if err != nil {
+		if !errors.Is(err, errBackupOutsideAllowlist) && filepath.Base(manifestPath) == backupManifestBasename {
+			if sanitizedDir, ok := s.sanctionedDirForManifestPath(manifestPath); ok {
+				envelopePath := filepath.Join(sanitizedDir, backupEnvelopeBasename)
+				if _, statErr := os.Lstat(envelopePath); statErr == nil {
+					return s.verifyEncryptedBackupSet(ctx, envelopePath)
+				}
+				if ctx.Err() == nil {
+					return confinedIntegrityError{err: err}
+				}
+			}
+		}
 		return err
 	}
 	manifest, err := readManifestFile(filepath.Join(setDir, backupManifestBasename))
 	if err != nil {
-		return errors.New("backup set manifest could not be read")
+		return s.confinedFailure(ctx, errors.New("backup set manifest could not be read"))
 	}
 	if manifest.RestoreInstructionsVersion < 1 || manifest.RestoreInstructionsVersion > backupRestoreInstructionsVersion || manifest.ConsistencyProtocol == "" {
-		return errors.New("backup set manifest is unsupported")
+		return s.confinedFailure(ctx, errors.New("backup set manifest is unsupported"))
 	}
 	for _, required := range []string{"catalog", "events"} {
 		snapshot, ok := manifest.Databases[required]
 		if !ok || snapshot.Database != required {
-			return errors.New("backup set is missing a required database")
+			return s.confinedFailure(ctx, errors.New("backup set is missing a required database"))
 		}
 	}
 	for name, snapshot := range manifest.Databases {
 		path, derr := confinedSnapshotPath(setDir, snapshot)
 		if derr != nil {
-			return fmt.Errorf("backup set entry %s failed integrity verification", sanitizeEntryName(name))
+			return s.confinedFailure(ctx, fmt.Errorf("backup set entry %s failed integrity verification", sanitizeEntryName(name)))
 		}
 		if verifyBackupSnapshotBytesConfined(snapshot, path) != nil {
-			return fmt.Errorf("backup set entry %s failed integrity verification", sanitizeEntryName(name))
+			return s.confinedFailure(ctx, fmt.Errorf("backup set entry %s failed integrity verification", sanitizeEntryName(name)))
 		}
 	}
 	if manifest.RestoreInstructionsVersion == backupRestoreInstructionsVersion {
 		for name, payload := range manifest.OperationalFiles {
 			path, derr := confinedOperationalPath(setDir, payload)
 			if derr != nil || validateOperationalEntry(name, payload) != nil || verifyOperationalFile(payload, path) != nil {
-				return fmt.Errorf("backup set operational entry %s failed integrity verification", sanitizeOperationalName(name))
+				return s.confinedFailure(ctx, fmt.Errorf("backup set operational entry %s failed integrity verification", sanitizeOperationalName(name)))
 			}
 		}
 	}
@@ -1227,10 +1257,39 @@ func (s *Store) VerifyBackupSet(ctx context.Context, manifestPath string) error 
 	}
 }
 
+func (s *Store) confinedFailure(ctx context.Context, err error) error {
+	if err == nil || ctx.Err() != nil {
+		return err
+	}
+	return confinedIntegrityError{err: err}
+}
+
+func (s *Store) sanctionedDirForManifestPath(path string) (string, bool) {
+	if strings.TrimSpace(path) == "" {
+		return "", false
+	}
+	resolved, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return "", false
+	}
+	for _, root := range s.sanctionedBackupRoots() {
+		if pathWithinRoot(root, resolved) {
+			return resolved, true
+		}
+	}
+	return "", false
+}
+
 func (s *Store) verifyEncryptedBackupSet(ctx context.Context, envelopePath string) error {
 	resolved, err := filepath.EvalSymlinks(envelopePath)
 	if err != nil || filepath.Base(resolved) != backupEnvelopeBasename {
-		return errors.New("backup set envelope could not be read")
+		fail := errors.New("backup set envelope could not be read")
+		if err != nil && filepath.Base(envelopePath) == backupEnvelopeBasename {
+			if _, ok := s.sanctionedDirForManifestPath(envelopePath); ok {
+				return s.confinedFailure(ctx, fail)
+			}
+		}
+		return fail
 	}
 	setDir := filepath.Dir(resolved)
 	allowed := false
@@ -1241,39 +1300,39 @@ func (s *Store) verifyEncryptedBackupSet(ctx context.Context, envelopePath strin
 		}
 	}
 	if !allowed {
-		return errors.New("backup set is outside the sanctioned path allowlist")
+		return errBackupOutsideAllowlist
 	}
 	entries, err := os.ReadDir(setDir)
 	if err != nil {
-		return errors.New("backup set envelope could not be read")
+		return s.confinedFailure(ctx, errors.New("backup set envelope could not be read"))
 	}
 	if len(entries) != 2 {
-		return errors.New("encrypted backup set contains unexpected plaintext or metadata")
+		return s.confinedFailure(ctx, errors.New("encrypted backup set contains unexpected plaintext or metadata"))
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || (entry.Name() != backupEnvelopeBasename && entry.Name() != backupReceiptBasename) {
-			return errors.New("encrypted backup set contains unexpected plaintext or metadata")
+			return s.confinedFailure(ctx, errors.New("encrypted backup set contains unexpected plaintext or metadata"))
 		}
 	}
 	receipt, err := readBackupSetReceipt(filepath.Join(setDir, backupReceiptBasename))
 	if err != nil || receipt.Type != "backup" || receipt.Envelope != backupEnvelopeBasename ||
 		receipt.EnvelopeVersion != 2 || !receipt.ManifestFormatEncrypted || receipt.KeyFingerprint == "" {
-		return errors.New("backup set receipt is unsupported")
+		return s.confinedFailure(ctx, errors.New("backup set receipt is unsupported"))
 	}
 	size, checksum, err := fileSizeAndSHA256(resolved)
 	if err != nil || size != receipt.EnvelopeSizeBytes || checksum != receipt.EnvelopeSHA256 {
-		return errors.New("backup set envelope failed integrity verification")
+		return s.confinedFailure(ctx, errors.New("backup set envelope failed integrity verification"))
 	}
 	src, err := os.Open(resolved) //nolint:gosec // resolved path is confined to a sanctioned backup set
 	if err != nil {
-		return errors.New("backup set envelope could not be read")
+		return s.confinedFailure(ctx, errors.New("backup set envelope could not be read"))
 	}
 	defer src.Close()
 	if s.snapshotSealer == nil {
 		return errors.New("backup set envelope verifier unavailable")
 	}
 	if err := s.snapshotSealer.VerifyEnvelopeStructure(src); err != nil {
-		return errors.New("backup set envelope is malformed")
+		return s.confinedFailure(ctx, errors.New("backup set envelope is malformed"))
 	}
 	return ctx.Err()
 }
@@ -1301,16 +1360,21 @@ func (s *Store) resolveBackupSetDir(manifestPath string) (string, error) {
 	if err != nil {
 		return "", errors.New("backup set manifest could not be read")
 	}
+	setDir := filepath.Dir(resolved)
+	allowed := false
+	for _, root := range s.sanctionedBackupRoots() {
+		if pathWithinRoot(root, setDir) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return "", errBackupOutsideAllowlist
+	}
 	if filepath.Base(resolved) != backupManifestBasename {
 		return "", errors.New("backup set manifest path is not a manifest.json")
 	}
-	setDir := filepath.Dir(resolved)
-	for _, root := range s.sanctionedBackupRoots() {
-		if pathWithinRoot(root, setDir) {
-			return setDir, nil
-		}
-	}
-	return "", errors.New("backup set is outside the sanctioned path allowlist")
+	return setDir, nil
 }
 
 // confinedSnapshotPath derives a snapshot's on-disk path from the set layout

@@ -3,12 +3,15 @@ package graph
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	backupcore "github.com/beamfall/core/internal/backup"
 	"github.com/beamfall/core/internal/restorestage"
+	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
 
@@ -30,6 +33,10 @@ func (f *fakeBackupOps) AcknowledgeBanner(b backupcore.Banner) (backupcore.Statu
 
 func (f *fakeBackupOps) SetUpgradeGate(gate string) (backupcore.Status, error) {
 	return backupcore.SetUpgradeGate(f.dataDir, gate)
+}
+
+func (f *fakeBackupOps) RecordRun(run backupcore.RunRecord, integrity bool) (backupcore.Status, error) {
+	return backupcore.RecordRun(f.dataDir, run, integrity)
 }
 
 func (f *fakeBackupOps) Drill(_ context.Context, _, backupKey string) (restorestage.DrillReport, error) {
@@ -145,6 +152,82 @@ func TestBackupOpsFieldsBannersGateAndDrill(t *testing.T) {
 	if fake.gotKey != "placeholder-drill-key" || strings.Contains(string(data["verifyBackupNow"]), "placeholder-drill-key") {
 		t.Fatalf("drill key handling: got %q, response %s", fake.gotKey, data["verifyBackupNow"])
 	}
+
+	// CORE-3516 #18: completed failed drills return verified=false and reason
+	// without being swallowed into a GraphQL error.
+	fake.report = restorestage.DrillReport{Verified: false, Set: "set-1", Reason: "restore-assertions-failed", Duration: time.Second}
+	data, errs = postLibraryTrash(t, handler, drillReq)
+	var failedDrill BackupDrillInfo
+	if len(errs) != 0 || json.Unmarshal(data["verifyBackupNow"], &failedDrill) != nil || failedDrill.Verified || failedDrill.Reason != "restore-assertions-failed" {
+		t.Fatalf("failed verifyBackupNow = %s, errors %q", data["verifyBackupNow"], errs)
+	}
+}
+
+// CORE-3516 #15 + follow-up: unverified manual backup leaves trusted recovery
+// point, integrity banner, and update gate untouched; confined verifyBackup
+// pass clears them and confined verifyBackup failure records an integrity incident.
+func TestManualBackupAndVerifyClearUpdateGate(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	openManagerAdminSession(t, st)
+	dataDir := t.TempDir()
+	st.SetSnapshotSealer(backupcore.NewDirectorySealer(dataDir))
+	if _, err := backupcore.CreateBootstrapEscrow(dataDir, time.Now().UTC()); err != nil {
+		t.Fatalf("CreateBootstrapEscrow: %v", err)
+	}
+	handler.SetBackupOps(&fakeBackupOps{dataDir: dataDir})
+	if _, err := backupcore.RecordRun(dataDir, backupcore.RunRecord{At: time.Now().UTC().Add(-time.Minute), FailureClass: "integrity", Set: "prior-bad"}, true); err != nil {
+		t.Fatal(err)
+	}
+	root, err := st.AddPathPickerRoot(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("AddPathPickerRoot: %v", err)
+	}
+	destJSON, _ := json.Marshal(root.Path)
+	createBody := `{"query":"mutation($d: String!) { backup(dest: $d) { manifest } }","variables":{"d":` + string(destJSON) + `}}`
+	data, errs := postLibraryTrash(t, handler, createBody)
+	if len(errs) != 0 {
+		t.Fatalf("backup errors = %q", errs)
+	}
+	var created struct {
+		Manifest string `json:"manifest"`
+	}
+	if err := json.Unmarshal(data["backup"], &created); err != nil || created.Manifest == "" {
+		t.Fatalf("backup payload = %s, %v", data["backup"], err)
+	}
+	if filepath.Base(created.Manifest) != "set.bbk" {
+		t.Fatalf("encrypted manual backup manifest = %q, want set.bbk", created.Manifest)
+	}
+	statusBody := `{"query":"query { backupStatus { updateGateClear integrityFailedBanner lastSuccess { set } lastIntegrityPass { set } lastIntegrityFailure { failureClass set } } }"}`
+	statusData, errs := postLibraryTrash(t, handler, statusBody)
+	if info := decodeBackupStatus(t, statusData["backupStatus"], errs); info.UpdateGateClear || !info.IntegrityFailedBanner || info.LastSuccess != nil || info.LastIntegrityPass != nil {
+		t.Fatalf("after unverified manual backup: %+v", info)
+	}
+	manifestJSON, _ := json.Marshal(created.Manifest)
+	verifyBody := `{"query":"mutation($m: String!) { verifyBackup(manifest: $m) { ok error } }","variables":{"m":` + string(manifestJSON) + `}}`
+	if _, errs := postLibraryTrash(t, handler, verifyBody); len(errs) != 0 {
+		t.Fatalf("verifyBackup errors = %q", errs)
+	}
+	statusData, errs = postLibraryTrash(t, handler, statusBody)
+	if info := decodeBackupStatus(t, statusData["backupStatus"], errs); !info.UpdateGateClear || info.IntegrityFailedBanner || info.LastSuccess == nil || info.LastIntegrityPass == nil || info.LastIntegrityPass.Set == "" {
+		t.Fatalf("after verified manual backup: %+v", info)
+	}
+	// Wait past the prior pass timestamp, tamper with set.bbk, and verify again:
+	// confined failure must record LastIntegrityFailure and close the gate.
+	time.Sleep(2 * time.Millisecond)
+	if err := os.WriteFile(created.Manifest, []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	vData, errs := postLibraryTrash(t, handler, verifyBody)
+	var vRes VerifyBackupInfo
+	if len(errs) != 0 || json.Unmarshal(vData["verifyBackup"], &vRes) != nil || vRes.OK {
+		t.Fatalf("tampered verifyBackup = %s, errs=%q", vData["verifyBackup"], errs)
+	}
+	statusData, errs = postLibraryTrash(t, handler, statusBody)
+	if info := decodeBackupStatus(t, statusData["backupStatus"], errs); info.UpdateGateClear || !info.IntegrityFailedBanner || info.LastIntegrityFailure == nil || info.LastIntegrityFailure.FailureClass != "integrity" {
+		t.Fatalf("after failed manual verifyBackup: %+v", info)
+	}
+	_ = store.IsConfinedBackupIntegrityError // compile-time check of store helper
 }
 
 // BKUP-14 key-to-archive mapping: a set sealed to the current wrap key is

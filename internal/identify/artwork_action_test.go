@@ -147,3 +147,55 @@ func TestArtworkActionsReplayAfterCrashBetweenCommitAndFetch(t *testing.T) {
 		t.Fatalf("imports=%d fetches=%d pending=%d, want 2/2/0", len(art.imports), fetcher.calls, len(st.pending))
 	}
 }
+
+type stalePendingActionStore struct {
+	*actionStore
+	onPendingMedia func()
+}
+
+func (s *stalePendingActionStore) PendingArtworkActionsForMedia(ctx context.Context, id store.MediaID) ([]store.ArtworkAction, error) {
+	if s.onPendingMedia != nil {
+		fn := s.onPendingMedia
+		s.onPendingMedia = nil
+		fn()
+	}
+	return s.actionStore.PendingArtworkActionsForMedia(ctx, id)
+}
+
+// CORE-3516 #9: ReplayArtworkActions revalidates that the snapshot action is
+// still pending under the per-Media write lock before fetching or importing it,
+// so a concurrent superseding identification is never overwritten by stale art.
+func TestReplayArtworkActionsSkipsSupersededBeforeLock(t *testing.T) {
+	ctx := context.Background()
+	_, base, art, fetcher := artworkActionFixture(true)
+	st := &stalePendingActionStore{actionStore: base}
+	service := identify.NewService(&fakeEngine{lookupResult: scrape.Result{
+		Fields:  map[string]any{"title": "Blue Harvest"},
+		Artwork: map[string]string{artwork.SlotPoster: "https://img.example.test/p/42.jpg"},
+	}}, demoBundles(plugin.ScraperSpec{ID: "lookup"}), st)
+	service.SetArtwork(fetcher, art)
+	if err := service.Apply(ctx, "media-alpha", "demo", "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	base.commitOnly = false
+	// Simulate a newer revision superseding revision 1 before Replay acquires the lock.
+	st.onPendingMedia = func() {
+		base.mu.Lock()
+		base.revision = 2
+		base.pending[artwork.SlotPoster] = store.ArtworkAction{
+			MediaID: "media-alpha", Revision: 2, Slot: artwork.SlotPoster,
+			SourceURL: "https://img.example.test/p/new.jpg", PluginID: "demo", ScraperID: "lookup",
+		}
+		base.mu.Unlock()
+	}
+	fetcher.byURL["https://img.example.test/p/new.jpg"] = fetchedResource{data: []byte("new-poster")}
+	replayed, err := service.ReplayArtworkActions(ctx)
+	if err != nil {
+		t.Fatalf("ReplayArtworkActions: %v", err)
+	}
+	// Revision 1 was skipped rather than fetched; revision 2 stays pending until next pass
+	// (no stale fetch for 42.jpg!).
+	if replayed != 0 || fetcher.calls != 0 || len(art.imports) != 0 {
+		t.Fatalf("replayed=%d fetches=%d imports=%d, want 0/0/0 (stale rev 1 must not run)", replayed, fetcher.calls, len(art.imports))
+	}
+}

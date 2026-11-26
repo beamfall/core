@@ -85,13 +85,16 @@ func TestSpawnSeamDarwinRunsShimUnderSeatbelt(t *testing.T) {
 		"(deny network*)",
 		`(allow file-read* (subpath "/media/in"))`,
 		`(allow file-write* (subpath "/var/out"))`,
-		`(allow file-read* (subpath "/opt/homebrew/bin"))`,
+		`(allow file-read* (literal "/opt/homebrew/bin/ffmpeg"))`,
 		`(allow file-read* (literal "/opt/beamfall/beamfall"))`,
 		"iokit-user-client-class",
 	} {
 		if !strings.Contains(profile, want) {
 			t.Errorf("darwin profile missing %q:\n%s", want, profile)
 		}
+	}
+	if strings.Contains(profile, `(subpath "/opt/homebrew/bin")`) {
+		t.Errorf("darwin profile granted the whole tool directory instead of literal executable:\n%s", profile)
 	}
 	if strings.Count(profile, "file-write*") != 1 {
 		t.Errorf("darwin profile grants writes beyond the job's read-write dir:\n%s", profile)

@@ -43,6 +43,10 @@ const (
 // no bit), so callers trust only frames with enough bits set and unset.
 const SpectralSilentFrame uint32 = 0
 
+// SpectralFingerprintMaxSeconds is the longest single-spawn spectral capture
+// that stays within captureLimitBytes at 8 kHz mono s16le PCM.
+const SpectralFingerprintMaxSeconds = captureLimitBytes / spectralBytesPerSecond
+
 // SpectralFingerprint returns one 32-bit spectral sub-fingerprint per
 // SpectralFrameSeconds frame over the first seconds of src's primary audio
 // stream. FFmpeg decodes the bounded region to 8 kHz mono PCM on stdout through
@@ -53,6 +57,22 @@ const SpectralSilentFrame uint32 = 0
 // two files share a loudness curve but not their sound (CORE-3111).
 func (r *Runner) SpectralFingerprint(ctx context.Context, src string, seconds int) ([]uint32, error) {
 	return r.spectralFingerprint(ctx, src, seconds, nil)
+}
+
+// SpectralFingerprintRange returns the same signature as SpectralFingerprint
+// over [startSeconds, startSeconds+seconds) of src's primary audio stream so
+// callers scanning long files can decode bounded candidate spans within the
+// capture limit.
+//
+//io:ignore ffmpeg-spectral-fingerprint-range — seek wrapper over the spectralFingerprint I/O journey.
+func (r *Runner) SpectralFingerprintRange(ctx context.Context, src string, startSeconds, seconds int) ([]uint32, error) {
+	if startSeconds < 0 {
+		return nil, errors.New("ffmpeg spectral fingerprint: startSeconds must be non-negative")
+	}
+	if startSeconds == 0 {
+		return r.spectralFingerprint(ctx, src, seconds, nil)
+	}
+	return r.spectralFingerprint(ctx, src, seconds, []string{"-ss", strconv.Itoa(startSeconds)})
 }
 
 // SpectralFingerprintTail returns the same signature as SpectralFingerprint
@@ -72,7 +92,7 @@ func (r *Runner) spectralFingerprint(ctx context.Context, src string, seconds in
 	if seconds <= 0 {
 		return nil, errors.New("ffmpeg spectral fingerprint: seconds must be positive")
 	}
-	if seconds > captureLimitBytes/spectralBytesPerSecond {
+	if seconds > SpectralFingerprintMaxSeconds {
 		return nil, fmt.Errorf("ffmpeg spectral fingerprint: %d s exceeds the capture limit", seconds)
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")

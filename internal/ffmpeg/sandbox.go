@@ -1,7 +1,9 @@
 package ffmpeg
 
 import (
+	"debug/macho"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -89,16 +91,248 @@ func sandboxProfileNet(roPaths, rwPaths []string, port int) string {
 const sandboxVideoToolboxRule = `(allow iokit-open (iokit-user-client-class "IOSurfaceRootUserClient" "AGXDeviceUserClient" "AppleAVE2UserClient" "AppleAVDUserClient" "IOSurfaceAcceleratorClient"))` + "\n"
 
 // sandboxProfileFor is the profile the spawn seam runs one confined job under
-// on macOS: the job's own paths and loopback port, plus read access to the
-// shim binary itself and to the tool's directory, so the shim can load and
-// exec FFmpeg wherever it is installed.
+// on macOS: the job's own paths and loopback port, plus literal read access to
+// the shim binary, the executable itself, and any non-system runtime shared
+// libraries it links (never the executable's parent directory subtree).
 func sandboxProfileFor(conf confinement, shimPath, binPath string) string {
 	var b strings.Builder
-	b.WriteString(sandboxProfileNet(append(append([]string(nil), conf.ReadOnly...), filepath.Dir(binPath)), conf.ReadWrite, conf.LoopbackPort))
-	for _, p := range sandboxResolvePaths([]string{shimPath}) {
+	b.WriteString(sandboxProfileNet(conf.ReadOnly, conf.ReadWrite, conf.LoopbackPort))
+	literals := []string{shimPath, binPath}
+	literals = append(literals, sandboxBinaryRuntimeLibs(binPath)...)
+	for _, p := range sandboxResolvePaths(literals) {
 		fmt.Fprintf(&b, "(allow file-read* (literal %s))\n", sandboxQuote(p))
 	}
 	return b.String()
+}
+
+// sandboxBinaryRuntimeLibs inspects binPath's Mach-O load commands (if binPath
+// exists and is a Mach-O binary on disk) and returns concrete shared-library
+// paths outside sandboxSystemReadRoots that dyld needs to load it, including
+// inherited @rpath chains and reexported/weak/upward dylibs. Sibling files in
+// the executable's or library directories are never granted.
+func sandboxBinaryRuntimeLibs(binPath string) []string {
+	resolvedBin, err := filepath.EvalSymlinks(binPath)
+	if err != nil {
+		resolvedBin = binPath
+	}
+	if resolvedBin == "" {
+		return nil
+	}
+	execDirs := uniqueAbsPaths([]string{filepath.Dir(resolvedBin), filepath.Dir(binPath)})
+	type libQueueItem struct {
+		path            string
+		inheritedRpaths []string
+	}
+	queue := []libQueueItem{{path: resolvedBin}}
+	seenObj := map[string]bool{resolvedBin: true}
+	seenRpathForObj := map[string]map[string]bool{resolvedBin: {}}
+	var out []string
+	seenLib := map[string]bool{}
+	const maxLibs = 64
+	const maxVisits = 256
+
+	for visits := 0; len(queue) > 0 && len(seenLib) < maxLibs && visits < maxVisits; visits++ {
+		cur := queue[0]
+		queue = queue[1:]
+		imports, rawRpaths := readMachoDeps(cur.path)
+		if len(imports) == 0 {
+			continue
+		}
+		loaderDir := filepath.Dir(cur.path)
+		ownRpaths := resolveMachoRpaths(execDirs, loaderDir, rawRpaths)
+		combinedRpaths := uniqueAbsPaths(append(ownRpaths, cur.inheritedRpaths...))
+		for _, imp := range imports {
+			for _, cand := range resolveMachoImportPaths(imp, execDirs, loaderDir, combinedRpaths) {
+				if isCoveredBySystemSandboxRoot(cand) {
+					continue
+				}
+				info, err := os.Stat(cand)
+				if err != nil || info.IsDir() {
+					continue
+				}
+				if !seenLib[cand] {
+					seenLib[cand] = true
+					out = append(out, cand)
+				}
+				realCand := cand
+				if r, err := filepath.EvalSymlinks(cand); err == nil {
+					realCand = r
+				}
+				if !seenObj[realCand] {
+					if len(seenObj) < maxLibs {
+						seenObj[realCand] = true
+						seenRpathForObj[realCand] = rpathSet(combinedRpaths)
+						queue = append(queue, libQueueItem{path: realCand, inheritedRpaths: combinedRpaths})
+					}
+				} else if extra := newRpaths(seenRpathForObj[realCand], combinedRpaths); len(extra) > 0 && len(queue) < maxVisits {
+					for _, rp := range extra {
+						seenRpathForObj[realCand][rp] = true
+					}
+					queue = append(queue, libQueueItem{path: realCand, inheritedRpaths: extra})
+				}
+				break
+			}
+		}
+	}
+	return out
+}
+
+func readMachoDeps(path string) (imports, rpaths []string) {
+	if f, err := macho.Open(path); err == nil {
+		defer func() { _ = f.Close() }()
+		return machoFileDeps(f)
+	}
+	if fat, err := macho.OpenFat(path); err == nil {
+		defer func() { _ = fat.Close() }()
+		for _, arch := range fat.Arches {
+			imps, rps := machoFileDeps(arch.File)
+			imports = append(imports, imps...)
+			rpaths = append(rpaths, rps...)
+		}
+	}
+	return imports, rpaths
+}
+
+const (
+	loadCmdLoadWeakDylib   macho.LoadCmd = 0x80000018
+	loadCmdReexportDylib   macho.LoadCmd = 0x8000001f
+	loadCmdLazyLoadDylib   macho.LoadCmd = 0x20
+	loadCmdLoadUpwardDylib macho.LoadCmd = 0x80000023
+)
+
+func machoFileDeps(f *macho.File) (imports, rpaths []string) {
+	imports, _ = f.ImportedLibraries()
+	for _, load := range f.Loads {
+		switch l := load.(type) {
+		case *macho.Rpath:
+			if l.Path != "" {
+				rpaths = append(rpaths, l.Path)
+			}
+		case macho.LoadBytes:
+			if len(l) < 24 || f.ByteOrder == nil {
+				continue
+			}
+			cmd := macho.LoadCmd(f.ByteOrder.Uint32(l[0:4]))
+			switch cmd {
+			case loadCmdLoadWeakDylib, loadCmdReexportDylib, loadCmdLazyLoadDylib, loadCmdLoadUpwardDylib:
+				nameOff := f.ByteOrder.Uint32(l[8:12])
+				if nameOff >= 24 && int(nameOff) < len(l) {
+					if name := machoCString(l[nameOff:]); name != "" {
+						imports = append(imports, name)
+					}
+				}
+			}
+		}
+	}
+	return imports, rpaths
+}
+
+func machoCString(b []byte) string {
+	for i, c := range b {
+		if c == 0 {
+			return string(b[:i])
+		}
+	}
+	return string(b)
+}
+
+func resolveMachoRpaths(execDirs []string, loaderDir string, rawRpaths []string) []string {
+	var out []string
+	for _, rp := range rawRpaths {
+		out = append(out, expandMachoPath(rp, execDirs, loaderDir)...)
+	}
+	return uniqueAbsPaths(out)
+}
+
+func resolveMachoImportPaths(imp string, execDirs []string, loaderDir string, rpaths []string) []string {
+	if strings.HasPrefix(imp, "@rpath/") {
+		rel := strings.TrimPrefix(imp, "@rpath/")
+		out := make([]string, 0, len(rpaths))
+		for _, base := range rpaths {
+			if filepath.IsAbs(base) {
+				out = append(out, filepath.Clean(filepath.Join(base, rel)))
+			}
+		}
+		return out
+	}
+	return expandMachoPath(imp, execDirs, loaderDir)
+}
+
+func expandMachoPath(p string, execDirs []string, loaderDir string) []string {
+	switch {
+	case strings.HasPrefix(p, "@executable_path/"):
+		rel := strings.TrimPrefix(p, "@executable_path/")
+		out := make([]string, 0, len(execDirs))
+		for _, execDir := range execDirs {
+			if filepath.IsAbs(execDir) {
+				out = append(out, filepath.Clean(filepath.Join(execDir, rel)))
+			}
+		}
+		return out
+	case p == "@executable_path":
+		return uniqueAbsPaths(execDirs)
+	case strings.HasPrefix(p, "@loader_path/"):
+		if !filepath.IsAbs(loaderDir) {
+			return nil
+		}
+		return []string{filepath.Clean(filepath.Join(loaderDir, strings.TrimPrefix(p, "@loader_path/")))}
+	case p == "@loader_path":
+		if !filepath.IsAbs(loaderDir) {
+			return nil
+		}
+		return []string{filepath.Clean(loaderDir)}
+	default:
+		if !filepath.IsAbs(p) {
+			return nil
+		}
+		return []string{filepath.Clean(p)}
+	}
+}
+
+func uniqueAbsPaths(paths []string) []string {
+	seen := make(map[string]bool, len(paths))
+	var out []string
+	for _, p := range paths {
+		if p == "" || !filepath.IsAbs(p) {
+			continue
+		}
+		c := filepath.Clean(p)
+		if !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func rpathSet(paths []string) map[string]bool {
+	set := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		set[p] = true
+	}
+	return set
+}
+
+func newRpaths(seen map[string]bool, candidates []string) []string {
+	var extra []string
+	for _, p := range candidates {
+		if !seen[p] {
+			extra = append(extra, p)
+		}
+	}
+	return extra
+}
+
+func isCoveredBySystemSandboxRoot(p string) bool {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		p = r
+	}
+	for _, root := range append(sandboxSystemReadRoots(), "/System") {
+		if p == root || strings.HasPrefix(p, root+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // sandboxResolvePaths expands each allow-list path to both its literal form and

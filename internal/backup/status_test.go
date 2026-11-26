@@ -7,6 +7,28 @@ import (
 	"time"
 )
 
+func TestUnverifiedSuccessDoesNotClearIntegrityFailedBanner(t *testing.T) {
+	dir := t.TempDir()
+	t0 := time.Date(2026, 11, 25, 2, 0, 0, 0, time.UTC)
+	if _, err := RecordRun(dir, RunRecord{At: t0, FailureClass: "integrity", Set: "beamfall-bad"}, true); err != nil {
+		t.Fatal(err)
+	}
+	s, err := RecordRun(dir, RunRecord{At: t0.Add(time.Hour), Set: "beamfall-unverified"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.BannerActive(BannerIntegrityFailed) {
+		t.Fatalf("unverified run cleared integrity banner: %+v", s)
+	}
+	s, err = RecordRun(dir, RunRecord{At: t0.Add(2 * time.Hour), Set: "beamfall-verified", IntegrityVerified: true}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.BannerActive(BannerIntegrityFailed) || !s.UpdateGateClear() {
+		t.Fatalf("verified run did not clear integrity banner/gate: %+v", s)
+	}
+}
+
 func TestStatusDefaultsAndBannerLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	s, err := LoadStatus(dir)

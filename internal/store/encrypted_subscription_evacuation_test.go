@@ -200,6 +200,79 @@ func TestEncryptedUnsealEvacuationSurvivesCrashBetweenCommits(t *testing.T) {
 	assertNoLegacySubscriptionSecret(t, st)
 }
 
+// CORE-3516 #2: when an evacuation group stays in catalog because its
+// referenced Media is outside the protected plane (rows == nil), the pending
+// retry marker must remain intact so a later unseal retries after repair.
+func TestEncryptedUnsealBlockedEvacuationRetainsRetryMarker(t *testing.T) {
+	ctx := context.Background()
+	dataDir := migratedDataDir(t)
+	st, err := Open(ctx, dataDir, Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+	libraryID := LibraryID("library-local")
+	if err := st.SetLibraryBacking(ctx, libraryID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	cipher := copyEncryptedLibraryDBCipher{}
+	if err := st.UnsealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, encryptedImport(libraryID, "sha256:blocked-evac", "/enc/blocked-evac.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	armLegacySubscriptionEvacuation(t, st, libraryID)
+	if err := st.SealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
+		t.Fatal(err)
+	}
+	// Seed legacy rows naming a Media not yet on the protected plane.
+	strandLegacySubscriptionRows(t, st, libraryID, "media-missing-from-plane")
+
+	if err := st.UnsealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
+		t.Fatalf("blocked unseal: %v", err)
+	}
+	assertLegacySubscriptionCounts(t, "catalog while media missing", st.catalogR, 1)
+	pendingSet, err := encryptedLibraryMetadataKeySet(ctx, st.encryptedDBs[libraryID].reader, "legacy_subscription_evacuation")
+	if err != nil || !pendingSet {
+		t.Fatalf("legacy_subscription_evacuation pending = %v, err=%v; want true", pendingSet, err)
+	}
+	if err := st.SealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
+		t.Fatal(err)
+	}
+	// Repair the dangling Media reference in catalog, then unseal again (with FKs
+	// off because the encrypted Media lives on the protected plane).
+	conn, err := st.catalogW.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []struct {
+		query string
+		args  []any
+	}{
+		{`PRAGMA foreign_keys = OFF`, nil},
+		{`UPDATE subscription_entry SET media_id = ? WHERE subscription_id = 'sub-legacy'`, []any{media.ID}},
+		{`UPDATE subscription_entry_collision SET incoming_media_id = ? WHERE subscription_id = 'sub-legacy'`, []any{media.ID}},
+		{`PRAGMA foreign_keys = ON`, nil},
+	} {
+		if _, err := conn.ExecContext(ctx, stmt.query, stmt.args...); err != nil {
+			_ = conn.Close()
+			t.Fatalf("repair %s: %v", stmt.query, err)
+		}
+	}
+	_ = conn.Close()
+	if err := st.UnsealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
+		t.Fatalf("unseal after media repaired: %v", err)
+	}
+	assertLegacySubscriptionCounts(t, "catalog after repair unseal", st.catalogR, 0)
+	assertLegacySubscriptionCounts(t, "plane after repair unseal", st.encryptedDBs[libraryID].reader, 1)
+	pendingSet, err = encryptedLibraryMetadataKeySet(ctx, st.encryptedDBs[libraryID].reader, "legacy_subscription_evacuation")
+	if err != nil || pendingSet {
+		t.Fatalf("legacy_subscription_evacuation after completion = %v, err=%v; want false", pendingSet, err)
+	}
+}
+
 func assertNoLegacySubscriptionSecret(t *testing.T, st *Store) {
 	t.Helper()
 	pattern := "%" + legacySubscriptionMarker + "%"

@@ -291,6 +291,41 @@ describe("BackupExportPage", () => {
     expect(await screen.findByText(/Integrity check passed/)).toBeVisible();
   });
 
+  it("per-row Verify targets set.bbk for encrypted sets and refreshes backup status on pass and fail", async () => {
+    const user = userEvent.setup();
+    mockHistory.mockResolvedValue([
+      {
+        directory: "/backups/beamfall-enc1",
+        createdAt: "2026-07-03T02:00:00Z",
+        sizeBytes: 2_040_109_465,
+        valid: true,
+        keyFingerprint: "kA1b2C3d4E5f6G7h",
+        keyState: "current",
+      },
+    ]);
+    mockVerify.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({
+      ok: false,
+      error: "backup set envelope failed integrity verification",
+    });
+
+    renderPage();
+    await user.type(screen.getByLabelText("Destination"), "/backups");
+    await user.click(screen.getByRole("button", { name: "Load history" }));
+    const row = (await screen.findByText("beamfall-enc1")).closest("tr")!;
+    const callsAfterMount = mockBackupStatus.mock.calls.length;
+
+    await user.click(within(row).getByRole("button", { name: "Verify" }));
+    await waitFor(() => expect(mockVerify).toHaveBeenCalledWith("/backups/beamfall-enc1/set.bbk"));
+    await waitFor(() =>
+      expect(mockBackupStatus.mock.calls.length).toBeGreaterThan(callsAfterMount),
+    );
+    const callsAfterPass = mockBackupStatus.mock.calls.length;
+
+    await user.click(within(row).getByRole("button", { name: "Verify" }));
+    expect(await screen.findByText(/Integrity check failed/)).toBeVisible();
+    await waitFor(() => expect(mockBackupStatus.mock.calls.length).toBeGreaterThan(callsAfterPass));
+  });
+
   // The three Admin-epoch boundaries (areas/console/adminEpoch): the page's
   // reads run at /console/backups, so an Admin Session expiry, an operator
   // lock, or an unmount must abort the in-flight transport signal AND drop the
@@ -613,6 +648,61 @@ describe("BackupExportPage", () => {
       ).toBeVisible();
       expect(key).toHaveValue("");
       expect(screen.getByText("Pass")).toBeVisible();
+    });
+
+    // CORE-3516 #18: when verifyBackupNow returns a completed failed drill
+    // (or rejects on timeout after persisting a failure), Fail replaces the
+    // previous green Pass badge.
+    it("replaces a previous Pass badge with Fail when a drill fails assertions or reloads on error", async () => {
+      const user = userEvent.setup();
+      mockBackupStatus.mockResolvedValue({
+        ...QUIET_STATUS,
+        lastDrill: {
+          at: "2026-07-01T10:00:00Z",
+          verified: true,
+          set: "beamfall-1f9a",
+          reason: "",
+        },
+      });
+      mockHistory.mockResolvedValue([HISTORY_ROW]);
+      mockDrill.mockResolvedValueOnce({
+        at: "2026-07-03T10:00:00Z",
+        verified: false,
+        set: "beamfall-1f9a",
+        reason: "restore-assertions-failed",
+      });
+      renderPage();
+      expect(await screen.findByText("Pass")).toBeVisible();
+
+      await user.type(screen.getByLabelText("Destination"), "/backups");
+      await user.click(screen.getByRole("button", { name: "Load history" }));
+      await user.click(await screen.findByText("beamfall-1f9a"));
+      await user.type(screen.getByLabelText("Backup key for the drill"), "drill-key-words");
+      await user.click(screen.getByRole("button", { name: "Verify my backup now" }));
+
+      expect(await screen.findByText("Fail")).toBeVisible();
+      expect(screen.queryByText("Pass")).toBeNull();
+      expect(
+        screen.getByText("The restore drill for beamfall-1f9a failed (restore-assertions-failed)."),
+      ).toBeVisible();
+
+      // Now simulate a timeout error after server persisted Fail while status reloads cleanly.
+      mockBackupStatus.mockResolvedValue({
+        ...QUIET_STATUS,
+        lastDrill: {
+          at: "2026-07-04T10:00:00Z",
+          verified: false,
+          set: "beamfall-1f9a",
+          reason: "timeout",
+        },
+      });
+      mockDrill.mockRejectedValueOnce(new Error("drill timed out"));
+      await user.type(screen.getByLabelText("Backup key for the drill"), "drill-key-words");
+      await user.click(screen.getByRole("button", { name: "Verify my backup now" }));
+      await waitFor(() => expect(mockBackupStatus).toHaveBeenCalledTimes(2));
+      const drillCard = screen.getByText("Last restore drill").closest('[data-evidence="drill"]');
+      expect(drillCard).not.toBeNull();
+      expect(within(drillCard as HTMLElement).getByText("Fail")).toBeVisible();
     });
   });
 });

@@ -38,6 +38,32 @@ type fakeDetector struct {
 	fingerprintErr error
 	// onFingerprint, when set, runs before each fingerprint read and may fail it.
 	onFingerprint func(path string) error
+	// maxSpectralSeconds, when positive, enforces the single-spawn PCM capture
+	// limit on SpectralFingerprint (and SpectralFingerprintRange when used).
+	maxSpectralSeconds int
+}
+
+func (f *fakeDetector) SpectralFingerprintRange(_ context.Context, path string, startSeconds, seconds int) ([]uint32, error) {
+	f.fingerprintCalls++
+	if err := f.fingerprintFault(path); err != nil {
+		return nil, err
+	}
+	if f.maxSpectralSeconds > 0 && seconds > f.maxSpectralSeconds {
+		return nil, fmt.Errorf("ffmpeg spectral fingerprint: %d s exceeds the capture limit", seconds)
+	}
+	frames, ok := f.framesByPath[path]
+	if !ok {
+		frames = soundOf(f.fingerprintByPath[path])
+	}
+	start := startSeconds * spectralFramesPerWindow
+	end := (startSeconds + seconds) * spectralFramesPerWindow
+	if start >= len(frames) {
+		return nil, errors.New("range past end")
+	}
+	if end > len(frames) {
+		end = len(frames)
+	}
+	return append([]uint32(nil), frames[start:end]...), nil
 }
 
 func (f *fakeDetector) fingerprintFault(path string) error {
@@ -55,6 +81,9 @@ func (f *fakeDetector) SpectralFingerprint(_ context.Context, path string, secon
 	if err := f.fingerprintFault(path); err != nil {
 		return nil, err
 	}
+	if f.maxSpectralSeconds > 0 && seconds > f.maxSpectralSeconds {
+		return nil, fmt.Errorf("ffmpeg spectral fingerprint: %d s exceeds the capture limit", seconds)
+	}
 	frames, ok := f.framesByPath[path]
 	if !ok {
 		frames = soundOf(f.fingerprintByPath[path])
@@ -69,6 +98,9 @@ func (f *fakeDetector) SpectralFingerprintTail(_ context.Context, path string, s
 	f.tailCalls++
 	if err := f.fingerprintFault(path); err != nil {
 		return nil, err
+	}
+	if f.maxSpectralSeconds > 0 && seconds > f.maxSpectralSeconds {
+		return nil, fmt.Errorf("ffmpeg spectral fingerprint: %d s exceeds the capture limit", seconds)
 	}
 	frames, ok := f.framesByPath[path]
 	if !ok {
