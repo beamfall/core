@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-const legacySubscriptionSecret = "feed-secret-7d21"
+const legacySubscriptionSecret = "feed-marker-7d21" // #nosec G101 -- a test leak marker, not a credential
 
 // strandLegacySubscriptionRows writes Subscription, entry, collision, seen and
 // item-state import rows for an Encrypted Library straight into catalog.db,
