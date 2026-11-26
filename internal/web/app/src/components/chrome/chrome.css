@@ -359,6 +359,274 @@
   flex: none;
   color: var(--text-muted);
   cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.bf-side-group {
+  display: grid;
+}
+
+.bf-side-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: start;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-side-group-toggle:hover {
+  color: var(--text-primary);
+  background: color-mix(in oklab, var(--bg-surface) 50%, var(--bg-raised));
+}
+
+.bf-side-group-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.bf-side-group-toggle.has-active {
+  color: var(--accent-text);
+}
+
+.bf-side-group-chevron {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.bf-side-group-toggle:dir(rtl) .bf-side-group-chevron {
+  transform: rotate(180deg);
+}
+
+.bf-side-group-toggle[aria-expanded="true"] .bf-side-group-chevron {
+  transform: rotate(90deg);
+}
+
+.bf-side-sublist {
+  display: grid;
+  gap: 2px;
+  margin-block: 2px;
+  margin-inline: 18px 0;
+  padding-block: 0;
+  padding-inline: 8px 0;
+  border-inline-start: 1px solid var(--border-subtle);
+  list-style: none;
+}
+
+.bf-side-divider-item {
+  padding: 6px 12px;
+}
+
+.bf-side-divider {
+  height: 1px;
+  margin: 0;
+  border: 0;
+  background: var(--border-subtle);
+}
+
+.bf-sidebar.is-collapsed .bf-side-divider-item {
+  padding: 6px 8px;
+}
+
+.bf-side-editor.has-groups .bf-side-edit-row {
+  gap: 2px;
+}
+
+.bf-side-editor.has-groups .bf-side-edit-row .bf-side-tool {
+  width: 24px;
+}
+
+.bf-side-edit-row.is-drop-target {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.bf-side-edit-group {
+  display: grid;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--bg-surface) 45%, var(--bg-raised));
+}
+
+.bf-side-edit-group.is-dragging {
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+}
+
+.bf-side-edit-group.is-drop-target {
+  box-shadow: 0 -2px 0 var(--accent);
+}
+
+.bf-side-edit-group.is-drop-inside {
+  border-color: var(--accent);
+}
+
+.bf-side-edit-group-header {
+  min-height: 40px;
+  padding: 2px 2px 2px 4px;
+}
+
+.bf-side-edit-sublist {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-block: 0 2px;
+  padding-inline: 10px 0;
+  list-style: none;
+}
+
+.bf-side-edit-empty {
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.bf-side-edit-divider {
+  min-height: 36px;
+  gap: 6px;
+}
+
+.bf-side-edit-divider-rule {
+  flex: 1;
+  min-width: 12px;
+  height: 1px;
+  margin: 0;
+  border: 0;
+  background: var(--border-strong);
+}
+
+.bf-side-rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-root);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bf-side-rename-input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.bf-side-group-picker {
+  position: relative;
+}
+
+.bf-side-group-picker select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.bf-side-group-picker:has(select:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.bf-side-group-picker:has(select:disabled) {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.bf-side-group-picker select:disabled {
+  cursor: default;
+}
+
+.bf-side-tool.is-danger:hover {
+  color: var(--state-danger);
+}
+
+.bf-side-edit-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 0 4px;
+}
+
+.bf-side-add-button {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-side-add-button:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: color-mix(in oklab, var(--bg-surface) 50%, var(--bg-raised));
+}
+
+.bf-side-add-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.bf-side-add-button[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+@media (pointer: coarse) {
+  .bf-side-group-toggle {
+    min-height: 44px;
+  }
+
+  .bf-side-editor.has-groups .bf-side-edit-row .bf-side-tool {
+    width: 28px;
+    height: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-side-group-chevron {
+    transition: none;
+  }
 }
 
 .bf-side-edit-actions {

@@ -1,6 +1,8 @@
 import {
   ChevronDown,
+  ChevronRight,
   ChevronUp,
+  FolderInput,
   GripVertical,
   Heart,
   History,
@@ -11,6 +13,9 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Plus,
+  Trash2,
+  X,
 } from "lucide-react";
 import {
   type ComponentProps,
@@ -33,7 +38,11 @@ import {
   EMPTY_SIDEBAR_PREFS,
   PERSONAL_ENTRIES,
   type PersonalEntry,
+  resolveSidebarLibraries,
+  type SidebarLayoutItem,
+  type SidebarLibraryGroup,
   type SidebarLibraryPrefs,
+  type SidebarResolvedNode,
 } from "./sidebarPrefs";
 
 // The "Your stuff" entries' labels and glyphs, the ones the account menu uses.
@@ -125,7 +134,7 @@ export function LibrarySidebar({
   const aggregates = rendered.filter((node) => !node.libraryID);
   const libraryNodes = rendered.filter((node) => node.libraryID);
   const libraryIDOf = (node: NavigationNode) => node.libraryID ?? "";
-  const { pinned, unpinned } = applySidebarPrefs(libraryNodes, libraryIDOf, prefs);
+  const { topLevel, unpinned } = resolveSidebarLibraries(libraryNodes, libraryIDOf, prefs);
   const personalIDOf = (entry: PersonalEntry) => entry.id;
   const personal = applySidebarPrefs(
     [...PERSONAL_ENTRIES],
@@ -133,6 +142,19 @@ export function LibrarySidebar({
     prefs.personal ?? EMPTY_SIDEBAR_PREFS,
   );
   const [moreOpen, setMoreOpen] = useState(false);
+  // Local collapse overrides handle standalone/mocked renders where prefs doesn't
+  // update immediately; synced back whenever the prefs object changes.
+  const [toggleState, setToggleState] = useState<{
+    prefs: SidebarLibraryPrefs;
+    overrides: Record<string, boolean>;
+  }>({ prefs, overrides: {} });
+  const activeLibraryID = libraryNodes.find((n) => n.id === activeNodeId)?.libraryID ?? "";
+  // Groups manually collapsed while their active library was open; resets when
+  // navigating to a different library so the new active library's group auto-expands.
+  const [collapsedWhileActive, setCollapsedWhileActive] = useState<{
+    libraryID: string;
+    groupIDs: Set<string>;
+  }>({ libraryID: activeLibraryID, groupIDs: new Set() });
   // One group is edited at a time.
   const [editing, setEditing] = useState<{ group: SidebarGroup; draft: EditDraft } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -170,6 +192,42 @@ export function LibrarySidebar({
     lettered.map((node) => displayString(node.title, displayLocale)),
   );
   const monogramFor = new Map(lettered.map((node, index) => [node.id, monograms[index]]));
+  const collapseOverrides = toggleState.prefs === prefs ? toggleState.overrides : {};
+  const activeCollapsedSet =
+    collapsedWhileActive.libraryID === activeLibraryID ? collapsedWhileActive.groupIDs : null;
+
+  function isGroupExpanded(group: Extract<SidebarResolvedNode<NavigationNode>, { kind: "group" }>) {
+    const containsActive =
+      activeLibraryID !== "" && group.items.some((entry) => entry.libraryID === activeLibraryID);
+    if (containsActive) {
+      return !(activeCollapsedSet?.has(group.id) ?? false);
+    }
+    const prefCollapsed = collapseOverrides[group.id] ?? group.collapsed;
+    return !prefCollapsed;
+  }
+
+  function toggleGroupCollapsed(groupID: string, currentlyExpanded: boolean) {
+    const nextCollapsed = currentlyExpanded;
+    setToggleState({
+      prefs,
+      overrides: { ...collapseOverrides, [groupID]: nextCollapsed },
+    });
+    if (activeLibraryID !== "") {
+      const nextSet = new Set(activeCollapsedSet ?? []);
+      if (nextCollapsed) nextSet.add(groupID);
+      else nextSet.delete(groupID);
+      setCollapsedWhileActive({ libraryID: activeLibraryID, groupIDs: nextSet });
+    }
+    if (onSavePrefs && prefsReady && prefs.groups?.some((group) => group.id === groupID)) {
+      const nextGroups: SidebarLibraryGroup[] = prefs.groups.map((group) => {
+        if (group.id !== groupID) return group;
+        return nextCollapsed
+          ? { id: group.id, name: group.name, libraries: group.libraries, collapsed: true }
+          : { id: group.id, name: group.name, libraries: group.libraries };
+      });
+      void onSavePrefs({ ...prefs, groups: nextGroups }).catch(() => {});
+    }
+  }
 
   function item(node: NavigationNode) {
     const title = displayString(node.title, displayLocale);
@@ -258,33 +316,42 @@ export function LibrarySidebar({
     );
   }
 
-  function editor(group: SidebarGroup, draft: EditDraft, titleOf: (key: string) => string) {
+  function editor(
+    group: SidebarGroup,
+    draft: EditDraft,
+    titleOf: (key: string) => string,
+    allowGrouping: boolean,
+  ) {
     return (
       <SidebarEditor
         draft={draft}
         titleOf={titleOf}
+        allowGrouping={allowGrouping}
         saving={saving}
         onChange={(next) => setEditing({ group, draft: next })}
         onCancel={() => {
           if (!savingRef.current) leaveEditing(group);
         }}
-        onDone={async () => {
+        onDone={async (finalDraft) => {
           if (!onSavePrefs || savingRef.current) return;
           savingRef.current = true;
           setSaving(true);
           setSaveFailed(null);
-          const choice = { order: draft.order, hidden: [...draft.hidden] };
-          // Only a move changes the stored order: pin toggles keep whatever
-          // order was stored, or none, so a later change to the defaults
-          // still reaches an order the Profile never chose (CORE-2880).
-          const moved = !sameOrder(draft.order, draft.start);
-          const personalChoice = moved ? choice : { ...choice, order: prefs.personal?.order ?? [] };
           try {
-            await onSavePrefs(
-              group === "libraries"
-                ? { ...prefs, ...choice }
-                : { ...prefs, personal: personalChoice },
-            );
+            if (group === "libraries") {
+              await onSavePrefs(buildLibraryPrefsFromDraft(finalDraft, prefs));
+            } else {
+              const order = flattenLibraryOrder(finalDraft.nodes);
+              const choice = { order, hidden: [...finalDraft.hidden] };
+              // Only a move changes the stored order: pin toggles keep whatever
+              // order was stored, or none, so a later change to the defaults
+              // still reaches an order the Profile never chose (CORE-2880).
+              const moved = !sameOrder(order, finalDraft.startLibraryOrder);
+              const personalChoice = moved
+                ? choice
+                : { ...choice, order: prefs.personal?.order ?? [] };
+              await onSavePrefs({ ...prefs, personal: personalChoice });
+            }
             leaveEditing(group);
           } catch {
             setSaveFailed(group);
@@ -304,6 +371,41 @@ export function LibrarySidebar({
           {t("sidebarSaveFailed")}
         </p>
       )
+    );
+  }
+
+  function renderTopLevelNode(node: SidebarResolvedNode<NavigationNode>) {
+    if (node.kind === "divider") {
+      return (
+        <li key={`divider:${node.id}`} className="bf-side-divider-item">
+          <hr className="bf-side-divider" />
+        </li>
+      );
+    }
+    if (node.kind === "library") {
+      return item(node.entry);
+    }
+    const expanded = isGroupExpanded(node);
+    const hasActiveChild = node.items.some((child) => child.entry.id === activeNodeId);
+    const sublistId = `${id}-group-${node.id}`;
+    return (
+      <li key={`group:${node.id}`} className="bf-side-group">
+        <button
+          type="button"
+          className={"bf-side-group-toggle" + (!expanded && hasActiveChild ? " has-active" : "")}
+          aria-expanded={expanded}
+          aria-controls={expanded ? sublistId : undefined}
+          onClick={() => toggleGroupCollapsed(node.id, expanded)}
+        >
+          <ChevronRight aria-hidden className="bf-side-group-chevron size-4" />
+          <span className="bf-side-label">{node.name}</span>
+        </button>
+        {expanded && (
+          <ul id={sublistId} className="bf-side-sublist">
+            {node.items.map((child) => item(child.entry))}
+          </ul>
+        )}
+      </li>
     );
   }
 
@@ -327,17 +429,36 @@ export function LibrarySidebar({
               {canEdit &&
                 !editing &&
                 editButton("libraries", t("sidebarEdit"), () =>
-                  startDraft(pinned, unpinned, libraryIDOf),
+                  startLibraryDraft(libraryNodes, libraryIDOf, prefs),
                 )}
             </div>
             {activeDraft ? (
-              editor("libraries", activeDraft, (libraryID) => {
-                const node = libraryNodes.find((n) => n.libraryID === libraryID);
-                return node ? displayString(node.title, displayLocale) : libraryID;
-              })
+              editor(
+                "libraries",
+                activeDraft,
+                (libraryID) => {
+                  const node = libraryNodes.find((n) => n.libraryID === libraryID);
+                  return node ? displayString(node.title, displayLocale) : libraryID;
+                },
+                true,
+              )
             ) : (
               <>
-                <ul className="bf-side-list">{pinned.map(item)}</ul>
+                <ul className="bf-side-list">
+                  {collapsed && !drawer
+                    ? topLevel.flatMap((node) =>
+                        node.kind === "group"
+                          ? node.items.map((child) => item(child.entry))
+                          : node.kind === "library"
+                            ? [item(node.entry)]
+                            : [
+                                <li key={`divider:${node.id}`} className="bf-side-divider-item">
+                                  <hr className="bf-side-divider" />
+                                </li>,
+                              ],
+                      )
+                    : topLevel.map(renderTopLevelNode)}
+                </ul>
                 {unpinned.length > 0 && (
                   <>
                     <button
@@ -373,14 +494,19 @@ export function LibrarySidebar({
               {canEditAny &&
                 !editing &&
                 editButton("personal", t("sidebarEditPersonal"), () =>
-                  startDraft(personal.pinned, personal.unpinned, personalIDOf),
+                  startSimpleDraft(personal.pinned, personal.unpinned, personalIDOf),
                 )}
             </div>
             {personalDraft
-              ? editor("personal", personalDraft, (entryID) => {
-                  const key = PERSONAL_LABELS[entryID as PersonalEntry["id"]];
-                  return key ? t(key) : entryID;
-                })
+              ? editor(
+                  "personal",
+                  personalDraft,
+                  (entryID) => {
+                    const key = PERSONAL_LABELS[entryID as PersonalEntry["id"]];
+                    return key ? t(key) : entryID;
+                  },
+                  false,
+                )
               : personal.pinned.length > 0 && (
                   <ul className="bf-side-list">{personal.pinned.map(personalItem)}</ul>
                 )}
@@ -392,19 +518,153 @@ export function LibrarySidebar({
   );
 }
 
-// An edit session's working copy: every entry of the group (each library the
-// server lists, or each "Your stuff" entry), in the order being edited, and
-// the ones unpinned.
+type EditNode =
+  | { kind: "library"; id: string }
+  | { kind: "group"; id: string; name: string; libraries: string[]; collapsed?: boolean }
+  | { kind: "divider"; id: string };
+
+// An edit session's working copy: top-level libraries, groups (holding their
+// assigned libraries), and dividers, plus the set of unpinned library IDs.
 interface EditDraft {
-  order: string[];
+  nodes: EditNode[];
   hidden: Set<string>;
-  /** The order the editor opened with; a draft still in it moved nothing. */
-  start: string[];
+  /** The flattened library order the editor opened with; detects no-op moves. */
+  startLibraryOrder: string[];
 }
 
-function startDraft<T>(pinned: T[], unpinned: T[], libraryIDOf: (entry: T) => string): EditDraft {
+function flattenLibraryOrder(nodes: EditNode[]): string[] {
+  const order: string[] = [];
+  for (const node of nodes) {
+    if (node.kind === "library") order.push(node.id);
+    else if (node.kind === "group") order.push(...node.libraries);
+  }
+  return order;
+}
+
+function startSimpleDraft<T>(
+  pinned: T[],
+  unpinned: T[],
+  libraryIDOf: (entry: T) => string,
+): EditDraft {
   const order = [...pinned, ...unpinned].map(libraryIDOf);
-  return { order, hidden: new Set(unpinned.map(libraryIDOf)), start: order };
+  return {
+    nodes: order.map((id) => ({ kind: "library", id })),
+    hidden: new Set(unpinned.map(libraryIDOf)),
+    startLibraryOrder: order,
+  };
+}
+
+function startLibraryDraft(
+  libraryNodes: NavigationNode[],
+  libraryIDOf: (node: NavigationNode) => string,
+  prefs: SidebarLibraryPrefs,
+): EditDraft {
+  const groups = prefs.groups ?? [];
+  const layout = prefs.layout ?? [];
+  const hasStructure = groups.length > 0 || layout.some((item) => item.type === "divider");
+  if (!hasStructure) {
+    const { pinned, unpinned } = applySidebarPrefs(libraryNodes, libraryIDOf, prefs);
+    return startSimpleDraft(pinned, unpinned, libraryIDOf);
+  }
+
+  const serverIDs = libraryNodes.map(libraryIDOf);
+  const serverSet = new Set(serverIDs);
+  const hidden = new Set(prefs.hidden);
+  const placedLibs = new Set<string>();
+  const groupByID = new Map<string, Extract<EditNode, { kind: "group" }>>();
+
+  for (const group of groups) {
+    const libs: string[] = [];
+    for (const libID of group.libraries) {
+      if (!serverSet.has(libID) || placedLibs.has(libID)) continue;
+      placedLibs.add(libID);
+      libs.push(libID);
+    }
+    groupByID.set(group.id, {
+      kind: "group",
+      id: group.id,
+      name: group.name,
+      libraries: libs,
+      ...(group.collapsed ? { collapsed: true } : {}),
+    });
+  }
+
+  const nodes: EditNode[] = [];
+  const seenGroups = new Set<string>();
+  const seenDividers = new Set<string>();
+
+  for (const item of layout) {
+    if (item.type === "divider") {
+      if (seenDividers.has(item.id)) continue;
+      seenDividers.add(item.id);
+      nodes.push({ kind: "divider", id: item.id });
+    } else if (item.type === "group") {
+      const group = groupByID.get(item.id);
+      if (!group || seenGroups.has(group.id)) continue;
+      seenGroups.add(group.id);
+      nodes.push(group);
+    } else if (item.type === "library") {
+      if (!serverSet.has(item.id) || placedLibs.has(item.id)) continue;
+      placedLibs.add(item.id);
+      nodes.push({ kind: "library", id: item.id });
+    }
+  }
+
+  for (const group of groupByID.values()) {
+    if (!seenGroups.has(group.id)) nodes.push(group);
+  }
+
+  // Keep any remaining libraries (e.g. newly added on the server) at top level,
+  // pinned first in server order, followed by unpinned in server order.
+  const remaining = serverIDs.filter((id) => !placedLibs.has(id));
+  for (const id of remaining) {
+    if (!hidden.has(id)) nodes.push({ kind: "library", id });
+  }
+  for (const id of remaining) {
+    if (hidden.has(id)) nodes.push({ kind: "library", id });
+  }
+
+  return {
+    nodes,
+    hidden,
+    startLibraryOrder: flattenLibraryOrder(nodes),
+  };
+}
+
+function buildLibraryPrefsFromDraft(
+  draft: EditDraft,
+  existingPrefs: SidebarLibraryPrefs,
+): SidebarLibraryPrefs {
+  const order = flattenLibraryOrder(draft.nodes);
+  const hidden = [...draft.hidden];
+  const groups: SidebarLibraryGroup[] = [];
+  const layout: SidebarLayoutItem[] = [];
+  let hasDividers = false;
+
+  for (const node of draft.nodes) {
+    if (node.kind === "library") {
+      layout.push({ type: "library", id: node.id });
+    } else if (node.kind === "divider") {
+      hasDividers = true;
+      layout.push({ type: "divider", id: node.id });
+    } else {
+      groups.push({
+        id: node.id,
+        name: node.name,
+        libraries: node.libraries,
+        ...(node.collapsed ? { collapsed: true } : {}),
+      });
+      layout.push({ type: "group", id: node.id });
+    }
+  }
+
+  const next: SidebarLibraryPrefs = { order, hidden };
+  if (existingPrefs.personal) next.personal = existingPrefs.personal;
+  if (groups.length > 0 || hasDividers) {
+    if (groups.length > 0) next.groups = groups;
+    next.layout = layout;
+  }
+  return next;
 }
 
 /** Move one entry of a list from one index to another. */
@@ -416,12 +676,32 @@ export function moveEntry<T>(list: T[], from: number, to: number): T[] {
   return next;
 }
 
-// The edit mode: one row per library with a pin toggle and move buttons.
-// Rows drag to reorder; for the keyboard, the move buttons and Alt+Up/Down on
-// a focused row do the same, and a live region announces the new position.
+function nextUniqueId(prefix: string, usedIDs: Iterable<string>): string {
+  let max = 0;
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+  for (const id of usedIDs) {
+    const match = pattern.exec(id);
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return `${prefix}-${max + 1}`;
+}
+
+type DragSource =
+  | { kind: "top"; index: number; nodeKind: EditNode["kind"]; id: string }
+  | { kind: "grouped"; groupID: string; libID: string; index: number };
+
+type DropTarget =
+  | { kind: "top"; index: number }
+  | { kind: "group"; groupID: string }
+  | { kind: "grouped"; groupID: string; index: number };
+
+// The edit mode: top-level rows (Libraries, collapsible groups, and dividers),
+// plus Libraries nested inside groups. Rows drag to reorder; buttons and
+// Alt+Up/Down do the same for keyboard users, and a live region announces moves.
 function SidebarEditor({
   draft,
   titleOf,
+  allowGrouping,
   saving,
   onChange,
   onCancel,
@@ -429,29 +709,125 @@ function SidebarEditor({
 }: {
   draft: EditDraft;
   titleOf: (libraryID: string) => string;
+  allowGrouping: boolean;
   saving: boolean;
   onChange: (draft: EditDraft) => void;
   onCancel: () => void;
-  onDone: () => void;
+  onDone: (finalDraft: EditDraft) => void;
 }) {
   const t = useT();
-  const [dragging, setDragging] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<DragSource | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const [announcement, setAnnouncement] = useState("");
-  const count = draft.order.length;
+  const topCount = draft.nodes.length;
   const listRef = useRef<HTMLUListElement>(null);
+  const addRef = useRef<HTMLDivElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const pendingFocusGroup = useRef<string | null>(null);
+  const pendingFocusAfterDelete = useRef(false);
+
   // Entering edit mode moves focus to the first control, where the Edit
   // button that started it no longer is.
   useEffect(() => {
     listRef.current?.querySelector("button")?.focus();
   }, []);
 
-  function move(from: number, to: number) {
+  useEffect(() => {
+    if (!renaming) return;
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [renaming?.id]);
+
+  useEffect(() => {
+    if (pendingFocusGroup.current) {
+      const groupID = pendingFocusGroup.current;
+      pendingFocusGroup.current = null;
+      const btn = listRef.current?.querySelector<HTMLButtonElement>(
+        `[data-group-rename="${groupID}"]`,
+      );
+      btn?.focus();
+    } else if (pendingFocusAfterDelete.current) {
+      pendingFocusAfterDelete.current = false;
+      const fallback =
+        listRef.current?.querySelector<HTMLButtonElement>("button") ??
+        addRef.current?.querySelector<HTMLButtonElement>("button");
+      fallback?.focus();
+    }
+  });
+
+  const groups = draft.nodes.filter(
+    (node): node is Extract<EditNode, { kind: "group" }> => node.kind === "group",
+  );
+  const dividerNodes = draft.nodes.filter((node) => node.kind === "divider");
+  const hasGroups = groups.length > 0;
+
+  function dividerLabel(dividerID: string): string {
+    if (dividerNodes.length <= 1) return t("sidebarDivider");
+    const index = dividerNodes.findIndex((node) => node.id === dividerID) + 1;
+    return t("sidebarDividerNumbered", { index });
+  }
+
+  function nodeLabel(node: EditNode): string {
+    if (node.kind === "library") return titleOf(node.id);
+    if (node.kind === "group") return node.name;
+    return dividerLabel(node.id);
+  }
+
+  function applyRename(currentDraft: EditDraft, groupID: string, rawValue: string): EditDraft {
+    const trimmed = rawValue.trim();
+    if (!trimmed) return currentDraft;
+    return {
+      ...currentDraft,
+      nodes: currentDraft.nodes.map((node) =>
+        node.kind === "group" && node.id === groupID ? { ...node, name: trimmed } : node,
+      ),
+    };
+  }
+
+  function commitRename(groupID: string, restoreButtonFocus = false) {
+    if (!renaming || renaming.id !== groupID) return;
+    const nextDraft = applyRename(draft, groupID, renaming.value);
+    if (nextDraft !== draft) onChange(nextDraft);
+    setRenaming(null);
+    if (restoreButtonFocus) pendingFocusGroup.current = groupID;
+  }
+
+  function cancelRename(groupID: string) {
+    if (!renaming || renaming.id !== groupID) return;
+    setRenaming(null);
+    pendingFocusGroup.current = groupID;
+  }
+
+  function moveTop(from: number, to: number) {
     if (saving) return;
-    const order = moveEntry(draft.order, from, to);
-    if (order === draft.order) return;
-    onChange({ ...draft, order });
+    const nodes = moveEntry(draft.nodes, from, to);
+    if (nodes === draft.nodes) return;
+    onChange({ ...draft, nodes });
     setAnnouncement(
-      t("sidebarMoved", { name: titleOf(draft.order[from]), position: to + 1, count }),
+      t("sidebarMoved", { name: nodeLabel(draft.nodes[from]), position: to + 1, count: topCount }),
+    );
+  }
+
+  function moveInGroup(groupID: string, from: number, to: number) {
+    if (saving) return;
+    const group = draft.nodes.find(
+      (node): node is Extract<EditNode, { kind: "group" }> =>
+        node.kind === "group" && node.id === groupID,
+    );
+    if (!group) return;
+    const libraries = moveEntry(group.libraries, from, to);
+    if (libraries === group.libraries) return;
+    const nodes = draft.nodes.map((node) =>
+      node.kind === "group" && node.id === groupID ? { ...node, libraries } : node,
+    );
+    onChange({ ...draft, nodes });
+    setAnnouncement(
+      t("sidebarMoved", {
+        name: titleOf(group.libraries[from]),
+        position: to + 1,
+        count: libraries.length,
+      }),
     );
   }
 
@@ -463,89 +839,596 @@ function SidebarEditor({
     onChange({ ...draft, hidden });
   }
 
-  function onRowKeyDown(event: KeyboardEvent, index: number) {
-    if (!event.altKey) return;
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      move(index, index - 1);
-    } else if (event.key === "ArrowDown") {
-      event.preventDefault();
-      move(index, index + 1);
+  function moveLibraryToGroup(
+    libraryID: string,
+    targetGroupID: string | null,
+    targetIndex?: number,
+  ) {
+    if (saving) return;
+    const targetGroup = targetGroupID
+      ? groups.find((group) => group.id === targetGroupID)
+      : undefined;
+    if (targetGroupID && !targetGroup) return;
+
+    // Remove the library from its current spot (top-level or inside a group).
+    let nodes: EditNode[] = draft.nodes
+      .filter((node) => !(node.kind === "library" && node.id === libraryID))
+      .map((node) =>
+        node.kind === "group"
+          ? { ...node, libraries: node.libraries.filter((id) => id !== libraryID) }
+          : node,
+      );
+
+    if (targetGroupID) {
+      nodes = nodes.map((node) => {
+        if (node.kind !== "group" || node.id !== targetGroupID) return node;
+        const libs = [...node.libraries];
+        const insertAt =
+          targetIndex !== undefined ? Math.max(0, Math.min(targetIndex, libs.length)) : libs.length;
+        libs.splice(insertAt, 0, libraryID);
+        return { ...node, libraries: libs };
+      });
+      onChange({ ...draft, nodes });
+      if (targetGroup) {
+        setAnnouncement(
+          t("sidebarMovedToGroup", { name: titleOf(libraryID), group: targetGroup.name }),
+        );
+      }
+    } else {
+      const insertAt =
+        targetIndex !== undefined ? Math.max(0, Math.min(targetIndex, nodes.length)) : nodes.length;
+      nodes.splice(insertAt, 0, { kind: "library", id: libraryID });
+      onChange({ ...draft, nodes });
+      setAnnouncement(t("sidebarRemovedFromGroup", { name: titleOf(libraryID) }));
     }
   }
 
+  function addGroup() {
+    if (saving) return;
+    const baseDraft = renaming ? applyRename(draft, renaming.id, renaming.value) : draft;
+    const usedIDs = baseDraft.nodes.map((node) => node.id);
+    const id = nextUniqueId("grp", usedIDs);
+    const name = t("sidebarDefaultGroupName", { n: groups.length + 1 });
+    const nextNodes: EditNode[] = [...baseDraft.nodes, { kind: "group", id, name, libraries: [] }];
+    onChange({ ...baseDraft, nodes: nextNodes });
+    setRenaming({ id, value: name });
+    setAnnouncement(t("sidebarGroupAdded", { name }));
+  }
+
+  function deleteGroup(groupID: string) {
+    if (saving) return;
+    const target = draft.nodes.find(
+      (node): node is Extract<EditNode, { kind: "group" }> =>
+        node.kind === "group" && node.id === groupID,
+    );
+    if (!target) return;
+    const nextNodes: EditNode[] = [];
+    for (const node of draft.nodes) {
+      if (node.kind === "group" && node.id === groupID) {
+        for (const libID of node.libraries) nextNodes.push({ kind: "library", id: libID });
+      } else {
+        nextNodes.push(node);
+      }
+    }
+    if (renaming?.id === groupID) setRenaming(null);
+    pendingFocusAfterDelete.current = true;
+    onChange({ ...draft, nodes: nextNodes });
+    setAnnouncement(t("sidebarGroupDeleted", { name: target.name }));
+  }
+
+  function addDivider() {
+    if (saving) return;
+    const baseDraft = renaming ? applyRename(draft, renaming.id, renaming.value) : draft;
+    const id = nextUniqueId(
+      "div",
+      baseDraft.nodes.map((node) => node.id),
+    );
+    onChange({ ...baseDraft, nodes: [...baseDraft.nodes, { kind: "divider", id }] });
+    setAnnouncement(t("sidebarDividerAdded"));
+  }
+
+  function removeDivider(dividerID: string) {
+    if (saving) return;
+    const nextNodes = draft.nodes.filter(
+      (node) => !(node.kind === "divider" && node.id === dividerID),
+    );
+    if (nextNodes.length === draft.nodes.length) return;
+    pendingFocusAfterDelete.current = true;
+    onChange({ ...draft, nodes: nextNodes });
+    setAnnouncement(t("sidebarDividerRemoved"));
+  }
+
+  function onTopRowKeyDown(event: KeyboardEvent, index: number) {
+    if (!event.altKey) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.tagName === "INPUT" || target?.tagName === "SELECT") return;
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveTop(index, index - 1);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveTop(index, index + 1);
+    }
+  }
+
+  function onGroupedRowKeyDown(event: KeyboardEvent, groupID: string, index: number) {
+    if (!event.altKey) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.tagName === "INPUT" || target?.tagName === "SELECT") return;
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveInGroup(groupID, index, index - 1);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveInGroup(groupID, index, index + 1);
+    }
+  }
+
+  function handleDropOnTopIndex(targetIndex: number) {
+    if (!dragging || saving) return;
+    if (dragging.kind === "top") {
+      moveTop(dragging.index, targetIndex);
+    } else {
+      moveLibraryToGroup(dragging.libID, null, targetIndex);
+    }
+  }
+
+  function handleDropOnGroup(targetGroupID: string, targetChildIndex?: number) {
+    if (!dragging || saving) return;
+    if (dragging.kind === "top") {
+      if (dragging.nodeKind === "library") {
+        moveLibraryToGroup(dragging.id, targetGroupID, targetChildIndex);
+      } else {
+        const topIndex = draft.nodes.findIndex(
+          (node) => node.kind === "group" && node.id === targetGroupID,
+        );
+        if (topIndex >= 0) moveTop(dragging.index, topIndex);
+      }
+    } else if (dragging.groupID === targetGroupID) {
+      if (targetChildIndex !== undefined) {
+        moveInGroup(targetGroupID, dragging.index, targetChildIndex);
+      }
+    } else {
+      moveLibraryToGroup(dragging.libID, targetGroupID, targetChildIndex);
+    }
+  }
+
+  function clearDrag() {
+    setDragging(null);
+    setDropTarget(null);
+  }
+
+  function groupPicker(libraryID: string, title: string, currentGroupID: string) {
+    if (!allowGrouping || !hasGroups) return null;
+    return (
+      <span
+        className="bf-side-tool bf-side-group-picker"
+        title={t("sidebarMoveToGroup", { name: title })}
+      >
+        <FolderInput aria-hidden className="size-3.5" />
+        <select
+          aria-label={t("sidebarMoveToGroup", { name: title })}
+          value={currentGroupID}
+          disabled={saving}
+          onChange={(event) => moveLibraryToGroup(libraryID, event.target.value || null)}
+        >
+          <option value="">{t("sidebarTopLevel")}</option>
+          {groups.map((group) => (
+            <option key={group.id} value={group.id}>
+              {group.name}
+            </option>
+          ))}
+        </select>
+      </span>
+    );
+  }
+
+  function libraryControls(
+    libraryID: string,
+    title: string,
+    index: number,
+    siblingCount: number,
+    onMove: (from: number, to: number) => void,
+    currentGroupID: string,
+  ) {
+    const isPinned = !draft.hidden.has(libraryID);
+    return (
+      <>
+        <span aria-hidden className="bf-side-grip" title={t("sidebarDragHint")}>
+          <GripVertical className="size-4" />
+        </span>
+        <span className="bf-side-label">{title}</span>
+        {groupPicker(libraryID, title, currentGroupID)}
+        <button
+          type="button"
+          className="bf-side-tool"
+          aria-pressed={isPinned}
+          aria-label={t("sidebarPin", { name: title })}
+          aria-disabled={saving || undefined}
+          onClick={() => togglePin(libraryID)}
+        >
+          {isPinned ? (
+            <Pin aria-hidden className="size-4" />
+          ) : (
+            <PinOff aria-hidden className="size-4" />
+          )}
+        </button>
+        <button
+          type="button"
+          className="bf-side-tool"
+          aria-label={t("sidebarMoveUp", { name: title })}
+          aria-disabled={saving || index === 0}
+          onClick={() => onMove(index, index - 1)}
+        >
+          <ChevronUp aria-hidden className="size-4" />
+        </button>
+        <button
+          type="button"
+          className="bf-side-tool"
+          aria-label={t("sidebarMoveDown", { name: title })}
+          aria-disabled={saving || index === siblingCount - 1}
+          onClick={() => onMove(index, index + 1)}
+        >
+          <ChevronDown aria-hidden className="size-4" />
+        </button>
+      </>
+    );
+  }
+
   return (
-    <div className="bf-side-editor">
-      <ul ref={listRef} className="bf-side-list">
-        {draft.order.map((libraryID, index) => {
-          const title = titleOf(libraryID);
-          const isPinned = !draft.hidden.has(libraryID);
+    <div className={"bf-side-editor" + (hasGroups ? " has-groups" : "")}>
+      <ul
+        ref={listRef}
+        className="bf-side-list"
+        onDragOver={(event) => {
+          if (dragging && event.target === listRef.current) event.preventDefault();
+        }}
+        onDrop={(event) => {
+          if (!dragging || event.target !== listRef.current) return;
+          event.preventDefault();
+          handleDropOnTopIndex(dragging.kind === "top" ? topCount - 1 : topCount);
+          clearDrag();
+        }}
+      >
+        {draft.nodes.map((node, index) => {
+          if (node.kind === "library") {
+            const libraryID = node.id;
+            const title = titleOf(libraryID);
+            const isPinned = !draft.hidden.has(libraryID);
+            const isDragging = dragging?.kind === "top" && dragging.id === libraryID;
+            const isTarget = dropTarget?.kind === "top" && dropTarget.index === index;
+            return (
+              <li
+                key={libraryID}
+                className={
+                  "bf-side-edit-row" +
+                  (isPinned ? "" : " is-unpinned") +
+                  (isDragging ? " is-dragging" : "") +
+                  (isTarget ? " is-drop-target" : "")
+                }
+                draggable={!saving}
+                onDragStart={(event) => {
+                  if (saving) return;
+                  setDragging({ kind: "top", index, nodeKind: "library", id: libraryID });
+                  event.dataTransfer?.setData("text/plain", libraryID);
+                  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(event) => {
+                  if (!dragging) return;
+                  event.preventDefault();
+                  setDropTarget({ kind: "top", index });
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  handleDropOnTopIndex(index);
+                  clearDrag();
+                }}
+                onDragEnd={clearDrag}
+                onKeyDown={(event) => onTopRowKeyDown(event, index)}
+              >
+                {libraryControls(libraryID, title, index, topCount, moveTop, "")}
+              </li>
+            );
+          }
+
+          if (node.kind === "divider") {
+            const label = dividerLabel(node.id);
+            const isDragging =
+              dragging?.kind === "top" &&
+              dragging.nodeKind === "divider" &&
+              dragging.id === node.id;
+            const isTarget = dropTarget?.kind === "top" && dropTarget.index === index;
+            return (
+              <li
+                key={`divider:${node.id}`}
+                className={
+                  "bf-side-edit-row bf-side-edit-divider" +
+                  (isDragging ? " is-dragging" : "") +
+                  (isTarget ? " is-drop-target" : "")
+                }
+                draggable={!saving}
+                onDragStart={(event) => {
+                  if (saving) return;
+                  setDragging({ kind: "top", index, nodeKind: "divider", id: node.id });
+                  event.dataTransfer?.setData("text/plain", node.id);
+                  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(event) => {
+                  if (!dragging) return;
+                  event.preventDefault();
+                  setDropTarget({ kind: "top", index });
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  handleDropOnTopIndex(index);
+                  clearDrag();
+                }}
+                onDragEnd={clearDrag}
+                onKeyDown={(event) => onTopRowKeyDown(event, index)}
+              >
+                <span aria-hidden className="bf-side-grip" title={t("sidebarDragHint")}>
+                  <GripVertical className="size-4" />
+                </span>
+                <hr aria-hidden="true" className="bf-side-edit-divider-rule" />
+                <button
+                  type="button"
+                  className="bf-side-tool is-danger"
+                  aria-label={t("sidebarRemoveDivider", { name: label })}
+                  aria-disabled={saving || undefined}
+                  onClick={() => removeDivider(node.id)}
+                >
+                  <X aria-hidden className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  className="bf-side-tool"
+                  aria-label={t("sidebarMoveUp", { name: label })}
+                  aria-disabled={saving || index === 0}
+                  onClick={() => moveTop(index, index - 1)}
+                >
+                  <ChevronUp aria-hidden className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  className="bf-side-tool"
+                  aria-label={t("sidebarMoveDown", { name: label })}
+                  aria-disabled={saving || index === topCount - 1}
+                  onClick={() => moveTop(index, index + 1)}
+                >
+                  <ChevronDown aria-hidden className="size-4" />
+                </button>
+              </li>
+            );
+          }
+
+          const isRenaming = renaming?.id === node.id;
+          const isDraggingGroup =
+            dragging?.kind === "top" && dragging.nodeKind === "group" && dragging.id === node.id;
+          const isDropInside = dropTarget?.kind === "group" && dropTarget.groupID === node.id;
+          const isDropTop = dropTarget?.kind === "top" && dropTarget.index === index;
+
           return (
             <li
-              key={libraryID}
+              key={`group:${node.id}`}
               className={
-                "bf-side-edit-row" +
-                (isPinned ? "" : " is-unpinned") +
-                (dragging === libraryID ? " is-dragging" : "")
+                "bf-side-edit-group" +
+                (isDraggingGroup ? " is-dragging" : "") +
+                (isDropInside ? " is-drop-inside" : "") +
+                (isDropTop ? " is-drop-target" : "")
               }
-              draggable={!saving}
+              draggable={!saving && !isRenaming}
               onDragStart={(event) => {
-                if (saving) return;
-                setDragging(libraryID);
-                event.dataTransfer?.setData("text/plain", libraryID);
+                if (saving || isRenaming) return;
+                setDragging({ kind: "top", index, nodeKind: "group", id: node.id });
+                event.dataTransfer?.setData("text/plain", node.id);
                 if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
               }}
               onDragOver={(event) => {
-                if (dragging) event.preventDefault();
+                if (!dragging) return;
+                event.preventDefault();
+                const draggingLibrary =
+                  dragging.kind === "grouped" ||
+                  (dragging.kind === "top" && dragging.nodeKind === "library");
+                setDropTarget(
+                  draggingLibrary ? { kind: "group", groupID: node.id } : { kind: "top", index },
+                );
               }}
               onDrop={(event) => {
                 event.preventDefault();
-                if (dragging) move(draft.order.indexOf(dragging), index);
-                setDragging(null);
+                handleDropOnGroup(node.id);
+                clearDrag();
               }}
-              onDragEnd={() => setDragging(null)}
-              onKeyDown={(event) => onRowKeyDown(event, index)}
+              onDragEnd={clearDrag}
+              onKeyDown={(event) => onTopRowKeyDown(event, index)}
             >
-              <span aria-hidden className="bf-side-grip" title={t("sidebarDragHint")}>
-                <GripVertical className="size-4" />
-              </span>
-              <span className="bf-side-label">{title}</span>
-              <button
-                type="button"
-                className="bf-side-tool"
-                aria-pressed={isPinned}
-                aria-label={t("sidebarPin", { name: title })}
-                aria-disabled={saving || undefined}
-                onClick={() => togglePin(libraryID)}
-              >
-                {isPinned ? (
-                  <Pin aria-hidden className="size-4" />
+              <div className="bf-side-edit-row bf-side-edit-group-header">
+                {isRenaming ? (
+                  <input
+                    ref={renameInputRef}
+                    type="text"
+                    className="bf-side-rename-input"
+                    aria-label={t("sidebarGroupNameLabel")}
+                    value={renaming.value}
+                    disabled={saving}
+                    onChange={(event) =>
+                      setRenaming((current) =>
+                        current ? { ...current, value: event.target.value } : current,
+                      )
+                    }
+                    onKeyDown={(event) => {
+                      if (event.nativeEvent.isComposing) return;
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitRename(node.id, true);
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        cancelRename(node.id);
+                      }
+                    }}
+                    onBlur={() => commitRename(node.id, false)}
+                  />
                 ) : (
-                  <PinOff aria-hidden className="size-4" />
+                  <>
+                    <span aria-hidden className="bf-side-grip" title={t("sidebarDragHint")}>
+                      <GripVertical className="size-4" />
+                    </span>
+                    <span
+                      className="bf-side-label"
+                      onDoubleClick={() => {
+                        if (!saving) {
+                          setRenaming({ id: node.id, value: node.name });
+                        }
+                      }}
+                    >
+                      {node.name}
+                    </span>
+                    <button
+                      type="button"
+                      data-group-rename={node.id}
+                      className="bf-side-tool"
+                      aria-label={t("sidebarRenameGroup", { name: node.name })}
+                      aria-disabled={saving || undefined}
+                      onClick={() => {
+                        if (!saving) {
+                          setRenaming({ id: node.id, value: node.name });
+                        }
+                      }}
+                    >
+                      <Pencil aria-hidden className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      className="bf-side-tool is-danger"
+                      aria-label={t("sidebarDeleteGroup", { name: node.name })}
+                      aria-disabled={saving || undefined}
+                      onClick={() => deleteGroup(node.id)}
+                    >
+                      <Trash2 aria-hidden className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      className="bf-side-tool"
+                      aria-label={t("sidebarMoveUp", { name: node.name })}
+                      aria-disabled={saving || index === 0}
+                      onClick={() => moveTop(index, index - 1)}
+                    >
+                      <ChevronUp aria-hidden className="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="bf-side-tool"
+                      aria-label={t("sidebarMoveDown", { name: node.name })}
+                      aria-disabled={saving || index === topCount - 1}
+                      onClick={() => moveTop(index, index + 1)}
+                    >
+                      <ChevronDown aria-hidden className="size-4" />
+                    </button>
+                  </>
                 )}
-              </button>
-              <button
-                type="button"
-                className="bf-side-tool"
-                aria-label={t("sidebarMoveUp", { name: title })}
-                aria-disabled={saving || index === 0}
-                onClick={() => move(index, index - 1)}
-              >
-                <ChevronUp aria-hidden className="size-4" />
-              </button>
-              <button
-                type="button"
-                className="bf-side-tool"
-                aria-label={t("sidebarMoveDown", { name: title })}
-                aria-disabled={saving || index === count - 1}
-                onClick={() => move(index, index + 1)}
-              >
-                <ChevronDown aria-hidden className="size-4" />
-              </button>
+              </div>
+              <ul className="bf-side-edit-sublist">
+                {node.libraries.length === 0 ? (
+                  <li className="bf-side-edit-empty">{t("sidebarGroupEmpty")}</li>
+                ) : (
+                  node.libraries.map((libID, childIndex) => {
+                    const title = titleOf(libID);
+                    const isPinned = !draft.hidden.has(libID);
+                    const isChildDragging =
+                      dragging?.kind === "grouped" && dragging.libID === libID;
+                    const isChildTarget =
+                      dropTarget?.kind === "grouped" &&
+                      dropTarget.groupID === node.id &&
+                      dropTarget.index === childIndex;
+                    return (
+                      <li
+                        key={libID}
+                        className={
+                          "bf-side-edit-row" +
+                          (isPinned ? "" : " is-unpinned") +
+                          (isChildDragging ? " is-dragging" : "") +
+                          (isChildTarget ? " is-drop-target" : "")
+                        }
+                        draggable={!saving}
+                        onDragStart={(event) => {
+                          event.stopPropagation();
+                          if (saving) return;
+                          setDragging({
+                            kind: "grouped",
+                            groupID: node.id,
+                            libID,
+                            index: childIndex,
+                          });
+                          event.dataTransfer?.setData("text/plain", libID);
+                          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragOver={(event) => {
+                          event.stopPropagation();
+                          if (!dragging) return;
+                          event.preventDefault();
+                          const draggingLibrary =
+                            dragging.kind === "grouped" ||
+                            (dragging.kind === "top" && dragging.nodeKind === "library");
+                          setDropTarget(
+                            draggingLibrary
+                              ? { kind: "grouped", groupID: node.id, index: childIndex }
+                              : { kind: "top", index },
+                          );
+                        }}
+                        onDrop={(event) => {
+                          event.stopPropagation();
+                          event.preventDefault();
+                          handleDropOnGroup(node.id, childIndex);
+                          clearDrag();
+                        }}
+                        onDragEnd={(event) => {
+                          event.stopPropagation();
+                          clearDrag();
+                        }}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          onGroupedRowKeyDown(event, node.id, childIndex);
+                        }}
+                      >
+                        {libraryControls(
+                          libID,
+                          title,
+                          childIndex,
+                          node.libraries.length,
+                          (from, to) => moveInGroup(node.id, from, to),
+                          node.id,
+                        )}
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
             </li>
           );
         })}
       </ul>
+      {allowGrouping && (
+        <div ref={addRef} className="bf-side-edit-add">
+          <button
+            type="button"
+            className="bf-side-add-button"
+            aria-disabled={saving || undefined}
+            onClick={addGroup}
+          >
+            <Plus aria-hidden className="size-3.5" />
+            <span>{t("sidebarNewGroup")}</span>
+          </button>
+          <button
+            type="button"
+            className="bf-side-add-button"
+            aria-disabled={saving || undefined}
+            onClick={addDivider}
+          >
+            <Plus aria-hidden className="size-3.5" />
+            <span>{t("sidebarAddDivider")}</span>
+          </button>
+        </div>
+      )}
       <div className="bf-side-edit-actions">
         <button
           type="button"
@@ -558,7 +1441,12 @@ function SidebarEditor({
         <button
           type="button"
           className="bf-side-action is-primary"
-          onClick={onDone}
+          onClick={() => {
+            const finalDraft = renaming ? applyRename(draft, renaming.id, renaming.value) : draft;
+            if (finalDraft !== draft) onChange(finalDraft);
+            setRenaming(null);
+            onDone(finalDraft);
+          }}
           aria-disabled={saving || undefined}
         >
           {t("sidebarDone")}

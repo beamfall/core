@@ -8,7 +8,9 @@ import {
   PERSONAL_ENTRIES,
   parseSidebarPrefs,
   resetSidebarPrefsCache,
+  resolveSidebarLibraries,
   SIDEBAR_LIBRARIES_PREF_KEY,
+  type SidebarLibraryPrefs,
   serializeSidebarPrefs,
   useSidebarPrefs,
 } from "./sidebarPrefs";
@@ -120,6 +122,110 @@ describe("applySidebarPrefs", () => {
     expect(applySidebarPrefs(["a", "c"], id, { order: ["b", "c", "a"], hidden: ["b"] })).toEqual({
       pinned: ["c", "a"],
       unpinned: [],
+    });
+  });
+});
+
+describe("Sidebar groups and dividers", () => {
+  it("round-trips groups, collapsed state, dividers, and layout alongside legacy fields", () => {
+    const prefs: SidebarLibraryPrefs = {
+      order: ["a", "b", "c", "d"],
+      hidden: ["d"],
+      groups: [
+        { id: "grp-1", name: "Audio", libraries: ["b", "c"], collapsed: true },
+        { id: "grp-2", name: "Archive", libraries: [] },
+      ],
+      layout: [
+        { type: "library", id: "a" },
+        { type: "divider", id: "div-1" },
+        { type: "group", id: "grp-1" },
+        { type: "group", id: "grp-2" },
+        { type: "library", id: "d" },
+      ],
+    };
+    const raw = serializeSidebarPrefs(prefs);
+    expect(parseSidebarPrefs(raw)).toEqual(prefs);
+  });
+
+  it("drops groups and layout on serialize when no groups or dividers remain", () => {
+    const prefs: SidebarLibraryPrefs = {
+      order: ["b", "a"],
+      hidden: ["a"],
+      groups: [],
+      layout: [
+        { type: "library", id: "b" },
+        { type: "library", id: "a" },
+      ],
+    };
+    expect(serializeSidebarPrefs(prefs)).toBe('{"order":["b","a"],"hidden":["a"]}');
+  });
+
+  it("sanitizes malformed or duplicate group and layout entries", () => {
+    const raw = JSON.stringify({
+      order: ["a", "b", "c"],
+      hidden: [],
+      groups: [
+        { id: "grp-1", name: "  Media  ", libraries: ["b", "b", ""], collapsed: false },
+        { id: "grp-1", name: "Duplicate ID", libraries: ["c"] },
+        { id: "grp-bad", name: "   ", libraries: ["c"] },
+        { id: "grp-2", name: "Other", libraries: ["b", "c"] },
+      ],
+      layout: [
+        { type: "library", id: "b" }, // already in grp-1 -> dropped from top-level
+        { type: "group", id: "missing" },
+        { type: "divider", id: "div-1" },
+        { type: "divider", id: "div-1" },
+        { type: "group", id: "grp-1" },
+        { type: "bogus", id: "x" },
+      ],
+    });
+    expect(parseSidebarPrefs(raw)).toEqual({
+      order: ["a", "b", "c"],
+      hidden: [],
+      groups: [
+        { id: "grp-1", name: "Media", libraries: ["b"] },
+        { id: "grp-2", name: "Other", libraries: ["c"] },
+      ],
+      layout: [
+        { type: "divider", id: "div-1" },
+        { type: "group", id: "grp-1" },
+        { type: "library", id: "a" },
+        { type: "group", id: "grp-2" },
+      ],
+    });
+  });
+
+  it("resolves groups, dividers, unpinned libraries, server removals, and new libraries", () => {
+    const prefs: SidebarLibraryPrefs = {
+      order: ["a", "b", "c", "gone"],
+      hidden: ["c"],
+      groups: [
+        { id: "grp-1", name: "Audio", libraries: ["b", "c", "gone"], collapsed: true },
+        { id: "grp-empty", name: "Empty", libraries: ["gone"] },
+      ],
+      layout: [
+        { type: "library", id: "a" },
+        { type: "divider", id: "div-1" },
+        { type: "group", id: "grp-1" },
+        { type: "group", id: "grp-empty" },
+      ],
+    };
+    const resolved = resolveSidebarLibraries(["a", "b", "c", "new"], id, prefs);
+    expect(resolved).toEqual({
+      topLevel: [
+        { kind: "library", libraryID: "a", entry: "a" },
+        { kind: "divider", id: "div-1" },
+        {
+          kind: "group",
+          id: "grp-1",
+          name: "Audio",
+          collapsed: true,
+          items: [{ libraryID: "b", entry: "b" }],
+        },
+        { kind: "library", libraryID: "new", entry: "new" },
+      ],
+      pinned: ["a", "b", "new"],
+      unpinned: ["c"],
     });
   });
 });
