@@ -3229,6 +3229,42 @@ func (s *Store) SetPrimaryMediaFile(ctx context.Context, id MediaID, path string
 	return s.upsertMediaFile(ctx, file, time.Now().UTC())
 }
 
+// SetMultiPartMediaDuration updates a grouped multi-Part Media row's runtime
+// to the summed duration across all Parts when that total differs.
+func (s *Store) SetMultiPartMediaDuration(ctx context.Context, id MediaID, seconds int) (bool, error) {
+	if seconds <= 0 || id == "" {
+		return false, nil
+	}
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return false, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	result, err := plane.writer.ExecContext(ctx, `
+		UPDATE media SET duration_seconds = ?
+		WHERE id = ? AND duration_seconds <> ? AND trashed_at_ms IS NULL
+		  AND EXISTS (SELECT 1 FROM media_file mf WHERE mf.media_id = media.id AND mf.missing_at_ms IS NULL AND mf.part_ordinal > 0)
+	`, seconds, id, seconds)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected == 0 {
+		return false, err
+	}
+	if !plane.encrypted {
+		s.emitMediaUpdated(ctx, id)
+	}
+	return true, nil
+}
+
 // StoredFingerprint is the cheap-triple identity a scan reuses when a file is
 // unchanged: the content fingerprint last computed for the file at Path, plus
 // the (size, mtime) that hash was taken at. OK is false when no available
