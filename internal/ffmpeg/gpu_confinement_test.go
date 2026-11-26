@@ -95,8 +95,8 @@ func parseRecordedShim(t *testing.T, args []string) shimFlags {
 			i++
 			flags.rw = append(flags.rw, args[i])
 		case "--":
-			if !requireLandlock {
-				t.Fatalf("shim invocation without --require-landlock: %q", args)
+			if requireLandlock {
+				t.Fatalf("ordinary GPU shim invocation unexpectedly set --require-landlock: %q", args)
 			}
 			flags.target = args[i+1:]
 			return flags

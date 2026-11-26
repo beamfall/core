@@ -9,17 +9,18 @@ import (
 	"runtime"
 )
 
-// Mandatory platform confinement at the common spawn seam (CORE-0700).
+// Platform confinement at the common spawn seam (CORE-0700).
 //
 // Once the server has configured the hardening shim (SetHardeningShim,
 // SetProbeHardeningShim), every FFmpeg/ffprobe spawn built by shimCommand runs
-// under kernel-enforced filesystem confinement scoped to the job's
-// confinement, or it does not run at all:
+// through the platform's confinement wrapper:
 //
-//   - linux: the shim is told --require-landlock, so a kernel without landlock,
-//     or with a landlock ABI below the one that fences truncate(2), refuses the
-//     launch (the shim exits ShimFailureExitCode) instead of running FFmpeg on
-//     rlimits alone.
+//   - linux: the shim applies rlimits and Landlock filesystem confinement.
+//     Ordinary jobs use best-effort Landlock (enforced whenever the host
+//     kernel supports it, falling back to rlimits on non-Landlock kernels such
+//     as Unraid); jobs with RequireLandlock (encrypted-library pipe
+//     transcodes) pass --require-landlock so a kernel without Landlock ABI 3+
+//     refuses the launch (exit ShimFailureExitCode).
 //   - darwin: the shim runs inside `/usr/bin/sandbox-exec` with a deny-default
 //     Seatbelt profile that grants only the job's paths. A host without
 //     sandbox-exec refuses the launch.
@@ -82,10 +83,13 @@ func confinedArgv(goos, shimPath, binPath string, conf confinement, args []strin
 	shimArgs := buildShimArgs(conf, binPath, args)
 	switch goos {
 	case "linux":
-		// --require-landlock goes right after the subcommand, ahead of the "--"
-		// that starts the target command.
-		required := append([]string{shimPath, shimArgs[0], "--require-landlock"}, shimArgs[1:]...)
-		return required, nil
+		if conf.RequireLandlock {
+			// --require-landlock goes right after the subcommand, ahead of the "--"
+			// that starts the target command.
+			required := append([]string{shimPath, shimArgs[0], "--require-landlock"}, shimArgs[1:]...)
+			return required, nil
+		}
+		return append([]string{shimPath}, shimArgs...), nil
 	case "darwin":
 		if !executableFile(sandboxExecPath) {
 			return nil, fmt.Errorf("%w: %s is not available", ErrConfinementUnavailable, sandboxExecPath)
