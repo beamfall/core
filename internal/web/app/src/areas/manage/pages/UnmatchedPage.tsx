@@ -214,6 +214,7 @@ export function UnmatchedPage() {
                   <AlertDialogTitle>{t("unmatchedClearQueue")}</AlertDialogTitle>
                   <AlertDialogDescription>
                     {t("unmatchedGroupItems", { count: items.length })}. {t("unmatchedHideBody")}
+                    {!complete && ` (${t("unmatchedTruncated", { count: items.length })})`}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -247,7 +248,7 @@ export function UnmatchedPage() {
           !error && <EmptyLine message={t("unmatchedEmpty")} />
         ) : (
           <div className="grid gap-3 lg:grid-cols-[minmax(220px,0.8fr)_minmax(320px,1.4fr)]">
-            <ul className="divide-y self-start rounded-md border border-border bg-card">
+            <ul className="divide-y self-start rounded-md border border-border bg-card lg:max-h-[65vh] lg:overflow-y-auto">
               {groups.map((group) => {
                 const path = paths[group.items[0]?.mediaID ?? ""];
                 const hint = folderHint(path);
@@ -299,7 +300,7 @@ export function UnmatchedPage() {
           </div>
         )}
       </ManageSection>
-      <RecordInbox libraryID={libraryID} />
+      <RecordInbox libraryID={libraryID} libraries={libraries} />
     </div>
   );
 }

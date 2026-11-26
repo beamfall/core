@@ -211,6 +211,8 @@ describe("NavOverridePage", () => {
     await ready();
 
     await user.click(screen.getByRole("button", { name: "Reset all" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Reset all" }));
     expect(resetNavOverride).toHaveBeenCalled();
   });
 });

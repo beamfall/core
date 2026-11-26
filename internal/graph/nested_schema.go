@@ -142,7 +142,10 @@ var resultTypes = map[string]any{
 	"similarmedia":                  SourceItem{},
 	"sonicanalysisenabled":          SonicAnalysisInfo{},
 	"medialyrics":                   MediaLyricsInfo{},
-	"homelayout":                    HomeLayoutInfo{}, // CORE-1972
+	"homelayout":                    HomeLayoutInfo{},       // CORE-1972
+	"homeconfig":                    HomeConfigInfo{},       // Home customization
+	"homefilterschema":              HomeFilterSchemaInfo{}, // Home customization
+	"previewhomeshelf":              HomeShelfPreviewInfo{}, // Home customization
 	"partysession":                  PartySessionInfo{},
 	"partystage":                    PartyStageInfo{},
 	"myplayhistory":                 PlayInfo{},
@@ -162,6 +165,7 @@ var resultTypes = map[string]any{
 	"updatestatus":           UpdateStatusInfo{},
 	"transcodeconfig":        TranscodeConfigInfo{},
 	"livesessions":           LiveSessionInfo{},
+	"managedlivesessions":    LiveSessionInfo{},
 	"hostmetrics":            HostMetricsInfo{},
 	"playhistory":            PlayInfo{},
 	"playstats":              PlayStatsInfo{},
@@ -265,6 +269,10 @@ var resultTypes = map[string]any{
 	"setclientpref":                      ClientPrefInfo{},
 	"sethomelayout":                      HomeLayoutInfo{}, // CORE-1972
 	"resethomelayout":                    HomeLayoutInfo{}, // CORE-1972
+	"savehomeconfig":                     HomeConfigInfo{}, // Home customization
+	"resethomeconfig":                    HomeConfigInfo{}, // Home customization
+	"savedefaulthometemplate":            HomeConfigInfo{}, // Home customization
+	"resetdefaulthometemplate":           HomeConfigInfo{}, // Home customization
 	"setfollow":                          FollowInfo{},
 	"setfollownewentryroute":             FollowInfo{},
 	"refreshsubscription":                SubscriptionRefreshInfo{},

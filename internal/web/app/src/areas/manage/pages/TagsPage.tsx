@@ -12,6 +12,17 @@ import {
   StatusBadge,
   TableSkeletonRows,
 } from "@/components/beamfall/workbench";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -66,10 +77,13 @@ function treeOrder(tags: TagInfo[]): { tag: TagInfo; depth: number }[] {
     byParent.set(key, list);
   }
   const ids = new Set(live.map((t) => t.id));
+  const visited = new Set<string>();
   const out: { tag: TagInfo; depth: number }[] = [];
   const visit = (parent: string | undefined, depth: number) => {
     const children = (byParent.get(parent) ?? []).sort((a, b) => a.name.localeCompare(b.name));
     for (const tag of children) {
+      if (visited.has(tag.id)) continue;
+      visited.add(tag.id);
       out.push({ tag, depth });
       visit(tag.id, Math.min(depth + 1, 2));
     }
@@ -77,12 +91,39 @@ function treeOrder(tags: TagInfo[]): { tag: TagInfo; depth: number }[] {
   // Roots: no parent, or a parent that no longer points at a live tag.
   visit(undefined, 0);
   for (const t of live) {
-    if (t.parentTagID && !ids.has(t.parentTagID)) {
+    if (t.parentTagID && !ids.has(t.parentTagID) && !visited.has(t.id)) {
+      visited.add(t.id);
       out.push({ tag: t, depth: 0 });
       visit(t.id, 1);
     }
   }
   return out;
+}
+
+function descendantsOf(rootID: string, tags: TagInfo[]): Set<string> {
+  const childrenByParent = new Map<string, string[]>();
+  for (const tag of tags) {
+    if (!tag.parentTagID) continue;
+    const list = childrenByParent.get(tag.parentTagID) ?? [];
+    list.push(tag.id);
+    childrenByParent.set(tag.parentTagID, list);
+  }
+  const result = new Set<string>();
+  const stack = [rootID];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    for (const child of childrenByParent.get(cur) ?? []) {
+      if (!result.has(child)) {
+        result.add(child);
+        stack.push(child);
+      }
+    }
+  }
+  return result;
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
 }
 
 const submit = (action: () => void) => (event: FormEvent) => {
@@ -134,9 +175,9 @@ export function TagsPage() {
         <CreateTagForm tags={liveTags} onChanged={load} onError={setError} />
       </ManageSection>
 
-      <AssignSection tags={liveTags} />
+      <AssignSection tags={liveTags} onChanged={load} />
 
-      <BulkSection tags={liveTags} />
+      <BulkSection tags={liveTags} onChanged={load} />
 
       <ManageSection
         title={t("tagsDeletedHeading")}
@@ -189,6 +230,7 @@ function TagTable({
   // Rename opens the editor on the name; Move opens it on the parent (reparent)
   // — both edit the same updateTag call, so this only steers initial focus.
   const [editFocus, setEditFocus] = useState<"name" | "parent">("name");
+  const [busy, setBusy] = useState(false);
 
   const rows = useMemo(() => treeOrder(tags), [tags]);
 
@@ -203,22 +245,28 @@ function TagTable({
     onError("");
     const trimmed = editName.trim();
     if (!trimmed) return;
+    setBusy(true);
     try {
       await updateTag(tag.id, trimmed, editParent === NO_PARENT ? undefined : editParent);
       setEditing(null);
       await onChanged();
-    } catch {
-      onError(t("tagsUnavailable"));
+    } catch (err) {
+      onError(errorMessage(err, t("tagsUnavailable")));
+    } finally {
+      setBusy(false);
     }
   };
 
   const onDelete = async (tag: TagInfo) => {
     onError("");
+    setBusy(true);
     try {
       await deleteTag(tag.id);
       await onChanged();
-    } catch {
-      onError(t("tagsUnavailable"));
+    } catch (err) {
+      onError(errorMessage(err, t("tagsUnavailable")));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -272,17 +320,20 @@ function TagTable({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={NO_PARENT}>{t("tagNoParent")}</SelectItem>
-                        {tags
-                          .filter((p) => p.id !== tag.id)
-                          .map((p) => (
-                            <SelectItem key={p.id} value={p.id}>
-                              {p.name}
-                            </SelectItem>
-                          ))}
+                        {(() => {
+                          const blocked = descendantsOf(tag.id, tags);
+                          return tags
+                            .filter((p) => p.id !== tag.id && !blocked.has(p.id))
+                            .map((p) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.name}
+                              </SelectItem>
+                            ));
+                        })()}
                       </SelectContent>
                     </Select>
                     <span className="ml-auto flex gap-2">
-                      <Button type="submit" size="sm" disabled={!editName.trim()}>
+                      <Button type="submit" size="sm" disabled={busy || !editName.trim()}>
                         {t("tagSave")}
                       </Button>
                       <Button
@@ -388,18 +439,22 @@ function CreateTagForm({
   const t = useT();
   const [name, setName] = useState("");
   const [parentID, setParentID] = useState(NO_PARENT);
+  const [busy, setBusy] = useState(false);
 
   const onCreate = async () => {
     onError("");
     const trimmed = name.trim();
     if (!trimmed) return;
+    setBusy(true);
     try {
       await createTag(trimmed, parentID === NO_PARENT ? undefined : parentID);
       setName("");
       setParentID(NO_PARENT);
       await onChanged();
-    } catch {
-      onError(t("tagsUnavailable"));
+    } catch (err) {
+      onError(errorMessage(err, t("tagsUnavailable")));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -431,7 +486,7 @@ function CreateTagForm({
             </SelectContent>
           </Select>
         </ManageField>
-        <Button type="submit" disabled={!name.trim()}>
+        <Button type="submit" disabled={busy || !name.trim()}>
           {t("tagCreate")}
         </Button>
       </ManageInlineForm>
@@ -473,12 +528,19 @@ function TargetTypeField({
   );
 }
 
-function AssignSection({ tags }: { tags: TagInfo[] }) {
+function AssignSection({
+  tags,
+  onChanged,
+}: {
+  tags: TagInfo[];
+  onChanged: () => Promise<void> | void;
+}) {
   const t = useT();
   const [targetType, setTargetType] = useState<TagTargetType>("media");
   const [targetID, setTargetID] = useState("");
   const [assignment, setAssignment] = useState<TagAssignmentInfo | null>(null);
   const [addTagID, setAddTagID] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   // The loaded panel belongs to the target it was loaded for; changing the
@@ -493,17 +555,21 @@ function AssignSection({ tags }: { tags: TagInfo[] }) {
     setAddTagID("");
   };
 
-  const run = async (action: () => Promise<TagAssignmentInfo>) => {
+  const run = async (action: () => Promise<TagAssignmentInfo>, refreshCounts = false) => {
     const started = generation.current;
     setError("");
+    setBusy(true);
     try {
       const next = await action();
       if (started !== generation.current) return false;
       setAssignment(next);
+      if (refreshCounts) void onChanged();
       return true;
-    } catch {
-      if (started === generation.current) setError(t("tagsUnavailable"));
+    } catch (err) {
+      if (started === generation.current) setError(errorMessage(err, t("tagsUnavailable")));
       return false;
+    } finally {
+      if (started === generation.current) setBusy(false);
     }
   };
 
@@ -515,12 +581,12 @@ function AssignSection({ tags }: { tags: TagInfo[] }) {
   const onAssign = async () => {
     if (!assignment || !addTagID) return;
     const { targetType: type, targetID: loaded } = assignment;
-    if (await run(() => assignTag(addTagID, type, loaded))) setAddTagID("");
+    if (await run(() => assignTag(addTagID, type, loaded), true)) setAddTagID("");
   };
   const onUnassign = (tagID: string) => {
     if (!assignment) return;
     const { targetType: type, targetID: loaded } = assignment;
-    void run(() => unassignTag(tagID, type, loaded));
+    void run(() => unassignTag(tagID, type, loaded), true);
   };
 
   const assigned = assignment?.tags ?? [];
@@ -568,7 +634,7 @@ function AssignSection({ tags }: { tags: TagInfo[] }) {
               />
             )}
           </ManageField>
-          <Button type="submit" variant="outline" disabled={!id}>
+          <Button type="submit" variant="outline" disabled={busy || !id}>
             {t("tagLoad")}
           </Button>
         </ManageInlineForm>
@@ -588,7 +654,11 @@ function AssignSection({ tags }: { tags: TagInfo[] }) {
           <form onSubmit={submit(() => void onAssign())}>
             <ManageInlineForm>
               <ManageField id="assign-add-tag" label={t("tagAssign")} className="min-w-48 flex-1">
-                <Select value={addTagID} onValueChange={setAddTagID}>
+                <Select
+                  value={addTagID}
+                  onValueChange={setAddTagID}
+                  disabled={busy || available.length === 0}
+                >
                   <SelectTrigger id="assign-add-tag">
                     <SelectValue placeholder={t("tagChooseTag")} />
                   </SelectTrigger>
@@ -601,7 +671,7 @@ function AssignSection({ tags }: { tags: TagInfo[] }) {
                   </SelectContent>
                 </Select>
               </ManageField>
-              <Button type="submit" disabled={!addTagID}>
+              <Button type="submit" disabled={busy || !addTagID}>
                 {t("tagAssign")}
               </Button>
             </ManageInlineForm>
@@ -613,13 +683,20 @@ function AssignSection({ tags }: { tags: TagInfo[] }) {
   );
 }
 
-function BulkSection({ tags }: { tags: TagInfo[] }) {
+function BulkSection({
+  tags,
+  onChanged,
+}: {
+  tags: TagInfo[];
+  onChanged: () => Promise<void> | void;
+}) {
   const t = useT();
   const [mode, setMode] = useState<TagBulkMode>("add");
   const [targetType, setTargetType] = useState<TagTargetType>("media");
   const [targetIDs, setTargetIDs] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [affected, setAffected] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   const idList = targetIDs
@@ -644,11 +721,15 @@ function BulkSection({ tags }: { tags: TagInfo[] }) {
   const onApply = async () => {
     setError("");
     if (!canApply) return;
+    setBusy(true);
     try {
       const result = await bulkAssignTags(selected, targetType, idList, mode);
       setAffected(result.affected);
-    } catch {
-      setError(t("tagsUnavailable"));
+      void onChanged();
+    } catch (err) {
+      setError(errorMessage(err, t("tagsUnavailable")));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -659,7 +740,12 @@ function BulkSection({ tags }: { tags: TagInfo[] }) {
 
   return (
     <ManageSection title={t("tagBulkHeading")} lead={t("tagBulkLead")}>
-      <form className="space-y-3" onSubmit={submit(() => void onApply())}>
+      <form
+        className="space-y-3"
+        onSubmit={submit(() => {
+          if (mode !== "replace") void onApply();
+        })}
+      >
         <ManageInlineForm>
           <TargetTypeField
             id="bulk-target-type"
@@ -708,7 +794,7 @@ function BulkSection({ tags }: { tags: TagInfo[] }) {
             {chosen.map((tag) => (
               <TagChip key={tag.id} name={tag.name} onRemove={() => toggle(tag.id)} />
             ))}
-            <Select value="" onValueChange={toggle}>
+            <Select value="" onValueChange={toggle} disabled={busy || available.length === 0}>
               <SelectTrigger id="bulk-add-tag" className="w-48">
                 <SelectValue placeholder={t("tagChooseTag")} />
               </SelectTrigger>
@@ -739,9 +825,33 @@ function BulkSection({ tags }: { tags: TagInfo[] }) {
                 {t("tagBulkApplied")} · {affected} {t("tagBulkAffected")}
               </StatusBadge>
             )}
-            <Button type="submit" disabled={!canApply}>
-              {t("tagBulkApply")}
-            </Button>
+            {mode === "replace" ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button type="button" disabled={busy || !canApply}>
+                    {t("tagBulkApply")}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t("tagBulkModeReplace")}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t("manageTagReplaceConfirm", { count: idList.length })}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => void onApply()}>
+                      {t("tagBulkApply")}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ) : (
+              <Button type="submit" disabled={busy || !canApply}>
+                {t("tagBulkApply")}
+              </Button>
+            )}
           </span>
         </div>
       </form>

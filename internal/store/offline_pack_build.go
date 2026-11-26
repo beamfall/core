@@ -186,6 +186,33 @@ func (s *Store) DeleteFailedOfflinePackBuild(ctx context.Context, id OfflinePack
 	return nil
 }
 
+// DeleteOfflinePackBuild removes the caller's build row regardless of state
+// (used when cancelling an in-progress build or dismissing a failed one).
+func (s *Store) DeleteOfflinePackBuild(ctx context.Context, id OfflinePackID, profileID ProfileID) error {
+	if id == "" || profileID == "" {
+		return ValidationError("pack ID and profile ID are required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	res, err := s.catalogW.ExecContext(ctx, `
+		DELETE FROM offline_pack_build WHERE pack_id = ? AND profile_id = ?
+	`, id, profileID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrOfflinePackBuildNotFound
+	}
+	return nil
+}
+
 // OfflinePackBuildByID returns the caller's pending build row. Another
 // Profile's row, or a row whose pack has sealed, reads as not found.
 func (s *Store) OfflinePackBuildByID(ctx context.Context, id OfflinePackID, profileID ProfileID) (OfflinePackBuild, error) {

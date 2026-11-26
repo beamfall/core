@@ -4555,10 +4555,20 @@ func offlinePackAttestationVerifier(hook offlinepack.DeviceKeyAttestationVerifie
 		return hook, nil
 	}
 	status := &offlinepack.AttestationStatusSource{}
-	return offlinepack.NewAndroidKeyAttestationVerifier(offlinepack.AndroidKeyAttestationOptions{
+	android, err := offlinepack.NewAndroidKeyAttestationVerifier(offlinepack.AndroidKeyAttestationOptions{
 		AllowSoftware: emulatorAttestationAllowed(capabilities.ReleaseVersion, logger),
 		Status:        status.Current,
 	})
+	if err != nil {
+		return nil, err
+	}
+	apple, err := offlinepack.NewAppleAppAttestVerifier(offlinepack.AppleAppAttestOptions{
+		AllowDevelopment: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return offlinepack.NewMultiPlatformAttestationVerifier(android, apple), nil
 }
 
 func emulatorAttestationAllowed(releaseVersion string, logger *slog.Logger) bool {

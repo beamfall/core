@@ -1476,6 +1476,28 @@
       ]
     },
     {
+      "field": "homeconfig",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "canEditTemplate",
+        "customized",
+        "hasOwnerTemplate",
+        "hero",
+        "shelves"
+      ]
+    },
+    {
+      "field": "homefilterschema",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "fields",
+        "libraries",
+        "pinnables"
+      ]
+    },
+    {
       "field": "homelayout",
       "effect": "read",
       "tier": "session",
@@ -1901,6 +1923,29 @@
       "field": "livesessions",
       "effect": "read",
       "tier": "admin",
+      "children": [
+        "bitrate",
+        "deviceID",
+        "deviceName",
+        "deviceRole",
+        "durationSeconds",
+        "expiresAt",
+        "libraryID",
+        "mediaID",
+        "playMethod",
+        "playReason",
+        "positionSeconds",
+        "profileID",
+        "profileName",
+        "sessionID",
+        "title",
+        "transcoding"
+      ]
+    },
+    {
+      "field": "managedlivesessions",
+      "effect": "read",
+      "tier": "session",
       "children": [
         "bitrate",
         "deviceID",
@@ -3135,6 +3180,15 @@
       ]
     },
     {
+      "field": "previewhomeshelf",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "items",
+        "totalCount"
+      ]
+    },
+    {
       "field": "profiles",
       "effect": "read",
       "tier": "session",
@@ -3770,6 +3824,30 @@
       ]
     },
     {
+      "field": "resetdefaulthometemplate",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "canEditTemplate",
+        "customized",
+        "hasOwnerTemplate",
+        "hero",
+        "shelves"
+      ]
+    },
+    {
+      "field": "resethomeconfig",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "canEditTemplate",
+        "customized",
+        "hasOwnerTemplate",
+        "hero",
+        "shelves"
+      ]
+    },
+    {
       "field": "resethomelayout",
       "effect": "write",
       "tier": "session",
@@ -4147,6 +4225,18 @@
       ]
     },
     {
+      "field": "savedefaulthometemplate",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "canEditTemplate",
+        "customized",
+        "hasOwnerTemplate",
+        "hero",
+        "shelves"
+      ]
+    },
+    {
       "field": "savedfilters",
       "effect": "read",
       "tier": "session",
@@ -4158,6 +4248,18 @@
         "name",
         "pinned",
         "profileID"
+      ]
+    },
+    {
+      "field": "savehomeconfig",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "canEditTemplate",
+        "customized",
+        "hasOwnerTemplate",
+        "hero",
+        "shelves"
       ]
     },
     {

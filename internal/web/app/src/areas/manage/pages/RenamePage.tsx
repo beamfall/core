@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   EmptyLine,
   ErrorLine,
@@ -8,6 +8,7 @@ import {
   PathPickerField,
   PresetSelect,
   StatusBadge,
+  TableSkeletonRows,
 } from "@/components/beamfall/workbench";
 import {
   AlertDialog,
@@ -63,6 +64,7 @@ export function RenamePage() {
   const [sources, setSources] = useState<RenameSource[]>([]);
   const [pattern, setPattern] = useState<RenamePattern>(DEFAULT_PATTERN);
   const [loadingFiles, setLoadingFiles] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [lastBatchID, setLastBatchID] = useState<string | null>(null);
@@ -85,22 +87,35 @@ export function RenamePage() {
         setLibraries(libs);
         if (libs.length > 0) setLibraryID(libs[0].id);
       } catch {
-        setError(t("convertLibrariesUnavailable"));
+        setLoadError(t("convertLibrariesUnavailable"));
       }
     })();
   }, [t]);
 
   const previews = useMemo(() => previewRenames(sources, pattern), [sources, pattern]);
   const changeCount = useMemo(() => previews.filter((p) => p.changed).length, [previews]);
+  const collidingNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of previews) {
+      counts.set(p.newName, (counts.get(p.newName) ?? 0) + 1);
+    }
+    const dupes = new Set<string>();
+    for (const [name, count] of counts) {
+      if (count > 1) dupes.add(name);
+    }
+    return dupes;
+  }, [previews]);
+  const hasCollisions = collidingNames.size > 0;
 
   const setField = <K extends keyof RenamePattern>(key: K, value: RenamePattern[K]) =>
     setPattern((prev) => ({ ...prev, [key]: value }));
 
   const onLoadFiles = async () => {
     if (!libraryID || !folder.trim()) {
-      setError(t("renameChooseLibraryAndFolder"));
+      setLoadError(t("renameChooseLibraryAndFolder"));
       return;
     }
+    setLoadError("");
     setError("");
     setNotice("");
     setLoadingFiles(true);
@@ -115,7 +130,7 @@ export function RenamePage() {
       if (files.length === 0) setNotice(t("renameNoFiles"));
     } catch {
       if (generation !== loadGenerationRef.current) return;
-      setError(t("renameListFolderFailed"));
+      setLoadError(t("renameListFolderFailed"));
       setSources([]);
       setLoadedFrom(null);
     } finally {
@@ -219,8 +234,9 @@ export function RenamePage() {
             disabled={loadingFiles}
             onClick={onLoadFiles}
           >
-            {t("renameLoadFiles")}
+            {loadingFiles ? t("loading") : t("renameLoadFiles")}
           </Button>
+          <ErrorLine message={loadError} />
         </div>
       </ManageSection>
 
@@ -280,24 +296,22 @@ export function RenamePage() {
                 <Button
                   type="button"
                   size="sm"
-                  disabled={busy || changeCount === 0 || !selectionMatches}
+                  disabled={busy || changeCount === 0 || !selectionMatches || hasCollisions}
                 >
                   {t("renameApply").replace("{count}", String(changeCount))}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>{t("renamePreviewTitle")}</AlertDialogTitle>
+                  <AlertDialogTitle>{t("renameBatchTitle")}</AlertDialogTitle>
                   <AlertDialogDescription>
                     {t("renameApply").replace("{count}", String(changeCount))}
+                    {loadedFrom ? ` — ${loadedFrom.folder}` : ""}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={onApply}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
+                  <AlertDialogAction onClick={onApply}>
                     {t("renameApply").replace("{count}", String(changeCount))}
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -315,12 +329,28 @@ export function RenamePage() {
           </div>
         }
       >
+        {loadedFrom && !selectionMatches && (
+          <p role="status" className="mb-2 text-xs text-[var(--state-warning)]">
+            {t("manageRenameStaleFolder", { folder: loadedFrom.folder })}
+          </p>
+        )}
+        {hasCollisions && (
+          <p role="alert" className="mb-2 text-xs text-[var(--state-danger)]">
+            {t("manageRenameCollisionNotice")}
+          </p>
+        )}
         {notice && (
           <p role="status" className="mb-2 text-sm text-muted-foreground">
             {notice}
           </p>
         )}
-        {sources.length === 0 ? (
+        {loadingFiles ? (
+          <ManageTable>
+            <TableBody>
+              <TableSkeletonRows columns={3} />
+            </TableBody>
+          </ManageTable>
+        ) : sources.length === 0 ? (
           <EmptyLine message={t("renameLoadFolderNotice")} />
         ) : (
           <ManageTable>
@@ -328,23 +358,28 @@ export function RenamePage() {
               <TableRow>
                 <TableHead>{t("renameColCurrent")}</TableHead>
                 <TableHead>{t("renameColNew")}</TableHead>
-                <TableHead className="text-right">{t("active")}</TableHead>
+                <TableHead className="text-right">{t("consoleOverviewStatus")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {previews.map((p) => (
-                <TableRow key={p.path}>
-                  <TableCell className="manage-cell-primary break-all">{p.oldName}</TableCell>
-                  <TableCell className="break-all">{p.newName}</TableCell>
-                  <TableCell className="text-right">
-                    {p.changed ? (
-                      <StatusBadge state="cyan">{t("renameStatusChanged")}</StatusBadge>
-                    ) : (
-                      <StatusBadge state="neutral">{t("renameStatusUnchanged")}</StatusBadge>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {previews.map((p) => {
+                const collision = collidingNames.has(p.newName);
+                return (
+                  <TableRow key={p.path}>
+                    <TableCell className="manage-cell-primary break-all">{p.oldName}</TableCell>
+                    <TableCell className="break-all">{p.newName}</TableCell>
+                    <TableCell className="text-right">
+                      {collision ? (
+                        <StatusBadge state="red">{t("manageRenameCollision")}</StatusBadge>
+                      ) : p.changed ? (
+                        <StatusBadge state="cyan">{t("renameStatusChanged")}</StatusBadge>
+                      ) : (
+                        <StatusBadge state="neutral">{t("renameStatusUnchanged")}</StatusBadge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </ManageTable>
         )}
@@ -372,17 +407,19 @@ function Field({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const id = useId();
   return (
     <div className="grid gap-1" data-setting={setting}>
       {tip ? (
         <span className="bf-label-with-tip">
-          <Label>{label}</Label>
+          <Label htmlFor={id}>{label}</Label>
           <HelpTip label={label} text={tip} />
         </span>
       ) : (
-        <Label>{label}</Label>
+        <Label htmlFor={id}>{label}</Label>
       )}
       <Input
+        id={id}
         aria-label={label}
         value={value}
         autoComplete="off"
@@ -407,17 +444,25 @@ function NumField({
   max?: number;
   onChange: (value: number) => void;
 }) {
+  const id = useId();
   return (
     <div className="grid gap-1">
-      <Label>{label}</Label>
+      <Label htmlFor={id}>{label}</Label>
       <Input
+        id={id}
         type="number"
         aria-label={label}
         min={min}
         max={max}
         step={1}
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => {
+          const parsed = Number.parseInt(e.target.value, 10);
+          const clamped = Number.isFinite(parsed)
+            ? Math.max(min, max !== undefined ? Math.min(max, parsed) : parsed)
+            : min;
+          onChange(clamped);
+        }}
         className="w-20"
       />
     </div>

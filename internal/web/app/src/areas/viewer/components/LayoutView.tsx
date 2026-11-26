@@ -91,7 +91,9 @@ export function LayoutView({
     const sections = known.slice(0, MAX_RENDERED_SECTIONS);
     const homeRecent = home && !libraryID ? findHomeRecentSection(sections) : undefined;
     const homeHero: Section | undefined =
-      homeRecent && !sections.some((section) => section.kind === "hero")
+      !layout?.suppressAutoHero &&
+      homeRecent &&
+      !sections.some((section) => section.kind === "hero")
         ? { ...homeRecent, id: `${homeRecent.id}:featured`, kind: "hero", title: t("homeFeatured") }
         : undefined;
     const homeContinue = homeHero

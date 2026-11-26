@@ -182,6 +182,16 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"clientprefs": {},
 	"homelayout":  {},
+	"homeconfig": {
+		{Name: "template", Kind: "boolean", Optional: true},
+	},
+	"homefilterschema": {
+		{Name: "libraryIDs", Kind: "list", Optional: true},
+	},
+	"previewhomeshelf": {
+		{Name: "limit", Kind: "int", Optional: true},
+		{Name: "shelf", Kind: "object"},
+	},
 	"collections": {
 		{Name: "includeTrashed", Kind: "boolean", Optional: true},
 		{Name: "libraryID", Kind: "string"},
@@ -507,8 +517,9 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "credential", Kind: "string"},
 		{Name: "service", Kind: "string"},
 	},
-	"livesessions": {},
-	"manifest":     {},
+	"livesessions":        {},
+	"managedlivesessions": {},
+	"manifest":            {},
 	"markers": {
 		{Name: "mediaID", Kind: "string"},
 	},
@@ -1058,6 +1069,14 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "hiddenSectionIDs", Kind: "list", Optional: true},
 		{Name: "sectionOrder", Kind: "list", Optional: true},
 	},
+	"savehomeconfig": {
+		{Name: "config", Kind: "object"},
+	},
+	"resethomeconfig": {},
+	"savedefaulthometemplate": {
+		{Name: "config", Kind: "object"},
+	},
+	"resetdefaulthometemplate": {},
 	"setnavoverride": {
 		{Name: "hiddenNodeIDs", Kind: "list", Optional: true},
 		{Name: "layoutSectionOverrides", Kind: "object", Optional: true},

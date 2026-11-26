@@ -39,7 +39,7 @@ beforeEach(() => {
       action: "media.trash",
       reversible: true,
       targetType: "media",
-      targetID: "9c08",
+      targetID: "media-9c08",
     },
     {
       id: "2",
@@ -137,12 +137,17 @@ describe("TrashPage", () => {
   });
 
   it("surfaces a reversible-action undo and flags the irreversible purge", async () => {
+    const user = userEvent.setup();
     renderPage();
+    await user.click(screen.getByText("Activity"));
     // The row reads as a sentence; the raw event key stays on the cell for hover.
     await screen.findByTitle("media.trash");
-    // media.trash row carries an Undo control; trash.purge row is flagged.
-    expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
+    // media.trash row carries an Undo control that restores the item; trash.purge row is flagged.
+    const undoBtn = screen.getByRole("button", { name: "Undo" });
+    expect(undoBtn).toBeInTheDocument();
     expect(screen.getByText("No undo")).toBeInTheDocument();
+    await user.click(undoBtn);
+    await waitFor(() => expect(restoreMedia).toHaveBeenCalledWith("media-9c08"));
   });
 
   it("lists merged copies apart from deletions, by batch, with Undo merge", async () => {

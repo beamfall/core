@@ -256,6 +256,12 @@ func (s *Service) DismissBuild(ctx context.Context, id store.OfflinePackID, prof
 	return s.store.DeleteFailedOfflinePackBuild(ctx, id, profileID)
 }
 
+// CancelBuild removes the caller's build row regardless of state when the user
+// cancels an in-progress download.
+func (s *Service) CancelBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error {
+	return s.store.DeleteOfflinePackBuild(ctx, id, profileID)
+}
+
 // recordBuildFailure moves a tracked build to failed after its job returned
 // err. A cancelled job yields and reruns, so it stays building.
 func (s *Service) recordBuildFailure(ctx context.Context, id store.OfflinePackID, err error) error {

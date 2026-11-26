@@ -143,12 +143,13 @@ package store
 // CORE-3311 adds 0137_player_controllers for Player Profile controller lists
 // and display last-seen tracking, off the entity-query hot path.
 // CORE-3313 adds 0138_reveal_generation on auth_session for restricted streams.
-// CORE-0706 adds 0139_subscription_entry_collision, the durable review queue
+// Home customization adds 0139_home_config for per-Profile and template Home layouts.
+// CORE-0706 adds 0140_subscription_entry_collision, the durable review queue
 // for a feed GUID offered for a second file, off the entity-query hot path.
-// CORE-0706 adds 0140_identification_revision, the immutable per-Media
+// CORE-0706 adds 0141_identification_revision, the immutable per-Media
 // identification revisions and idempotency receipts, written by identification
 // commits and read by their replay check, off the entity-query hot path.
-// CORE-0706 adds 0141_artwork_action, the pending post-commit artwork actions
+// CORE-0706 adds 0142_artwork_action, the pending post-commit artwork actions
 // written by identification commits and drained by the artwork worker and its
 // restart replay, off the entity-query hot path.
-const schemaFreezeCatalogMigrations = 137
+const schemaFreezeCatalogMigrations = 138

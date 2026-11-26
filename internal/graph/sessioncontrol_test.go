@@ -354,6 +354,45 @@ func TestProfileSessionsExcludeIdlePlaybacksButControlReachesThem(t *testing.T) 
 	}
 }
 
+func TestControlSessionAdultToManagedBoundedCommands(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+
+	adult2, err := st.CreateProfile(t.Context(), "Adult Two", store.ProfileAdult, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatalf("CreateProfile adult2: %v", err)
+	}
+	if _, errs := post(t, handler,
+		`{"query":"mutation($id: String!) { switchProfile(profileID: $id) { id } }","variables":{"id":"`+string(adult2.ID)+`"}}`,
+		authorizeManager); len(errs) != 0 {
+		t.Fatalf("switchProfile adult2 errs = %#v", errs)
+	}
+
+	recordActive(t, st, "session-managed", "profile-managed", "device-tv", "media-direct", "media-alpha", false)
+	recordActive(t, st, "session-manager", adult2.ID, "device-tv", "media-direct", "media-alpha", false)
+
+	for _, cmd := range []string{"pause", "resume", "stop"} {
+		if _, errs := controlSessionPost(t, handler, "session-managed", cmd, authorizeViewer); len(errs) != 0 {
+			t.Fatalf("adult->managed %s errs = %#v", cmd, errs)
+		}
+	}
+	if _, errs := post(t, handler,
+		`{"query":"mutation { controlSession(sessionID: \"session-managed\", command: \"display-message\", text: \"Dinner in 5\") { sessionID command } }"}`,
+		authorizeViewer); len(errs) != 0 {
+		t.Fatalf("adult->managed display-message errs = %#v", errs)
+	}
+
+	if _, errs := post(t, handler,
+		`{"query":"mutation { controlSession(sessionID: \"session-managed\", command: \"set-volume\", volume: 10) { sessionID } }"}`,
+		authorizeViewer); len(errs) == 0 || !strings.Contains(errs[0].Message, "command not permitted") {
+		t.Fatalf("adult->managed set-volume errs = %#v, want command not permitted", errs)
+	}
+
+	if _, errs := controlSessionPost(t, handler, "session-manager", "pause", authorizeViewer); len(errs) == 0 || !strings.Contains(errs[0].Message, "unknown session") {
+		t.Fatalf("adult->adult2 pause errs = %#v, want unknown session", errs)
+	}
+}
+
 func errsJoin(errs []graphError) string {
 	parts := make([]string, len(errs))
 	for i, e := range errs {

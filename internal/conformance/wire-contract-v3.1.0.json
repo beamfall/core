@@ -28,11 +28,6 @@
       "tier": "admin"
     },
     {
-      "field": "acknowledgebackupbanner",
-      "effect": "write",
-      "tier": "admin"
-    },
-    {
       "field": "acknowledgebackupkey",
       "effect": "write",
       "tier": "admin"
@@ -124,11 +119,6 @@
     },
     {
       "field": "backupkeystatus",
-      "effect": "read",
-      "tier": "admin"
-    },
-    {
-      "field": "backupstatus",
       "effect": "read",
       "tier": "admin"
     },
@@ -555,6 +545,16 @@
     {
       "field": "formgroup",
       "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "homeconfig",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
+      "field": "homefilterschema",
+      "effect": "read",
       "tier": "session"
     },
     {
@@ -1078,6 +1078,11 @@
       "tier": "session"
     },
     {
+      "field": "previewhomeshelf",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "profiles",
       "effect": "read",
       "tier": "session"
@@ -1288,6 +1293,16 @@
       "tier": "session"
     },
     {
+      "field": "resetdefaulthometemplate",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "resethomeconfig",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "resethomelayout",
       "effect": "write",
       "tier": "session"
@@ -1428,8 +1443,18 @@
       "tier": "admin"
     },
     {
+      "field": "savedefaulthometemplate",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "savedfilters",
       "effect": "read",
+      "tier": "session"
+    },
+    {
+      "field": "savehomeconfig",
+      "effect": "write",
       "tier": "session"
     },
     {
@@ -1514,11 +1539,6 @@
     },
     {
       "field": "setaccessschedule",
-      "effect": "write",
-      "tier": "admin"
-    },
-    {
-      "field": "setbackupupgradegate",
       "effect": "write",
       "tier": "admin"
     },
@@ -2018,11 +2038,6 @@
       "tier": "admin"
     },
     {
-      "field": "verifybackupnow",
-      "effect": "write",
-      "tier": "admin"
-    },
-    {
       "field": "watcherstatus",
       "effect": "read",
       "tier": "admin"
@@ -2226,143 +2241,6 @@
               "kind": "scalar"
             }
           ]
-        }
-      ]
-    },
-    {
-      "field": "acknowledgebackupbanner",
-      "kind": "object",
-      "children": [
-        {
-          "name": "backupFailedBanner",
-          "kind": "scalar"
-        },
-        {
-          "name": "integrityFailedBanner",
-          "kind": "scalar"
-        },
-        {
-          "name": "lastDrill",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "backupCreatedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "databases",
-              "kind": "scalar"
-            },
-            {
-              "name": "durationMs",
-              "kind": "scalar"
-            },
-            {
-              "name": "libraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "reason",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            },
-            {
-              "name": "verified",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastFailure",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastIntegrityFailure",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastIntegrityPass",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastSuccess",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "updateGateClear",
-          "kind": "scalar"
-        },
-        {
-          "name": "upgradeGate",
-          "kind": "scalar"
         }
       ]
     },
@@ -4222,14 +4100,6 @@
           "optional": true
         },
         {
-          "name": "keyFingerprint",
-          "kind": "scalar"
-        },
-        {
-          "name": "keyState",
-          "kind": "scalar"
-        },
-        {
           "name": "sizeBytes",
           "kind": "scalar"
         },
@@ -4253,143 +4123,6 @@
         },
         {
           "name": "pending",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "backupstatus",
-      "kind": "object",
-      "children": [
-        {
-          "name": "backupFailedBanner",
-          "kind": "scalar"
-        },
-        {
-          "name": "integrityFailedBanner",
-          "kind": "scalar"
-        },
-        {
-          "name": "lastDrill",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "backupCreatedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "databases",
-              "kind": "scalar"
-            },
-            {
-              "name": "durationMs",
-              "kind": "scalar"
-            },
-            {
-              "name": "libraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "reason",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            },
-            {
-              "name": "verified",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastFailure",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastIntegrityFailure",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastIntegrityPass",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastSuccess",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "updateGateClear",
-          "kind": "scalar"
-        },
-        {
-          "name": "upgradeGate",
           "kind": "scalar"
         }
       ]
@@ -12076,6 +11809,827 @@
       ]
     },
     {
+      "field": "homeconfig",
+      "kind": "object",
+      "children": [
+        {
+          "name": "canEditTemplate",
+          "kind": "scalar"
+        },
+        {
+          "name": "customized",
+          "kind": "scalar"
+        },
+        {
+          "name": "hasOwnerTemplate",
+          "kind": "scalar"
+        },
+        {
+          "name": "hero",
+          "kind": "object",
+          "children": [
+            {
+              "name": "enabled",
+              "kind": "scalar"
+            },
+            {
+              "name": "mode",
+              "kind": "scalar"
+            },
+            {
+              "name": "source",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "builtinKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "collectionID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityName",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "libraryIDs",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playlistID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "rollUpContainers",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "rules",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "conditions",
+                      "kind": "list",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "object",
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      "children": [
+                        {
+                          "name": "field",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "group",
+                          "kind": "object",
+                          "optional": true,
+                          "nullable": true,
+                          "recursive": true
+                        },
+                        {
+                          "name": "op",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "value",
+                          "kind": "scalar",
+                          "optional": true,
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    {
+                      "name": "match",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "savedFilterID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "sort",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "by",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "desc",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "randomSeedMode",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "type",
+                  "kind": "scalar"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "shelves",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "display",
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "artworkSlot",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "limit",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "style",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "hidden",
+                "kind": "scalar"
+              },
+              {
+                "name": "hideWhenEmpty",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "source",
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "builtinKind",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "collectionID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityKind",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityName",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "libraryIDs",
+                    "kind": "list",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "playlistID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "rollUpContainers",
+                    "kind": "scalar",
+                    "optional": true,
+                    "nullable": true
+                  },
+                  {
+                    "name": "rules",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "conditions",
+                        "kind": "list",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "object",
+                          "children": [
+                            {
+                              "name": "field",
+                              "kind": "scalar",
+                              "optional": true
+                            },
+                            {
+                              "name": "group",
+                              "kind": "object",
+                              "optional": true,
+                              "nullable": true,
+                              "recursive": true
+                            },
+                            {
+                              "name": "op",
+                              "kind": "scalar",
+                              "optional": true
+                            },
+                            {
+                              "name": "value",
+                              "kind": "scalar",
+                              "optional": true,
+                              "nullable": true
+                            }
+                          ]
+                        },
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      {
+                        "name": "match",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "savedFilterID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "sort",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "by",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "desc",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "randomSeedMode",
+                        "kind": "scalar",
+                        "optional": true
+                      }
+                    ]
+                  },
+                  {
+                    "name": "type",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "display",
+              "kind": "object",
+              "children": [
+                {
+                  "name": "artworkSlot",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "limit",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "style",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "hidden",
+              "kind": "scalar"
+            },
+            {
+              "name": "hideWhenEmpty",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "source",
+              "kind": "object",
+              "children": [
+                {
+                  "name": "builtinKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "collectionID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityName",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "libraryIDs",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playlistID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "rollUpContainers",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "rules",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "conditions",
+                      "kind": "list",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "object",
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      "children": [
+                        {
+                          "name": "field",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "group",
+                          "kind": "object",
+                          "optional": true,
+                          "nullable": true,
+                          "recursive": true
+                        },
+                        {
+                          "name": "op",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "value",
+                          "kind": "scalar",
+                          "optional": true,
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    {
+                      "name": "match",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "savedFilterID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "sort",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "by",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "desc",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "randomSeedMode",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "type",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "field": "homefilterschema",
+      "kind": "object",
+      "children": [
+        {
+          "name": "fields",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "group",
+                "kind": "scalar"
+              },
+              {
+                "name": "key",
+                "kind": "scalar"
+              },
+              {
+                "name": "label",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "operators",
+                "kind": "list",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "suggestions",
+                "kind": "list",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "valueType",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "group",
+              "kind": "scalar"
+            },
+            {
+              "name": "key",
+              "kind": "scalar"
+            },
+            {
+              "name": "label",
+              "kind": "map",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "operators",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "suggestions",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "valueType",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "libraries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "accent",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "icon",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "accent",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "icon",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "pinnables",
+          "kind": "object",
+          "children": [
+            {
+              "name": "collections",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "libraryID",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "name",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "libraryID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "name",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "savedFilters",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "libraryID",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "name",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "libraryID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "name",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "smartCollections",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "libraryID",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "name",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "libraryID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "name",
+                  "kind": "scalar"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "field": "homelayout",
       "kind": "object",
       "children": [
@@ -16447,6 +17001,11 @@
                     }
                   }
                 ]
+              },
+              {
+                "name": "suppressAutoHero",
+                "kind": "scalar",
+                "optional": true
               }
             ]
           },
@@ -16728,6 +17287,11 @@
                   }
                 }
               ]
+            },
+            {
+              "name": "suppressAutoHero",
+              "kind": "scalar",
+              "optional": true
             }
           ]
         },
@@ -20926,6 +21490,11 @@
                     }
                   }
                 ]
+              },
+              {
+                "name": "suppressAutoHero",
+                "kind": "scalar",
+                "optional": true
               }
             ]
           },
@@ -21207,6 +21776,11 @@
                   }
                 }
               ]
+            },
+            {
+              "name": "suppressAutoHero",
+              "kind": "scalar",
+              "optional": true
             }
           ]
         },
@@ -44686,6 +45260,452 @@
       ]
     },
     {
+      "field": "previewhomeshelf",
+      "kind": "object",
+      "children": [
+        {
+          "name": "items",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "artwork",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "dominantColor",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "poster",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "artworkSlots",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "audienceScore",
+                "kind": "scalar",
+                "optional": true,
+                "nullable": true
+              },
+              {
+                "name": "audienceScoreLabel",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "audienceScoreVotes",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "byline",
+                "kind": "list",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "certification",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "container",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "artwork",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "dominantColor",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "poster",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "title",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "durationSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "engagement",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "completed",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "durationSeconds",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "positionSeconds",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "remainingCount",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "totalCount",
+                    "kind": "scalar",
+                    "optional": true
+                  }
+                ]
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "index",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "libraryID",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "locked",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "mediaClass",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "muted",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "placeholderIcon",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "playsAlone",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "restricted",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "selectPlays",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "sequence",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "subtitle",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "summary",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              },
+              {
+                "name": "year",
+                "kind": "scalar",
+                "optional": true
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "audienceScore",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
+              "name": "audienceScoreLabel",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "audienceScoreVotes",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "byline",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "certification",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "container",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "artwork",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "dominantColor",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "poster",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "engagement",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "completed",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "durationSeconds",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "positionSeconds",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "remainingCount",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "totalCount",
+                  "kind": "scalar",
+                  "optional": true
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "index",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "libraryID",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "locked",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "mediaClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "muted",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "placeholderIcon",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "playsAlone",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "restricted",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "selectPlays",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "subtitle",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "summary",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            },
+            {
+              "name": "year",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        {
+          "name": "totalCount",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "profiles",
       "kind": "object",
       "children": [
@@ -47771,6 +48791,1140 @@
       ]
     },
     {
+      "field": "resetdefaulthometemplate",
+      "kind": "object",
+      "children": [
+        {
+          "name": "canEditTemplate",
+          "kind": "scalar"
+        },
+        {
+          "name": "customized",
+          "kind": "scalar"
+        },
+        {
+          "name": "hasOwnerTemplate",
+          "kind": "scalar"
+        },
+        {
+          "name": "hero",
+          "kind": "object",
+          "children": [
+            {
+              "name": "enabled",
+              "kind": "scalar"
+            },
+            {
+              "name": "mode",
+              "kind": "scalar"
+            },
+            {
+              "name": "source",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "builtinKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "collectionID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityName",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "libraryIDs",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playlistID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "rollUpContainers",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "rules",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "conditions",
+                      "kind": "list",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "object",
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      "children": [
+                        {
+                          "name": "field",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "group",
+                          "kind": "object",
+                          "optional": true,
+                          "nullable": true,
+                          "recursive": true
+                        },
+                        {
+                          "name": "op",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "value",
+                          "kind": "scalar",
+                          "optional": true,
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    {
+                      "name": "match",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "savedFilterID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "sort",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "by",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "desc",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "randomSeedMode",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "type",
+                  "kind": "scalar"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "shelves",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "display",
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "artworkSlot",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "limit",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "style",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "hidden",
+                "kind": "scalar"
+              },
+              {
+                "name": "hideWhenEmpty",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "source",
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "builtinKind",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "collectionID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityKind",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityName",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "libraryIDs",
+                    "kind": "list",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "playlistID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "rollUpContainers",
+                    "kind": "scalar",
+                    "optional": true,
+                    "nullable": true
+                  },
+                  {
+                    "name": "rules",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "conditions",
+                        "kind": "list",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "object",
+                          "children": [
+                            {
+                              "name": "field",
+                              "kind": "scalar",
+                              "optional": true
+                            },
+                            {
+                              "name": "group",
+                              "kind": "object",
+                              "optional": true,
+                              "nullable": true,
+                              "recursive": true
+                            },
+                            {
+                              "name": "op",
+                              "kind": "scalar",
+                              "optional": true
+                            },
+                            {
+                              "name": "value",
+                              "kind": "scalar",
+                              "optional": true,
+                              "nullable": true
+                            }
+                          ]
+                        },
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      {
+                        "name": "match",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "savedFilterID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "sort",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "by",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "desc",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "randomSeedMode",
+                        "kind": "scalar",
+                        "optional": true
+                      }
+                    ]
+                  },
+                  {
+                    "name": "type",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "display",
+              "kind": "object",
+              "children": [
+                {
+                  "name": "artworkSlot",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "limit",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "style",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "hidden",
+              "kind": "scalar"
+            },
+            {
+              "name": "hideWhenEmpty",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "source",
+              "kind": "object",
+              "children": [
+                {
+                  "name": "builtinKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "collectionID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityName",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "libraryIDs",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playlistID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "rollUpContainers",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "rules",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "conditions",
+                      "kind": "list",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "object",
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      "children": [
+                        {
+                          "name": "field",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "group",
+                          "kind": "object",
+                          "optional": true,
+                          "nullable": true,
+                          "recursive": true
+                        },
+                        {
+                          "name": "op",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "value",
+                          "kind": "scalar",
+                          "optional": true,
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    {
+                      "name": "match",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "savedFilterID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "sort",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "by",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "desc",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "randomSeedMode",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "type",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "field": "resethomeconfig",
+      "kind": "object",
+      "children": [
+        {
+          "name": "canEditTemplate",
+          "kind": "scalar"
+        },
+        {
+          "name": "customized",
+          "kind": "scalar"
+        },
+        {
+          "name": "hasOwnerTemplate",
+          "kind": "scalar"
+        },
+        {
+          "name": "hero",
+          "kind": "object",
+          "children": [
+            {
+              "name": "enabled",
+              "kind": "scalar"
+            },
+            {
+              "name": "mode",
+              "kind": "scalar"
+            },
+            {
+              "name": "source",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "builtinKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "collectionID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityName",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "libraryIDs",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playlistID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "rollUpContainers",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "rules",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "conditions",
+                      "kind": "list",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "object",
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      "children": [
+                        {
+                          "name": "field",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "group",
+                          "kind": "object",
+                          "optional": true,
+                          "nullable": true,
+                          "recursive": true
+                        },
+                        {
+                          "name": "op",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "value",
+                          "kind": "scalar",
+                          "optional": true,
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    {
+                      "name": "match",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "savedFilterID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "sort",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "by",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "desc",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "randomSeedMode",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "type",
+                  "kind": "scalar"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "shelves",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "display",
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "artworkSlot",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "limit",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "style",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "hidden",
+                "kind": "scalar"
+              },
+              {
+                "name": "hideWhenEmpty",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "source",
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "builtinKind",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "collectionID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityKind",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityName",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "libraryIDs",
+                    "kind": "list",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "playlistID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "rollUpContainers",
+                    "kind": "scalar",
+                    "optional": true,
+                    "nullable": true
+                  },
+                  {
+                    "name": "rules",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "conditions",
+                        "kind": "list",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "object",
+                          "children": [
+                            {
+                              "name": "field",
+                              "kind": "scalar",
+                              "optional": true
+                            },
+                            {
+                              "name": "group",
+                              "kind": "object",
+                              "optional": true,
+                              "nullable": true,
+                              "recursive": true
+                            },
+                            {
+                              "name": "op",
+                              "kind": "scalar",
+                              "optional": true
+                            },
+                            {
+                              "name": "value",
+                              "kind": "scalar",
+                              "optional": true,
+                              "nullable": true
+                            }
+                          ]
+                        },
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      {
+                        "name": "match",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "savedFilterID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "sort",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "by",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "desc",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "randomSeedMode",
+                        "kind": "scalar",
+                        "optional": true
+                      }
+                    ]
+                  },
+                  {
+                    "name": "type",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "display",
+              "kind": "object",
+              "children": [
+                {
+                  "name": "artworkSlot",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "limit",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "style",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "hidden",
+              "kind": "scalar"
+            },
+            {
+              "name": "hideWhenEmpty",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "source",
+              "kind": "object",
+              "children": [
+                {
+                  "name": "builtinKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "collectionID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityName",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "libraryIDs",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playlistID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "rollUpContainers",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "rules",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "conditions",
+                      "kind": "list",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "object",
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      "children": [
+                        {
+                          "name": "field",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "group",
+                          "kind": "object",
+                          "optional": true,
+                          "nullable": true,
+                          "recursive": true
+                        },
+                        {
+                          "name": "op",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "value",
+                          "kind": "scalar",
+                          "optional": true,
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    {
+                      "name": "match",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "savedFilterID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "sort",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "by",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "desc",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "randomSeedMode",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "type",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "field": "resethomelayout",
       "kind": "object",
       "children": [
@@ -49222,6 +51376,573 @@
       ]
     },
     {
+      "field": "savedefaulthometemplate",
+      "kind": "object",
+      "children": [
+        {
+          "name": "canEditTemplate",
+          "kind": "scalar"
+        },
+        {
+          "name": "customized",
+          "kind": "scalar"
+        },
+        {
+          "name": "hasOwnerTemplate",
+          "kind": "scalar"
+        },
+        {
+          "name": "hero",
+          "kind": "object",
+          "children": [
+            {
+              "name": "enabled",
+              "kind": "scalar"
+            },
+            {
+              "name": "mode",
+              "kind": "scalar"
+            },
+            {
+              "name": "source",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "builtinKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "collectionID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityName",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "libraryIDs",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playlistID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "rollUpContainers",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "rules",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "conditions",
+                      "kind": "list",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "object",
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      "children": [
+                        {
+                          "name": "field",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "group",
+                          "kind": "object",
+                          "optional": true,
+                          "nullable": true,
+                          "recursive": true
+                        },
+                        {
+                          "name": "op",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "value",
+                          "kind": "scalar",
+                          "optional": true,
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    {
+                      "name": "match",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "savedFilterID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "sort",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "by",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "desc",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "randomSeedMode",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "type",
+                  "kind": "scalar"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "shelves",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "display",
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "artworkSlot",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "limit",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "style",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "hidden",
+                "kind": "scalar"
+              },
+              {
+                "name": "hideWhenEmpty",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "source",
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "builtinKind",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "collectionID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityKind",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityName",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "libraryIDs",
+                    "kind": "list",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "playlistID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "rollUpContainers",
+                    "kind": "scalar",
+                    "optional": true,
+                    "nullable": true
+                  },
+                  {
+                    "name": "rules",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "conditions",
+                        "kind": "list",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "object",
+                          "children": [
+                            {
+                              "name": "field",
+                              "kind": "scalar",
+                              "optional": true
+                            },
+                            {
+                              "name": "group",
+                              "kind": "object",
+                              "optional": true,
+                              "nullable": true,
+                              "recursive": true
+                            },
+                            {
+                              "name": "op",
+                              "kind": "scalar",
+                              "optional": true
+                            },
+                            {
+                              "name": "value",
+                              "kind": "scalar",
+                              "optional": true,
+                              "nullable": true
+                            }
+                          ]
+                        },
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      {
+                        "name": "match",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "savedFilterID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "sort",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "by",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "desc",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "randomSeedMode",
+                        "kind": "scalar",
+                        "optional": true
+                      }
+                    ]
+                  },
+                  {
+                    "name": "type",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "display",
+              "kind": "object",
+              "children": [
+                {
+                  "name": "artworkSlot",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "limit",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "style",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "hidden",
+              "kind": "scalar"
+            },
+            {
+              "name": "hideWhenEmpty",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "source",
+              "kind": "object",
+              "children": [
+                {
+                  "name": "builtinKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "collectionID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityName",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "libraryIDs",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playlistID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "rollUpContainers",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "rules",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "conditions",
+                      "kind": "list",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "object",
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      "children": [
+                        {
+                          "name": "field",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "group",
+                          "kind": "object",
+                          "optional": true,
+                          "nullable": true,
+                          "recursive": true
+                        },
+                        {
+                          "name": "op",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "value",
+                          "kind": "scalar",
+                          "optional": true,
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    {
+                      "name": "match",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "savedFilterID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "sort",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "by",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "desc",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "randomSeedMode",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "type",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "field": "savedfilters",
       "kind": "object",
       "children": [
@@ -49253,6 +51974,573 @@
         {
           "name": "profileID",
           "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "savehomeconfig",
+      "kind": "object",
+      "children": [
+        {
+          "name": "canEditTemplate",
+          "kind": "scalar"
+        },
+        {
+          "name": "customized",
+          "kind": "scalar"
+        },
+        {
+          "name": "hasOwnerTemplate",
+          "kind": "scalar"
+        },
+        {
+          "name": "hero",
+          "kind": "object",
+          "children": [
+            {
+              "name": "enabled",
+              "kind": "scalar"
+            },
+            {
+              "name": "mode",
+              "kind": "scalar"
+            },
+            {
+              "name": "source",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "builtinKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "collectionID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityName",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "libraryIDs",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playlistID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "rollUpContainers",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "rules",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "conditions",
+                      "kind": "list",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "object",
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      "children": [
+                        {
+                          "name": "field",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "group",
+                          "kind": "object",
+                          "optional": true,
+                          "nullable": true,
+                          "recursive": true
+                        },
+                        {
+                          "name": "op",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "value",
+                          "kind": "scalar",
+                          "optional": true,
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    {
+                      "name": "match",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "savedFilterID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "sort",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "by",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "desc",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "randomSeedMode",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "type",
+                  "kind": "scalar"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "shelves",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "display",
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "artworkSlot",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "limit",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "style",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "hidden",
+                "kind": "scalar"
+              },
+              {
+                "name": "hideWhenEmpty",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "source",
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "builtinKind",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "collectionID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityKind",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityName",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "libraryIDs",
+                    "kind": "list",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "playlistID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "rollUpContainers",
+                    "kind": "scalar",
+                    "optional": true,
+                    "nullable": true
+                  },
+                  {
+                    "name": "rules",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "conditions",
+                        "kind": "list",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "object",
+                          "children": [
+                            {
+                              "name": "field",
+                              "kind": "scalar",
+                              "optional": true
+                            },
+                            {
+                              "name": "group",
+                              "kind": "object",
+                              "optional": true,
+                              "nullable": true,
+                              "recursive": true
+                            },
+                            {
+                              "name": "op",
+                              "kind": "scalar",
+                              "optional": true
+                            },
+                            {
+                              "name": "value",
+                              "kind": "scalar",
+                              "optional": true,
+                              "nullable": true
+                            }
+                          ]
+                        },
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      {
+                        "name": "match",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "savedFilterID",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "sort",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "by",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "desc",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "randomSeedMode",
+                        "kind": "scalar",
+                        "optional": true
+                      }
+                    ]
+                  },
+                  {
+                    "name": "type",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "display",
+              "kind": "object",
+              "children": [
+                {
+                  "name": "artworkSlot",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "limit",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "style",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "hidden",
+              "kind": "scalar"
+            },
+            {
+              "name": "hideWhenEmpty",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "source",
+              "kind": "object",
+              "children": [
+                {
+                  "name": "builtinKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "collectionID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityKind",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityName",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "libraryIDs",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playlistID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "rollUpContainers",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "rules",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "conditions",
+                      "kind": "list",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "object",
+                        "children": [
+                          {
+                            "name": "field",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "group",
+                            "kind": "object",
+                            "optional": true,
+                            "nullable": true,
+                            "recursive": true
+                          },
+                          {
+                            "name": "op",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "value",
+                            "kind": "scalar",
+                            "optional": true,
+                            "nullable": true
+                          }
+                        ]
+                      },
+                      "children": [
+                        {
+                          "name": "field",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "group",
+                          "kind": "object",
+                          "optional": true,
+                          "nullable": true,
+                          "recursive": true
+                        },
+                        {
+                          "name": "op",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "value",
+                          "kind": "scalar",
+                          "optional": true,
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    {
+                      "name": "match",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "savedFilterID",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "sort",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "by",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "desc",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "randomSeedMode",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "type",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
         }
       ]
     },
@@ -51054,143 +54342,6 @@
               "kind": "scalar"
             }
           ]
-        }
-      ]
-    },
-    {
-      "field": "setbackupupgradegate",
-      "kind": "object",
-      "children": [
-        {
-          "name": "backupFailedBanner",
-          "kind": "scalar"
-        },
-        {
-          "name": "integrityFailedBanner",
-          "kind": "scalar"
-        },
-        {
-          "name": "lastDrill",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "backupCreatedAt",
-              "kind": "scalar"
-            },
-            {
-              "name": "databases",
-              "kind": "scalar"
-            },
-            {
-              "name": "durationMs",
-              "kind": "scalar"
-            },
-            {
-              "name": "libraries",
-              "kind": "scalar"
-            },
-            {
-              "name": "reason",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            },
-            {
-              "name": "verified",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastFailure",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastIntegrityFailure",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastIntegrityPass",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "lastSuccess",
-          "kind": "object",
-          "nullable": true,
-          "children": [
-            {
-              "name": "at",
-              "kind": "scalar"
-            },
-            {
-              "name": "failureClass",
-              "kind": "scalar"
-            },
-            {
-              "name": "set",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "updateGateClear",
-          "kind": "scalar"
-        },
-        {
-          "name": "upgradeGate",
-          "kind": "scalar"
         }
       ]
     },
@@ -64707,44 +67858,6 @@
       ]
     },
     {
-      "field": "verifybackupnow",
-      "kind": "object",
-      "children": [
-        {
-          "name": "at",
-          "kind": "scalar"
-        },
-        {
-          "name": "backupCreatedAt",
-          "kind": "scalar"
-        },
-        {
-          "name": "databases",
-          "kind": "scalar"
-        },
-        {
-          "name": "durationMs",
-          "kind": "scalar"
-        },
-        {
-          "name": "libraries",
-          "kind": "scalar"
-        },
-        {
-          "name": "reason",
-          "kind": "scalar"
-        },
-        {
-          "name": "set",
-          "kind": "scalar"
-        },
-        {
-          "name": "verified",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
       "field": "watcherstatus",
       "kind": "object",
       "children": [
@@ -66142,10 +69255,6 @@
         "effect": "read"
       },
       {
-        "field": "acknowledgebackupbanner",
-        "effect": "write"
-      },
-      {
         "field": "acknowledgebackupkey",
         "effect": "write"
       },
@@ -66175,10 +69284,6 @@
       },
       {
         "field": "backupkeystatus",
-        "effect": "read"
-      },
-      {
-        "field": "backupstatus",
         "effect": "read"
       },
       {
@@ -66558,10 +69663,6 @@
         "effect": "write"
       },
       {
-        "field": "setbackupupgradegate",
-        "effect": "write"
-      },
-      {
         "field": "setcapabilityenabled",
         "effect": "write"
       },
@@ -66751,10 +69852,6 @@
       },
       {
         "field": "verifybackup",
-        "effect": "write"
-      },
-      {
-        "field": "verifybackupnow",
         "effect": "write"
       },
       {
@@ -67334,6 +70431,13 @@
                   "name": "entityKind",
                   "shape": {
                     "type": "string",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "suppressAutoHero",
+                  "shape": {
+                    "type": "boolean",
                     "optional": true
                   }
                 }

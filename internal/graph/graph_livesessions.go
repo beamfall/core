@@ -92,6 +92,28 @@ func (h *Handler) playDelivery(s store.ActiveSession) (method, reason string, bi
 // grant or progress report within store.LiveSessionActivityWindow (CORE-2305,
 // CORE-2346), and Transcoding follows the reported play method so the two
 // fields never disagree.
+func (h *Handler) liveSessionInfo(s store.ActiveSession) LiveSessionInfo {
+	method, reason, bitrate := h.playDelivery(s)
+	return LiveSessionInfo{
+		SessionID:       string(s.SessionID),
+		DeviceID:        string(s.DeviceID),
+		DeviceName:      s.DeviceName,
+		DeviceRole:      string(s.DeviceRole),
+		ProfileID:       string(s.ProfileID),
+		ProfileName:     s.ProfileName,
+		MediaID:         string(s.MediaID),
+		Title:           s.Title,
+		LibraryID:       string(s.LibraryID),
+		Transcoding:     method == "transcode",
+		PlayMethod:      method,
+		PlayReason:      reason,
+		Bitrate:         bitrate,
+		PositionSeconds: s.PositionSeconds,
+		DurationSeconds: s.DurationSeconds,
+		ExpiresAt:       s.ExpiresAt.UTC().Format(time.RFC3339),
+	}
+}
+
 func (h *Handler) liveSessions(ctx context.Context, scope auth.Scope) ([]LiveSessionInfo, error) {
 	now := time.Now().UTC()
 	sessions, err := h.store.ActiveSessions(ctx, now, scope.LibraryFilter())
@@ -100,25 +122,39 @@ func (h *Handler) liveSessions(ctx context.Context, scope auth.Scope) ([]LiveSes
 	}
 	out := make([]LiveSessionInfo, 0, len(sessions))
 	for _, s := range sessions {
-		method, reason, bitrate := h.playDelivery(s)
-		out = append(out, LiveSessionInfo{
-			SessionID:       string(s.SessionID),
-			DeviceID:        string(s.DeviceID),
-			DeviceName:      s.DeviceName,
-			DeviceRole:      string(s.DeviceRole),
-			ProfileID:       string(s.ProfileID),
-			ProfileName:     s.ProfileName,
-			MediaID:         string(s.MediaID),
-			Title:           s.Title,
-			LibraryID:       string(s.LibraryID),
-			Transcoding:     method == "transcode",
-			PlayMethod:      method,
-			PlayReason:      reason,
-			Bitrate:         bitrate,
-			PositionSeconds: s.PositionSeconds,
-			DurationSeconds: s.DurationSeconds,
-			ExpiresAt:       s.ExpiresAt.UTC().Format(time.RFC3339),
-		})
+		out = append(out, h.liveSessionInfo(s))
+	}
+	return out, nil
+}
+
+// managedLiveSessions returns active playback sessions belonging to managed
+// (child) Profiles for any adult Profile (ADR-0242 §2.3), without requiring
+// Admin Session re-auth. Non-adult callers are refused; other adult Profiles'
+// sessions are never returned; ProfileTied rows are dropped; and Reveal
+// filtering uses the calling adult's scope.LibraryFilter().
+func (h *Handler) managedLiveSessions(ctx context.Context, scope auth.Scope) ([]LiveSessionInfo, error) {
+	if scope.ProfileID == "" || scope.Profile != store.ProfileAdult {
+		return nil, clientError("only an adult profile can view managed live sessions")
+	}
+	profiles, err := h.store.Profiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	kinds := make(map[store.ProfileID]store.ProfileKind, len(profiles))
+	for _, p := range profiles {
+		kinds[p.ID] = p.Kind
+	}
+	now := time.Now().UTC()
+	sessions, err := h.store.ActiveSessions(ctx, now, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]LiveSessionInfo, 0, len(sessions))
+	for _, s := range sessions {
+		if s.ProfileTied || kinds[s.ProfileID] != store.ProfileManaged {
+			continue
+		}
+		out = append(out, h.liveSessionInfo(s))
 	}
 	return out, nil
 }
