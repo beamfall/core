@@ -157,6 +157,16 @@ type ControlRendererSessionResult struct {
 // other same-Profile, reveal-permitted subscriber) without re-authorizing at
 // delivery time. For play-media the anchor is the started Media, so a target
 // that cannot see it never receives the command.
+// managedParentalCommands is the closed set of session-control verbs an adult
+// Profile may issue against a managed (child) Profile's active session under
+// ADR-0242 §2.3 without requiring Admin Session re-auth.
+var managedParentalCommands = map[string]bool{
+	store.SessionCommandPause:          true,
+	store.SessionCommandResume:         true,
+	store.SessionCommandStop:           true,
+	store.SessionCommandDisplayMessage: true,
+}
+
 func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req request) (ControlSessionResult, error) {
 	targetID := trimmedVariable(req, "sessionID")
 	command := trimmedVariable(req, "command")
@@ -405,7 +415,12 @@ func (h *Handler) authorizeSessionControl(
 	}
 
 	if target.ProfileID != scope.ProfileID {
-		return store.Session{}, nil, "", nil, clientError("unknown session")
+		if scope.Profile != store.ProfileAdult || targetProfile.Kind != store.ProfileManaged {
+			return store.Session{}, nil, "", nil, clientError("unknown session")
+		}
+		if !managedParentalCommands[command] {
+			return store.Session{}, nil, "", nil, clientError("command not permitted for managed session")
+		}
 	}
 
 	// Gate 2 — reveal. Applied through the CALLER's own filter: a session

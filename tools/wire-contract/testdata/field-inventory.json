@@ -1909,6 +1909,29 @@
       ]
     },
     {
+      "field": "managedlivesessions",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "bitrate",
+        "deviceID",
+        "deviceName",
+        "deviceRole",
+        "durationSeconds",
+        "expiresAt",
+        "libraryID",
+        "mediaID",
+        "playMethod",
+        "playReason",
+        "positionSeconds",
+        "profileID",
+        "profileName",
+        "sessionID",
+        "title",
+        "transcoding"
+      ]
+    },
+    {
       "field": "manifest",
       "effect": "read",
       "tier": "session",

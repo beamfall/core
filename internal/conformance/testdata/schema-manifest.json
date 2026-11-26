@@ -715,6 +715,11 @@
     "tier": "admin"
   },
   {
+    "field": "managedlivesessions",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "manifest",
     "effect": "read",
     "tier": "session"

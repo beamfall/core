@@ -509,6 +509,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	158: dispatchFieldBlock158,
 	159: dispatchFieldBlock159,
 	160: dispatchFieldBlock160,
+	161: dispatchFieldBlock161,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -643,6 +644,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"linkmediarelation":                  newFieldHandler("linkMediaRelation", "linkMediaRelation", fieldMutation, roleSession|roleManager, 110),
 	"linkscrobble":                       newFieldHandler("linkScrobble", "linkScrobble", fieldMutation, roleSession, 27),
 	"livesessions":                       newFieldHandler("liveSessions", "liveSessions", fieldRead, roleSession|roleAdmin, 145),
+	"managedlivesessions":                newFieldHandler("managedLiveSessions", "managedLiveSessions", fieldRead, roleSession, 161),
 	"hostmetrics":                        newFieldHandler("hostMetrics", "hostMetrics", fieldRead, roleSession|roleAdmin, 145),
 	"playhistory":                        newFieldHandler("playHistory", "playHistory", fieldRead, roleSession|roleAdmin, 145),
 	"playstats":                          newFieldHandler("playStats", "playStats", fieldRead, roleSession|roleAdmin, 145),
@@ -5031,6 +5033,16 @@ func dispatchFieldBlock160(dispatch *fieldDispatchContext) response {
 		if resp := resolveField(dispatch, "previewhomeshelf", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
+	}
+	return response{}
+}
+
+// dispatchFieldBlock161 resolves adult-to-managed live session monitoring (ADR-0242 §2.3).
+func dispatchFieldBlock161(dispatch *fieldDispatchContext) response {
+	fields := dispatch.fields
+	if fields["managedlivesessions"] {
+		sessions, err := dispatch.handler.managedLiveSessions(dispatch.ctx, dispatch.scope)
+		return resolveField(dispatch, "managedlivesessions", sessions, err)
 	}
 	return response{}
 }

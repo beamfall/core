@@ -273,6 +273,9 @@ var clientErrorCodes = map[string]ErrorCode{
 	"only an adult profile can resolve an access request":              ErrorCodeForbidden,
 	"only an adult profile can respond to an extension request":        ErrorCodeForbidden,
 	"only an adult profile can revoke an access grant":                 ErrorCodeForbidden,
+	"only an adult profile can view managed live sessions":             ErrorCodeForbidden,
+	"command not permitted for managed session":                        ErrorCodeForbidden,
+	"manager access required to edit default Home template":            ErrorCodeForbidden,
 	// CORE-2725: a compatibility integration key binds an enabled adult Profile.
 	"only an enabled adult profile can hold an integration key": ErrorCodeForbidden,
 	"profile PIN required":                                           ErrorCodeForbidden,

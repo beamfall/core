@@ -7165,6 +7165,7 @@ var queryFields = map[string]bool{
 	"updatestatus":           true,
 	"transcodeconfig":        true,
 	"livesessions":           true,
+	"managedlivesessions":    true,
 	"hostmetrics":            true,
 	"playhistory":            true,
 	"playstats":              true,

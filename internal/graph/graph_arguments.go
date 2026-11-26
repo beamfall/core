@@ -507,8 +507,9 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "credential", Kind: "string"},
 		{Name: "service", Kind: "string"},
 	},
-	"livesessions": {},
-	"manifest":     {},
+	"livesessions":        {},
+	"managedlivesessions": {},
+	"manifest":            {},
 	"markers": {
 		{Name: "mediaID", Kind: "string"},
 	},
@@ -1061,7 +1062,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"savehomeconfig": {
 		{Name: "config", Kind: "object"},
 	},
-	"resethomeconfig":          {},
+	"resethomeconfig": {},
 	"savedefaulthometemplate": {
 		{Name: "config", Kind: "object"},
 	},

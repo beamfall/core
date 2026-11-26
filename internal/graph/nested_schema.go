@@ -164,6 +164,7 @@ var resultTypes = map[string]any{
 	"updatestatus":           UpdateStatusInfo{},
 	"transcodeconfig":        TranscodeConfigInfo{},
 	"livesessions":           LiveSessionInfo{},
+	"managedlivesessions":    LiveSessionInfo{},
 	"hostmetrics":            HostMetricsInfo{},
 	"playhistory":            PlayInfo{},
 	"playstats":              PlayStatsInfo{},
