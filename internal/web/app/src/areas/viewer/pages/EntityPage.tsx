@@ -90,6 +90,7 @@ import {
   type PlayerNavState,
   playQueueOf,
   queueWindow,
+  rememberFullCatalogQueue,
 } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import "./media-detail.css";
@@ -579,8 +580,11 @@ export function EntityPage() {
     // ends an earlier Play all queue, so it never runs on (ADR-0055 §2.4).
     const queue = relationOrdered ? playQueueOf([item]) : fallbackQueue;
     if (identity && queue && queue.length > 0) {
-      state.queue = queueWindow(queue, item.id);
+      const windowed = queueWindow(queue, item.id);
+      const catalogKey = rememberFullCatalogQueue(identity, windowed, queue);
+      state.queue = windowed;
       state.queueIdentity = identity;
+      if (catalogKey) state.catalogKey = catalogKey;
     }
     navigate(mediaPath("watch", item.id), { state });
   }

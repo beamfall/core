@@ -1,16 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { unavailableReasonMessage } from "./playback";
 import {
+  dispatchAddToQueueToActivePlayer,
+  fullCatalogQueueFor,
   listsPlaysAlone,
   newStartID,
+  pinActiveCatalogQueue,
   playQueueOf,
   queueForPlaying,
   queueNeighbours,
   queueOfClass,
   queueWindow,
   readPlayerNavState,
+  rememberFullCatalogQueue,
+  resetPlayNextForTest,
   sectionQueue,
+  setActivePlayingMediaID,
+  setActivePlayNextHandler,
+  windowedQueueState,
   withQueueClasses,
 } from "./watchQueue";
 
@@ -268,5 +276,95 @@ describe("unavailableReasonMessage", () => {
     expect(unavailableReasonMessage("media-unavailable", messages)).toBe("not here");
     expect(unavailableReasonMessage("something-new", messages)).toBeUndefined();
     expect(unavailableReasonMessage(undefined, messages)).toBeUndefined();
+  });
+});
+
+describe("CORE-2845 untruncated catalog memory and queue placement dispatch", () => {
+  afterEach(() => {
+    resetPlayNextForTest();
+  });
+
+  it("recovers full >500-item catalog order even after queueWindow truncation", () => {
+    const full = playQueueOf(Array.from({ length: 650 }, (_, i) => item(`m${i}`, "media")));
+    const windowed = queueWindow(full, "m0");
+    expect(windowed).toHaveLength(500);
+
+    const catalogKey = rememberFullCatalogQueue("viewer-1", windowed, full);
+    expect(catalogKey).toBeTruthy();
+    expect(fullCatalogQueueFor("viewer-1", windowed, catalogKey)).toEqual(full);
+    expect(fullCatalogQueueFor("viewer-2", windowed, catalogKey)).toEqual(windowed);
+
+    const nav = windowedQueueState("viewer-2", full, "m0");
+    expect(nav.queue).toHaveLength(500);
+    expect(nav.catalogKey).toBeTruthy();
+    expect(fullCatalogQueueFor("viewer-2", nav.queue, nav.catalogKey)).toEqual(full);
+  });
+
+  it("dispatches Add to queue with end placement to the active player for matching identity", async () => {
+    const handler = vi.fn(async () => true);
+    setActivePlayNextHandler(handler);
+    setActivePlayingMediaID("m-current");
+
+    expect(
+      await dispatchAddToQueueToActivePlayer(
+        { id: "m-end", title: "End track", mediaClass: "audio" },
+        "viewer-1",
+      ),
+    ).toBe(true);
+    expect(handler).toHaveBeenCalledWith(
+      { id: "m-end", title: "End track", mediaClass: "audio" },
+      "viewer-1",
+      "end",
+    );
+  });
+
+  it("retains the first window across 520 sibling card renders and pins active playback across unrelated catalogs", () => {
+    const album = playQueueOf(Array.from({ length: 520 }, (_, i) => item(`alb-${i}`, "media")));
+    const firstCard = windowedQueueState("viewer-1", album, "alb-0");
+    for (let i = 1; i < album.length; i++) {
+      windowedQueueState("viewer-1", album, `alb-${i}`);
+    }
+    expect(firstCard.queue).toHaveLength(500);
+    expect(fullCatalogQueueFor("viewer-1", firstCard.queue, firstCard.catalogKey)).toHaveLength(
+      520,
+    );
+
+    // Browsing 20 unrelated >500-item collections does not evict the pinned active album.
+    pinActiveCatalogQueue("viewer-1", firstCard.queue, firstCard.catalogKey);
+    for (let c = 0; c < 20; c++) {
+      const other = playQueueOf(Array.from({ length: 510 }, (_, i) => item(`c${c}-${i}`, "media")));
+      windowedQueueState("viewer-1", other, `c${c}-0`);
+    }
+    expect(fullCatalogQueueFor("viewer-1", firstCard.queue, firstCard.catalogKey)).toHaveLength(
+      520,
+    );
+  });
+
+  it("never matches an untruncated 500-track playlist sharing the cached 520-track album slice", () => {
+    const album = playQueueOf(Array.from({ length: 520 }, (_, i) => item(`shared-${i}`, "media")));
+    const albumCard = windowedQueueState("viewer-1", album, "shared-0");
+    expect(fullCatalogQueueFor("viewer-1", albumCard.queue, albumCard.catalogKey)).toHaveLength(
+      520,
+    );
+
+    const exact500Playlist = windowedQueueState("viewer-1", album.slice(0, 500), "shared-0");
+    expect(exact500Playlist.catalogKey).toBeUndefined();
+    expect(
+      fullCatalogQueueFor("viewer-1", exact500Playlist.queue, exact500Playlist.catalogKey),
+    ).toHaveLength(500);
+  });
+
+  it("issues distinct catalogKey namespaces across resets / reloads so restored history never collides", () => {
+    const albumA = playQueueOf(Array.from({ length: 520 }, (_, i) => item(`a-${i}`, "media")));
+    const albumB = playQueueOf(Array.from({ length: 520 }, (_, i) => item(`b-${i}`, "media")));
+    const navA = windowedQueueState("viewer-1", albumA, "a-0");
+    expect(navA.catalogKey).toBeTruthy();
+
+    // Simulate reload resetting in-memory state.
+    resetPlayNextForTest();
+    const navB = windowedQueueState("viewer-1", albumB, "b-0");
+    expect(navB.catalogKey).toBeTruthy();
+    expect(navB.catalogKey).not.toBe(navA.catalogKey);
+    expect(fullCatalogQueueFor("viewer-1", navA.queue, navA.catalogKey)).toEqual(navA.queue);
   });
 });

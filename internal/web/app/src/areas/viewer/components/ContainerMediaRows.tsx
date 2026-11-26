@@ -19,7 +19,13 @@ import {
   useSpoilerGuard,
 } from "../lib/spoilerGuard";
 import { runtimeParts, serverDurationSummary } from "../lib/viewerFields";
-import { navTitleFor, type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
+import {
+  navTitleFor,
+  type PlayerNavState,
+  playQueueOf,
+  queueWindow,
+  rememberFullCatalogQueue,
+} from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 import { SpoilerContainerToggle, SpoilerRevealButton, SpoilerStill } from "./SpoilerGuard";
@@ -60,11 +66,19 @@ export function ContainerMediaRows({
   const spoiler = useSpoilerGuard(guarded);
   if (media.length === 0) return null;
 
+  function windowedQueueFor(id: string) {
+    const windowed = queueWindow(queue, id);
+    const catalogKey = rememberFullCatalogQueue(identity, windowed, queue);
+    return { windowed, catalogKey };
+  }
+
   function play(item: SourceItem) {
     const state: PlayerNavState = { title: navTitleFor(identity, item.title) };
     if (identity && queue.length > 0) {
-      state.queue = queueWindow(queue, item.id);
+      const { windowed, catalogKey } = windowedQueueFor(item.id);
+      state.queue = windowed;
       state.queueIdentity = identity;
+      if (catalogKey) state.catalogKey = catalogKey;
     }
     navigate(mediaPath("watch", item.id), { state });
   }
@@ -73,7 +87,13 @@ export function ContainerMediaRows({
   function linkState(item: SourceItem) {
     const link = mediaLinkState(item, identity);
     if (!link || queue.length === 0) return link;
-    return { ...link, queue: queueWindow(queue, item.id), queueIdentity: identity };
+    const { windowed, catalogKey } = windowedQueueFor(item.id);
+    return {
+      ...link,
+      queue: windowed,
+      queueIdentity: identity,
+      ...(catalogKey ? { catalogKey } : {}),
+    };
   }
 
   return (
@@ -196,6 +216,8 @@ export function ContainerMediaRows({
                     primaryLabel={t("play")}
                     isMedia
                     isAudio={item.mediaClass === "audio"}
+                    mediaClass={item.mediaClass}
+                    lockState={item.locked ? "locked" : "unlocked"}
                     containerID={item.container?.id}
                     href={
                       new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin)

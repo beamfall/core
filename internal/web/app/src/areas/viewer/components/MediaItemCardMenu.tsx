@@ -9,6 +9,7 @@ import {
   ListPlus,
   MoreVertical,
   Play,
+  Plus,
   Radio,
   ScanEye,
   SquareArrowOutUpRight,
@@ -19,17 +20,23 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Menu } from "@/components/ui/astryx-primitives";
 import { ActionTooltip } from "@/components/ui/tooltip";
-import { fetchMedia, queuePlayNextMedia } from "@/lib/graphql";
+import { getExpectedProfile, getIdentityEpochSignal } from "@/lib/api";
+import { fetchMedia } from "@/lib/graphql";
 import type { ItemTarget, MediaCredit } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { removeFromContinueWatching, useItemActions, useItemHide } from "../actions";
 import { entityPath } from "../lib/entityAddress";
+import { editServerQueue } from "../lib/musicQueue";
 import { moreWithLead } from "../lib/related";
 import {
+  dispatchAddToQueueToActivePlayer,
   dispatchPlayNextToActivePlayer,
+  getActivePlayingMediaID,
   type PlayQueueItem,
+  type QueuePlacementAction,
   stagePlayNext,
+  useActivePlayingMediaID,
 } from "../lib/watchQueue";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 import { useStartRadio } from "./StartRadio";
@@ -46,11 +53,17 @@ const COPIED_RESET_MS = 2000;
 // rather than "watched"; a Media item can be added to a playlist (CORE-1635).
 // On the Continue Watching row a Media card can leave the row and keep its
 // progress (CORE-2017); the Undo notice reports a failed write.
+export type CardLockState = "unlocked" | "locked" | "unknown";
+
 export function MediaItemCardMenu({
   title,
   primaryLabel,
   isMedia,
   isAudio = false,
+  mediaClass,
+  lockState = "unlocked",
+  locked = false,
+  expectedProfileID,
   credits,
   containerID,
   href,
@@ -65,6 +78,12 @@ export function MediaItemCardMenu({
   isMedia: boolean;
   /** The Media's class is "audio": the watched entry uses listening wording. */
   isAudio?: boolean;
+  /** Reported media class when known (e.g. "audio", "video", "image"). */
+  mediaClass?: string;
+  /** Lock state when explicitly tracked; unknown or locked hides queue actions (CORE-2845). */
+  lockState?: CardLockState;
+  locked?: boolean;
+  expectedProfileID?: string;
   /** Credit rows already read by the listing, when available. */
   credits?: readonly MediaCredit[];
   containerID?: string;
@@ -72,7 +91,7 @@ export function MediaItemCardMenu({
   href: string;
   /** The item the watched entry acts on. */
   target: ItemTarget;
-  onPrimary: () => void;
+  onPrimary?: () => void;
   /** Opens Media detail without starting playback (CORE-1144, CORE-2034). */
   onDetails?: () => void;
   /** The card is on the Continue Watching row, so it offers to leave it. */
@@ -82,10 +101,18 @@ export function MediaItemCardMenu({
 }) {
   const t = useT();
   const identity = useViewerIdentity();
+  const activePlayingID = useActivePlayingMediaID();
   const [copied, setCopied] = useState(false);
   const [opened, setOpened] = useState(false);
   const [open, setOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [queuePending, setQueuePending] = useState(false);
+  const [queueNotice, setQueueNotice] = useState<{ kind: "status" | "alert"; text: string } | null>(
+    null,
+  );
+  const aliveRef = useRef(true);
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
   const [creditRead, setCreditRead] = useState<{
     identity: string;
     mediaID: string;
@@ -99,6 +126,10 @@ export function MediaItemCardMenu({
   const radio = useStartRadio();
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioID = isAudio && isMedia && "mediaID" in target ? target.mediaID : undefined;
+  const effectiveLockState: CardLockState = locked ? "locked" : lockState;
+  const canQueue =
+    isMedia && "mediaID" in target && mediaClass !== "image" && effectiveLockState === "unlocked";
+  const isCurrentPlaying = isMedia && "mediaID" in target && activePlayingID === target.mediaID;
   // Radio starts from an audio Media item, or from an Entity whose card lists audio (CORE-2772).
   const radioSeed = audioID
     ? ({ seedKind: "media", seedID: audioID } as const)
@@ -138,10 +169,59 @@ export function MediaItemCardMenu({
   }, [open, audioID, identity, audioCredits]);
 
   useEffect(() => {
+    aliveRef.current = true;
     return () => {
+      aliveRef.current = false;
       if (resetRef.current !== null) clearTimeout(resetRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    setQueueNotice(null);
+  }, [identity]);
+
+  async function queueTrack(placement: QueuePlacementAction) {
+    if (!canQueue || !("mediaID" in target) || queuePending || isCurrentPlaying) return;
+    const actionIdentity = identity;
+    const runEpoch = getIdentityEpochSignal();
+    const stillHere = () =>
+      aliveRef.current && !runEpoch?.aborted && identityRef.current === actionIdentity;
+    setQueuePending(true);
+    setQueueNotice(null);
+    const nextItem: PlayQueueItem = {
+      id: target.mediaID,
+      title,
+      ...(isAudio ? { mediaClass: "audio" } : {}),
+    };
+    try {
+      const handled =
+        placement === "next"
+          ? await dispatchPlayNextToActivePlayer(nextItem, actionIdentity)
+          : await dispatchAddToQueueToActivePlayer(nextItem, actionIdentity);
+      if (!handled) {
+        await editServerQueue({
+          mediaID: target.mediaID,
+          placement,
+          expectedProfileID: expectedProfileID ?? getExpectedProfile?.(),
+          currentPlayingMediaID: getActivePlayingMediaID,
+          signal: runEpoch,
+        });
+        if (placement === "next") stagePlayNext(actionIdentity, nextItem);
+      }
+      if (stillHere()) {
+        setQueueNotice({
+          kind: "status",
+          text: t(placement === "next" ? "feedsQueuedNext" : "cardQueuedEnd", { title }),
+        });
+      }
+    } catch {
+      if (stillHere()) {
+        setQueueNotice({ kind: "alert", text: t("musicQueueWriteFailed") });
+      }
+    } finally {
+      if (aliveRef.current) setQueuePending(false);
+    }
+  }
 
   function copyLink() {
     const clipboard = navigator.clipboard;
@@ -163,15 +243,27 @@ export function MediaItemCardMenu({
 
   return (
     <>
-      {(failed || hide.failed) && (
-        <span role="status" className="bf-card-action-error">
-          {t("itemActionFailed")}
+      {queueNotice ? (
+        <span
+          role={queueNotice.kind}
+          className={
+            queueNotice.kind === "alert" ? "bf-card-action-error" : "bf-card-action-status"
+          }
+        >
+          {queueNotice.text}
         </span>
+      ) : (
+        (failed || hide.failed) && (
+          <span role="status" className="bf-card-action-error">
+            {t("itemActionFailed")}
+          </span>
+        )
       )}
       <Menu.Root
         onOpenChange={(open) => {
           setOpen(open);
           if (!open) return;
+          setQueueNotice(null);
           // A state load that failed is tried again each time the menu opens.
           if (opened && failed && !state) retry();
           setOpened(true);
@@ -185,30 +277,31 @@ export function MediaItemCardMenu({
         <Menu.Portal>
           <Menu.Positioner side="bottom" align="end" sideOffset={6} className="bf-card-menu-layer">
             <Menu.Popup className="bf-card-menu" data-register="viewer">
-              <Menu.Item className="bf-card-menu-item" onClick={onPrimary}>
-                <PrimaryIcon aria-hidden="true" size={15} />
-                {primaryLabel}
-              </Menu.Item>
-              {isMedia && "mediaID" in target && (
-                <Menu.Item
-                  className="bf-card-menu-item"
-                  onClick={() => {
-                    const nextItem: PlayQueueItem = {
-                      id: target.mediaID,
-                      title,
-                      ...(isAudio ? { mediaClass: "audio" } : {}),
-                    };
-                    void dispatchPlayNextToActivePlayer(nextItem, identity).then((handled) => {
-                      if (!handled) {
-                        stagePlayNext(identity, nextItem);
-                        void queuePlayNextMedia?.(target.mediaID)?.catch?.(() => {});
-                      }
-                    });
-                  }}
-                >
-                  <ListPlus aria-hidden="true" size={15} />
-                  {t("cardPlayNext")}
+              {onPrimary && (
+                <Menu.Item className="bf-card-menu-item" onClick={onPrimary}>
+                  <PrimaryIcon aria-hidden="true" size={15} />
+                  {primaryLabel}
                 </Menu.Item>
+              )}
+              {canQueue && (
+                <>
+                  <Menu.Item
+                    className="bf-card-menu-item"
+                    disabled={queuePending || isCurrentPlaying}
+                    onClick={() => void queueTrack("next")}
+                  >
+                    <ListPlus aria-hidden="true" size={15} />
+                    {t("cardPlayNext")}
+                  </Menu.Item>
+                  <Menu.Item
+                    className="bf-card-menu-item"
+                    disabled={queuePending || isCurrentPlaying}
+                    onClick={() => void queueTrack("end")}
+                  >
+                    <Plus aria-hidden="true" size={15} />
+                    {t("cardAddToQueue")}
+                  </Menu.Item>
+                </>
               )}
               {onDetails && (
                 <Menu.Item className="bf-card-menu-item" onClick={onDetails}>

@@ -2,6 +2,8 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as api from "@/lib/api";
+import { ApiError, setExpectedProfile } from "@/lib/api";
 import {
   addCollectionMedia,
   clearMute,
@@ -16,6 +18,12 @@ import {
 import type { MediaCredit } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import type { Locale } from "@/strings";
+import { resetQueueCoordinatorForTest } from "../lib/musicQueue";
+import {
+  resetPlayNextForTest,
+  setActivePlayingMediaID,
+  setActivePlayNextHandler,
+} from "../lib/watchQueue";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 
 vi.mock("@/lib/graphql", async (importOriginal) => ({
@@ -206,7 +214,7 @@ describe("MediaItemCardMenu wording", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Add to playlist" }));
     fireEvent.click(await screen.findByRole("button", { name: /Test List/ }));
     await vi.waitFor(() => expect(addCollectionMedia).toHaveBeenCalledWith("p1", ["t1"]));
-    expect(await screen.findByRole("status")).toHaveTextContent("Test List");
+    await vi.waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Test List"));
   });
 });
 
@@ -256,5 +264,196 @@ describe("MediaItemCardMenu Continue Watching (CORE-2017)", () => {
     renderMenu(false);
     await screen.findByRole("menuitem", { name: "Mark watched" });
     expect(screen.queryByRole("menuitem", { name: "Remove from Continue Watching" })).toBeNull();
+  });
+});
+
+function deferredPromise<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+describe("MediaItemCardMenu queue actions (CORE-2845)", () => {
+  afterEach(() => {
+    resetPlayNextForTest();
+    resetQueueCoordinatorForTest();
+    setExpectedProfile(undefined);
+    vi.restoreAllMocks();
+  });
+
+  function installServerQueueApi(
+    initialIDs: string[] = ["current-1"],
+    onMutation?: (
+      op: "QueueAddAt" | "QueueNext",
+      vars: Record<string, unknown>,
+    ) => Promise<unknown>,
+  ) {
+    let ids = [...initialIDs];
+    const snapshot = () => ({
+      currentSession: { profileID: "profile-a", revealed: true },
+      sourceItems: ids.map((id) => ({ id, title: `Title ${id}`, mediaClass: "audio" })),
+      playQueue: {
+        currentEntryID: ids[0] ? `e-0-${ids[0]}` : null,
+        entries: ids.map((id, idx) => ({ id: `e-${idx}-${id}`, mediaID: id })),
+      },
+    });
+    return vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueue")) {
+        return snapshot();
+      }
+      if (query.startsWith("mutation QueueAddAt")) {
+        if (onMutation) {
+          const override = await onMutation("QueueAddAt", vars);
+          if (override !== undefined) return override;
+        }
+        const mediaID = String(vars.mediaID);
+        const position = typeof vars.position === "number" ? vars.position : ids.length;
+        ids = ids.filter((id) => id !== mediaID);
+        ids.splice(position, 0, mediaID);
+        return { queueAdd: { id: mediaID } };
+      }
+      if (query.startsWith("mutation QueueNext")) {
+        if (onMutation) {
+          const override = await onMutation("QueueNext", vars);
+          if (override !== undefined) return override;
+        }
+        return { queueAddMany: { currentEntryID: snapshot().playQueue.currentEntryID } };
+      }
+      return {};
+    });
+  }
+
+  it("acknowledges Play next only after confirmed server state and passes expectedProfileID", async () => {
+    setExpectedProfile("profile-a");
+    const gate = deferredPromise<unknown>();
+    const graphql = installServerQueueApi(["current-1"], async () => {
+      await gate.promise;
+      return undefined;
+    });
+
+    renderMenu(true);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Play next" }));
+
+    await vi.waitFor(() =>
+      expect(graphql).toHaveBeenCalledWith(
+        expect.stringContaining("mutation QueueAddAt"),
+        expect.objectContaining({ mediaID: "t1", position: 1, expectedProfileID: "profile-a" }),
+      ),
+    );
+    expect(document.querySelector(".bf-card-action-status")).toBeNull();
+
+    gate.resolve(undefined);
+    expect(await screen.findByText("Track One plays next.")).toHaveAttribute("role", "status");
+  });
+
+  it("acknowledges Add to queue only after server confirmation", async () => {
+    setExpectedProfile("profile-a");
+    const gate = deferredPromise<unknown>();
+    installServerQueueApi(["current-1", "other-2"], async () => {
+      await gate.promise;
+      return undefined;
+    });
+
+    renderMenu(true);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Add to queue" }));
+    expect(document.querySelector(".bf-card-action-status")).toBeNull();
+
+    gate.resolve(undefined);
+    expect(await screen.findByText("Track One added to the queue.")).toHaveAttribute(
+      "role",
+      "status",
+    );
+  });
+
+  it("routes active-player edits with placement and reports failures with role=alert", async () => {
+    const gate = deferredPromise<boolean>();
+    const handler = vi.fn(async () => gate.promise);
+    setActivePlayNextHandler(handler);
+
+    renderMenu(true);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Add to queue" }));
+
+    await vi.waitFor(() =>
+      expect(handler).toHaveBeenCalledWith(
+        { id: "t1", title: "Track One", mediaClass: "audio" },
+        "viewer-1",
+        "end",
+      ),
+    );
+    expect(document.querySelector(".bf-card-action-status")).toBeNull();
+
+    gate.resolve(true);
+    expect(await screen.findByText("Track One added to the queue.")).toHaveAttribute(
+      "role",
+      "status",
+    );
+
+    handler.mockRejectedValueOnce(
+      new ApiError("Profile changed", 409, {
+        errors: [{ message: "mismatch", extensions: { reason: "PROFILE_MISMATCH" } }],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Track One" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Play next" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not update the Play Queue.");
+    expect(document.querySelector(".bf-card-action-status")).toBeNull();
+  });
+
+  it("disables Play next and Add to queue for the currently playing track", async () => {
+    setActivePlayingMediaID("t1");
+    renderMenu(true);
+
+    const playNext = await screen.findByRole("menuitem", { name: "Play next" });
+    const addToQueue = await screen.findByRole("menuitem", { name: "Add to queue" });
+    expect(playNext).toHaveAttribute("aria-disabled", "true");
+    expect(addToQueue).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("hides Play next and Add to queue when lock state is unknown, locked, or item is an image", async () => {
+    const cases = [
+      {
+        title: "Unknown Track",
+        props: { isAudio: true, lockState: "unknown" as const },
+        target: { mediaID: "u1" },
+      },
+      {
+        title: "Locked Track",
+        props: { isAudio: true, locked: true },
+        target: { mediaID: "l1" },
+      },
+      {
+        title: "Cover Photo",
+        props: { mediaClass: "image" },
+        target: { mediaID: "i1" },
+      },
+    ];
+
+    for (const c of cases) {
+      const view = render(
+        <I18nProvider>
+          <MemoryRouter>
+            <MediaItemCardMenu
+              title={c.title}
+              primaryLabel="Play"
+              isMedia
+              href={`https://example.test/watch/${c.target.mediaID}`}
+              target={c.target}
+              {...c.props}
+            />
+          </MemoryRouter>
+        </I18nProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: `More actions for ${c.title}` }));
+      await screen.findByRole("menuitem", { name: "Copy link" });
+      expect(screen.queryByRole("menuitem", { name: "Play next" })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: "Add to queue" })).toBeNull();
+      view.unmount();
+    }
   });
 });

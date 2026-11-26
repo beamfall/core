@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OFFERED_LOCALE_TAGS } from "@/l10n/locales";
 import { I18nProvider } from "@/lib/i18n";
 import { STRINGS } from "@/strings";
-import { useMusicQueue } from "../lib/musicQueue";
+import { beginQueueAdvance, resetQueueCoordinatorForTest, useMusicQueue } from "../lib/musicQueue";
+import { resetPlayNextForTest, setActivePlayingMediaID } from "../lib/watchQueue";
 import { MusicQueuePanel } from "./MusicQueuePanel";
 
 const viewer = vi.hoisted(() => ({
@@ -574,5 +575,122 @@ describe("MusicQueuePanel", () => {
     });
     expect(playlistInput).toHaveAttribute("placeholder", STRINGS.en.musicQueuePlaylistName);
     expect(playlistInput).not.toHaveAttribute("placeholder", STRINGS.en.musicQueueTitle);
+  });
+
+  it("refuses Remove and excludes newly current track from Clear upcoming when queued behind an advance (CORE-2845)", async () => {
+    const removedIDs: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_path: string, request: RequestInit) => {
+        const body = JSON.parse(String(request.body));
+        const q = String(body.query ?? "");
+        if (q.includes("queueRemove")) {
+          removedIDs.push(String(body.variables?.mediaID ?? ""));
+          return new Response(JSON.stringify({ data: { queueRemove: { id: "ok" } } }));
+        }
+        return new Response(
+          JSON.stringify({
+            data: {
+              currentSession: { profileID: viewer.profileID, revealed: viewer.revealed },
+              sourceItems: [
+                { id: "track-202", title: "Track A", mediaClass: "audio", libraryID: "lib-1" },
+                { id: "b", title: "Track B", mediaClass: "audio", libraryID: "lib-1" },
+                { id: "c", title: "Track C", mediaClass: "audio", libraryID: "lib-1" },
+              ],
+            },
+          }),
+        );
+      }),
+    );
+
+    try {
+      setActivePlayingMediaID("track-202");
+      renderQueuePanel();
+      await screen.findByText("Track B");
+
+      // Advance A -> B begins while user clicks Remove on Track B.
+      const endAdvance = beginQueueAdvance();
+      fireEvent.click(screen.getByRole("button", { name: "Remove Track B" }));
+      await Promise.resolve();
+      expect(removedIDs).toEqual([]);
+
+      // Advance commits to Track B before releasing the advance lock.
+      setActivePlayingMediaID("b");
+      endAdvance();
+
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Clear upcoming" })).toBeEnabled(),
+      );
+      expect(removedIDs).toEqual([]);
+
+      // Repeat for Clear upcoming captured on Track A then advancing to Track B.
+      setActivePlayingMediaID("track-202");
+      const endAdvance2 = beginQueueAdvance();
+      fireEvent.click(screen.getByRole("button", { name: "Clear upcoming" }));
+      await Promise.resolve();
+
+      setActivePlayingMediaID("b");
+      endAdvance2();
+
+      await waitFor(() => expect(removedIDs).toEqual(["c"]));
+    } finally {
+      resetPlayNextForTest();
+      resetQueueCoordinatorForTest();
+    }
+  });
+
+  it("refuses a queued Move when an advance turns the source row into played history (CORE-2845)", async () => {
+    const mutations: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_path: string, request: RequestInit) => {
+        const body = JSON.parse(String(request.body));
+        const q = String(body.query ?? "");
+        if (q.includes("queueMove") || q.includes("queueRemove")) {
+          mutations.push(
+            `${q.includes("queueMove") ? "move" : "remove"}:${body.variables?.mediaID}`,
+          );
+          return new Response(JSON.stringify({ data: {} }));
+        }
+        return new Response(
+          JSON.stringify({
+            data: {
+              currentSession: { profileID: viewer.profileID, revealed: viewer.revealed },
+              sourceItems: [
+                { id: "track-202", title: "Track A", mediaClass: "audio", libraryID: "lib-1" },
+                { id: "b", title: "Track B", mediaClass: "audio", libraryID: "lib-1" },
+                { id: "c", title: "Track C", mediaClass: "audio", libraryID: "lib-1" },
+                { id: "d", title: "Track D", mediaClass: "audio", libraryID: "lib-1" },
+              ],
+            },
+          }),
+        );
+      }),
+    );
+
+    try {
+      setActivePlayingMediaID("track-202");
+      renderQueuePanel();
+      const rowB = (await screen.findByText("Track B")).closest("li")!;
+      const rowD = screen.getByText("Track D").closest("li")!;
+
+      const endAdvance = beginQueueAdvance();
+      fireEvent.dragStart(rowB);
+      fireEvent.drop(rowD);
+      fireEvent.click(screen.getByRole("button", { name: "Remove Track B" }));
+      await Promise.resolve();
+
+      // Advance skips over Track B directly to Track C, making Track B played history.
+      setActivePlayingMediaID("c");
+      endAdvance();
+
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Clear upcoming" })).toBeEnabled(),
+      );
+      expect(mutations).toEqual([]);
+    } finally {
+      resetPlayNextForTest();
+      resetQueueCoordinatorForTest();
+    }
   });
 });

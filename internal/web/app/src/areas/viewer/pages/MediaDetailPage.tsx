@@ -291,8 +291,8 @@ export function MediaDetailPage() {
     // item whose detail has not loaded yet, since it decides whether it is
     // one; the one-item queue also ends an earlier Play all.
     const alone = !media || !!media.playsAlone || !!series;
-    const { queue } = alone
-      ? { queue: [{ id: previewID, title }] }
+    const { queue, catalogKey } = alone
+      ? { queue: [{ id: previewID, title }], catalogKey: undefined }
       : readPlayerNavState(location.state, identity);
     // Every Play or Start over is its own start, so pressing one while the
     // mini player already plays this Media starts it again with these picks.
@@ -300,6 +300,7 @@ export function MediaDetailPage() {
     if (identity && queue) {
       state.queue = queue;
       state.queueIdentity = identity;
+      if (catalogKey) state.catalogKey = catalogKey;
     }
     if (
       trackPicks?.mediaID === mediaId &&

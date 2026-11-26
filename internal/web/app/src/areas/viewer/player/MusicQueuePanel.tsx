@@ -7,6 +7,8 @@ import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import {
   currentAndUpcomingPlayable,
+  enqueueQueueEdit,
+  isProfileMismatchError,
   isUpcomingPlayableIndex,
   type MusicQueueRow,
   type MusicQueueView,
@@ -16,6 +18,7 @@ import {
   removeMusicQueueTrack,
   upcomingPlayableIDs,
 } from "../lib/musicQueue";
+import { getActivePlayingMediaID } from "../lib/watchQueue";
 
 interface FrozenPlaylistSave {
   key: string;
@@ -63,6 +66,10 @@ export function MusicQueuePanel({
   const frozenSaveRef = useRef<FrozenPlaylistSave | null>(null);
 
   const { rows, failed, invalid, pending } = queue ?? {};
+  const currentIDRef = useRef(currentID);
+  currentIDRef.current = currentID;
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
   const first = rows?.find(playableMusic);
   const upcomingIDs = upcomingPlayableIDs(rows, currentID);
 
@@ -81,18 +88,58 @@ export function MusicQueuePanel({
     }
   }
 
+  function stillUpcomingEditable(
+    liveRows: readonly MusicQueueRow[] | undefined,
+    mediaID: string,
+    liveCurrent: string,
+  ): { valid: boolean; curIndex: number } {
+    if (!liveRows || (liveCurrent && mediaID === liveCurrent)) {
+      return { valid: false, curIndex: -1 };
+    }
+    const sourceIndex = liveRows.findIndex((row) => row.id === mediaID);
+    const curIndex = liveCurrent ? liveRows.findIndex((row) => row.id === liveCurrent) : -1;
+    return {
+      valid: sourceIndex >= 0 && isUpcomingPlayableIndex(liveRows, sourceIndex, liveCurrent),
+      curIndex,
+    };
+  }
+
   async function handleMove(mediaID: string, position: number) {
     if (busy) return;
     setBusy(true);
     setNotice(null);
     let writeFailed = false;
+    let mismatched = false;
     try {
-      await moveMusicQueueTrack(mediaID, position, profileID);
-    } catch {
-      writeFailed = true;
+      await enqueueQueueEdit(async () => {
+        const liveCurrent = getActivePlayingMediaID() ?? currentIDRef.current;
+        const liveRows = rowsRef.current;
+        const { valid, curIndex } = stillUpcomingEditable(liveRows, mediaID, liveCurrent);
+        if (
+          !valid ||
+          !liveRows ||
+          (curIndex >= 0 && position <= curIndex) ||
+          position < 0 ||
+          position >= liveRows.length
+        ) {
+          await rereadQueue();
+          return;
+        }
+        try {
+          await moveMusicQueueTrack(mediaID, position, profileID);
+        } catch (err) {
+          if (isProfileMismatchError(err)) {
+            mismatched = true;
+            return;
+          }
+          writeFailed = true;
+        }
+        await rereadQueue();
+      });
     } finally {
-      await rereadQueue();
-      if (writeFailed) setNotice({ kind: "alert", text: t("musicQueueWriteFailed") });
+      if (writeFailed && !mismatched) {
+        setNotice({ kind: "alert", text: t("musicQueueWriteFailed") });
+      }
       setBusy(false);
     }
   }
@@ -102,36 +149,67 @@ export function MusicQueuePanel({
     setBusy(true);
     setNotice(null);
     let writeFailed = false;
+    let mismatched = false;
     try {
-      await removeMusicQueueTrack(mediaID, profileID);
-    } catch {
-      writeFailed = true;
+      await enqueueQueueEdit(async () => {
+        const liveCurrent = getActivePlayingMediaID() ?? currentIDRef.current;
+        if (!stillUpcomingEditable(rowsRef.current, mediaID, liveCurrent).valid) {
+          await rereadQueue();
+          return;
+        }
+        try {
+          await removeMusicQueueTrack(mediaID, profileID);
+        } catch (err) {
+          if (isProfileMismatchError(err)) {
+            mismatched = true;
+            return;
+          }
+          writeFailed = true;
+        }
+        await rereadQueue();
+      });
     } finally {
-      await rereadQueue();
-      if (writeFailed) setNotice({ kind: "alert", text: t("musicQueueWriteFailed") });
+      if (writeFailed && !mismatched) {
+        setNotice({ kind: "alert", text: t("musicQueueWriteFailed") });
+      }
       setBusy(false);
     }
   }
 
   async function handleClearUpcoming() {
     if (busy) return;
-    const captured = upcomingPlayableIDs(rows, currentID);
-    if (captured.length === 0) return;
+    if (upcomingPlayableIDs(rows, currentID).length === 0) return;
     setBusy(true);
     setNotice(null);
     let writeFailed = false;
+    let mismatched = false;
     try {
-      for (const id of captured) {
-        try {
-          await removeMusicQueueTrack(id, profileID);
-        } catch {
-          writeFailed = true;
-          break;
+      await enqueueQueueEdit(async () => {
+        // Recompute targets after any in-flight advance finishes so a newly playing track is never deleted.
+        const liveCurrent = getActivePlayingMediaID() ?? currentIDRef.current;
+        const upcoming = upcomingPlayableIDs(rowsRef.current, liveCurrent);
+        if (upcoming.length === 0) {
+          await rereadQueue();
+          return;
         }
-      }
+        for (const id of upcoming) {
+          try {
+            await removeMusicQueueTrack(id, profileID);
+          } catch (err) {
+            if (isProfileMismatchError(err)) {
+              mismatched = true;
+              return;
+            }
+            writeFailed = true;
+            break;
+          }
+        }
+        await rereadQueue();
+      });
     } finally {
-      await rereadQueue();
-      if (writeFailed) setNotice({ kind: "alert", text: t("musicQueueWriteFailed") });
+      if (writeFailed && !mismatched) {
+        setNotice({ kind: "alert", text: t("musicQueueWriteFailed") });
+      }
       setBusy(false);
     }
   }

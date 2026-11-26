@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   MemoryRouter,
   type NavigateFunction,
@@ -100,7 +100,8 @@ vi.mock("@/lib/session", () => ({
   }),
   useViewerIdentity: () => viewer.identity,
 }));
-vi.mock("@/lib/graphql", () => ({
+vi.mock("@/lib/graphql", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/graphql")>()),
   fetchClientPrefs: vi.fn().mockResolvedValue([]),
   setClientPref: vi.fn().mockResolvedValue(undefined),
   fetchItemState: vi.fn().mockResolvedValue(null),
@@ -4252,23 +4253,80 @@ describe("PlayerPage in a Watch Party (CORE-1766)", () => {
   });
 
   it("inserts Play next after the currently playing item in a catalogue-started session (CORE-3250)", async () => {
-    const { dispatchPlayNextToActivePlayer } = await import("../lib/watchQueue");
-    renderPlayer(
-      playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),
-      { title: "Alpha", queue, queueIdentity: "viewer-1" },
-    );
-    expect(vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.nextTitle).toBe("After");
-
-    await act(async () => {
-      const handled = await dispatchPlayNextToActivePlayer(
-        { id: "media-inserted", title: "Inserted", mediaClass: "audio" },
-        "viewer-1",
-      );
-      expect(handled).toBe(true);
+    let entries: { id: string; mediaID: string }[] = [];
+    let currentEntryID: string | null = null;
+    let seq = 0;
+    const rowsFor = () => {
+      const seen = new Set<string>();
+      const out: { id: string; title: string; mediaClass: string }[] = [];
+      for (const e of entries) {
+        if (seen.has(e.mediaID)) continue;
+        seen.add(e.mediaID);
+        out.push({
+          id: e.mediaID,
+          title: e.mediaID === "media-inserted" ? "Inserted" : e.mediaID,
+          mediaClass: "audio",
+        });
+      }
+      return out;
+    };
+    const graphql = vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return {
+          currentSession: { profileID: "profile-a", revealed: true },
+          media: null,
+        };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        return {
+          currentSession: { profileID: "profile-a", revealed: true },
+          sourceItems: rowsFor(),
+          playQueue: { currentEntryID, entries },
+        };
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        const added = (vars.mediaIDs as string[]).map((id) => ({ id: `e-${++seq}`, mediaID: id }));
+        entries = [...entries, ...added];
+        currentEntryID ??= entries[0]?.id ?? null;
+        return { queueAddMany: { currentEntryID, entries } };
+      }
+      return {};
     });
 
-    const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
-    expect(props?.nextTitle).toBe("Inserted");
+    try {
+      const { dispatchPlayNextToActivePlayer, resetPlayNextForTest } = await import(
+        "../lib/watchQueue"
+      );
+      const { resetQueueCoordinatorForTest } = await import("../lib/musicQueue");
+      try {
+        renderPlayer(
+          playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),
+          { title: "Alpha", queue, queueIdentity: "viewer-1" },
+        );
+        expect(vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.nextTitle).toBe("After");
+
+        await act(async () => {
+          const handled = await dispatchPlayNextToActivePlayer(
+            { id: "media-inserted", title: "Inserted", mediaClass: "audio" },
+            "viewer-1",
+          );
+          expect(handled).toBe(true);
+        });
+
+        expect(graphql).toHaveBeenCalledWith(expect.stringContaining("mutation QueueAddManyEnd"), {
+          mediaIDs: ["media-alpha", "media-inserted", "media-next", "media-prev"],
+          expectedProfileID: "profile-a",
+        });
+        const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+        expect(props?.nextTitle).toBe("Inserted");
+      } finally {
+        resetPlayNextForTest();
+        resetQueueCoordinatorForTest();
+      }
+    } finally {
+      graphql.mockRestore();
+    }
   });
 });
 
@@ -4421,5 +4479,1260 @@ describe("PlayerPage standalone playsAlone audio vs music Play Queue", () => {
         "function",
       ),
     );
+  });
+});
+
+describe("PlayerPage CORE-2845 catalog conversion and serialization", () => {
+  let loc: ReturnType<typeof useLocation>;
+  function RouteProbe() {
+    loc = useLocation();
+    return null;
+  }
+
+  function renderAudioAt(path: string, navState: Record<string, unknown>, playingMediaID: string) {
+    vi.mocked(usePlayer).mockReturnValue({
+      videoRef: { current: null },
+      hlsRef: { current: null },
+      state: playerState({
+        phase: "playing",
+        mediaID: playingMediaID,
+        info: { mediaClass: "audio", streams: [], assets: {} } as never,
+      }),
+      retry: vi.fn(),
+      restart: vi.fn(),
+      switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
+    });
+    return render(
+      <I18nProvider>
+        <MemoryRouter
+          initialEntries={[
+            (() => {
+              const [pathname, rawSearch] = path.split("?");
+              return {
+                pathname,
+                ...(rawSearch ? { search: `?${rawSearch}` } : {}),
+                state: { skipPrePlay: true, ...navState },
+              };
+            })(),
+          ]}
+        >
+          <Routes>
+            <Route
+              path="/watch/*"
+              element={
+                <>
+                  <PlayerPage />
+                  <RouteProbe />
+                </>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+  }
+
+  function createServerQueueHarness() {
+    let entries: { id: string; mediaID: string }[] = [];
+    let currentEntryID: string | null = null;
+    let seq = 0;
+    const rows = () => {
+      const seen = new Set<string>();
+      const out: { id: string; title: string; mediaClass: string }[] = [];
+      for (const entry of entries) {
+        if (seen.has(entry.mediaID)) continue;
+        seen.add(entry.mediaID);
+        out.push({ id: entry.mediaID, title: `Track ${entry.mediaID}`, mediaClass: "audio" });
+      }
+      return out;
+    };
+    const applyAdd = (mediaID: string, position?: number) => {
+      entries = entries.filter((e) => e.mediaID !== mediaID);
+      const next = { id: `e-${++seq}`, mediaID };
+      if (position === undefined || position >= entries.length) {
+        entries.push(next);
+      } else {
+        entries.splice(Math.max(0, position), 0, next);
+      }
+      currentEntryID ??= entries[0]?.id ?? null;
+    };
+    const applyMany = (mediaIDs: string[]) => {
+      for (const id of mediaIDs) applyAdd(id);
+    };
+    return {
+      get rows() {
+        return rows();
+      },
+      seed(ids: string[]) {
+        entries = [];
+        currentEntryID = null;
+        applyMany(ids);
+      },
+      snapshot(offset = 0, limit = 200) {
+        const allRows = rows();
+        return {
+          currentSession: { profileID: "profile-a", revealed: true },
+          sourceItems: allRows.slice(offset, offset + limit),
+          playQueue: { currentEntryID, entries: [...entries] },
+        };
+      },
+      applyAdd,
+      applyMany,
+    };
+  }
+
+  beforeEach(() => {
+    viewer.revealed = true;
+    viewer.profileID = "profile-a";
+    viewer.identity = "viewer-1";
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(PlayerTransport).mockClear();
+    vi.mocked(fetchMedia).mockReset().mockResolvedValue(null);
+    vi.mocked(fetchClientPrefs).mockReset().mockResolvedValue([]);
+  });
+
+  afterEach(async () => {
+    const { resetPlayNextForTest } = await import("../lib/watchQueue");
+    const { resetQueueCoordinatorForTest } = await import("../lib/musicQueue");
+    const { leavePlayQueue, playQueueHandle } = await import("../lib/playQueue");
+    leavePlayQueue(playQueueHandle());
+    resetPlayNextForTest();
+    resetQueueCoordinatorForTest();
+    viewer.revealed = true;
+    viewer.profileID = "profile-a";
+    viewer.identity = "viewer-1";
+    vi.restoreAllMocks();
+  });
+
+  it("converts >500-row albums once, keeps track 520, preserves startID, and uses server edits afterwards", async () => {
+    const {
+      dispatchAddToQueueToActivePlayer,
+      dispatchPlayNextToActivePlayer,
+      queueWindow,
+      rememberFullCatalogQueue,
+    } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    const graphql = vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        server.applyMany(vars.mediaIDs as string[]);
+        return {
+          queueAddMany: { currentEntryID: server.snapshot().playQueue.currentEntryID, entries: [] },
+        };
+      }
+      if (query.startsWith("mutation QueueAddAt")) {
+        server.applyAdd(vars.mediaID as string, vars.position as number | undefined);
+        return { queueAdd: { id: vars.mediaID } };
+      }
+      return {};
+    });
+
+    const fullAlbum = Array.from({ length: 520 }, (_, i) => ({
+      id: `alb-${i}`,
+      title: `Track ${i}`,
+      mediaClass: "audio",
+    }));
+    const windowed = queueWindow(fullAlbum, "alb-0");
+    expect(windowed).toHaveLength(500);
+    const catalogKey = rememberFullCatalogQueue("viewer-1", windowed, fullAlbum);
+
+    renderAudioAt(
+      "/watch/alb-0",
+      {
+        title: "Track 0",
+        queue: windowed,
+        queueIdentity: "viewer-1",
+        catalogKey,
+        startID: "start-keep-1",
+      },
+      "alb-0",
+    );
+    expect(vi.mocked(usePlayer).mock.lastCall?.[6]).toBe("start-keep-1");
+
+    await act(async () => {
+      await dispatchAddToQueueToActivePlayer(
+        { id: "extra-end", title: "Extra End", mediaClass: "audio" },
+        "viewer-1",
+      );
+    });
+
+    expect(loc.search).toBe("?playQueue=profile-a");
+    // Preserves effectiveStartID so usePlayer does not restart audio across navigation.
+    expect(vi.mocked(usePlayer).mock.lastCall?.[6]).toBe("start-keep-1");
+    expect(server.rows).toHaveLength(521);
+    expect(server.rows[519]?.id).toBe("alb-519");
+    expect(server.rows[520]?.id).toBe("extra-end");
+
+    const batchCountAfterConversion = graphql.mock.calls.filter(([q]) =>
+      q.startsWith("mutation QueueAddManyEnd"),
+    ).length;
+    expect(batchCountAfterConversion).toBe(2);
+
+    // Subsequent edit edits the server queue rather than re-converting.
+    await act(async () => {
+      await dispatchPlayNextToActivePlayer(
+        { id: "extra-next", title: "Extra Next", mediaClass: "audio" },
+        "viewer-1",
+      );
+    });
+    expect(
+      graphql.mock.calls.filter(([q]) => q.startsWith("mutation QueueAddManyEnd")).length,
+    ).toBe(batchCountAfterConversion);
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining("mutation QueueAddAt"),
+      expect.objectContaining({ mediaID: "extra-next", position: 1 }),
+    );
+  });
+
+  it("converts a multi-page Play all run including track 201+ on first explicit edit", async () => {
+    const { startPlayQueue } = await import("../lib/playQueue");
+    const { dispatchPlayNextToActivePlayer } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    const playAllIDs = Array.from({ length: 205 }, (_, i) => `pa-${i}`);
+
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.includes("libraryItems(")) {
+        const offset = typeof vars.offset === "number" ? vars.offset : 0;
+        const limit = typeof vars.limit === "number" ? vars.limit : 200;
+        return {
+          libraryItems: {
+            total: playAllIDs.length,
+            items: playAllIDs
+              .slice(offset, offset + limit)
+              .map((id) => ({ id, kind: "media", title: `Title ${id}`, mediaClass: "audio" })),
+            facets: { groupings: [], decades: [], qualities: [], fields: [] },
+            letters: [],
+          },
+        };
+      }
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        server.applyMany(vars.mediaIDs as string[]);
+        return {
+          queueAddMany: { currentEntryID: server.snapshot().playQueue.currentEntryID, entries: [] },
+        };
+      }
+      return {};
+    });
+
+    await startPlayQueue({
+      libraryID: "lib-a",
+      state: {
+        query: "",
+        sort: "title",
+        direction: "asc",
+        watch: "",
+        quality: "",
+        minRating: 0,
+        decade: 0,
+        yearFrom: 0,
+        yearTo: 0,
+        groups: {},
+      },
+    });
+
+    renderAudioAt("/watch/pa-0", { title: "Title pa-0" }, "pa-0");
+
+    await act(async () => {
+      const ok = await dispatchPlayNextToActivePlayer(
+        { id: "pa-inserted", title: "Inserted", mediaClass: "audio" },
+        "viewer-1",
+      );
+      expect(ok).toBe(true);
+    });
+
+    expect(loc.search).toBe("?playQueue=profile-a");
+    expect(server.rows.slice(0, 3).map((r) => r.id)).toEqual(["pa-0", "pa-inserted", "pa-1"]);
+    expect(server.rows.at(-1)?.id).toBe("pa-204");
+    expect(server.rows).toHaveLength(206);
+  });
+
+  it("serializes delayed Add to queue across Next and rereads cleanly after partial import failure", async () => {
+    const { dispatchAddToQueueToActivePlayer } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    let releaseConvert = () => {};
+    let holdConvert = false;
+    let partialBatchCount = 0;
+    let failSecondChunk = false;
+
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        if (holdConvert) {
+          await new Promise<void>((resolve) => {
+            releaseConvert = resolve;
+          });
+        }
+        partialBatchCount++;
+        if (failSecondChunk && partialBatchCount === 2) {
+          throw new Error("chunk 2 lost");
+        }
+        server.applyMany(vars.mediaIDs as string[]);
+        return {
+          queueAddMany: { currentEntryID: server.snapshot().playQueue.currentEntryID, entries: [] },
+        };
+      }
+      return {};
+    });
+
+    // 1. Delayed Add to queue (conversion) while user clicks Next: Next waits for conversion & reread.
+    holdConvert = true;
+    renderAudioAt(
+      "/watch/s-1",
+      {
+        title: "One",
+        queue: [
+          { id: "s-1", title: "One", mediaClass: "audio" },
+          { id: "s-2", title: "Two", mediaClass: "audio" },
+        ],
+        queueIdentity: "viewer-1",
+      },
+      "s-1",
+    );
+
+    let editDone = false;
+    let editPromise!: Promise<boolean>;
+    act(() => {
+      editPromise = dispatchAddToQueueToActivePlayer(
+        { id: "s-tail", title: "Tail", mediaClass: "audio" },
+        "viewer-1",
+      ).then((ok) => {
+        editDone = true;
+        return ok;
+      });
+    });
+
+    await waitFor(() => expect(holdConvert).toBe(true));
+    // Trigger Next while conversion is still waiting on server response.
+    act(() => {
+      vi.mocked(PlayerTransport).mock.lastCall?.[0]?.onNextInQueue?.();
+    });
+    await Promise.resolve();
+    expect(editDone).toBe(false);
+    expect(loc.pathname).toBe("/watch/s-1");
+
+    await act(async () => {
+      holdConvert = false;
+      releaseConvert();
+      await editPromise;
+    });
+
+    await waitFor(() => expect(loc.pathname).toBe("/watch/s-2"));
+    expect(loc.search).toBe("?playQueue=profile-a");
+    expect(server.rows.map((r) => r.id)).toEqual(["s-1", "s-2", "s-tail"]);
+
+    // 2. Partial import failure on >500 album commits batch 1 and syncs player to reread without replay.
+    cleanup();
+    server.seed([]);
+    partialBatchCount = 0;
+    failSecondChunk = true;
+    const bigAlbum = Array.from({ length: 550 }, (_, i) => ({
+      id: `p-${i}`,
+      title: `P${i}`,
+      mediaClass: "audio",
+    }));
+    renderAudioAt("/watch/p-0", { title: "P0", queue: bigAlbum, queueIdentity: "viewer-1" }, "p-0");
+
+    await act(async () => {
+      await expect(
+        dispatchAddToQueueToActivePlayer(
+          { id: "p-end", title: "End", mediaClass: "audio" },
+          "viewer-1",
+        ),
+      ).rejects.toThrow("chunk 2 lost");
+    });
+
+    expect(partialBatchCount).toBe(2);
+    expect(loc.search).toBe("?playQueue=profile-a");
+    expect(server.rows).toHaveLength(500);
+  });
+
+  it("preserves timestamp params (?t=0) and suspends gapless handoff during pending catalog conversion", async () => {
+    const { dispatchPlayNextToActivePlayer } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    let releaseWrite = () => {};
+    let holdWrite = true;
+
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        if (holdWrite) {
+          await new Promise<void>((resolve) => {
+            releaseWrite = resolve;
+          });
+        }
+        server.applyMany(vars.mediaIDs as string[]);
+        return {
+          queueAddMany: { currentEntryID: server.snapshot().playQueue.currentEntryID, entries: [] },
+        };
+      }
+      return {};
+    });
+
+    renderAudioAt(
+      "/watch/t-1?t=0",
+      {
+        title: "Track 1",
+        queue: [
+          { id: "t-1", title: "Track 1", mediaClass: "audio" },
+          { id: "t-2", title: "Track 2", mediaClass: "audio" },
+        ],
+        queueIdentity: "viewer-1",
+        startID: "start-t1",
+      },
+      "t-1",
+    );
+
+    expect(vi.mocked(usePlayer).mock.lastCall?.[2]).toBe(0);
+    expect(vi.mocked(useGaplessAudio).mock.lastCall?.[0]?.waitForAdvance).toBe(false);
+
+    let convertPromise!: Promise<boolean>;
+    act(() => {
+      convertPromise = dispatchPlayNextToActivePlayer(
+        { id: "t-next", title: "Next", mediaClass: "audio" },
+        "viewer-1",
+      );
+    });
+
+    await waitFor(() =>
+      expect(vi.mocked(useGaplessAudio).mock.lastCall?.[0]?.waitForAdvance).toBe(true),
+    );
+    expect(holdWrite).toBe(true);
+
+    await act(async () => {
+      holdWrite = false;
+      releaseWrite();
+      await convertPromise;
+    });
+
+    const params = new URLSearchParams(loc.search);
+    expect(params.get("t")).toBe("0");
+    expect(params.get("playQueue")).toBe("profile-a");
+    expect(vi.mocked(usePlayer).mock.lastCall?.[2]).toBe(0);
+    expect(vi.mocked(usePlayer).mock.lastCall?.[6]).toBe("start-t1");
+  });
+
+  it("does not deadlock when an edit arrives while an explicit Next queue read is in flight", async () => {
+    const { dispatchAddToQueueToActivePlayer } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    server.seed(["q-1", "q-2"]);
+    let holdAdvanceRead = false;
+    let releaseAdvanceRead = () => {};
+    let readCount = 0;
+
+    const graphql = vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        readCount++;
+        if (holdAdvanceRead && readCount === 2) {
+          await new Promise<void>((resolve) => {
+            releaseAdvanceRead = resolve;
+          });
+        }
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddAt")) {
+        server.applyAdd(vars.mediaID as string, vars.position as number | undefined);
+        return { queueAdd: { id: vars.mediaID } };
+      }
+      return {};
+    });
+
+    renderAudioAt("/watch/q-1?playQueue=profile-a", {}, "q-1");
+    await waitFor(() =>
+      expect(vi.mocked(PlayerTransport).mock.lastCall?.[0]?.onNextInQueue).toBeTypeOf("function"),
+    );
+
+    // Start explicit Next whose queue read pauses in flight, then enqueue an edit mid-read.
+    holdAdvanceRead = true;
+    act(() => {
+      vi.mocked(PlayerTransport).mock.lastCall?.[0]?.onNextInQueue?.();
+    });
+    await waitFor(() => expect(readCount).toBe(2));
+
+    let editSettled = false;
+    let editPromise!: Promise<boolean>;
+    act(() => {
+      editPromise = dispatchAddToQueueToActivePlayer(
+        { id: "q-3", title: "Track 3", mediaClass: "audio" },
+        "viewer-1",
+      ).then((ok) => {
+        editSettled = true;
+        return ok;
+      });
+    });
+
+    await Promise.resolve();
+    expect(editSettled).toBe(false);
+
+    // Unblocking the advance read completes Next (q-1 -> q-2) and then unblocks q-3 without deadlocking.
+    await act(async () => {
+      holdAdvanceRead = false;
+      releaseAdvanceRead();
+      await editPromise;
+    });
+
+    expect(editSettled).toBe(true);
+    await waitFor(() => expect(loc.pathname).toBe("/watch/q-2"));
+    expect(server.rows.map((r) => r.id)).toEqual(["q-1", "q-2", "q-3"]);
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining("mutation QueueAddAt"),
+      expect.objectContaining({ mediaID: "q-3", expectedProfileID: "profile-a" }),
+    );
+  });
+
+  it("places Play next after the newly playing track when queued behind an in-flight Next advance", async () => {
+    const { dispatchPlayNextToActivePlayer } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    server.seed(["q-1", "q-2", "q-4"]);
+    let holdAdvanceRead = false;
+    let releaseAdvanceRead = () => {};
+    let readCount = 0;
+
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        readCount++;
+        if (holdAdvanceRead && readCount === 2) {
+          await new Promise<void>((resolve) => {
+            releaseAdvanceRead = resolve;
+          });
+        }
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddAt")) {
+        server.applyAdd(vars.mediaID as string, vars.position as number | undefined);
+        return { queueAdd: { id: vars.mediaID } };
+      }
+      return {};
+    });
+
+    renderAudioAt("/watch/q-1?playQueue=profile-a", {}, "q-1");
+    await waitFor(() =>
+      expect(vi.mocked(PlayerTransport).mock.lastCall?.[0]?.onNextInQueue).toBeTypeOf("function"),
+    );
+
+    holdAdvanceRead = true;
+    act(() => {
+      vi.mocked(PlayerTransport).mock.lastCall?.[0]?.onNextInQueue?.();
+    });
+    await waitFor(() => expect(readCount).toBe(2));
+
+    let playNextPromise!: Promise<boolean>;
+    act(() => {
+      playNextPromise = dispatchPlayNextToActivePlayer(
+        { id: "q-3", title: "Track 3", mediaClass: "audio" },
+        "viewer-1",
+      );
+    });
+
+    await act(async () => {
+      holdAdvanceRead = false;
+      releaseAdvanceRead();
+      await playNextPromise;
+    });
+
+    // q-3 must be placed after q-2 (new playing track), producing [q-1, q-2, q-3, q-4], NOT [q-1, q-3, q-2, q-4].
+    await waitFor(() => expect(loc.pathname).toBe("/watch/q-2"));
+    expect(server.rows.map((r) => r.id)).toEqual(["q-1", "q-2", "q-3", "q-4"]);
+  });
+
+  it("still advances a waiting Next even if a second edit arrives after conversion renders", async () => {
+    const { dispatchAddToQueueToActivePlayer } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    let holdFirstBatch = false;
+    let releaseFirstBatch = () => {};
+    let holdSecondWrite = false;
+    let releaseSecondWrite = () => {};
+    let addManyCount = 0;
+
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        addManyCount++;
+        if (addManyCount === 1 && holdFirstBatch) {
+          await new Promise<void>((resolve) => {
+            releaseFirstBatch = resolve;
+          });
+        } else if (addManyCount > 1 && holdSecondWrite) {
+          await new Promise<void>((resolve) => {
+            releaseSecondWrite = resolve;
+          });
+        }
+        server.applyMany(vars.mediaIDs as string[]);
+        return {
+          queueAddMany: { currentEntryID: server.snapshot().playQueue.currentEntryID, entries: [] },
+        };
+      }
+      if (query.startsWith("mutation QueueAddAt")) {
+        if (holdSecondWrite) {
+          await new Promise<void>((resolve) => {
+            releaseSecondWrite = resolve;
+          });
+        }
+        server.applyAdd(vars.mediaID as string, vars.position as number | undefined);
+        return { queueAdd: { id: vars.mediaID } };
+      }
+      return {};
+    });
+
+    renderAudioAt(
+      "/watch/s-1",
+      {
+        title: "One",
+        queue: [
+          { id: "s-1", title: "One", mediaClass: "audio" },
+          { id: "s-2", title: "Two", mediaClass: "audio" },
+        ],
+        queueIdentity: "viewer-1",
+      },
+      "s-1",
+    );
+
+    holdFirstBatch = true;
+    holdSecondWrite = true;
+    let edit1!: Promise<boolean>;
+    let edit2!: Promise<boolean>;
+    act(() => {
+      edit1 = dispatchAddToQueueToActivePlayer(
+        { id: "s-3", title: "Three", mediaClass: "audio" },
+        "viewer-1",
+      );
+      edit2 = dispatchAddToQueueToActivePlayer(
+        { id: "s-4", title: "Four", mediaClass: "audio" },
+        "viewer-1",
+      );
+    });
+    await Promise.resolve();
+
+    // User clicks Next (captures pre-conversion runCatalogAdvance).
+    act(() => {
+      vi.mocked(PlayerTransport).mock.lastCall?.[0]?.onNextInQueue?.();
+    });
+
+    // Finish edit1 (conversion commits and renders ?playQueue=profile-a), while edit2 keeps
+    // hasPendingQueueEdits() true across conversion's React commit!
+    await act(async () => {
+      holdFirstBatch = false;
+      releaseFirstBatch();
+      await edit1;
+    });
+
+    // React has now rendered ?playQueue=profile-a (clearing convertedProfileRef), while edit2 is still holding Next.
+    expect(loc.search).toBe("?playQueue=profile-a");
+    expect(loc.pathname).toBe("/watch/s-1");
+
+    await act(async () => {
+      holdSecondWrite = false;
+      releaseSecondWrite();
+      await edit2;
+    });
+
+    await waitFor(() => expect(loc.pathname).toBe("/watch/s-2"));
+    expect(server.rows.map((r) => r.id)).toEqual(["s-1", "s-2", "s-3", "s-4"]);
+  });
+
+  it("keeps resumed Next alive if conversion route commits mid-read", async () => {
+    const { dispatchAddToQueueToActivePlayer } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    let holdEdit = false;
+    let releaseEdit = () => {};
+    let holdPostConvertRead = false;
+    let releasePostConvertRead = () => {};
+    let musicQueueReads = 0;
+
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        musicQueueReads++;
+        if (holdPostConvertRead && musicQueueReads === 3) {
+          await new Promise<void>((resolve) => {
+            releasePostConvertRead = resolve;
+          });
+        }
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        if (holdEdit) {
+          await new Promise<void>((resolve) => {
+            releaseEdit = resolve;
+          });
+        }
+        server.applyMany(vars.mediaIDs as string[]);
+        return {
+          queueAddMany: { currentEntryID: server.snapshot().playQueue.currentEntryID, entries: [] },
+        };
+      }
+      return {};
+    });
+
+    renderAudioAt(
+      "/watch/c-1",
+      {
+        title: "One",
+        queue: [
+          { id: "c-1", title: "One", mediaClass: "audio" },
+          { id: "c-2", title: "Two", mediaClass: "audio" },
+        ],
+        queueIdentity: "viewer-1",
+      },
+      "c-1",
+    );
+
+    holdEdit = true;
+    holdPostConvertRead = true;
+    let editPromise!: Promise<boolean>;
+    act(() => {
+      editPromise = dispatchAddToQueueToActivePlayer(
+        { id: "c-3", title: "Three", mediaClass: "audio" },
+        "viewer-1",
+      );
+      vi.mocked(PlayerTransport).mock.lastCall?.[0]?.onNextInQueue?.();
+    });
+
+    // Release conversion without wrapping React commit yet, then commit and release post-convert read.
+    await act(async () => {
+      holdEdit = false;
+      releaseEdit();
+      await editPromise;
+    });
+
+    // Now flush post-conversion read after ?playQueue=profile-a route commit already ran cleanup.
+    await act(async () => {
+      holdPostConvertRead = false;
+      releasePostConvertRead();
+    });
+
+    await waitFor(() => expect(loc.pathname).toBe("/watch/c-2"));
+    expect(loc.search).toBe("?playQueue=profile-a");
+  });
+
+  it("does not convert video Play all sessions into the music Play Queue", async () => {
+    const { startPlayQueue } = await import("../lib/playQueue");
+    const { dispatchPlayNextToActivePlayer } = await import("../lib/watchQueue");
+    const videoIDs = ["v-1", "v-2", "v-3"];
+    const graphql = vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.includes("libraryItems(")) {
+        const offset = typeof vars.offset === "number" ? vars.offset : 0;
+        const limit = typeof vars.limit === "number" ? vars.limit : 200;
+        return {
+          libraryItems: {
+            total: videoIDs.length,
+            items: videoIDs
+              .slice(offset, offset + limit)
+              .map((id) => ({ id, kind: "media", title: `Film ${id}`, mediaClass: "video" })),
+            facets: { groupings: [], decades: [], qualities: [], fields: [] },
+            letters: [],
+          },
+        };
+      }
+      return {};
+    });
+
+    await startPlayQueue({
+      libraryID: "lib-videos",
+      state: {
+        query: "",
+        sort: "title",
+        direction: "asc",
+        watch: "",
+        quality: "",
+        minRating: 0,
+        decade: 0,
+        yearFrom: 0,
+        yearTo: 0,
+        groups: {},
+      },
+    });
+
+    vi.mocked(usePlayer).mockReturnValue({
+      videoRef: { current: null },
+      hlsRef: { current: null },
+      state: playerState({
+        phase: "playing",
+        mediaID: "v-1",
+        info: { mediaClass: "video", streams: [], assets: {} } as never,
+      }),
+      retry: vi.fn(),
+      restart: vi.fn(),
+      switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
+    });
+    render(
+      <I18nProvider>
+        <MemoryRouter
+          initialEntries={[
+            { pathname: "/watch/v-1", state: { skipPrePlay: true, title: "Film v-1" } },
+          ]}
+        >
+          <Routes>
+            <Route
+              path="/watch/*"
+              element={
+                <>
+                  <PlayerPage />
+                  <RouteProbe />
+                </>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    await act(async () => {
+      const handled = await dispatchPlayNextToActivePlayer(
+        { id: "v-inserted", title: "Film Inserted", mediaClass: "video" },
+        "viewer-1",
+      );
+      expect(handled).toBe(true);
+    });
+
+    expect(loc.search).toBe("");
+    expect(graphql.mock.calls.some(([q]) => q.startsWith("mutation Queue"))).toBe(false);
+  });
+
+  it("advances from the last catalog track when it ends while conversion is in flight", async () => {
+    const { dispatchAddToQueueToActivePlayer } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    let holdWrite = true;
+    let releaseWrite = () => {};
+
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        if (holdWrite) {
+          await new Promise<void>((resolve) => {
+            releaseWrite = resolve;
+          });
+        }
+        server.applyMany(vars.mediaIDs as string[]);
+        return {
+          queueAddMany: { currentEntryID: server.snapshot().playQueue.currentEntryID, entries: [] },
+        };
+      }
+      return {};
+    });
+
+    vi.mocked(usePlayer).mockReturnValue({
+      videoRef: { current: null },
+      hlsRef: { current: null },
+      state: playerState({
+        phase: "playing",
+        mediaID: "last-1",
+        info: { mediaClass: "audio", streams: [], assets: {} } as never,
+      }),
+      retry: vi.fn(),
+      restart: vi.fn(),
+      switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
+    });
+    render(
+      <I18nProvider>
+        <MemoryRouter
+          initialEntries={[
+            {
+              pathname: "/watch/last-1",
+              state: {
+                skipPrePlay: true,
+                title: "Last Track",
+                queue: [{ id: "last-1", title: "Last Track", mediaClass: "audio" }],
+                queueIdentity: "viewer-1",
+              },
+            },
+          ]}
+        >
+          <Routes>
+            <Route
+              path="/watch/*"
+              element={
+                <>
+                  <PlayerPage />
+                  <RouteProbe />
+                </>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    let editPromise!: Promise<boolean>;
+    act(() => {
+      editPromise = dispatchAddToQueueToActivePlayer(
+        { id: "added-b", title: "Added B", mediaClass: "audio" },
+        "viewer-1",
+      );
+    });
+
+    // Track ends while conversion is still pending on a single-track/last-track catalog session.
+    const renderedVideo = document.querySelector("video");
+    expect(renderedVideo).not.toBeNull();
+    act(() => {
+      renderedVideo?.dispatchEvent(new Event("ended"));
+    });
+    expect(loc.pathname).toBe("/watch/last-1");
+
+    await act(async () => {
+      holdWrite = false;
+      releaseWrite();
+      await editPromise;
+    });
+
+    await waitFor(() => expect(loc.pathname).toBe("/watch/added-b"));
+    expect(loc.search).toBe("?playQueue=profile-a");
+  });
+
+  it("advances on repeat-all when a single-track catalog ends while conversion is in flight", async () => {
+    const { DEFAULT_PLAY_MODES, writePlayModes } = await import("../player/nowPlaying");
+    const { dispatchAddToQueueToActivePlayer } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    let holdWrite = true;
+    let releaseWrite = () => {};
+    const restart = vi.fn();
+
+    writePlayModes({ ...DEFAULT_PLAY_MODES, repeat: "all" });
+    try {
+      vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+        const vars = (variables ?? {}) as Record<string, unknown>;
+        if (query.startsWith("query MusicQueueMedia")) {
+          return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+        }
+        if (query.startsWith("query MusicQueue")) {
+          return server.snapshot(
+            typeof vars.offset === "number" ? vars.offset : 0,
+            typeof vars.limit === "number" ? vars.limit : 200,
+          );
+        }
+        if (query.startsWith("mutation QueueAddManyEnd")) {
+          if (holdWrite) {
+            await new Promise<void>((resolve) => {
+              releaseWrite = resolve;
+            });
+          }
+          server.applyMany(vars.mediaIDs as string[]);
+          return {
+            queueAddMany: {
+              currentEntryID: server.snapshot().playQueue.currentEntryID,
+              entries: [],
+            },
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(usePlayer).mockReturnValue({
+        videoRef: { current: null },
+        hlsRef: { current: null },
+        state: playerState({
+          phase: "playing",
+          mediaID: "solo-1",
+          info: { mediaClass: "audio", streams: [], assets: {} } as never,
+        }),
+        retry: vi.fn(),
+        restart,
+        switchToHls: vi.fn(() => false as const),
+        adjustment: DEFAULT_ADJUSTMENT,
+        adjust: vi.fn(),
+      });
+      render(
+        <I18nProvider>
+          <MemoryRouter
+            initialEntries={[
+              {
+                pathname: "/watch/solo-1",
+                state: {
+                  skipPrePlay: true,
+                  title: "Solo Track",
+                  queue: [{ id: "solo-1", title: "Solo Track", mediaClass: "audio" }],
+                  queueIdentity: "viewer-1",
+                },
+              },
+            ]}
+          >
+            <Routes>
+              <Route
+                path="/watch/*"
+                element={
+                  <>
+                    <PlayerPage />
+                    <RouteProbe />
+                  </>
+                }
+              />
+            </Routes>
+          </MemoryRouter>
+        </I18nProvider>,
+      );
+
+      let editPromise!: Promise<boolean>;
+      act(() => {
+        editPromise = dispatchAddToQueueToActivePlayer(
+          { id: "solo-2", title: "Added Track", mediaClass: "audio" },
+          "viewer-1",
+        );
+      });
+
+      const renderedVideo = document.querySelector("video");
+      expect(renderedVideo).not.toBeNull();
+      act(() => {
+        renderedVideo?.dispatchEvent(new Event("ended"));
+      });
+      expect(restart).not.toHaveBeenCalled();
+
+      await act(async () => {
+        holdWrite = false;
+        releaseWrite();
+        await editPromise;
+      });
+
+      await waitFor(() => expect(loc.pathname).toBe("/watch/solo-2"));
+      expect(loc.search).toBe("?playQueue=profile-a");
+    } finally {
+      writePlayModes(DEFAULT_PLAY_MODES);
+    }
+  });
+
+  it("preserves detail-page selected version across catalog conversion and lets explicit Play queue beat pending ended", async () => {
+    const { dispatchAddToQueueToActivePlayer, dispatchPlayNextToActivePlayer } = await import(
+      "../lib/watchQueue"
+    );
+    const server = createServerQueueHarness();
+    let holdWrite = false;
+    let releaseWrite = () => {};
+
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        server.applyMany(vars.mediaIDs as string[]);
+        return {
+          queueAddMany: { currentEntryID: server.snapshot().playQueue.currentEntryID, entries: [] },
+        };
+      }
+      if (query.startsWith("mutation QueueAddAt")) {
+        if (holdWrite) {
+          await new Promise<void>((resolve) => {
+            releaseWrite = resolve;
+          });
+        }
+        server.applyAdd(vars.mediaID as string, vars.position as number | undefined);
+        return { queueAdd: { id: vars.mediaID } };
+      }
+      return {};
+    });
+
+    // 1. Detail page selected version v-sent is kept across conversion when storage cannot save it.
+    renderAudioAt(
+      "/watch/ver-1",
+      {
+        title: "Versioned Track",
+        queue: [
+          { id: "ver-1", title: "Versioned Track", mediaClass: "audio" },
+          { id: "ver-2", title: "Track Two", mediaClass: "audio" },
+        ],
+        queueIdentity: "viewer-1",
+        tracks: { mediaID: "ver-1", versionID: "v-sent" },
+        startID: "start-v",
+      },
+      "ver-1",
+    );
+    expect(vi.mocked(usePlayer).mock.lastCall?.[4]).toBe("v-sent");
+
+    await act(async () => {
+      await dispatchPlayNextToActivePlayer(
+        { id: "ver-next", title: "Next", mediaClass: "audio" },
+        "viewer-1",
+      );
+    });
+    expect(loc.search).toBe("?playQueue=profile-a");
+    expect(vi.mocked(usePlayer).mock.lastCall?.[4]).toBe("v-sent");
+
+    // 2. Explicit "Play queue" clicked while an edit is pending is not overridden by track end.
+    cleanup();
+    server.seed(["a", "b", "c"]);
+    holdWrite = true;
+    renderAudioAt("/watch/b?playQueue=profile-a", {}, "b");
+    await waitFor(() =>
+      expect(vi.mocked(PlayerTransport).mock.lastCall?.[0]?.onPlayMusicQueue).toBeTypeOf(
+        "function",
+      ),
+    );
+
+    const renderedVideo = document.querySelector("video");
+    expect(renderedVideo).not.toBeNull();
+
+    let editPromise!: Promise<boolean>;
+    act(() => {
+      editPromise = dispatchAddToQueueToActivePlayer(
+        { id: "d", title: "D", mediaClass: "audio" },
+        "viewer-1",
+      );
+    });
+
+    act(() => {
+      vi.mocked(PlayerTransport).mock.lastCall?.[0]?.onPlayMusicQueue?.();
+      renderedVideo?.dispatchEvent(new Event("ended"));
+    });
+    expect(loc.pathname).toBe("/watch/b");
+
+    await act(async () => {
+      holdWrite = false;
+      releaseWrite();
+      await editPromise;
+    });
+
+    await waitFor(() => expect(loc.pathname).toBe("/watch/a"));
+  });
+
+  it("coordinates an Up Next pick behind pending catalog conversion so added tracks stay in the active queue", async () => {
+    const { dispatchAddToQueueToActivePlayer } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    let holdWrite = true;
+    let releaseWrite = () => {};
+
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        if (holdWrite) {
+          await new Promise<void>((resolve) => {
+            releaseWrite = resolve;
+          });
+        }
+        server.applyMany(vars.mediaIDs as string[]);
+        return {
+          queueAddMany: { currentEntryID: server.snapshot().playQueue.currentEntryID, entries: [] },
+        };
+      }
+      return {};
+    });
+
+    renderAudioAt(
+      "/watch/pick-a",
+      {
+        title: "Track A",
+        queue: [
+          { id: "pick-a", title: "Track A", mediaClass: "audio" },
+          { id: "pick-b", title: "Track B", mediaClass: "audio" },
+        ],
+        queueIdentity: "viewer-1",
+      },
+      "pick-a",
+    );
+
+    let editPromise!: Promise<boolean>;
+    act(() => {
+      editPromise = dispatchAddToQueueToActivePlayer(
+        { id: "pick-added", title: "Track Added", mediaClass: "audio" },
+        "viewer-1",
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Play Track B" }));
+    expect(loc.pathname).toBe("/watch/pick-a");
+
+    await act(async () => {
+      holdWrite = false;
+      releaseWrite();
+      await editPromise;
+    });
+
+    await waitFor(() => expect(loc.pathname).toBe("/watch/pick-b"));
+    expect(loc.search).toBe("?playQueue=profile-a");
+    expect(server.rows.map((r) => r.id)).toEqual(["pick-a", "pick-b", "pick-added"]);
   });
 });

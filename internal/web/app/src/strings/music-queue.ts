@@ -20,6 +20,8 @@ export const musicQueueStrings = {
     musicQueueSaveManagerOnly: "Saving a playlist requires a manager device.",
     musicQueueSaveMixedLibraries: "A playlist can hold tracks from one library only.",
     musicQueueSaveDuplicateTrack: "A playlist cannot contain the same track more than once.",
+    cardAddToQueue: "Add to queue",
+    cardQueuedEnd: "{title} added to the queue.",
   },
   fr: {
     musicQueueTitle: "File de lecture",
@@ -44,6 +46,8 @@ export const musicQueueStrings = {
       "Une liste de lecture ne peut contenir que les titres d’une seule bibliothèque.",
     musicQueueSaveDuplicateTrack:
       "Une liste de lecture ne peut pas contenir plusieurs fois le même titre.",
+    cardAddToQueue: "Ajouter à la file",
+    cardQueuedEnd: "{title} ajouté à la file.",
   },
   de: {
     musicQueueTitle: "Wiedergabewarteschlange",
@@ -68,6 +72,8 @@ export const musicQueueStrings = {
       "Eine Wiedergabeliste kann nur Titel aus einer einzigen Mediathek enthalten.",
     musicQueueSaveDuplicateTrack:
       "Eine Wiedergabeliste darf denselben Titel nicht mehrfach enthalten.",
+    cardAddToQueue: "Zur Warteschlange hinzufügen",
+    cardQueuedEnd: "{title} zur Warteschlange hinzugefügt.",
   },
   es: {
     musicQueueTitle: "Cola de reproducción",
@@ -92,6 +98,8 @@ export const musicQueueStrings = {
       "Una lista de reproducción solo puede incluir pistas de una misma biblioteca.",
     musicQueueSaveDuplicateTrack:
       "Una lista de reproducción no puede contener la misma pista más de una vez.",
+    cardAddToQueue: "Añadir a la cola",
+    cardQueuedEnd: "{title} añadido a la cola.",
   },
   pt: {
     musicQueueTitle: "Fila de reprodução",
@@ -112,5 +120,7 @@ export const musicQueueStrings = {
     musicQueueSaveManagerOnly: "Salvar uma playlist requer um dispositivo gerenciador.",
     musicQueueSaveMixedLibraries: "Uma playlist só pode conter faixas de uma única biblioteca.",
     musicQueueSaveDuplicateTrack: "Uma playlist não pode conter a mesma faixa mais de uma vez.",
+    cardAddToQueue: "Adicionar à fila",
+    cardQueuedEnd: "{title} adicionado à fila.",
   },
 } as const;

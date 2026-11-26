@@ -199,10 +199,11 @@ export function ImageViewerPage() {
         const gone = removedRef.current;
         state.queue = gone.size ? base.filter((item) => !gone.has(item.id)) : base;
         state.queueIdentity = navState.queueIdentity;
+        if (navState.catalogKey) state.catalogKey = navState.catalogKey;
       }
       return state;
     },
-    [navState.queue, navState.queueIdentity, identity],
+    [navState.queue, navState.queueIdentity, navState.catalogKey, identity],
   );
   const step = useCallback(
     (target: PlayQueueItem | undefined, direction: "previous" | "next") => {

@@ -19,8 +19,11 @@ interface PlayQueue {
   request: Omit<LibraryItemsRequest, "limit" | "offset">;
   epoch: AbortSignal | undefined;
   ids: string[];
+  idSet: Set<string>;
   /** The titles the listing gave, by ID: the player's heading for each item. */
   titles: Map<string, string>;
+  /** Media classes reported by the listing, by ID when known. */
+  classes: Map<string, string>;
   /** Index of the item last handed to the player. */
   cursor: number;
   /** Size of the set, and how far into it the server was read, at the last page. */
@@ -61,7 +64,9 @@ export async function startPlayQueue(
     request,
     epoch,
     ids: [],
+    idSet: new Set(),
     titles: new Map(),
+    classes: new Map(),
     cursor: 0,
     total: 0,
     fetched: 0,
@@ -108,16 +113,55 @@ async function loadMore(queue: PlayQueue): Promise<void> {
       continue;
     }
     queue.fetched = offset + page.items.length;
-    const seen = new Set(queue.ids);
-    const more = page.items.filter((item) => playable(item) && !seen.has(item.id));
+    const more = page.items.filter((item) => playable(item) && !queue.idSet.has(item.id));
     for (const item of more) {
+      queue.idSet.add(item.id);
       queue.ids.push(item.id);
       queue.titles.set(item.id, item.title || "");
+      if (item.mediaClass) queue.classes.set(item.id, item.mediaClass);
     }
     queue.done = !page.items.length || queue.fetched >= page.total;
     if (more.length || queue.done) return;
     offset = queue.fetched;
   }
+}
+
+/** Whether the active Play all queue contains `mediaID` (CORE-2845). */
+export function playQueueHolds(mediaID: string): boolean {
+  const queue = activeQueue();
+  return !!mediaID && !!queue && queue.idSet.has(mediaID);
+}
+
+/** The listed mediaClass of `mediaID` in the active Play all queue, when known (CORE-2845). */
+export function playQueueMediaClass(mediaID: string): string | undefined {
+  const queue = activeQueue();
+  return mediaID && queue ? queue.classes.get(mediaID) : undefined;
+}
+
+/**
+ * Drains every remaining page of the active Play all queue so converting to
+ * the server Play Queue includes items beyond the first 200-item page,
+ * including track 201+ (CORE-2845). Returns null when the queue is inactive
+ * or aborted before finishing.
+ */
+export async function readAllPlayQueueItems(
+  signal?: AbortSignal,
+): Promise<{ id: string; title: string; mediaClass?: string }[] | null> {
+  const queue = activeQueue();
+  if (!queue) return null;
+  while (!queue.done) {
+    if (signal?.aborted || activeQueue() !== queue) return null;
+    await loadMore(queue);
+  }
+  if (signal?.aborted || activeQueue() !== queue) return null;
+  return queue.ids.map((id) => {
+    const mediaClass = queue.classes.get(id);
+    return {
+      id,
+      title: queue.titles.get(id) ?? "",
+      ...(mediaClass ? { mediaClass } : {}),
+    };
+  });
 }
 
 /**

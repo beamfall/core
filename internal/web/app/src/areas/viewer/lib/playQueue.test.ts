@@ -5,8 +5,10 @@ import {
   leavePlayQueue,
   nextInPlayQueue,
   playQueueHandle,
+  playQueueHolds,
   playQueueTitle,
   previousInPlayQueue,
+  readAllPlayQueueItems,
   startPlayQueue,
 } from "./playQueue";
 
@@ -232,5 +234,47 @@ describe("play queue", () => {
 
     setIdentityEpochSignal(new AbortController().signal);
     expect(await nextInPlayQueue("a")).toBe("");
+  });
+
+  it("drains all remaining 200-item pages for server conversion including track 201+ (CORE-2845)", async () => {
+    const allIDs = Array.from({ length: 405 }, (_, i) => `p-${i}`);
+    fetchLibraryItems.mockImplementation(async ({ offset, limit }: LibraryItemsRequest) => {
+      const slice = allIDs.slice(offset, offset + limit);
+      return {
+        total: allIDs.length,
+        items: slice.map((id) => ({
+          id,
+          kind: "media",
+          title: `Title ${id}`,
+          mediaClass: "audio",
+        })),
+        facets: { groupings: [], decades: [], qualities: [] },
+      };
+    });
+
+    expect(await startPlayQueue(request)).toEqual({ id: "p-0", title: "Title p-0" });
+    expect(playQueueHolds("p-0")).toBe(true);
+    expect(playQueueHolds("p-199")).toBe(true);
+    expect(playQueueHolds("p-200")).toBe(false);
+
+    const all = await readAllPlayQueueItems();
+    expect(all).toHaveLength(405);
+    expect(all?.[200]).toEqual({ id: "p-200", title: "Title p-200", mediaClass: "audio" });
+    expect(all?.[404]).toEqual({ id: "p-404", title: "Title p-404", mediaClass: "audio" });
+    expect(playQueueHolds("p-404")).toBe(true);
+    expect(fetchLibraryItems).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns null from readAllPlayQueueItems when aborted or left before finishing", async () => {
+    const allIDs = Array.from({ length: 250 }, (_, i) => `p-${i}`);
+    const abort = new AbortController();
+    fetchLibraryItems.mockImplementation(async ({ offset, limit }: LibraryItemsRequest) => {
+      if (offset > 0) abort.abort();
+      const slice = allIDs.slice(offset, offset + limit);
+      return page(slice, allIDs.length);
+    });
+
+    await startPlayQueue(request);
+    expect(await readAllPlayQueueItems(abort.signal)).toBeNull();
   });
 });
