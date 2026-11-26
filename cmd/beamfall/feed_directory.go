@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"net"
 	"net/url"
 	"slices"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/beamfall/core/internal/scrape"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+	"golang.org/x/net/idna"
 )
 
 const (
@@ -93,12 +95,20 @@ func (s *feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) (
 		})
 	}
 
+	asciiHost, err := idna.Lookup.ToASCII(link.Hostname())
+	if err != nil || asciiHost == "" {
+		return nil, graph.ErrFeedSearchInvalidURL
+	}
+	if port := link.Port(); port != "" {
+		link.Host = net.JoinHostPort(asciiHost, port)
+	} else {
+		link.Host = asciiHost
+	}
+	link.Fragment = ""
+	link.RawFragment = ""
 	if err := s.engine.CheckDocumentURL(link); err != nil {
 		return nil, graph.ErrFeedSearchInvalidURL
 	}
-	link.Host = strings.ToLower(link.Host)
-	link.Fragment = ""
-	link.RawFragment = ""
 	return s.searchCached(ctx, link.String(), func(ctx context.Context) ([]graph.FeedSearchResult, error) {
 		if s.lookup != nil {
 			results, matched, err := s.lookup(ctx, link)

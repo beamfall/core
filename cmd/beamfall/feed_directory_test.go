@@ -691,3 +691,34 @@ func TestFeedDirectoryCountsRedirectAndDoesNotRetry429(t *testing.T) {
 		t.Fatalf("upstream 429 = %v, %d requests", err, requests.Load())
 	}
 }
+
+type recordingDirectoryFetcher struct {
+	*scrape.Engine
+	seenURLs []string
+}
+
+func (f *recordingDirectoryFetcher) FetchDocumentLimited(ctx context.Context, rawURL string, headers map[string]string, maxBytes int64, admit func() error) ([]byte, *url.URL, error) {
+	f.seenURLs = append(f.seenURLs, rawURL)
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	return []byte(`<!doctype html><link rel="alternate" type="application/rss+xml" href="/feed.xml">`), parsed, nil
+}
+
+func TestFeedDirectoryPreservesUnicodeIDNAHostname(t *testing.T) {
+	fetcher := &recordingDirectoryFetcher{Engine: scrape.New()}
+	searcher := newTestFeedDirectorySearcher(t, fetcher, nil, "https://directory.example.com", "", time.Now)
+
+	idnResults, err := searcher.SearchFeeds(t.Context(), "https://İxample.com/")
+	if err != nil || len(idnResults) != 1 || idnResults[0].FeedURL != "https://xn--ixample-6he.com/feed.xml" {
+		t.Fatalf("IDN search = %+v, err = %v; want punycode host xn--ixample-6he.com", idnResults, err)
+	}
+	asciiResults, err := searcher.SearchFeeds(t.Context(), "https://IXAMPLE.com/")
+	if err != nil || len(asciiResults) != 1 || asciiResults[0].FeedURL != "https://ixample.com/feed.xml" {
+		t.Fatalf("ASCII search = %+v, err = %v; want ixample.com", asciiResults, err)
+	}
+	if len(fetcher.seenURLs) != 2 || fetcher.seenURLs[0] != "https://xn--ixample-6he.com/" || fetcher.seenURLs[1] != "https://ixample.com/" {
+		t.Fatalf("fetched URLs = %v, want distinct punycode vs ascii hosts", fetcher.seenURLs)
+	}
+}
