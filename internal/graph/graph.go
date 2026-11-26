@@ -4581,6 +4581,13 @@ func scopedAPIKeyInfo(key store.ScopedAPIKey) ScopedAPIKeyInfo {
 // code, token, or path. Reveal/relock entries carry no target: they must
 // never name restricted content in their payload.
 func (h *Handler) logActivity(ctx context.Context, scope auth.Scope, action, targetType, targetID string, libraryID store.LibraryID) error {
+	if libraryID != "" && targetType != "library" && targetID != "" {
+		if encrypted, err := h.store.LibraryEncrypted(ctx, libraryID); err == nil && encrypted {
+			// Encrypted Library content IDs stay on the private plane; global
+			// activity keeps only the action and Library identifier.
+			targetID = ""
+		}
+	}
 	err := h.store.AppendActivity(ctx, store.ActivityEntry{
 		OccurredAt: time.Now().UTC(),
 		Action:     action,
@@ -6041,13 +6048,24 @@ func (h *Handler) identifyApply(ctx context.Context, scope auth.Scope, req reque
 	pluginID := trimmedVariable(req, "pluginID")
 	scraperID := trimmedVariable(req, "scraperID")
 	candidateID := trimmedVariable(req, "candidateID")
+	requestID := trimmedVariable(req, "requestId")
 	if mediaID == "" || pluginID == "" || scraperID == "" || candidateID == "" {
 		return MediaInfo{}, clientError("mediaID, pluginID, scraperID, and candidateID are required")
 	}
 	if _, err := h.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter()); err != nil {
 		return MediaInfo{}, clientError("unknown media")
 	}
-	if err := h.identify.Apply(ctx, store.MediaID(mediaID), pluginID, scraperID, candidateID); err != nil {
+	if err := h.identify.ApplyRequest(ctx, identify.IdentifyRequest{
+		RequestID:   requestID,
+		MediaID:     store.MediaID(mediaID),
+		PluginID:    pluginID,
+		ScraperID:   scraperID,
+		CandidateID: candidateID,
+		Actor:       scope.ProfileID,
+	}); err != nil {
+		if errors.Is(err, store.ErrIdentificationRequestConflict) {
+			return MediaInfo{}, clientError(err.Error())
+		}
 		return MediaInfo{}, err
 	}
 	media, err := h.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())

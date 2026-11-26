@@ -147,31 +147,26 @@ func (s *Store) UpsertSubscriptionCatalogWithInitialDownloads(ctx context.Contex
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	subscription, err := scanSubscription(s.catalogR.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, id))
+	subscription, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	var encrypted int
-	if err := s.catalogR.QueryRowContext(ctx, `SELECT encrypted FROM library WHERE id = ?`, subscription.LibraryID).Scan(&encrypted); err != nil {
-		return nil, err
-	}
-	if encrypted != 0 {
-		return nil, ErrSubscriptionCatalogUnsupported
-	}
-	created, minted, err := s.upsertSubscriptionCatalogSQL(ctx, subscription, entries, now.UTC(), selectInitial)
+	created, minted, err := s.upsertSubscriptionCatalogSQL(ctx, plane, subscription, entries, now.UTC(), selectInitial)
 	if err != nil {
 		return nil, err
 	}
-	for _, mediaID := range minted {
-		if eventErr := s.appendMediaEventLocked(ctx, MediaEventCreated, mediaID, nil, now.UTC()); eventErr != nil {
-			slog.Warn("media outbox event append failed", "kind", MediaEventCreated, "media", mediaID, "error", eventErr)
+	if !plane.encrypted {
+		for _, mediaID := range minted {
+			if eventErr := s.appendMediaEventLocked(ctx, MediaEventCreated, mediaID, nil, now.UTC()); eventErr != nil {
+				slog.Warn("media outbox event append failed", "kind", MediaEventCreated, "media", mediaID, "error", eventErr)
+			}
 		}
 	}
 	return created, nil
 }
 
-func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription Subscription, entries []FeedCatalogEntry, now time.Time, selectInitial func() []string) ([]SubscriptionEntry, []MediaID, error) {
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, plane catalogPlane, subscription Subscription, entries []FeedCatalogEntry, now time.Time, selectInitial func() []string) ([]SubscriptionEntry, []MediaID, error) {
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -358,7 +353,11 @@ func (s *Store) SubscriptionBackCatalogue(ctx context.Context, id SubscriptionID
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT guid FROM subscription_seen_entry
 		WHERE subscription_id = ? AND path = '' AND seen_at_ms = 0
 	`, id)
@@ -386,7 +385,11 @@ func (s *Store) RecordInitialSubscriptionDownloads(ctx context.Context, id Subsc
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -534,7 +537,11 @@ func (s *Store) SubscriptionEntries(ctx context.Context, id SubscriptionID) ([]S
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, subscriptionEntryColumns+`
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, subscriptionEntryColumns+`
 		WHERE se.subscription_id = ? ORDER BY se.feed_position, se.first_seen_at_ms, se.guid`, id)
 	if err != nil {
 		return nil, err
@@ -562,7 +569,14 @@ func (s *Store) SubscriptionEntryForMedia(ctx context.Context, mediaID MediaID) 
 	if err := s.guardLocked(); err != nil {
 		return SubscriptionEntry{}, Subscription{}, false, err
 	}
-	entry, err := scanSubscriptionEntryRow(s.catalogR.QueryRowContext(ctx, subscriptionEntryColumns+`
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return SubscriptionEntry{}, Subscription{}, false, nil
+	}
+	if err != nil {
+		return SubscriptionEntry{}, Subscription{}, false, err
+	}
+	entry, err := scanSubscriptionEntryRow(plane.reader.QueryRowContext(ctx, subscriptionEntryColumns+`
 		WHERE se.media_id = ? ORDER BY se.first_seen_at_ms, se.subscription_id, se.guid LIMIT 1`, mediaID).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SubscriptionEntry{}, Subscription{}, false, nil
@@ -570,7 +584,7 @@ func (s *Store) SubscriptionEntryForMedia(ctx context.Context, mediaID MediaID) 
 	if err != nil {
 		return SubscriptionEntry{}, Subscription{}, false, err
 	}
-	subscription, err := scanSubscription(s.catalogR.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, entry.SubscriptionID))
+	subscription, err := scanSubscription(plane.reader.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, entry.SubscriptionID))
 	if err != nil {
 		return SubscriptionEntry{}, Subscription{}, false, err
 	}
@@ -597,7 +611,11 @@ func (s *Store) SetSubscriptionEntryDownload(ctx context.Context, id Subscriptio
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	result, err := s.catalogW.ExecContext(ctx, `
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	result, err := plane.writer.ExecContext(ctx, `
 		UPDATE subscription_entry SET download_state = ?, download_path = ?
 		WHERE subscription_id = ? AND guid = ?
 	`, state, strings.TrimSpace(path), id, guid)
@@ -617,8 +635,12 @@ func (s *Store) SubscriptionDownloadPolicy(ctx context.Context, id SubscriptionI
 	if err := s.guardLocked(); err != nil {
 		return SubscriptionPolicy{}, err
 	}
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return SubscriptionPolicy{}, err
+	}
 	var policy SubscriptionPolicy
-	err := s.catalogR.QueryRowContext(ctx, `
+	err = plane.reader.QueryRowContext(ctx, `
 		SELECT download_policy, download_latest_n FROM subscription WHERE id = ?
 	`, id).Scan(&policy.Policy, &policy.LatestN)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -655,7 +677,11 @@ func (s *Store) SetSubscriptionDownloadPolicy(ctx context.Context, id Subscripti
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	result, err := s.catalogW.ExecContext(ctx, `
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	result, err := plane.writer.ExecContext(ctx, `
 		UPDATE subscription
 		SET download_policy = ?, download_latest_n = ?, etag = '', last_modified = '',
 		    next_poll_at_ms = CASE WHEN retired_at_ms = 0 THEN 0 ELSE next_poll_at_ms END

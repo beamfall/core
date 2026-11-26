@@ -152,4 +152,8 @@ package store
 // CORE-0706 adds 0142_artwork_action, the pending post-commit artwork actions
 // written by identification commits and drained by the artwork worker and its
 // restart replay, off the entity-query hot path.
-const schemaFreezeCatalogMigrations = 138
+// CORE-3511 adds 0143_artwork_action_retry (bounded retry/backoff on
+// media_artwork_action) and 0144_identification_revision_actor_erase (permitting
+// Profile erasure to null actor_profile_id while keeping revisions immutable),
+// both off the entity-query hot path.
+const schemaFreezeCatalogMigrations = 140

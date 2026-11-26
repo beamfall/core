@@ -54,9 +54,13 @@ func (s *Store) SetFollowNewEntryRoute(ctx context.Context, profileID ProfileID,
 		return err
 	}
 	var seenThrough int64
-	if err := s.catalogR.QueryRowContext(ctx, `
-		SELECT COALESCE(MAX(first_seen_at_ms), 0) FROM subscription_entry WHERE subscription_id = ?
-	`, subscriptionID).Scan(&seenThrough); err != nil {
+	if _, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, subscriptionID); err == nil {
+		if err := plane.reader.QueryRowContext(ctx, `
+			SELECT COALESCE(MAX(first_seen_at_ms), 0) FROM subscription_entry WHERE subscription_id = ?
+		`, subscriptionID).Scan(&seenThrough); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, ErrSubscriptionNotFound) {
 		return err
 	}
 	result, err := s.eventsW.ExecContext(ctx, `
@@ -182,7 +186,7 @@ const subscriptionEntryTimeSQL = `CASE WHEN published_at_ms <> 0 THEN published_
 const newEntryFollowChunk = 400
 
 // newEntryMediaSQL lists the Media of entries newer than each follow, newest
-// first. Subscriptions are catalogued in the plain catalog only.
+// first, spanning the shared catalog and every unsealed Encrypted Library plane.
 func (s *Store) newEntryMediaSQL(ctx context.Context, follows []followRow) ([]MediaID, error) {
 	type entry struct {
 		id       MediaID
@@ -190,32 +194,34 @@ func (s *Store) newEntryMediaSQL(ctx context.Context, follows []followRow) ([]Me
 		position int64
 	}
 	var entries []entry
-	for chunk := range slices.Chunk(follows, newEntryFollowChunk) {
-		args := make([]any, 0, 2*len(chunk))
-		for _, follow := range chunk {
-			args = append(args, follow.subID, follow.followedMS)
-		}
-		values := strings.TrimSuffix(strings.Repeat("(?, ?),", len(chunk)), ",")
-		// #nosec G202 -- only generated placeholders and the closed entry-time expression are interpolated; every value is bound.
-		rows, err := s.catalogR.QueryContext(ctx, `
-			WITH followed(subscription_id, followed_at_ms) AS (VALUES `+values+`)
-			SELECT e.media_id, `+subscriptionEntryTimeSQL+`, e.feed_position
-			FROM subscription_entry e JOIN followed f ON f.subscription_id = e.subscription_id
-			WHERE `+subscriptionEntryTimeSQL+` > f.followed_at_ms
-		`, args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var e entry
-			if err := rows.Scan(&e.id, &e.at, &e.position); err != nil {
-				_ = rows.Close()
+	for _, plane := range s.allCatalogPlanesLocked() {
+		for chunk := range slices.Chunk(follows, newEntryFollowChunk) {
+			args := make([]any, 0, 2*len(chunk))
+			for _, follow := range chunk {
+				args = append(args, follow.subID, follow.followedMS)
+			}
+			values := strings.TrimSuffix(strings.Repeat("(?, ?),", len(chunk)), ",")
+			// #nosec G202 -- only generated placeholders and the closed entry-time expression are interpolated; every value is bound.
+			rows, err := plane.reader.QueryContext(ctx, `
+				WITH followed(subscription_id, followed_at_ms) AS (VALUES `+values+`)
+				SELECT e.media_id, `+subscriptionEntryTimeSQL+`, e.feed_position
+				FROM subscription_entry e JOIN followed f ON f.subscription_id = e.subscription_id
+				WHERE `+subscriptionEntryTimeSQL+` > f.followed_at_ms
+			`, args...)
+			if err != nil {
 				return nil, err
 			}
-			entries = append(entries, e)
-		}
-		if err := rows.Close(); err != nil {
-			return nil, err
+			for rows.Next() {
+				var e entry
+				if err := rows.Scan(&e.id, &e.at, &e.position); err != nil {
+					_ = rows.Close()
+					return nil, err
+				}
+				entries = append(entries, e)
+			}
+			if err := rows.Close(); err != nil {
+				return nil, err
+			}
 		}
 	}
 	slices.SortFunc(entries, func(a, b entry) int {
@@ -360,8 +366,15 @@ func (s *Store) unroutedEntries(ctx context.Context, follower followRow) ([]Medi
 	if err := s.guardLocked(); err != nil {
 		return nil, 0, err
 	}
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, follower.subID)
+	if errors.Is(err, ErrSubscriptionNotFound) || errors.Is(err, ErrEncryptedLibrarySubscription) {
+		return nil, follower.routedMS, nil
+	}
+	if err != nil {
+		return nil, 0, err
+	}
 	// #nosec G202 -- only the closed entry-time expression is interpolated; every value is bound.
-	rows, err := s.catalogR.QueryContext(ctx, `
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT media_id, first_seen_at_ms FROM subscription_entry
 		WHERE subscription_id = ? AND first_seen_at_ms > ? AND `+subscriptionEntryTimeSQL+` > ?
 		ORDER BY `+subscriptionEntryTimeSQL+`, feed_position DESC, media_id

@@ -502,6 +502,7 @@ var fieldArguments = map[string][]NestedArgument{
 		{Name: "mediaID", Kind: "string"},
 		{Name: "pluginID", Kind: "string", Optional: true},
 		{Name: "recordID", Kind: "string", Optional: true},
+		{Name: "requestId", Kind: "string", Optional: true},
 		{Name: "scraperID", Kind: "string", Optional: true},
 		{Name: "sequence", Kind: "string", Optional: true},
 	},

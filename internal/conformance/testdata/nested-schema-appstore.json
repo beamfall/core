@@ -9110,6 +9110,11 @@
         "optional": true
       },
       {
+        "name": "requestId",
+        "kind": "string",
+        "optional": true
+      },
+      {
         "name": "scraperID",
         "kind": "string",
         "optional": true

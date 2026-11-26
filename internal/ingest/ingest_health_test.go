@@ -1,19 +1,26 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -159,40 +166,318 @@ func TestLatestLimitsFirstCatalogueAfterPreviousPoll(t *testing.T) {
 	}
 }
 
-func TestEncryptedFeedPollIsRefusedBeforeFetch(t *testing.T) {
-	// CORE-0706: an Encrypted Library's feed GUIDs, paths and title would land
-	// in the shared catalog, so its poll is refused before the feed is fetched
-	// or any enclosure is downloaded, under every download policy.
+type ingestEncryptedDBCipher struct{}
+
+func (ingestEncryptedDBCipher) UnsealDBFile(_ context.Context, _ store.LibraryID, ciphertextPath, workingPath string) error {
+	src, err := os.Open(ciphertextPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	if err := os.MkdirAll(filepath.Dir(workingPath), 0o700); err != nil {
+		return err
+	}
+	dst, err := os.OpenFile(workingPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(dst, src)
+	closeErr := dst.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
+}
+
+func (ingestEncryptedDBCipher) SealDBFile(_ context.Context, _ store.LibraryID, workingPath, ciphertextPath string) error {
+	src, err := os.Open(workingPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	if err := os.MkdirAll(filepath.Dir(ciphertextPath), 0o700); err != nil {
+		return err
+	}
+	dst, err := os.OpenFile(ciphertextPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(dst, src)
+	closeErr := dst.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Remove(workingPath)
+}
+
+func (ingestEncryptedDBCipher) EncryptObject(libraryID store.LibraryID, src io.Reader, ciphertextPath, objectClass, immutableObjectID string) error {
+	if objectClass != "media-bytes" {
+		return fmt.Errorf("unexpected object class %q", objectClass)
+	}
+	plain, err := io.ReadAll(src)
+	if err != nil {
+		return err
+	}
+	cipher := make([]byte, len(plain))
+	for i, b := range plain {
+		cipher[i] = b ^ 0xA5
+	}
+	header := fmt.Sprintf("ENC|%s|%s|", libraryID, immutableObjectID)
+	return os.WriteFile(ciphertextPath, append([]byte(header), cipher...), 0o600)
+}
+
+func TestEncryptedFeedPollAndDownloadsRouteWhenUnsealedAndRefuseWhenSealed(t *testing.T) {
+	// CORE-0706 / CORE-3511: an unsealed Encrypted Library's feed poll and
+	// enclosure downloads encrypt directly at rest on the owning plane (never
+	// plaintext on disk and never leaking roots into events-DB scan jobs);
+	// missing encryptor or sealed state fails closed before download/fetch.
 	for _, policy := range []store.DownloadPolicy{
 		store.DownloadPolicyStreamOnly, store.DownloadPolicyNewOnly,
 		store.DownloadPolicyLatest, store.DownloadPolicyEverything,
 	} {
 		t.Run(string(policy), func(t *testing.T) {
-			fs := newFeedServer(t)
-			st, sub, poller := healthFixture(t, fs.server.URL+"/feed.xml")
 			ctx := t.Context()
+			fs := newFeedServer(t)
+			st, err := store.Open(ctx, storetest.MigratedDataDir(t), store.Options{
+				SeedDevelopmentData:               true,
+				EnableEncryptedLibraryDBLifecycle: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = st.Close() }()
+			lib, err := st.CreateLibrary(ctx, "Encrypted Feeds", false, "", "profile-default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetLibraryBacking(ctx, lib.ID, true, true); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.UnsealEncryptedLibraryDB(ctx, lib.ID, ingestEncryptedDBCipher{}); err != nil {
+				t.Fatal(err)
+			}
+			subRoot := t.TempDir()
+			sub, err := st.AddSubscription(ctx, store.Subscription{
+				LibraryID: lib.ID,
+				FeedURL:   fs.server.URL + "/feed.xml",
+				Root:      subRoot,
+			}, time.Now().UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
 			if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, store.SubscriptionPolicy{Policy: policy, LatestN: 1}); err != nil {
 				t.Fatal(err)
 			}
-			if err := st.SetLibraryBacking(ctx, sub.LibraryID, true, true); err != nil {
+			poller := NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))
+			poller.jitter = func() float64 { return 0.5 }
+			poller.SetEncryptedIngest(ingestEncryptedDBCipher{})
+			fs.enclosures["one.mp3"] = []byte("one.mp3")
+			fs.enclosures["two.mp3"] = []byte("two.mp3")
+			fs.setFeed(fs.item("g1", "One", "one.mp3"))
+
+			wantCount := 1
+			if policy == store.DownloadPolicyStreamOnly || policy == store.DownloadPolicyNewOnly {
+				wantCount = 0
+			}
+			if count, err := poller.pollSubscription(ctx, sub); err != nil || count != wantCount {
+				t.Fatalf("unsealed encrypted poll (%s) = %d, %v; want %d, nil", policy, count, err, wantCount)
+			}
+			entries, err := st.SubscriptionEntries(ctx, sub.ID)
+			if err != nil || len(entries) != 1 || entries[0].GUID != "g1" {
+				t.Fatalf("entries after first poll = %+v, %v", entries, err)
+			}
+			checkDownloadedCiphertext := func(guid string, plain []byte) {
+				t.Helper()
+				seenEntries, err := st.SubscriptionEntries(ctx, sub.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var matched store.SubscriptionEntry
+				for _, e := range seenEntries {
+					if e.GUID == guid {
+						matched = e
+					}
+				}
+				if matched.DownloadState != store.EntryDownloadDownloaded || matched.MediaID == "" || matched.DownloadPath == "" {
+					t.Fatalf("entry %q not imported cleanly: %+v", guid, matched)
+				}
+				onDisk, err := os.ReadFile(matched.DownloadPath)
+				if err != nil {
+					t.Fatalf("ReadFile(%s): %v", matched.DownloadPath, err)
+				}
+				if bytes.Contains(onDisk, plain) || !bytes.HasPrefix(onDisk, []byte("ENC|"+string(lib.ID)+"|sha256:")) {
+					t.Fatalf("enclosure on disk was not encrypted ciphertext: %q", onDisk)
+				}
+				sum := sha256.Sum256(plain)
+				wantFP := "sha256:" + hex.EncodeToString(sum[:])
+				files, err := st.MediaFilesForMedia(ctx, matched.MediaID, store.LibraryFilter{Revealed: true, AllLibraries: true})
+				if err != nil || len(files) != 1 || files[0].ContentFingerprint != wantFP {
+					t.Fatalf("imported files = %+v, %v; want fingerprint %s", files, err, wantFP)
+				}
+			}
+			if wantCount == 1 {
+				checkDownloadedCiphertext("g1", fs.enclosures["one.mp3"])
+			}
+			if policy == store.DownloadPolicyNewOnly {
+				fs.setFeed(fs.item("g2", "Two", "two.mp3") + fs.item("g1", "One", "one.mp3"))
+				if count, err := poller.pollSubscription(ctx, reloadSubscription(t, st, sub.ID)); err != nil || count != 1 {
+					t.Fatalf("second new-only encrypted poll = %d, %v; want 1, nil", count, err)
+				}
+				if fs.hits("two.mp3") != 1 {
+					t.Fatalf("two.mp3 hits = %d, want 1", fs.hits("two.mp3"))
+				}
+				checkDownloadedCiphertext("g2", fs.enclosures["two.mp3"])
+			}
+			queued, err := st.ListJobs(ctx, store.JobStatusQueued)
+			if err != nil {
 				t.Fatal(err)
 			}
-			fs.enclosures["one.mp3"] = []byte("one.mp3")
-			fs.setFeed(fs.item("g1", "One", "one.mp3"))
-			if count, err := poller.pollSubscription(ctx, sub); !errors.Is(err, store.ErrEncryptedLibrarySubscription) || count != 0 {
-				t.Fatalf("encrypted poll = %d, %v; want 0, ErrEncryptedLibrarySubscription", count, err)
+			for _, j := range queued {
+				if j.Kind == scan.JobKind {
+					t.Fatalf("encrypted subscription enqueued shared scan job %+v", j)
+				}
+			}
+
+			// Sealing drops access and stops subsequent polls before any network fetch.
+			fs.mu.Lock()
+			hitsBeforeSeal := fs.feedHits
+			fs.mu.Unlock()
+			if err := st.SealEncryptedLibraryDB(ctx, lib.ID, ingestEncryptedDBCipher{}); err != nil {
+				t.Fatal(err)
+			}
+			fs.setFeed(fs.item("g3", "Three", "two.mp3"))
+			if count, err := poller.pollSubscription(ctx, sub); err == nil || count != 0 {
+				t.Fatalf("sealed encrypted poll = %d, %v; want 0, error", count, err)
 			}
 			fs.mu.Lock()
-			feedHits := fs.feedHits
+			hitsAfterSeal := fs.feedHits
 			fs.mu.Unlock()
-			if feedHits != 0 || fs.hits("one.mp3") != 0 {
-				t.Fatalf("feed hits = %d, enclosure hits = %d; want no network", feedHits, fs.hits("one.mp3"))
-			}
-			if seen, err := st.SubscriptionSeenGUIDs(ctx, sub.ID); err != nil || len(seen) != 0 {
-				t.Fatalf("seen GUIDs = %v, %v; want none recorded", seen, err)
+			if hitsAfterSeal != hitsBeforeSeal {
+				t.Fatalf("sealed poll hit feed server (%d -> %d)", hitsBeforeSeal, hitsAfterSeal)
 			}
 		})
 	}
+
+	t.Run("missing-encryptor-refuses", func(t *testing.T) {
+		ctx := t.Context()
+		fs := newFeedServer(t)
+		st, err := store.Open(ctx, storetest.MigratedDataDir(t), store.Options{
+			SeedDevelopmentData:               true,
+			EnableEncryptedLibraryDBLifecycle: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = st.Close() }()
+		lib, err := st.CreateLibrary(ctx, "Encrypted Missing Ingestor", false, "", "profile-default")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetLibraryBacking(ctx, lib.ID, true, true); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UnsealEncryptedLibraryDB(ctx, lib.ID, ingestEncryptedDBCipher{}); err != nil {
+			t.Fatal(err)
+		}
+		subRoot := t.TempDir()
+		sub, err := st.AddSubscription(ctx, store.Subscription{
+			LibraryID: lib.ID,
+			FeedURL:   fs.server.URL + "/feed.xml",
+			Root:      subRoot,
+		}, time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, store.SubscriptionPolicy{Policy: store.DownloadPolicyEverything}); err != nil {
+			t.Fatal(err)
+		}
+		fs.enclosures["one.mp3"] = []byte("one.mp3")
+		fs.setFeed(fs.item("g1", "One", "one.mp3"))
+
+		unwired := NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))
+		unwired.jitter = func() float64 { return 0.5 }
+		if _, err := unwired.pollSubscription(ctx, sub); err == nil {
+			t.Fatal("encrypted download without encryptor succeeded unexpectedly")
+		}
+		if fs.hits("one.mp3") != 0 {
+			t.Fatalf("missing encryptor fetched enclosure (%d hits)", fs.hits("one.mp3"))
+		}
+		if entries, err := os.ReadDir(subRoot); err != nil || len(entries) != 0 {
+			t.Fatalf("subRoot entries after refused download = %v, %v; want empty", entries, err)
+		}
+	})
+
+	t.Run("import-failure-stays-retryable", func(t *testing.T) {
+		ctx := t.Context()
+		fs := newFeedServer(t)
+		st, err := store.Open(ctx, storetest.MigratedDataDir(t), store.Options{
+			SeedDevelopmentData:               true,
+			EnableEncryptedLibraryDBLifecycle: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = st.Close() }()
+		lib, err := st.CreateLibrary(ctx, "Encrypted Retryable", false, "", "profile-default")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetLibraryBacking(ctx, lib.ID, true, true); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UnsealEncryptedLibraryDB(ctx, lib.ID, ingestEncryptedDBCipher{}); err != nil {
+			t.Fatal(err)
+		}
+		subRoot := t.TempDir()
+		sub, err := st.AddSubscription(ctx, store.Subscription{
+			LibraryID: lib.ID,
+			FeedURL:   fs.server.URL + "/feed.xml",
+			Root:      subRoot,
+		}, time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, store.SubscriptionPolicy{Policy: store.DownloadPolicyEverything}); err != nil {
+			t.Fatal(err)
+		}
+		fs.enclosures["one.mp3"] = []byte("one.mp3")
+		fs.setFeed(fs.item("g1", "One", "one.mp3"))
+
+		poller := NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))
+		poller.jitter = func() float64 { return 0.5 }
+		poller.SetEncryptedIngest(ingestEncryptedDBCipher{})
+		poller.fault = func(point string) error {
+			if point == "encrypted-before-import" {
+				return errors.New("injected import fault")
+			}
+			return nil
+		}
+		if count, err := poller.pollSubscription(ctx, sub); err == nil || count != 0 {
+			t.Fatalf("first poll with import fault = %d, %v; want 0, error", count, err)
+		}
+		if entries, err := os.ReadDir(subRoot); err != nil || len(entries) != 0 {
+			t.Fatalf("subRoot entries after failed import = %v, %v; want empty", entries, err)
+		}
+		entries, err := st.SubscriptionEntries(ctx, sub.ID)
+		if err != nil || len(entries) != 1 || entries[0].DownloadState != store.EntryDownloadFailed {
+			t.Fatalf("entry after failed import = %+v, %v; want EntryDownloadFailed", entries, err)
+		}
+
+		poller.fault = nil
+		if count, err := poller.pollSubscription(ctx, reloadSubscription(t, st, sub.ID)); err != nil || count != 1 {
+			t.Fatalf("retry poll after clearing fault = %d, %v; want 1, nil", count, err)
+		}
+		entries, err = st.SubscriptionEntries(ctx, sub.ID)
+		if err != nil || len(entries) != 1 || entries[0].DownloadState != store.EntryDownloadDownloaded {
+			t.Fatalf("entry after retry poll = %+v, %v; want EntryDownloadDownloaded", entries, err)
+		}
+	})
 }
 
 func TestClassifyFeedError(t *testing.T) {

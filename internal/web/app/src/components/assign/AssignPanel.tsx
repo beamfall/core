@@ -164,6 +164,7 @@ export function AssignPanel({
   const searched = useRef(false);
   const selection = useRef(0);
   const childRequest = useRef(0);
+  const attemptRequestIDs = useRef<Map<string, string>>(new Map());
   const live = useRef(true);
   const preview = approval?.rows;
 
@@ -195,6 +196,7 @@ export function AssignPanel({
 
   const resetPreview = () => {
     selection.current++;
+    attemptRequestIDs.current.clear();
     setApproval(null);
     setConfirmed(false);
     setResults([]);
@@ -422,12 +424,13 @@ export function AssignPanel({
     }
   };
 
+  const hasFailedResult = results.some((entry) => !!entry.error);
   const canApply =
     !!selectedID &&
     !disabled &&
     (!!unmatched ||
       (!!preview &&
-        results.length === 0 &&
+        (results.length === 0 || hasFailedResult) &&
         preview.every((row) => Array.isArray(row[diffKey(row)])) &&
         !ordinalConflict &&
         !duplicatePairing &&
@@ -440,14 +443,29 @@ export function AssignPanel({
     const identityEnded = () => epoch?.aborted || epoch !== getIdentityEpochSignal();
     onWriteChange?.(true);
     setActivity(true);
+    const succeeded = new Set(results.filter((entry) => !entry.error).map((entry) => entry.mediaID));
     const next: Result[] = [];
     const writes = unmatched ? items.map(({ mediaID }) => ({ mediaID })) : (preview ?? []);
     for (const [index, { mediaID }] of writes.entries()) {
       if (identityEnded()) break;
+      if (succeeded.has(mediaID)) {
+        next.push({ mediaID });
+        setResults([...next]);
+        continue;
+      }
       setProgress(t("unmatchedMatching", { done: index + 1, total: writes.length }));
       const row = unmatched ? undefined : preview?.[index];
+      let requestId = attemptRequestIDs.current.get(mediaID);
+      if (!requestId) {
+        requestId =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `fix-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        attemptRequestIDs.current.set(mediaID, requestId);
+      }
       try {
-        await fixMatch({ mediaID, ...candidate, ...ordinalVars(row) }, epoch);
+        await fixMatch({ mediaID, ...candidate, ...ordinalVars(row), requestId }, epoch);
+        attemptRequestIDs.current.delete(mediaID);
         next.push({ mediaID });
         // Invalidate cached viewer documents as each write is confirmed, whether
         // or not the panel is still mounted (Back during a write unmounts it).
@@ -479,6 +497,7 @@ export function AssignPanel({
     if (!approval) return;
     const { candidate, epoch } = approval;
     if (epoch?.aborted || epoch !== getIdentityEpochSignal()) return;
+    attemptRequestIDs.current.delete(row.mediaID);
     const asked = selection.current;
     const clearLocks = checked
       ? [...row.clearLocks, field]

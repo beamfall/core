@@ -375,6 +375,15 @@ describe("RecordInbox", () => {
       recordID: "urec-1",
       candidateID: "cand-9",
     });
+
+    await user.click(screen.getByRole("radio", { name: /This file/ }));
+    await user.click(screen.getByRole("button", { name: "Suppress" }));
+    expect(suppressUnmatched).toHaveBeenLastCalledWith({
+      scope: "file",
+      recordID: "urec-1",
+      fingerprint: "urec-1",
+      sourceHandle: "/media/Family_Reel_1998.mp4",
+    });
   });
 
   // Each active suppression carries its OWN reset, and that reset addresses only

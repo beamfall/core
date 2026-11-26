@@ -3211,7 +3211,7 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	// entry's file-less Media instead of minting a new one, keeping the
 	// feed's title (CORE-2953). The catalogue lives on the catalog plane only.
 	boundEntry := false
-	if mediaID == "" && !plane.encrypted {
+	if mediaID == "" {
 		mediaID, err = subscriptionEntryMediaForPathTx(ctx, tx, imported.LibraryID, imported.Path)
 		if err != nil {
 			return Media{}, MediaFile{}, false, err
@@ -3759,19 +3759,26 @@ func (s *Store) addMediaFileVersionSQL(ctx context.Context, file MediaFile, stre
 // updateMediaMetadataSQL applies the non-nil MediaMetadata fields. The title
 // FTS index stays current through the 0006 UPDATE OF title trigger; summary
 // and year are deliberately outside FTS (0011).
-func (s *Store) updateMediaMetadataSQL(ctx context.Context, id MediaID, metadata MediaMetadata) error {
-	if metadata.Source == MutationSourceAI {
-		return s.updateAIMediaMetadataSQL(ctx, id, metadata)
+func (s *Store) updateMediaMetadataSQL(ctx context.Context, id MediaID, metadata MediaMetadata) (bool, error) {
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return false, errors.New("media not found")
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return false, err
+	}
+	if metadata.Source == MutationSourceAI {
+		return plane.encrypted, s.updateAIMediaMetadataSQL(ctx, plane, id, metadata)
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
 	}
 	defer tx.Rollback()
 	if err := updateMediaMetadataTx(ctx, tx, id, metadata); err != nil {
-		return err
+		return false, err
 	}
-	return tx.Commit()
+	return plane.encrypted, tx.Commit()
 }
 
 // updateMediaMetadataTx applies the non-nil MediaMetadata fields at
@@ -3864,8 +3871,8 @@ func derefInt(p *int) any {
 	return *p
 }
 
-func (s *Store) updateAIMediaMetadataSQL(ctx context.Context, id MediaID, metadata MediaMetadata) error {
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+func (s *Store) updateAIMediaMetadataSQL(ctx context.Context, plane catalogPlane, id MediaID, metadata MediaMetadata) error {
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}

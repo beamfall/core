@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -107,7 +109,8 @@ func (s *Store) AddSubscription(ctx context.Context, subscription Subscription, 
 	if err := s.guardLocked(); err != nil {
 		return Subscription{}, err
 	}
-	if err := s.subscriptionLibraryLocked(ctx, subscription.LibraryID); err != nil {
+	plane, err := s.subscriptionPlaneForLibraryLocked(ctx, subscription.LibraryID)
+	if err != nil {
 		return Subscription{}, err
 	}
 	if subscription.Root == "" {
@@ -135,7 +138,7 @@ func (s *Store) AddSubscription(ctx context.Context, subscription Subscription, 
 	if err := validateRetention(subscription.RetentionKind, subscription.RetentionN); err != nil {
 		return Subscription{}, err
 	}
-	if _, err := s.catalogW.ExecContext(ctx, `
+	if _, err := plane.writer.ExecContext(ctx, `
 		INSERT INTO subscription(id, library_id, feed_url, auth_ref, root, title, added_at_ms, retention_kind, retention_n)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, subscription.ID, subscription.LibraryID, subscription.FeedURL, subscription.AuthRef,
@@ -168,10 +171,11 @@ func (s *Store) GetOrCreateSubscription(ctx context.Context, subscription Subscr
 	if err := s.guardLocked(); err != nil {
 		return Subscription{}, false, err
 	}
-	if err := s.subscriptionLibraryLocked(ctx, subscription.LibraryID); err != nil {
+	plane, err := s.subscriptionPlaneForLibraryLocked(ctx, subscription.LibraryID)
+	if err != nil {
 		return Subscription{}, false, err
 	}
-	existing, err := scanSubscription(s.catalogR.QueryRowContext(ctx, subscriptionColumns+` WHERE library_id = ? AND feed_url = ?`, subscription.LibraryID, subscription.FeedURL))
+	existing, err := scanSubscription(plane.reader.QueryRowContext(ctx, subscriptionColumns+` WHERE library_id = ? AND feed_url = ?`, subscription.LibraryID, subscription.FeedURL))
 	if err == nil {
 		return existing, false, nil
 	}
@@ -203,13 +207,13 @@ func (s *Store) GetOrCreateSubscription(ctx context.Context, subscription Subscr
 	if err := validateRetention(subscription.RetentionKind, subscription.RetentionN); err != nil {
 		return Subscription{}, false, err
 	}
-	if _, err := s.catalogW.ExecContext(ctx, `
+	if _, err := plane.writer.ExecContext(ctx, `
 		INSERT INTO subscription(id, library_id, feed_url, auth_ref, root, title, added_at_ms, retention_kind, retention_n)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, subscription.ID, subscription.LibraryID, subscription.FeedURL, subscription.AuthRef,
 		subscription.Root, subscription.Title, subscription.AddedAt.UnixMilli(), subscription.RetentionKind, nullableRetentionN(subscription.RetentionN)); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
-			existing, readErr := scanSubscription(s.catalogR.QueryRowContext(ctx, subscriptionColumns+` WHERE library_id = ? AND feed_url = ?`, subscription.LibraryID, subscription.FeedURL))
+			existing, readErr := scanSubscription(plane.reader.QueryRowContext(ctx, subscriptionColumns+` WHERE library_id = ? AND feed_url = ?`, subscription.LibraryID, subscription.FeedURL))
 			if readErr == nil {
 				return existing, false, nil
 			}
@@ -220,54 +224,62 @@ func (s *Store) GetOrCreateSubscription(ctx context.Context, subscription Subscr
 	return subscription, true, nil
 }
 
-// subscriptionLibraryLocked admits a new Subscription only into an existing
-// plaintext Library; see ErrEncryptedLibrarySubscription.
-func (s *Store) subscriptionLibraryLocked(ctx context.Context, libraryID LibraryID) error {
+// subscriptionPlaneForLibraryLocked resolves the owning plane for a new
+// Subscription. An unknown Library yields a validation error; a sealed Encrypted
+// Library refuses with ErrEncryptedLibraryDBDisabled rather than parking rows
+// in the shared catalog.
+func (s *Store) subscriptionPlaneForLibraryLocked(ctx context.Context, libraryID LibraryID) (catalogPlane, error) {
 	var encrypted int
 	err := s.catalogR.QueryRowContext(ctx, `SELECT encrypted FROM library WHERE id = ?`, libraryID).Scan(&encrypted)
 	if errors.Is(err, sql.ErrNoRows) {
-		return ValidationError("library not found")
+		return catalogPlane{}, ValidationError("library not found")
 	}
 	if err != nil {
-		return err
+		return catalogPlane{}, err
 	}
-	if encrypted != 0 {
-		return ErrEncryptedLibrarySubscription
-	}
-	return nil
+	return s.catalogPlaneForLibraryLocked(ctx, libraryID)
 }
 
-// SubscriptionPrivacyCheck reports ErrEncryptedLibrarySubscription when the
-// Subscription belongs to an Encrypted Library, so the poller can stop before
-// fetching the feed or downloading an enclosure it could not record.
+// catalogPlaneForSubscriptionLocked locates a Subscription on its owning plane
+// (shared catalog or an unsealed Encrypted Library plane). A sealed plane's
+// Subscription is unreachable (ErrSubscriptionNotFound), and any legacy
+// encrypted row stranded in catalog.db before unseal is refused rather than
+// mutated or exposed in plaintext.
+func (s *Store) catalogPlaneForSubscriptionLocked(ctx context.Context, id SubscriptionID) (Subscription, catalogPlane, error) {
+	for _, plane := range s.allCatalogPlanesLocked() {
+		sub, err := scanSubscription(plane.reader.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, id))
+		if errors.Is(err, ErrSubscriptionNotFound) {
+			continue
+		}
+		if err != nil {
+			return Subscription{}, catalogPlane{}, err
+		}
+		if !plane.encrypted {
+			var encrypted int
+			err := s.catalogR.QueryRowContext(ctx, `SELECT encrypted FROM library WHERE id = ?`, sub.LibraryID).Scan(&encrypted)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return Subscription{}, catalogPlane{}, err
+			}
+			if encrypted != 0 {
+				return Subscription{}, catalogPlane{}, ErrEncryptedLibrarySubscription
+			}
+		}
+		return sub, plane, nil
+	}
+	return Subscription{}, catalogPlane{}, ErrSubscriptionNotFound
+}
+
+// SubscriptionPrivacyCheck fails closed if the Subscription is stranded in the
+// shared catalog for an Encrypted Library or sits on a sealed Encrypted
+// Library plane.
 func (s *Store) SubscriptionPrivacyCheck(ctx context.Context, id SubscriptionID) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	return s.refuseEncryptedSubscriptionLocked(ctx, id)
-}
-
-// refuseEncryptedSubscriptionLocked refuses an entry or title write for a
-// Subscription that an Encrypted Library left in the shared catalog before
-// this refusal existed, so no new GUID, path or title of it lands there. An
-// unknown Subscription passes through to the caller's own not-found handling.
-func (s *Store) refuseEncryptedSubscriptionLocked(ctx context.Context, id SubscriptionID) error {
-	var encrypted int
-	err := s.catalogR.QueryRowContext(ctx, `
-		SELECT l.encrypted FROM subscription sub JOIN library l ON l.id = sub.library_id WHERE sub.id = ?
-	`, id).Scan(&encrypted)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if encrypted != 0 {
-		return ErrEncryptedLibrarySubscription
-	}
-	return nil
+	_, _, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	return err
 }
 
 func normalizeSubscriptionFeedURL(raw string) (string, error) {
@@ -290,7 +302,11 @@ func (s *Store) SetSubscriptionRetention(ctx context.Context, id SubscriptionID,
 	if err := s.guardLocked(); err != nil {
 		return Subscription{}, err
 	}
-	result, err := s.catalogW.ExecContext(ctx, `
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return Subscription{}, err
+	}
+	result, err := plane.writer.ExecContext(ctx, `
 		UPDATE subscription SET retention_kind = ?, retention_n = ? WHERE id = ?
 	`, kind, nullableRetentionN(n), id)
 	if err != nil {
@@ -303,7 +319,7 @@ func (s *Store) SetSubscriptionRetention(ctx context.Context, id SubscriptionID,
 	if affected == 0 {
 		return Subscription{}, ErrSubscriptionNotFound
 	}
-	return scanSubscription(s.catalogR.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, id))
+	return scanSubscription(plane.reader.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, id))
 }
 
 // SetSubscriptionAuthRef records the secure-store KEY for a private feed's
@@ -321,7 +337,11 @@ func (s *Store) SetSubscriptionAuthRef(ctx context.Context, id SubscriptionID, r
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	result, err := s.catalogW.ExecContext(ctx, `UPDATE subscription SET auth_ref = ? WHERE id = ?`, ref, id)
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	result, err := plane.writer.ExecContext(ctx, `UPDATE subscription SET auth_ref = ? WHERE id = ?`, ref, id)
 	if err != nil {
 		return err
 	}
@@ -345,8 +365,8 @@ func (s *Store) Subscription(ctx context.Context, id SubscriptionID) (Subscripti
 	if err := s.guardLocked(); err != nil {
 		return Subscription{}, err
 	}
-	row := s.catalogR.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, id)
-	return scanSubscription(row)
+	sub, _, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	return sub, err
 }
 
 // Subscriptions returns the Library's Subscriptions ordered by added time.
@@ -359,19 +379,39 @@ func (s *Store) Subscriptions(ctx context.Context, libraryID LibraryID) ([]Subsc
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	return s.querySubscriptions(ctx, subscriptionColumns+` WHERE library_id = ? ORDER BY added_at_ms, id`, libraryID)
+	plane, err := s.subscriptionPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	return querySubscriptionsFrom(ctx, plane.reader, subscriptionColumns+` WHERE library_id = ? ORDER BY added_at_ms, id`, libraryID)
 }
 
-// AllSubscriptions returns every Subscription ordered by ID. Server-internal
-// (the poll job): client reads go through Subscriptions with the caller's
-// Library visibility already checked.
+// AllSubscriptions returns every readable Subscription ordered by ID (shared
+// catalog plus unsealed Encrypted Library planes). Server-internal (the poll
+// job): client reads go through Subscriptions with the caller's Library
+// visibility already checked.
 func (s *Store) AllSubscriptions(ctx context.Context) ([]Subscription, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	return s.querySubscriptions(ctx, subscriptionColumns+` ORDER BY id`)
+	out := []Subscription{}
+	for _, plane := range s.allCatalogPlanesLocked() {
+		query := subscriptionColumns + ` ORDER BY id`
+		if !plane.encrypted {
+			query = subscriptionColumns + ` WHERE library_id NOT IN (SELECT id FROM library WHERE encrypted <> 0) ORDER BY id`
+		}
+		subs, err := querySubscriptionsFrom(ctx, plane.reader, query)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, subs...)
+	}
+	slices.SortFunc(out, func(a, b Subscription) int {
+		return cmp.Compare(a.ID, b.ID)
+	})
+	return out, nil
 }
 
 // RemoveSubscription deletes a Subscription (and its seen-entry bookkeeping,
@@ -386,11 +426,30 @@ func (s *Store) RemoveSubscription(ctx context.Context, id SubscriptionID) (Subs
 	if err := s.guardLocked(); err != nil {
 		return Subscription{}, err
 	}
-	removed, err := scanSubscription(s.catalogR.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, id))
+	removed, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
 	if err != nil {
 		return Subscription{}, err
 	}
-	if _, err := s.catalogW.ExecContext(ctx, `DELETE FROM subscription WHERE id = ?`, id); err != nil {
+	tx, err := plane.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return Subscription{}, err
+	}
+	defer tx.Rollback()
+	// Encrypted-library planes mirror subscription tables without catalog's ON
+	// DELETE CASCADE, so delete child receipts/entries/collisions alongside the
+	// Subscription row on every plane.
+	for _, stmt := range []string{
+		`DELETE FROM item_state_import WHERE subscription_id = ?`,
+		`DELETE FROM subscription_entry_collision WHERE subscription_id = ?`,
+		`DELETE FROM subscription_entry WHERE subscription_id = ?`,
+		`DELETE FROM subscription_seen_entry WHERE subscription_id = ?`,
+		`DELETE FROM subscription WHERE id = ?`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt, id); err != nil {
+			return Subscription{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return Subscription{}, err
 	}
 	return removed, nil
@@ -456,21 +515,15 @@ func (s *Store) FillSubscriptionTitle(ctx context.Context, id SubscriptionID, ti
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	if err := s.refuseEncryptedSubscriptionLocked(ctx, id); err != nil {
+	sub, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
 		return false, err
 	}
-	var feedURL string
-	if err := s.catalogW.QueryRowContext(ctx, `SELECT feed_url FROM subscription WHERE id = ?`, id).Scan(&feedURL); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, ErrSubscriptionNotFound
-		}
-		return false, err
-	}
-	title = SubscriptionTitle(title, feedURL)
+	title = SubscriptionTitle(title, sub.FeedURL)
 	if title == "" {
 		return false, nil
 	}
-	result, err := s.catalogW.ExecContext(ctx, `
+	result, err := plane.writer.ExecContext(ctx, `
 		UPDATE subscription SET title = ? WHERE id = ? AND COALESCE(title, '') = ''
 	`, title, id)
 	if err != nil {
@@ -491,7 +544,11 @@ func (s *Store) MarkSubscriptionPolled(ctx context.Context, id SubscriptionID, e
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	result, err := s.catalogW.ExecContext(ctx, `
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	result, err := plane.writer.ExecContext(ctx, `
 		UPDATE subscription SET last_polled_at_ms = ?, etag = ?, last_modified = ? WHERE id = ?
 	`, now.UTC().UnixMilli(), etag, lastModified, id)
 	if err != nil {
@@ -518,7 +575,14 @@ func (s *Store) SubscriptionSeenGUIDs(ctx context.Context, id SubscriptionID) (m
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if errors.Is(err, ErrSubscriptionNotFound) {
+		return map[string]bool{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT guid FROM subscription_seen_entry
 		WHERE subscription_id = ? AND (path <> '' OR seen_at_ms <> 0)
 	`, id)
@@ -564,10 +628,11 @@ func (s *Store) markSubscriptionEntrySeen(ctx context.Context, id SubscriptionID
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	if err := s.refuseEncryptedSubscriptionLocked(ctx, id); err != nil {
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path, feed_position)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(subscription_id, guid) DO UPDATE SET seen_at_ms = excluded.seen_at_ms, path = excluded.path,
@@ -578,7 +643,7 @@ func (s *Store) markSubscriptionEntrySeen(ctx context.Context, id SubscriptionID
 }
 
 // PublishSubscriptionEntry records the published path in both the receipt and
-// the optional catalogue row. It holds the catalogue writer during publish
+// the optional catalogue row. It holds the plane writer during publish
 // so a concurrent scan import sees the binding when it writes the Media.
 func (s *Store) PublishSubscriptionEntry(ctx context.Context, id SubscriptionID, guid string, publish func() (string, error)) error {
 	s.mu.RLock()
@@ -586,10 +651,11 @@ func (s *Store) PublishSubscriptionEntry(ctx context.Context, id SubscriptionID,
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	if err := s.refuseEncryptedSubscriptionLocked(ctx, id); err != nil {
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
 		return err
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -631,10 +697,11 @@ func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionI
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	if err := s.refuseEncryptedSubscriptionLocked(ctx, id); err != nil {
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path, feed_position)
 		SELECT subscription_id, ?, seen_at_ms, path, feed_position FROM subscription_seen_entry
 		WHERE subscription_id = ? AND guid = ?
@@ -666,21 +733,17 @@ func (s *Store) AssociateSubscriptionEntryMedia(ctx context.Context, id Subscrip
 		s.mu.RUnlock()
 		return SubscriptionEntryAssociation{}, err
 	}
-	if err := s.refuseEncryptedSubscriptionLocked(ctx, id); err != nil {
-		s.mu.RUnlock()
-		return SubscriptionEntryAssociation{}, err
-	}
-	subscription, err := scanSubscription(s.catalogR.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, id))
+	subscription, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
 	if err != nil {
 		s.mu.RUnlock()
 		return SubscriptionEntryAssociation{}, err
 	}
-	path, err := s.subscriptionAssociationPathLocked(ctx, subscription, mediaID)
+	path, err := subscriptionAssociationPath(ctx, plane.reader, subscription, mediaID)
 	if err != nil {
 		s.mu.RUnlock()
 		return SubscriptionEntryAssociation{}, err
 	}
-	if err := s.upsertSubscriptionEntryAssociationLocked(ctx, id, guid, mediaID, path, now); err != nil {
+	if err := upsertSubscriptionEntryAssociation(ctx, plane, id, guid, mediaID, path, now); err != nil {
 		s.mu.RUnlock()
 		return SubscriptionEntryAssociation{}, err
 	}
@@ -699,8 +762,8 @@ func (s *Store) AssociateSubscriptionEntryMedia(ctx context.Context, id Subscrip
 	}, nil
 }
 
-func (s *Store) subscriptionAssociationPathLocked(ctx context.Context, subscription Subscription, mediaID MediaID) (string, error) {
-	rows, err := s.catalogR.QueryContext(ctx, `
+func subscriptionAssociationPath(ctx context.Context, reader *sql.DB, subscription Subscription, mediaID MediaID) (string, error) {
+	rows, err := reader.QueryContext(ctx, `
 		SELECT mf.path
 		FROM media_file mf
 		JOIN media m ON m.id = mf.media_id
@@ -737,9 +800,9 @@ func (s *Store) subscriptionAssociationPathLocked(ctx context.Context, subscript
 	}
 }
 
-func (s *Store) upsertSubscriptionEntryAssociationLocked(ctx context.Context, id SubscriptionID, guid string, mediaID MediaID, path string, now time.Time) error {
+func upsertSubscriptionEntryAssociation(ctx context.Context, plane catalogPlane, id SubscriptionID, guid string, mediaID MediaID, path string, now time.Time) error {
 	var existing string
-	err := s.catalogR.QueryRowContext(ctx, `
+	err := plane.reader.QueryRowContext(ctx, `
 		SELECT path FROM subscription_seen_entry WHERE subscription_id = ? AND guid = ?
 	`, id, guid).Scan(&existing)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -748,18 +811,18 @@ func (s *Store) upsertSubscriptionEntryAssociationLocked(ctx context.Context, id
 	if err == nil {
 		existing = strings.TrimSpace(existing)
 		if existing != "" && existing != path {
-			if err := s.recordSubscriptionEntryCollisionLocked(ctx, id, guid, existing, path, mediaID, now); err != nil {
+			if err := recordSubscriptionEntryCollision(ctx, plane.writer, id, guid, existing, path, mediaID, now); err != nil {
 				return err
 			}
 			return ErrSubscriptionEntryCollision
 		}
-		_, err = s.catalogW.ExecContext(ctx, `
+		_, err = plane.writer.ExecContext(ctx, `
 			UPDATE subscription_seen_entry
 			SET path = ?, seen_at_ms = ?
 			WHERE subscription_id = ? AND guid = ?
 		`, path, now.UTC().UnixMilli(), id, guid)
 	} else {
-		_, err = s.catalogW.ExecContext(ctx, `
+		_, err = plane.writer.ExecContext(ctx, `
 			INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
 			VALUES (?, ?, ?, ?)
 		`, id, guid, now.UTC().UnixMilli(), path)
@@ -767,7 +830,7 @@ func (s *Store) upsertSubscriptionEntryAssociationLocked(ctx context.Context, id
 	if err != nil {
 		return err
 	}
-	_, err = s.catalogW.ExecContext(ctx, `
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
 		VALUES (?, ?, ?)
 	`, mediaID, subscriptionFeedGUIDScheme, feedGUIDExternalID(guid))
@@ -787,11 +850,11 @@ type SubscriptionEntryCollision struct {
 	Observations    int
 }
 
-// recordSubscriptionEntryCollisionLocked keeps a same-GUID, different-file
+// recordSubscriptionEntryCollision keeps a same-GUID, different-file
 // offer for review. A repeat offer of the same file refreshes the one row.
-func (s *Store) recordSubscriptionEntryCollisionLocked(ctx context.Context, id SubscriptionID, guid, boundPath, incomingPath string, mediaID MediaID, now time.Time) error {
+func recordSubscriptionEntryCollision(ctx context.Context, writer *sql.DB, id SubscriptionID, guid, boundPath, incomingPath string, mediaID MediaID, now time.Time) error {
 	at := now.UTC().UnixMilli()
-	_, err := s.catalogW.ExecContext(ctx, `
+	_, err := writer.ExecContext(ctx, `
 		INSERT INTO subscription_entry_collision(subscription_id, guid, bound_path, incoming_path, incoming_media_id, first_seen_at_ms, last_seen_at_ms)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(subscription_id, guid, incoming_path) DO UPDATE SET
@@ -811,7 +874,11 @@ func (s *Store) SubscriptionEntryCollisions(ctx context.Context, id Subscription
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT subscription_id, guid, bound_path, incoming_path, incoming_media_id,
 		       first_seen_at_ms, last_seen_at_ms, observations
 		FROM subscription_entry_collision WHERE subscription_id = ?
@@ -851,8 +918,8 @@ func pathWithinRoot(root, path string) bool {
 
 const subscriptionColumns = `SELECT id, library_id, feed_url, auth_ref, root, title, added_at_ms, last_polled_at_ms, etag, last_modified, retention_kind, retention_n, ` + subscriptionHealthColumns + ` FROM subscription`
 
-func (s *Store) querySubscriptions(ctx context.Context, query string, args ...any) ([]Subscription, error) {
-	rows, err := s.catalogR.QueryContext(ctx, query, args...)
+func querySubscriptionsFrom(ctx context.Context, reader *sql.DB, query string, args ...any) ([]Subscription, error) {
+	rows, err := reader.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

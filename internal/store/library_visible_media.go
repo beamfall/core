@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 )
 
@@ -187,7 +188,8 @@ func (s *Store) CatalogItemLibraries(ctx context.Context, ids []string) (map[str
 }
 
 // MediaMetadataProvenanceBatch returns the stored metadata provenance of each
-// given catalog-plane Media that has one.
+// given readable Media (across catalog and unsealed Encrypted Library planes)
+// that has one.
 func (s *Store) MediaMetadataProvenanceBatch(ctx context.Context, ids []MediaID) (map[MediaID]MediaMetadataProvenance, error) {
 	records := map[MediaID]MediaMetadataProvenance{}
 	if len(ids) == 0 {
@@ -198,34 +200,39 @@ func (s *Store) MediaMetadataProvenanceBatch(ctx context.Context, ids []MediaID)
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	for start := 0; start < len(ids); start += engagementChunkSize {
-		chunk := ids[start:min(start+engagementChunkSize, len(ids))]
-		args := make([]any, len(chunk))
-		for i, id := range chunk {
-			args[i] = string(id)
-		}
-		// #nosec G201 -- only generated placeholders are interpolated; IDs are bound args.
-		rows, err := s.catalogR.QueryContext(ctx, fmt.Sprintf(
-			`SELECT media_id, plugin_id, scraper_id, candidate_id FROM media_metadata_provenance WHERE media_id IN (%s)`,
-			sqlPlaceholders(len(chunk))), args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var id MediaID
-			var record MediaMetadataProvenance
-			if err := rows.Scan(&id, &record.PluginID, &record.ScraperID, &record.CandidateID); err != nil {
-				_ = rows.Close()
+	// Media IDs are unique across planes, so each open plane contributes only
+	// its own Media's provenance and sealed planes remain unreadable.
+	for _, plane := range s.allCatalogPlanesLocked() {
+		for start := 0; start < len(ids); start += engagementChunkSize {
+			chunk := ids[start:min(start+engagementChunkSize, len(ids))]
+			if err := mediaMetadataProvenanceChunk(ctx, plane.reader, chunk, records); err != nil {
 				return nil, err
 			}
-			records[id] = record
-		}
-		if err := rows.Close(); err != nil {
-			return nil, err
-		}
-		if err := rows.Err(); err != nil {
-			return nil, err
 		}
 	}
 	return records, nil
+}
+
+func mediaMetadataProvenanceChunk(ctx context.Context, reader *sql.DB, chunk []MediaID, records map[MediaID]MediaMetadataProvenance) error {
+	args := make([]any, len(chunk))
+	for i, id := range chunk {
+		args[i] = string(id)
+	}
+	// #nosec G201 -- only generated placeholders are interpolated; IDs are bound args.
+	rows, err := reader.QueryContext(ctx, fmt.Sprintf(
+		`SELECT media_id, plugin_id, scraper_id, candidate_id FROM media_metadata_provenance WHERE media_id IN (%s)`,
+		sqlPlaceholders(len(chunk))), args...)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id MediaID
+		var record MediaMetadataProvenance
+		if err := rows.Scan(&id, &record.PluginID, &record.ScraperID, &record.CandidateID); err != nil {
+			return err
+		}
+		records[id] = record
+	}
+	return rows.Err()
 }

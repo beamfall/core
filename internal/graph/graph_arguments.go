@@ -428,6 +428,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "candidateID", Kind: "string"},
 		{Name: "mediaID", Kind: "string"},
 		{Name: "pluginID", Kind: "string"},
+		{Name: "requestId", Kind: "string", Optional: true},
 		{Name: "scraperID", Kind: "string"},
 	},
 	"identifylookup": {

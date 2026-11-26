@@ -17,7 +17,6 @@ import (
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/identify"
-	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/manifest"
 	"github.com/beamfall/core/internal/plugin"
@@ -117,26 +116,78 @@ func TestFixMatchReadsRequireManagerAndVisibleMedia(t *testing.T) {
 	}
 }
 
-func TestFixMatchRejectsVisibleEncryptedMedia(t *testing.T) {
+type encryptedFixMatchEngine struct {
+	rematchTestEngine
+}
+
+func (e *encryptedFixMatchEngine) Lookup(ctx context.Context, spec plugin.ScraperSpec, id string, vars ...scrape.Variables) (scrape.Result, error) {
+	if id == "43" {
+		return scrape.Result{
+			Fields: map[string]any{"title": "Blue Harvest II", "summary": "A sequel.", "year": "1978"},
+		}, nil
+	}
+	return e.rematchTestEngine.Lookup(ctx, spec, id, vars...)
+}
+
+func TestFixMatchSupportsUnsealedEncryptedMediaAndClientRequestID(t *testing.T) {
 	ctx := t.Context()
-	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := store.Open(ctx, storetest.MigratedDataDir(t), store.Options{
+		SeedDevelopmentData:               true,
+		EnableEncryptedLibraryDBLifecycle: true,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	handler := newTestHandlerWithStore(st)
-	handler.SetIdentify(identify.NewService(nil, nil, st))
-	mgr := libencrypt.NewManagerWithParams(newMemSecretStore(), libencrypt.TestArgon2Params)
-	handler.SetLibEncrypt(mgr)
-	libraryID := newEncryptedLibrary(t, st)
-	if _, err := mgr.Provision(libraryID, libencrypt.UnsealModeAuto, ""); err != nil {
+	bundle := plugin.Bundle{
+		ID:          "demo",
+		Version:     "0.1.0",
+		DisplayName: plugin.L("Demo"),
+		MediaLabel:  plugin.L("Item"),
+		Layouts:     []plugin.LayoutSpec{{ID: "home", Role: "browse"}},
+		Scrapers: []plugin.ScraperSpec{{
+			ID:              "lookup",
+			DisplayName:     plugin.L("Demo Lookup"),
+			Kind:            "http-json",
+			Endpoint:        "https://demo.example.test",
+			SearchTemplate:  "/search?q={query}",
+			CandidatesPath:  "results",
+			CandidateIDPath: "id",
+			LookupTemplate:  "/title/{id}",
+			FieldMap:        map[string]string{"title": "name", "summary": "overview", "year": "year"},
+		}},
+	}
+	registry, err := newTestPluginRegistry([]plugin.Bundle{bundle})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UnsealEncryptedLibraryDB(ctx, store.LibraryID(libraryID), handler.libEncryptDBCipher()); err != nil {
+	handler := NewHandler(
+		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, registry),
+		auth.NewService(st),
+		st,
+		registry,
+	)
+	service := identify.NewService(&encryptedFixMatchEngine{}, registry, st)
+	service.SetAutoStores(st, st)
+	handler.SetIdentify(service)
+	mgr := libencrypt.NewManagerWithParams(newMemSecretStore(), libencrypt.TestArgon2Params)
+	handler.SetLibEncrypt(mgr)
+
+	lib, err := st.CreateLibrary(ctx, "Encrypted Film", false, "demo", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetLibraryBacking(ctx, lib.ID, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.Provision(string(lib.ID), libencrypt.UnsealModeAuto, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, lib.ID, handler.libEncryptDBCipher()); err != nil {
 		t.Fatal(err)
 	}
 	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-		LibraryID: store.LibraryID(libraryID), Path: "/fixtures/protected.mkv", Title: "Protected Title",
+		LibraryID: lib.ID, Path: "/fixtures/protected.mkv", Title: "Protected Title",
 		Container: "mkv", Codec: "h264", ContentFingerprint: "sha256:protected",
 	})
 	if err != nil {
@@ -145,38 +196,116 @@ func TestFixMatchRejectsVisibleEncryptedMedia(t *testing.T) {
 	if err := st.SetSessionRevealed(ctx, "session-manager", true); err != nil {
 		t.Fatal(err)
 	}
+
+	// Queries work for unsealed encrypted media.
+	var sources []FixMatchSourceInfo
+	execGraph(t, handler, authorizeManager, fixMatchSourcesTestQuery, map[string]any{"mediaID": string(media.ID)}, "fixMatchSources", &sources)
+	if len(sources) != 1 || sources[0].PluginID != "demo" {
+		t.Fatalf("fixMatchSources = %+v", sources)
+	}
+	var current *FixMatchCurrentInfo
+	execGraph(t, handler, authorizeManager, `query($mediaID: String!) { fixMatchCurrent(mediaID: $mediaID) { candidateID } }`,
+		map[string]any{"mediaID": string(media.ID)}, "fixMatchCurrent", &current)
+	var locks []FixMatchLockedFieldInfo
+	execGraph(t, handler, authorizeManager, `query($mediaID: String!) { fixMatchLockedFields(mediaID: $mediaID) { field } }`,
+		map[string]any{"mediaID": string(media.ID)}, "fixMatchLockedFields", &locks)
+	var candidates []FixMatchCandidateInfo
+	execGraph(t, handler, authorizeManager, `query($mediaID: String!) { fixMatchCandidates(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", query: "blue harvest") { id } }`,
+		map[string]any{"mediaID": string(media.ID)}, "fixMatchCandidates", &candidates)
+	if len(candidates) != 1 || candidates[0].ID != "42" {
+		t.Fatalf("fixMatchCandidates = %+v", candidates)
+	}
+	var preview []FixMatchFieldDiff
+	execGraph(t, handler, authorizeManager, `query($mediaID: String!) { fixMatchPreview(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42") { field proposed changed } }`,
+		map[string]any{"mediaID": string(media.ID)}, "fixMatchPreview", &preview)
+	if len(preview) == 0 || !preview[0].Changed || preview[0].Proposed != "Blue Harvest" {
+		t.Fatalf("fixMatchPreview = %+v", preview)
+	}
+
+	// fixMatch threads optional requestId for idempotent replay vs conflict detection.
+	const fixMutation = `mutation($mediaID: String!, $candidateID: String!, $clearLocks: [String!], $requestId: String) {
+		fixMatch(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: $candidateID, clearLocks: $clearLocks, requestId: $requestId) { id title summary year }
+	}`
+	var matched MediaInfo
+	execGraph(t, handler, authorizeManager, fixMutation, map[string]any{
+		"mediaID": string(media.ID), "candidateID": "42", "requestId": "req-enc-fix-1",
+	}, "fixMatch", &matched)
+	if matched.Title != "Blue Harvest" || matched.Year != 1977 {
+		t.Fatalf("fixMatch = %+v", matched)
+	}
+	// Identical requestId replays cleanly; reusing requestId with different payload conflicts.
+	var replayed MediaInfo
+	execGraph(t, handler, authorizeManager, fixMutation, map[string]any{
+		"mediaID": string(media.ID), "candidateID": "42", "requestId": "req-enc-fix-1",
+	}, "fixMatch", &replayed)
+	if replayed.Title != matched.Title {
+		t.Fatalf("fixMatch replay = %+v", replayed)
+	}
+	conflictResp := postGraphJSON(t, handler, authorizeManager, fixMutation, map[string]any{
+		"mediaID": string(media.ID), "candidateID": "43", "requestId": "req-enc-fix-1",
+	})
+	if len(conflictResp.Errors) != 1 || conflictResp.Errors[0].Extensions.Code != ErrorCodeConflict {
+		t.Fatalf("fixMatch conflict = %#v, want ErrorCodeConflict", conflictResp.Errors)
+	}
+
+	// Clearing locks emits activity with scrubbed targetID (non-library encrypted target).
+	titleLock := "Pinned Manual Title"
+	if err := st.UpdateMediaMetadata(ctx, media.ID, store.MediaMetadata{Title: &titleLock, Source: store.MutationSourceManual}); err != nil {
+		t.Fatal(err)
+	}
+	execGraph(t, handler, authorizeManager, fixMutation, map[string]any{
+		"mediaID": string(media.ID), "candidateID": "42", "clearLocks": []string{"title"}, "requestId": "req-enc-fix-clear",
+	}, "fixMatch", &matched)
+	activities, err := st.ActivityEntries(ctx, store.ActivityQuery{Filter: store.LibraryFilter{Revealed: true, AllLibraries: true}, Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var foundLockActivity bool
+	for _, entry := range activities {
+		if entry.Action == store.ActivityMediaFieldLock && entry.LibraryID == lib.ID {
+			foundLockActivity = true
+			if entry.TargetID != "" {
+				t.Fatalf("encrypted fixMatch clearLocks activity leaked TargetID %q", entry.TargetID)
+			}
+		}
+	}
+	if !foundLockActivity {
+		t.Fatal("expected ActivityMediaFieldLock entry for clearLocks")
+	}
+
+	// identifyApply also honors client requestId (replay and conflict) on encrypted media.
+	const applyMutation = `mutation($mediaID: String!, $requestId: String) {
+		identifyApply(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42", requestId: $requestId) { id title }
+	}`
+	execGraph(t, handler, authorizeManager, applyMutation, map[string]any{"mediaID": string(media.ID), "requestId": "req-apply-1"}, "identifyApply", &matched)
+	execGraph(t, handler, authorizeManager, applyMutation, map[string]any{"mediaID": string(media.ID), "requestId": "req-apply-1"}, "identifyApply", &replayed)
+	const applyCustomMutation = `mutation($mediaID: String!, $candidateID: String!, $requestId: String) {
+		identifyApply(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: $candidateID, requestId: $requestId) { id title }
+	}`
+	if resp := postGraphJSON(t, handler, authorizeManager, applyCustomMutation, map[string]any{
+		"mediaID": string(media.ID), "candidateID": "43", "requestId": "req-apply-1",
+	}); len(resp.Errors) != 1 || resp.Errors[0].Extensions.Code != ErrorCodeConflict {
+		t.Fatalf("identifyApply conflict = %#v, want ErrorCodeConflict", resp.Errors)
+	}
+
+	// Sealing hides encrypted media as unknown across Fix Match operations.
+	if err := st.SealEncryptedLibraryDB(ctx, lib.ID, handler.libEncryptDBCipher()); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Seal(string(lib.ID))
 	for _, tc := range []struct{ name, query string }{
 		{"sources", fixMatchSourcesTestQuery},
 		{"current", `query($mediaID: String!) { fixMatchCurrent(mediaID: $mediaID) { candidateID } }`},
 		{"locked fields", `query($mediaID: String!) { fixMatchLockedFields(mediaID: $mediaID) { field } }`},
 		{"candidates", `query($mediaID: String!) { fixMatchCandidates(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup") { id } }`},
-		{"children", `query($mediaID: String!) { fixMatchChildren(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42", level: 1) { key } }`},
 		{"clear ordinal", clearMediaOrdinalMutation},
 		{"preview", `query($mediaID: String!) { fixMatchPreview(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42") { field } }`},
 		{"replace", `mutation($mediaID: String!) { fixMatch(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42") { id } }`},
-		{"associate", `mutation($mediaID: String!) { fixMatch(mediaID: $mediaID, recordID: "record", importRunID: "run") { id } }`},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run("sealed/"+tc.name, func(t *testing.T) {
 			resp := postGraphJSON(t, handler, authorizeManager, tc.query, map[string]any{"mediaID": string(media.ID)})
-			if len(resp.Errors) != 1 || resp.Errors[0].Extensions.Code != ErrorCodeInvalid ||
-				resp.Errors[0].Message != "fix match is unavailable in encrypted libraries" {
-				t.Fatalf("errors = %#v, want encrypted-library refusal", resp.Errors)
-			}
-		})
-	}
-	for locale, want := range map[string]string{
-		"fr": "La correction de la correspondance est indisponible dans les bibliothèques chiffrées.",
-		"de": "Die Zuordnung kann in verschlüsselten Bibliotheken nicht korrigiert werden.",
-		"es": "La corrección de coincidencias no está disponible en bibliotecas cifradas.",
-		"pt": "A correção de correspondências não está disponível em bibliotecas criptografadas.",
-	} {
-		t.Run(locale, func(t *testing.T) {
-			resp := postGraphJSON(t, handler, func(req *http.Request) {
-				authorizeManager(req)
-				*req = *req.WithContext(l10n.WithLocale(req.Context(), locale))
-			}, fixMatchSourcesTestQuery, map[string]any{"mediaID": string(media.ID)})
-			if len(resp.Errors) != 1 || resp.Errors[0].Extensions.Code != ErrorCodeInvalid || resp.Errors[0].Message != want {
-				t.Fatalf("errors = %#v, want localized encrypted-library refusal %q", resp.Errors, want)
+			if len(resp.Errors) != 1 || resp.Errors[0].Extensions.Code != ErrorCodeNotFound || resp.Errors[0].Message != "unknown media" {
+				t.Fatalf("sealed errors = %#v, want unknown media", resp.Errors)
 			}
 		})
 	}

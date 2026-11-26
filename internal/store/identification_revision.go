@@ -26,10 +26,11 @@ const ErrIdentificationRequestConflict = ValidationError("identification request
 // committed revision without writing; "" mints a fresh ID, so the commit is
 // never deduplicated.
 type IdentificationCommit struct {
-	RequestID  string
-	Metadata   MediaMetadata
-	Provenance MediaMetadataProvenance
-	Fields     []MediaField
+	RequestID    string
+	IntentDigest string
+	Metadata     MediaMetadata
+	Provenance   MediaMetadataProvenance
+	Fields       []MediaField
 }
 
 // IdentificationReceipt is the committed revision of an identification.
@@ -60,7 +61,15 @@ type IdentificationRevision struct {
 // Encrypted Library's Media commits on its own plane and emits no shared
 // event; a sealed plane's Media is refused as not found.
 func (s *Store) CommitMediaIdentification(ctx context.Context, id MediaID, commit IdentificationCommit) (IdentificationReceipt, error) {
-	return s.commitIdentification(ctx, id, commit, IdentificationKindIdentify, nil, nil)
+	return s.commitIdentification(ctx, id, commit, IdentificationKindIdentify, nil, func(context.Context, *sql.Tx) (string, error) {
+		if commit.IntentDigest == "" {
+			return "{}", nil
+		}
+		detail, err := json.Marshal(struct {
+			IntentDigest string `json:"intentDigest,omitempty"`
+		}{IntentDigest: commit.IntentDigest})
+		return string(detail), err
+	})
 }
 
 // FixMatchCommit is a Fix Match: the identification plus the match pin and
@@ -76,6 +85,7 @@ type FixMatchAudit struct {
 	Ordinal          string   `json:"ordinal"`
 	PinnedFiles      int64    `json:"pinnedFiles"`
 	UnmatchedCleared bool     `json:"unmatchedCleared"`
+	IntentDigest     string   `json:"intentDigest,omitempty"`
 }
 
 // CommitFixMatch applies a Fix Match in one transaction on the Media's own
@@ -87,7 +97,11 @@ func (s *Store) CommitFixMatch(ctx context.Context, id MediaID, commit FixMatchC
 	metadata := commit.Metadata
 	return s.commitIdentification(ctx, id, commit.IdentificationCommit, IdentificationKindFixMatch, &commit.Filter,
 		func(ctx context.Context, tx *sql.Tx) (string, error) {
-			audit := FixMatchAudit{ClearedLocks: append([]string{}, metadata.ClearLocks...), Ordinal: "kept"}
+			audit := FixMatchAudit{
+				ClearedLocks: append([]string{}, metadata.ClearLocks...),
+				Ordinal:      "kept",
+				IntentDigest: commit.IntentDigest,
+			}
 			switch {
 			case metadata.OperatorOrdinal != nil:
 				audit.Ordinal = "set"

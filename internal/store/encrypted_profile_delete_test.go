@@ -67,8 +67,12 @@ func TestDeleteProfileErasesItsEncryptedPlaneRows(t *testing.T) {
 			SELECT (SELECT COUNT(*) FROM saved_filter WHERE profile_id = ?1)
 			     + (SELECT COUNT(*) FROM saved_station WHERE profile_id = ?1)
 			     + (SELECT COUNT(*) FROM channel WHERE profile_id = ?1)
-			     + (SELECT COUNT(*) FROM media_operator_ordinal WHERE actor_profile_id = ?1)`, string(profile.ID)); n != 0 {
+			     + (SELECT COUNT(*) FROM media_operator_ordinal WHERE actor_profile_id = ?1)
+			     + (SELECT COUNT(*) FROM media_identification_revision WHERE actor_profile_id = ?1)`, string(profile.ID)); n != 0 {
 			t.Fatalf("sealed=%v plane rows still naming the deleted Profile = %d", sealed, n)
+		}
+		if n := identificationRowCount(t, plane, `SELECT COUNT(*) FROM media_identification_revision WHERE media_id = ? AND actor_profile_id IS NULL`, media.ID); n != 1 {
+			t.Fatalf("sealed=%v revision rows after actor erase = %d, want 1 kept with NULL actor", sealed, n)
 		}
 		if n := identificationRowCount(t, plane, `SELECT COUNT(*) FROM media_operator_ordinal WHERE media_id = ? AND ordinal_index = 2`, media.ID); n != 1 {
 			t.Fatalf("sealed=%v ordinal rows after the erase = %d, want the ordinal kept", sealed, n)

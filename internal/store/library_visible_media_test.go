@@ -61,17 +61,36 @@ func TestLibraryVisibleMedia(t *testing.T) {
 }
 
 func TestMediaMetadataProvenanceBatch(t *testing.T) {
-	st := openSeeded(t)
 	ctx := context.Background()
+	st, encMedia := seededEncryptedMedia(t, "provenance-batch-private")
+	defer func() { _ = st.Close() }()
 	if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", "demo", "lookup", "cand-1"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := st.MediaMetadataProvenanceBatch(ctx, []MediaID{"media-alpha", "media-missing"})
+	if err := st.SetMediaMetadataProvenance(ctx, encMedia.ID, "demo", "lookup", "cand-enc"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.MediaMetadataProvenanceBatch(ctx, []MediaID{"media-alpha", encMedia.ID, "media-missing"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got["media-alpha"] != (MediaMetadataProvenance{PluginID: "demo", ScraperID: "lookup", CandidateID: "cand-1"}) {
+	if len(got) != 2 ||
+		got["media-alpha"] != (MediaMetadataProvenance{PluginID: "demo", ScraperID: "lookup", CandidateID: "cand-1"}) ||
+		got[encMedia.ID] != (MediaMetadataProvenance{PluginID: "demo", ScraperID: "lookup", CandidateID: "cand-enc"}) {
 		t.Fatalf("provenance batch = %#v", got)
+	}
+	if err := st.SealEncryptedLibraryDB(ctx, encMedia.LibraryID, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatal(err)
+	}
+	sealedGot, err := st.MediaMetadataProvenanceBatch(ctx, []MediaID{"media-alpha", encMedia.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sealedGot) != 1 || sealedGot["media-alpha"] == (MediaMetadataProvenance{}) {
+		t.Fatalf("sealed provenance batch = %#v, want only catalog entry", sealedGot)
+	}
+	if _, leaked := sealedGot[encMedia.ID]; leaked {
+		t.Fatalf("sealed encrypted media provenance leaked: %#v", sealedGot[encMedia.ID])
 	}
 	if empty, err := st.MediaMetadataProvenanceBatch(ctx, nil); err != nil || len(empty) != 0 {
 		t.Fatalf("empty batch = %v (%v)", empty, err)

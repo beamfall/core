@@ -16,8 +16,10 @@ import (
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
 )
 
@@ -694,5 +696,82 @@ func TestPrepareUploadedArtworkRejectsBadInputFailClosed(t *testing.T) {
 				t.Fatalf("err = %#v, want store.ValidationError", err)
 			}
 		})
+	}
+}
+
+func TestFileScopeSuppressionRoutesToRecordPlaneAndHidesRestrictedFromUnrevealed(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, storetest.MigratedDataDir(t), store.Options{
+		SeedDevelopmentData:               true,
+		EnableEncryptedLibraryDBLifecycle: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	handler := newTestHandlerWithStore(st)
+	mgr := libencrypt.NewManagerWithParams(newMemSecretStore(), libencrypt.TestArgon2Params)
+	handler.SetLibEncrypt(mgr)
+
+	libID := newEncryptedLibrary(t, st)
+	if _, err := mgr.Provision(libID, libencrypt.UnsealModeAuto, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, store.LibraryID(libID), handler.libEncryptDBCipher()); err != nil {
+		t.Fatal(err)
+	}
+	recordID, err := st.QueueUnmatchedRecord(ctx, store.UnmatchedRecord{
+		Origin:        store.UnmatchedOriginScan,
+		LibraryID:     store.LibraryID(libID),
+		ImporterID:    "demo",
+		SourceHandle:  "/enc/private-ignore.mkv",
+		FailureReason: store.UnmatchedReasonNoCandidates,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ok, err := handler.suppressUnmatched(ctx, managerScope(), request{Variables: map[string]any{
+		"scope":        store.SuppressionScopeFile,
+		"recordID":     recordID,
+		"fingerprint":  "sha256:private-ignore",
+		"sourceHandle": "/enc/private-ignore.mkv",
+	}})
+	if err != nil || !ok {
+		t.Fatalf("suppressUnmatched(file) = %v, %v", ok, err)
+	}
+
+	// Unrevealed session must not see encrypted file suppressions; revealed session must see and reset it.
+	unrevealed, err := handler.unmatchedSuppressions(ctx, auth.Scope{ProfileID: "profile-default", SessionID: "s-unrevealed", Revealed: false}, request{})
+	if err != nil {
+		t.Fatalf("unmatchedSuppressions unrevealed: %v", err)
+	}
+	if len(unrevealed) != 0 {
+		t.Fatalf("unrevealed suppressions = %#v, want empty", unrevealed)
+	}
+	revealed, err := handler.unmatchedSuppressions(ctx, managerScope(), request{})
+	if err != nil {
+		t.Fatalf("unmatchedSuppressions revealed: %v", err)
+	}
+	if len(revealed) != 1 || revealed[0].Scope != store.SuppressionScopeFile || revealed[0].SourceHandle != "/enc/private-ignore.mkv" {
+		t.Fatalf("revealed suppressions = %#v, want file suppression for encrypted handle", revealed)
+	}
+	storeSupps, err := st.UnmatchedSuppressionsFiltered(ctx, "", store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil || len(storeSupps) != 1 || storeSupps[0].LibraryID != store.LibraryID(libID) {
+		t.Fatalf("store UnmatchedSuppressionsFiltered = %#v, %v; want encrypted library %s", storeSupps, err, libID)
+	}
+
+	resetOK, err := handler.resetUnmatchedSuppression(ctx, managerScope(), request{Variables: map[string]any{
+		"scope":        store.SuppressionScopeFile,
+		"recordID":     recordID,
+		"fingerprint":  "sha256:private-ignore",
+		"sourceHandle": "/enc/private-ignore.mkv",
+	}})
+	if err != nil || !resetOK {
+		t.Fatalf("resetUnmatchedSuppression = %v, %v", resetOK, err)
+	}
+	afterReset, err := handler.unmatchedSuppressions(ctx, managerScope(), request{})
+	if err != nil || len(afterReset) != 0 {
+		t.Fatalf("afterReset = %#v, %v; want empty", afterReset, err)
 	}
 }

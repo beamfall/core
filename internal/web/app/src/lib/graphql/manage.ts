@@ -1849,7 +1849,7 @@ export async function identifySearch(vars: {
 }
 
 const FIX_MATCH_MUTATION =
-  "mutation FixMatch($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $clearLocks: [String!], $sequence: String, $index: Int) { fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, clearLocks: $clearLocks, sequence: $sequence, index: $index) { id title summary year favorited } }";
+  "mutation FixMatch($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $clearLocks: [String!], $sequence: String, $index: Int, $requestId: String) { fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, clearLocks: $clearLocks, sequence: $sequence, index: $index, requestId: $requestId) { id title summary year favorited } }";
 
 /** FixMatch — apply a selected candidate and clear the unmatched row. */
 export async function fixMatch(
@@ -1861,6 +1861,7 @@ export async function fixMatch(
     clearLocks?: string[];
     sequence?: string;
     index?: number;
+    requestId?: string;
   },
   signal?: AbortSignal,
 ): Promise<GenericMediaInfo> {

@@ -182,7 +182,11 @@ func (s *Store) updateSubscriptionHealth(ctx context.Context, id SubscriptionID,
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	result, err := s.catalogW.ExecContext(ctx, query, args...)
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	result, err := plane.writer.ExecContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -219,7 +223,11 @@ func (s *Store) RecordSubscriptionMoveObservation(ctx context.Context, id Subscr
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
@@ -279,8 +287,12 @@ func (s *Store) RequestSubscriptionRefresh(ctx context.Context, id SubscriptionI
 	if err := s.guardLocked(); err != nil {
 		return Subscription{}, err
 	}
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, id)
+	if err != nil {
+		return Subscription{}, err
+	}
 	nowMS := now.UTC().UnixMilli()
-	result, err := s.catalogW.ExecContext(ctx, `
+	result, err := plane.writer.ExecContext(ctx, `
 		UPDATE subscription SET next_poll_at_ms = ?, refresh_requested_at_ms = ?, etag = '', last_modified = ''
 		WHERE id = ? AND (refresh_requested_at_ms = 0 OR refresh_requested_at_ms <= ?)
 	`, nowMS, nowMS, id, nowMS-minGap.Milliseconds())
@@ -291,7 +303,7 @@ func (s *Store) RequestSubscriptionRefresh(ctx context.Context, id SubscriptionI
 	if err != nil {
 		return Subscription{}, err
 	}
-	subscription, err := scanSubscription(s.catalogR.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, id))
+	subscription, err := scanSubscription(plane.reader.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, id))
 	if err != nil {
 		return Subscription{}, err
 	}
@@ -305,8 +317,8 @@ func (s *Store) RequestSubscriptionRefresh(ctx context.Context, id SubscriptionI
 // filter can see, and outside its own minGap, due now. It reports how many it
 // refreshed; Subscriptions in Libraries the filter hides are neither touched
 // nor counted, so the count never reveals them. Visibility (trash, grant,
-// restriction and seal, as libraryVisible decides it) is checked inside the
-// UPDATE itself, so a Library hidden concurrently is never refreshed.
+// restriction and seal, as libraryVisible decides it) is verified against the
+// shared Library directory, then applied on each Library's owning plane.
 func (s *Store) RequestAllSubscriptionsRefresh(ctx context.Context, filter LibraryFilter, now time.Time, minGap time.Duration) (int, error) {
 	if len(filter.AllowedIDs) == 0 && !filter.AllLibraries {
 		return 0, nil
@@ -316,33 +328,78 @@ func (s *Store) RequestAllSubscriptionsRefresh(ctx context.Context, filter Libra
 	if err := s.guardLocked(); err != nil {
 		return 0, err
 	}
-	nowMS := now.UTC().UnixMilli()
-	args := []any{nowMS, nowMS, nowMS - minGap.Milliseconds()}
-	visible := `SELECT id FROM library WHERE trashed_at_ms IS NULL`
-	if len(filter.AllowedIDs) > 0 {
-		visible += ` AND id IN (` + sqlPlaceholders(len(filter.AllowedIDs)) + `)`
-		for _, id := range filter.AllowedIDs {
-			args = append(args, id)
-		}
-	}
-	if !filter.Revealed {
-		visible += ` AND is_restricted = 0`
-	}
-	if len(filter.SealedIDs) > 0 {
-		visible += ` AND id NOT IN (` + sqlPlaceholders(len(filter.SealedIDs)) + `)`
-		for _, id := range filter.SealedIDs {
-			args = append(args, id)
-		}
-	}
-	// #nosec G202 -- only generated placeholders and closed clauses are interpolated; every value is bound.
-	result, err := s.catalogW.ExecContext(ctx, `
-		UPDATE subscription SET next_poll_at_ms = ?, refresh_requested_at_ms = ?
-		WHERE (refresh_requested_at_ms = 0 OR refresh_requested_at_ms <= ?)
-		AND library_id IN (`+visible+`)
-	`, args...)
+	libraries, err := loadLibraries(ctx, s.catalogR)
 	if err != nil {
 		return 0, err
 	}
-	affected, err := result.RowsAffected()
-	return int(affected), err
+	visiblePlain := map[LibraryID]bool{}
+	visibleEnc := map[LibraryID]bool{}
+	for _, library := range libraries {
+		if !libraryVisible(library, filter) {
+			continue
+		}
+		if library.Encrypted {
+			visibleEnc[library.ID] = true
+		} else {
+			visiblePlain[library.ID] = true
+		}
+	}
+	nowMS := now.UTC().UnixMilli()
+	cutoffMS := nowMS - minGap.Milliseconds()
+	total := 0
+	for _, plane := range s.allCatalogPlanesLocked() {
+		if plane.encrypted {
+			if !visibleEnc[plane.libraryID] {
+				continue
+			}
+			result, err := plane.writer.ExecContext(ctx, `
+				UPDATE subscription SET next_poll_at_ms = ?, refresh_requested_at_ms = ?
+				WHERE library_id = ? AND (refresh_requested_at_ms = 0 OR refresh_requested_at_ms <= ?)
+			`, nowMS, nowMS, plane.libraryID, cutoffMS)
+			if err != nil {
+				return total, err
+			}
+			affected, err := result.RowsAffected()
+			if err != nil {
+				return total, err
+			}
+			total += int(affected)
+			continue
+		}
+		if len(visiblePlain) == 0 {
+			continue
+		}
+		args := []any{nowMS, nowMS, cutoffMS}
+		visible := `SELECT id FROM library WHERE trashed_at_ms IS NULL AND encrypted = 0`
+		if len(filter.AllowedIDs) > 0 {
+			visible += ` AND id IN (` + sqlPlaceholders(len(filter.AllowedIDs)) + `)`
+			for _, id := range filter.AllowedIDs {
+				args = append(args, id)
+			}
+		}
+		if !filter.Revealed {
+			visible += ` AND is_restricted = 0`
+		}
+		if len(filter.SealedIDs) > 0 {
+			visible += ` AND id NOT IN (` + sqlPlaceholders(len(filter.SealedIDs)) + `)`
+			for _, id := range filter.SealedIDs {
+				args = append(args, id)
+			}
+		}
+		// #nosec G202 -- only generated placeholders and closed clauses are interpolated; every value is bound.
+		result, err := plane.writer.ExecContext(ctx, `
+			UPDATE subscription SET next_poll_at_ms = ?, refresh_requested_at_ms = ?
+			WHERE (refresh_requested_at_ms = 0 OR refresh_requested_at_ms <= ?)
+			AND library_id IN (`+visible+`)
+		`, args...)
+		if err != nil {
+			return total, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return total, err
+		}
+		total += int(affected)
+	}
+	return total, nil
 }

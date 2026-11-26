@@ -126,3 +126,24 @@ func (l hydrationBackfillOnUnseal) UnsealEncryptedLibraryDB(ctx context.Context,
 	l.backfill(context.WithoutCancel(ctx))
 	return nil
 }
+
+// artworkReplayOnUnseal wakes the background artwork action replay worker when
+// an Encrypted Library's database is unsealed at runtime, so any pending or
+// retryable artwork actions on that Library's plane run promptly.
+type artworkReplayOnUnseal struct {
+	encryptedLibraryDBLifecycle
+	wake chan<- struct{}
+}
+
+func (l artworkReplayOnUnseal) UnsealEncryptedLibraryDB(ctx context.Context, libraryID store.LibraryID, cipher store.EncryptedLibraryDBCipher) error {
+	if err := l.encryptedLibraryDBLifecycle.UnsealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
+		return err
+	}
+	if l.wake != nil {
+		select {
+		case l.wake <- struct{}{}:
+		default:
+		}
+	}
+	return nil
+}

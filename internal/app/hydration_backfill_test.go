@@ -50,6 +50,16 @@ func TestHydrationBackfillRunsAfterRuntimeUnseal(t *testing.T) {
 	}); !ok {
 		t.Fatal("the unseal wrapper hides the staged-provision abort the graph handler asserts for")
 	}
+	wake := make(chan struct{}, 1)
+	artLifecycle := artworkReplayOnUnseal{encryptedLibraryDBLifecycle: inner, wake: wake}
+	inner.err = errors.New("wrong passphrase")
+	if err := artLifecycle.UnsealEncryptedLibraryDB(ctx, "lib-1", nil); err == nil || len(wake) != 0 {
+		t.Fatalf("failed unseal woke artwork replay unexpectedly: err=%v len=%d", err, len(wake))
+	}
+	inner.err = nil
+	if err := artLifecycle.UnsealEncryptedLibraryDB(ctx, "lib-1", nil); err != nil || len(wake) != 1 {
+		t.Fatalf("successful unseal did not wake artwork replay: err=%v len=%d", err, len(wake))
+	}
 }
 
 type unsealRecorder struct {

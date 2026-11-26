@@ -33,9 +33,14 @@ type UnmatchedSuppression struct {
 	// stable content fingerprint, or the record+candidate pair. Core compares it
 	// and never parses it for meaning.
 	Key string
-	// RecordID names the Unmatched Record a candidate- or record-scoped
-	// suppression belongs to; empty for a pure file-scoped one.
+	// RecordID names the Unmatched Record a suppression belongs to (including
+	// file-scoped suppressions created from an inbox record); empty only for a
+	// standalone file-scoped suppression.
 	RecordID string
+	// LibraryID optionally pins a file-scoped suppression without RecordID to a
+	// Library's own plane. Empty on legacy global catalog rows; populated on read
+	// from Encrypted Library planes.
+	LibraryID LibraryID
 	// SourceHandle is the display handle captured at suppression time (a path or
 	// an external-id summary). Context only — never the durable identity.
 	SourceHandle   string
@@ -86,17 +91,47 @@ func (s *Store) SuppressUnmatched(ctx context.Context, suppression UnmatchedSupp
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	// A record-bearing suppression lives beside its record. A record no
-	// readable plane holds is refused rather than written to the shared
-	// catalog: it may sit on a sealed Encrypted Library plane, and its key and
-	// source handle would otherwise reach the global catalog in plaintext.
+	// A suppression lives beside its Unmatched Record or named Library. A record
+	// or Library no readable plane holds is refused rather than written to the
+	// shared catalog. For a file-scoped suppression without RecordID/LibraryID,
+	// resolve any matching open Encrypted Library plane before falling back to the
+	// shared catalog so private files never write plaintext keys globally.
 	plane := catalogPlane{writer: s.catalogW, reader: s.catalogR}
-	if suppression.RecordID != "" {
+	switch {
+	case suppression.RecordID != "":
 		recordPlane, err := s.unmatchedRecordPlaneLocked(ctx, suppression.RecordID)
 		if err != nil {
 			return err
 		}
 		plane = recordPlane
+	case suppression.LibraryID != "":
+		libPlane, err := s.catalogPlaneForLibraryLocked(ctx, suppression.LibraryID)
+		if err != nil {
+			return err
+		}
+		plane = libPlane
+	case suppression.Scope == SuppressionScopeFile:
+		encPlane, found, err := s.fileSuppressionPlaneLocked(ctx, suppression.Key, suppression.SourceHandle)
+		if err != nil {
+			return err
+		}
+		if found {
+			plane = encPlane
+			break
+		}
+		sharedOwned, err := s.fileSuppressionOwnedBySharedCatalogLocked(ctx, suppression.Key, suppression.SourceHandle)
+		if err != nil {
+			return err
+		}
+		if !sharedOwned {
+			sealed, err := s.hasSealedEncryptedLibraryLocked(ctx)
+			if err != nil {
+				return err
+			}
+			if sealed {
+				return ErrEncryptedLibraryDBDisabled
+			}
+		}
 	}
 	_, err := plane.writer.ExecContext(ctx, `
 		INSERT INTO unmatched_suppression(scope, scope_key, record_id, source_handle, actor_profile_id, created_at_ms)
@@ -201,6 +236,144 @@ func (s *Store) UnmatchedSuppressions(ctx context.Context, recordID string) ([]U
 	return out, nil
 }
 
+// UnmatchedSuppressionsFiltered lists active suppressions visible under filter,
+// newest first, skipping any suppression bound to an invisible Library.
+func (s *Store) UnmatchedSuppressionsFiltered(ctx context.Context, recordID string, filter LibraryFilter) ([]UnmatchedSuppression, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	libraries, err := loadLibraries(ctx, s.catalogR)
+	if err != nil {
+		return nil, err
+	}
+	visibleLibs := make(map[LibraryID]bool, len(libraries))
+	for _, library := range libraries {
+		if libraryVisible(library, filter) {
+			visibleLibs[library.ID] = true
+		}
+	}
+	out := []UnmatchedSuppression{}
+	for _, plane := range s.expressionReadPlanesLocked() {
+		if plane.encrypted && !visibleLibs[plane.libraryID] {
+			continue
+		}
+		suppressions, err := planeUnmatchedSuppressions(ctx, plane, recordID)
+		if err != nil {
+			return nil, err
+		}
+		for _, suppression := range suppressions {
+			if !plane.encrypted && suppression.RecordID != "" {
+				var recLib sql.NullString
+				if err := plane.reader.QueryRowContext(ctx,
+					`SELECT library_id FROM unmatched_record WHERE id = ?`, suppression.RecordID).
+					Scan(&recLib); err == nil && recLib.Valid && !visibleLibs[LibraryID(recLib.String)] {
+					continue
+				}
+			}
+			out = append(out, suppression)
+		}
+	}
+	slices.SortStableFunc(out, func(a, b UnmatchedSuppression) int {
+		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Scope, b.Scope); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Key, b.Key)
+	})
+	return out, nil
+}
+
+func (s *Store) fileSuppressionPlaneLocked(ctx context.Context, key, sourceHandle string) (catalogPlane, bool, error) {
+	for _, plane := range s.unsealedEncryptedPlanesLocked() {
+		var hit int
+		err := plane.reader.QueryRowContext(ctx, `
+			SELECT 1 FROM media WHERE id = ?
+			UNION ALL
+			SELECT 1 FROM media_file WHERE content_fingerprint = ?
+			UNION ALL
+			SELECT 1 FROM unmatched_record WHERE media_id = ? OR (? <> '' AND source_handle = ?)
+			LIMIT 1`, key, key, key, sourceHandle, sourceHandle).Scan(&hit)
+		if err == nil {
+			return plane, true, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return catalogPlane{}, false, err
+		}
+	}
+	return catalogPlane{}, false, nil
+}
+
+func (s *Store) fileSuppressionOwnedBySharedCatalogLocked(ctx context.Context, key, sourceHandle string) (bool, error) {
+	// When a caller provides a SourceHandle, require that handle itself to be
+	// owned by a plaintext Library so a shared content fingerprint can never
+	// smuggle a sealed Encrypted Library's private path into catalog.db.
+	if sourceHandle != "" {
+		var hit int
+		err := s.catalogR.QueryRowContext(ctx, `
+			SELECT 1 FROM media_file mf
+			JOIN media m ON m.id = mf.media_id
+			JOIN library l ON l.id = m.library_id
+			WHERE l.encrypted = 0 AND mf.path = ? AND (mf.content_fingerprint = ? OR m.id = ?)
+			UNION ALL
+			SELECT 1 FROM unmatched_record ur
+			JOIN library l ON l.id = ur.library_id
+			WHERE l.encrypted = 0 AND ur.source_handle = ?
+			LIMIT 1`, sourceHandle, key, key, sourceHandle).Scan(&hit)
+		if err == nil {
+			return true, nil
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	var hit int
+	err := s.catalogR.QueryRowContext(ctx, `
+		SELECT 1 FROM media m
+		JOIN library l ON l.id = m.library_id
+		WHERE l.encrypted = 0 AND m.id = ?
+		UNION ALL
+		SELECT 1 FROM media_file mf
+		JOIN media m ON m.id = mf.media_id
+		JOIN library l ON l.id = m.library_id
+		WHERE l.encrypted = 0 AND mf.content_fingerprint = ?
+		UNION ALL
+		SELECT 1 FROM unmatched_record ur
+		JOIN library l ON l.id = ur.library_id
+		WHERE l.encrypted = 0 AND ur.media_id = ?
+		LIMIT 1`, key, key, key).Scan(&hit)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return false, err
+}
+
+func (s *Store) hasSealedEncryptedLibraryLocked(ctx context.Context) (bool, error) {
+	rows, err := s.catalogR.QueryContext(ctx, `SELECT id FROM library WHERE encrypted != 0`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id LibraryID
+		if err := rows.Scan(&id); err != nil {
+			return false, err
+		}
+		db := s.encryptedDBs[id]
+		if db == nil || db.state != "unsealed-registered" || db.reader == nil || db.writer == nil {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
 func planeUnmatchedSuppressions(ctx context.Context, plane catalogPlane, recordID string) ([]UnmatchedSuppression, error) {
 	query := `
 		SELECT scope, scope_key, record_id, source_handle, actor_profile_id, created_at_ms
@@ -230,6 +403,7 @@ func planeUnmatchedSuppressions(ctx context.Context, plane catalogPlane, recordI
 			return nil, err
 		}
 		suppression.RecordID = record.String
+		suppression.LibraryID = plane.libraryID
 		suppression.ActorProfileID = ProfileID(actor.String)
 		suppression.CreatedAt = millisToTime(createdMS)
 		out = append(out, suppression)

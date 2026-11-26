@@ -633,16 +633,18 @@ describe("manage mutation request recording", () => {
       pluginID: "filmtv",
       scraperID: "tmdb",
       candidateID: "candidate-1",
+      requestId: "req-fix-1",
     });
     expect(recorded[0].query).toContain("mutation FixMatch");
     expect(recorded[0].query).toContain(
-      "fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, clearLocks: $clearLocks, sequence: $sequence, index: $index)",
+      "fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, clearLocks: $clearLocks, sequence: $sequence, index: $index, requestId: $requestId)",
     );
     expect(recorded[0].variables).toEqual({
       mediaID: "media-1",
       pluginID: "filmtv",
       scraperID: "tmdb",
       candidateID: "candidate-1",
+      requestId: "req-fix-1",
     });
   });
 

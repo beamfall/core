@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -630,5 +631,58 @@ func sweepSubscriptionRetention(t *testing.T, st *Store, want int) {
 	trashed, skipped, err := st.ApplySubscriptionRetentionPolicies(t.Context())
 	if err != nil || skipped || trashed != want {
 		t.Fatalf("retention sweep = %d, %v, %v, want %d, false, nil", trashed, skipped, err, want)
+	}
+}
+
+func TestEncryptedSubscriptionRetentionAppliesAndHidesPrivateMediaFromActivity(t *testing.T) {
+	ctx := t.Context()
+	st, encMedia := seededEncryptedMedia(t, "encrypted-retention")
+	defer func() { _ = st.Close() }()
+
+	keep := 1
+	now := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	sub, err := st.AddSubscription(ctx, Subscription{
+		LibraryID: encMedia.LibraryID, FeedURL: "https://feeds.example.com/enc-ret.xml", Root: "/enc/ret",
+		RetentionKind: RetentionKeepLastN, RetentionN: &keep,
+	}, now)
+	if err != nil {
+		t.Fatalf("AddSubscription: %v", err)
+	}
+	ids := make([]MediaID, 2)
+	for i := range ids {
+		path := filepath.Join(sub.Root, fmt.Sprintf("ep-%d.mp3", i))
+		item, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: sub.LibraryID, Path: path, Title: fmt.Sprintf("Ep %d", i), Class: MediaClassAudio,
+			Container: "mp3", Codec: "mp3", ContentFingerprint: HashMediaFilePath(path),
+		})
+		if err != nil {
+			t.Fatalf("ImportMediaFile #%d: %v", i, err)
+		}
+		if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, fmt.Sprintf("ep-%d", i), path, now.Add(time.Duration(i+1)*time.Second)); err != nil {
+			t.Fatalf("MarkSubscriptionEntrySeen #%d: %v", i, err)
+		}
+		ids[i] = item.ID
+	}
+
+	sweepSubscriptionRetention(t, st, 1)
+	filter := LibraryFilter{AllowedIDs: []LibraryID{encMedia.LibraryID}, Revealed: true}
+	if _, err := st.Media(ctx, ids[0], filter); err == nil {
+		t.Fatalf("expected older encrypted episode %s to be trashed by retention", ids[0])
+	}
+	if _, err := st.Media(ctx, ids[1], filter); err != nil {
+		t.Fatalf("newer encrypted episode %s should remain live: %v", ids[1], err)
+	}
+	plane, err := st.catalogPlaneForLibraryLocked(ctx, encMedia.LibraryID)
+	if err != nil {
+		t.Fatalf("catalogPlaneForLibraryLocked: %v", err)
+	}
+	var trashedAt sql.NullInt64
+	if err := plane.reader.QueryRowContext(ctx, `SELECT trashed_at_ms FROM media WHERE id = ?`, ids[0]).Scan(&trashedAt); err != nil || !trashedAt.Valid {
+		t.Fatalf("encrypted trashed_at_ms = %+v, %v; want valid timestamp", trashedAt, err)
+	}
+
+	var leaked int
+	if err := st.eventsR.QueryRowContext(ctx, `SELECT COUNT(*) FROM activity_entry WHERE target_id = ?`, ids[0]).Scan(&leaked); err != nil || leaked != 0 {
+		t.Fatalf("shared activity leaked encrypted trashed media ID: count=%d, err=%v", leaked, err)
 	}
 }

@@ -3839,10 +3839,13 @@ func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata Me
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	if err := s.updateMediaMetadataSQL(ctx, id, metadata); err != nil {
+	encrypted, err := s.updateMediaMetadataSQL(ctx, id, metadata)
+	if err != nil {
 		return err
 	}
-	s.emitMediaUpdated(ctx, id)
+	if !encrypted {
+		s.emitMediaUpdated(ctx, id)
+	}
 	return nil
 }
 

@@ -271,6 +271,9 @@ func (s *Store) DeleteProfile(ctx context.Context, id ProfileID) error {
 	if err := recordPlaneErasuresTx(ctx, tx, id, timeToMillis(s.serverNow().UTC()), true); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE media_identification_revision SET actor_profile_id = NULL WHERE actor_profile_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM profile WHERE id = ?`, id); err != nil {
 		return err
 	}

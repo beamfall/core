@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -8,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -51,26 +53,9 @@ func ProvisionalMediaID(libraryID LibraryID, guid string) MediaID {
 }
 
 // ErrEncryptedLibraryProvisionalMedia refuses a provisional feed Media in an
-// Encrypted Library (CORE-0706): its title, tee path and GUID External ID
-// would otherwise be written to the shared catalog in plaintext.
+// Encrypted Library (CORE-0706) when the library's encrypted plane is sealed
+// or unavailable.
 var ErrEncryptedLibraryProvisionalMedia = ValidationError("provisional feed Media are not available in an Encrypted Library yet")
-
-// provisionalLibraryTx admits a provisional Media only into an existing
-// plaintext Library.
-func provisionalLibraryTx(ctx context.Context, tx *sql.Tx, libraryID LibraryID) error {
-	var encrypted int
-	err := tx.QueryRowContext(ctx, "SELECT encrypted FROM library WHERE id = ?", libraryID).Scan(&encrypted)
-	if errors.Is(err, sql.ErrNoRows) {
-		return errors.New("library not found")
-	}
-	if err != nil {
-		return err
-	}
-	if encrypted != 0 {
-		return ErrEncryptedLibraryProvisionalMedia
-	}
-	return nil
-}
 
 // ErrProvisionalRegistrationConflict means a registration attempted to revive
 // an already-promoted or otherwise non-provisional Media.
@@ -147,14 +132,17 @@ func (s *Store) CreateProvisionalMedia(ctx context.Context, p ProvisionalMedia) 
 		return "", err
 	}
 	now := time.Now().UTC()
-	if err := s.createProvisionalMediaSQL(ctx, mediaID, p, now); err != nil {
+	plane, err := s.createProvisionalMediaSQL(ctx, mediaID, p, now)
+	if err != nil {
 		return "", err
 	}
-	if eventErr := s.appendMediaEventLocked(ctx, MediaEventCreated, mediaID, nil, now); eventErr != nil {
-		// The Media is already persisted; a failed outbox append must not fail
-		// the create (same posture as ImportMediaFile). Log it so the resulting
-		// catalog/outbox divergence is visible to the operator.
-		slog.Warn("media outbox event append failed", "kind", MediaEventCreated, "media", mediaID, "error", eventErr)
+	if !plane.encrypted {
+		if eventErr := s.appendMediaEventLocked(ctx, MediaEventCreated, mediaID, nil, now); eventErr != nil {
+			// The Media is already persisted; a failed outbox append must not fail
+			// the create (same posture as ImportMediaFile). Log it so the resulting
+			// catalog/outbox divergence is visible to the operator.
+			slog.Warn("media outbox event append failed", "kind", MediaEventCreated, "media", mediaID, "error", eventErr)
+		}
 	}
 	return mediaID, nil
 }
@@ -185,14 +173,15 @@ func (s *Store) RegisterProvisionalMedia(ctx context.Context, p ProvisionalMedia
 	if err := s.guardLocked(); err != nil {
 		return "", "", err
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, p.LibraryID)
+	if err != nil {
+		return "", "", err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return "", "", err
 	}
 	defer tx.Rollback()
-	if err := provisionalLibraryTx(ctx, tx, p.LibraryID); err != nil {
-		return "", "", err
-	}
 	var one int
 	var provisional int
 	err = tx.QueryRowContext(ctx, `SELECT path, provisional FROM media_file WHERE media_id = ?`, mediaID).Scan(&previousPath, &provisional)
@@ -296,10 +285,17 @@ func (s *Store) CompensateProvisionalMediaRegistration(ctx context.Context, medi
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	if previousPath == "" {
-		return s.compensateNewProvisionalRegistration(ctx, mediaID, registeredPath)
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return false, nil
 	}
-	res, err := s.catalogW.ExecContext(ctx, `
+	if err != nil {
+		return false, err
+	}
+	if previousPath == "" {
+		return s.compensateNewProvisionalRegistration(ctx, plane, mediaID, registeredPath)
+	}
+	res, err := plane.writer.ExecContext(ctx, `
 		UPDATE media_file SET path = ?
 		WHERE media_id = ? AND content_fingerprint = ? AND path = ? AND provisional = 1
 	`, previousPath, mediaID, provisionalFingerprint(mediaID), registeredPath)
@@ -310,8 +306,8 @@ func (s *Store) CompensateProvisionalMediaRegistration(ctx context.Context, medi
 	return rows == 1, err
 }
 
-func (s *Store) compensateNewProvisionalRegistration(ctx context.Context, mediaID MediaID, registeredPath string) (bool, error) {
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+func (s *Store) compensateNewProvisionalRegistration(ctx context.Context, plane catalogPlane, mediaID MediaID, registeredPath string) (bool, error) {
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
@@ -341,16 +337,16 @@ func (s *Store) compensateNewProvisionalRegistration(ctx context.Context, mediaI
 	return true, nil
 }
 
-func (s *Store) createProvisionalMediaSQL(ctx context.Context, mediaID MediaID, p ProvisionalMedia, now time.Time) error {
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+func (s *Store) createProvisionalMediaSQL(ctx context.Context, mediaID MediaID, p ProvisionalMedia, now time.Time) (catalogPlane, error) {
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, p.LibraryID)
 	if err != nil {
-		return err
+		return catalogPlane{}, err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return catalogPlane{}, err
 	}
 	defer tx.Rollback()
-
-	if err := provisionalLibraryTx(ctx, tx, p.LibraryID); err != nil {
-		return err
-	}
 	// Idempotent on the GUID-derived ID: a re-play of the same entry must not
 	// fork the Media or overwrite a title an importer/identification set. The
 	// ON CONFLICT is a no-op (id stays, provisional flag untouched) so a
@@ -360,22 +356,22 @@ func (s *Store) createProvisionalMediaSQL(ctx context.Context, mediaID MediaID, 
 		VALUES (?, ?, ?, 0, ?, ?, ?, 'scan')
 		ON CONFLICT(id) DO NOTHING
 	`, mediaID, p.LibraryID, p.Title, p.Container, p.Codec, p.Class); err != nil {
-		return err
+		return catalogPlane{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO media_file(id, content_fingerprint, media_id, path, provisional, last_seen_at_ms)
 		VALUES (?, ?, ?, ?, 1, ?)
 		ON CONFLICT(content_fingerprint) DO NOTHING
 	`, provisionalFingerprint(mediaID), provisionalFingerprint(mediaID), mediaID, p.TeePath, timeToMillis(now)); err != nil {
-		return err
+		return catalogPlane{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
 		VALUES (?, ?, ?)
 	`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(p.GUID)); err != nil {
-		return err
+		return catalogPlane{}, err
 	}
-	return tx.Commit()
+	return plane, tx.Commit()
 }
 
 // PromoteProvisionalMedia promotes a provisional Media to archived in place on
@@ -425,9 +421,23 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	// Route unsealed encrypted planes first so plaintext promotions touch
+	// catalogW cleanly inside the transaction without pre-querying catalogR.
+	plane := catalogPlane{writer: s.catalogW, reader: s.catalogR}
+	for _, enc := range s.registeredEncryptedPlanesLocked() {
+		var found int
+		err := enc.reader.QueryRowContext(ctx, `SELECT 1 FROM media WHERE id = ?`, mediaID).Scan(&found)
+		if err == nil {
+			plane = enc
+			break
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return false, err
+		}
+	}
 	// BEGIN IMMEDIATE serializes the decision and UPDATE with scan and managed
 	// import admissions, even when they use a different fingerprint key.
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
@@ -439,17 +449,21 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 		}
 		if duplicate {
 			// A concurrent admission can own the archive path even when the
-			// duplicate was found at a different path. Read the committed catalog
+			// duplicate was found at a different path. Read the committed plane
 			// independently of the transaction, which cancellation can roll back.
 			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 			defer cancel()
-			var keep bool
-			err := s.catalogR.QueryRowContext(cleanupCtx, `
-				SELECT EXISTS (SELECT 1 FROM media_file
-					WHERE path IN (?, ?) AND missing_at_ms IS NULL)
-			`, finalPath, archivePath).Scan(&keep)
+			var inPlane, keep bool
+			err := plane.reader.QueryRowContext(cleanupCtx, `
+				SELECT
+					EXISTS (SELECT 1 FROM media WHERE id = ?),
+					EXISTS (SELECT 1 FROM media_file WHERE path IN (?, ?) AND missing_at_ms IS NULL)
+			`, mediaID, finalPath, archivePath).Scan(&inPlane, &keep)
 			if err != nil {
 				return false, err
+			}
+			if !inPlane {
+				return false, nil
 			}
 			return false, &ProvisionalPromotionDuplicateError{KeepArchive: keep}
 		}
@@ -476,10 +490,12 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
-	if eventErr := s.appendMediaEventLocked(ctx, MediaEventUpdated, mediaID, nil, time.Now().UTC()); eventErr != nil {
-		// The promotion is already committed; the append must not fail it, but the
-		// divergence has to be visible.
-		slog.Warn("media outbox event append failed", "kind", MediaEventUpdated, "media", mediaID, "error", eventErr)
+	if !plane.encrypted {
+		if eventErr := s.appendMediaEventLocked(ctx, MediaEventUpdated, mediaID, nil, time.Now().UTC()); eventErr != nil {
+			// The promotion is already committed; the append must not fail it, but the
+			// divergence has to be visible.
+			slog.Warn("media outbox event append failed", "kind", MediaEventUpdated, "media", mediaID, "error", eventErr)
+		}
 	}
 	return true, nil
 }
@@ -500,7 +516,14 @@ func (s *Store) CompensateProvisionalMediaPromotion(ctx context.Context, mediaID
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
@@ -523,8 +546,10 @@ func (s *Store) CompensateProvisionalMediaPromotion(ctx context.Context, mediaID
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
-	if eventErr := s.appendMediaEventLocked(ctx, MediaEventUpdated, mediaID, nil, time.Now().UTC()); eventErr != nil {
-		slog.Warn("media promotion compensation outbox event append failed", "kind", MediaEventUpdated, "media", mediaID, "error", eventErr)
+	if !plane.encrypted {
+		if eventErr := s.appendMediaEventLocked(ctx, MediaEventUpdated, mediaID, nil, time.Now().UTC()); eventErr != nil {
+			slog.Warn("media promotion compensation outbox event append failed", "kind", MediaEventUpdated, "media", mediaID, "error", eventErr)
+		}
 	}
 	return true, nil
 }
@@ -543,7 +568,14 @@ func (s *Store) SetMediaFileProvisional(ctx context.Context, mediaID MediaID, pr
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx, `
 		UPDATE media_file SET provisional = ? WHERE media_id = ?
 	`, boolToInt(provisional), mediaID)
 	return err
@@ -561,8 +593,15 @@ func (s *Store) MediaFileProvisional(ctx context.Context, mediaID MediaID) (bool
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	var provisional int
-	err := s.catalogR.QueryRowContext(ctx, `
+	err = plane.reader.QueryRowContext(ctx, `
 		SELECT provisional FROM media_file WHERE media_id = ?
 	`, mediaID).Scan(&provisional)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -605,52 +644,97 @@ func (s *Store) availabilitySQL(ctx context.Context, value string, filter Librar
 	if err != nil {
 		return nil, err
 	}
-	var visible []LibraryID
+	var plainVisible []LibraryID
+	encVisible := map[LibraryID]bool{}
 	for _, library := range libraries {
-		if libraryVisible(library, filter) {
-			visible = append(visible, library.ID)
+		if !libraryVisible(library, filter) {
+			continue
+		}
+		if library.Encrypted {
+			encVisible[library.ID] = true
+		} else {
+			plainVisible = append(plainVisible, library.ID)
 		}
 	}
-	if len(visible) == 0 {
+	if len(plainVisible) == 0 && len(encVisible) == 0 {
 		return []SourceItem{}, nil
 	}
-	placeholders := make([]string, len(visible))
-	args := make([]any, 0, len(visible)+2)
-	for i, id := range visible {
-		placeholders[i] = "?"
-		args = append(args, id)
+	fetchLimit := limit + offset
+	if limit <= 0 {
+		fetchLimit = -1
 	}
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
-	args = append(args, certArgs...)
-	args = append(args, limit, offset)
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT m.id, m.title, m.library_id, m.duration_seconds
-		FROM media m
-		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
-		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+certClause+bandClause+`
-		ORDER BY m.title COLLATE NOCASE, m.id
-		LIMIT ? OFFSET ?
-	`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	items := []SourceItem{}
-	for rows.Next() {
-		var id MediaID
-		var title string
-		var libraryID LibraryID
-		var durationSeconds int
-		if err := rows.Scan(&id, &title, &libraryID, &durationSeconds); err != nil {
+	for _, plane := range s.allCatalogPlanesLocked() {
+		var libs []LibraryID
+		if plane.encrypted {
+			if !encVisible[plane.libraryID] {
+				continue
+			}
+			libs = []LibraryID{plane.libraryID}
+		} else {
+			if len(plainVisible) == 0 {
+				continue
+			}
+			libs = plainVisible
+		}
+		placeholders := make([]string, len(libs))
+		args := make([]any, 0, len(libs)+len(certArgs)+1)
+		for i, id := range libs {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		args = append(args, certArgs...)
+		limitSQL := ""
+		if fetchLimit >= 0 {
+			limitSQL = ` LIMIT ?`
+			args = append(args, fetchLimit)
+		}
+		// #nosec G202 -- only generated placeholders and closed clauses are interpolated.
+		rows, err := plane.reader.QueryContext(ctx, `
+			SELECT m.id, m.title, m.library_id, m.duration_seconds
+			FROM media m
+			WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
+			  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+certClause+bandClause+`
+			ORDER BY m.title COLLATE NOCASE, m.id`+limitSQL, args...)
+		if err != nil {
 			return nil, err
 		}
-		items = append(items, SourceItem{
-			ID:        id,
-			Kind:      "media",
-			Title:     title,
-			LibraryID: libraryID,
-			Summary:   mediaDurationSummary(durationSeconds),
-		})
+		for rows.Next() {
+			var id MediaID
+			var title string
+			var libraryID LibraryID
+			var durationSeconds int
+			if err := rows.Scan(&id, &title, &libraryID, &durationSeconds); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			items = append(items, SourceItem{
+				ID:        id,
+				Kind:      "media",
+				Title:     title,
+				LibraryID: libraryID,
+				Summary:   mediaDurationSummary(durationSeconds),
+			})
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
 	}
-	return items, rows.Err()
+	slices.SortFunc(items, func(a, b SourceItem) int {
+		return cmp.Or(
+			cmp.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title)),
+			cmp.Compare(a.ID, b.ID),
+		)
+	})
+	start := min(max(offset, 0), len(items))
+	end := len(items)
+	if limit > 0 {
+		end = min(start+limit, end)
+	}
+	return items[start:end], nil
 }

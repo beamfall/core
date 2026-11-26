@@ -143,6 +143,18 @@ func TestIdentificationRequestReplayConvergesOnce(t *testing.T) {
 			`UPDATE media_identification_revision SET candidate_id = 'rewritten' WHERE media_id = ?`, media.ID); err == nil {
 			t.Fatalf("encrypted=%v identification revision accepted an update", encrypted)
 		}
+		if _, err := plane.writer.ExecContext(ctx,
+			`UPDATE media_identification_revision SET actor_profile_id = 'profile-other' WHERE media_id = ?`, media.ID); err == nil {
+			t.Fatalf("encrypted=%v identification revision accepted non-null actor rewrite", encrypted)
+		}
+		if _, err := plane.writer.ExecContext(ctx,
+			`UPDATE media_identification_revision SET actor_profile_id = NULL, candidate_id = 'rewritten' WHERE media_id = ?`, media.ID); err == nil {
+			t.Fatalf("encrypted=%v identification revision accepted multi-column update with actor null", encrypted)
+		}
+		if _, err := plane.writer.ExecContext(ctx,
+			`UPDATE media_identification_revision SET actor_profile_id = NULL WHERE media_id = ?`, media.ID); err != nil {
+			t.Fatalf("encrypted=%v identification revision refused nulling actor_profile_id: %v", encrypted, err)
+		}
 		_ = st.Close()
 	}
 }

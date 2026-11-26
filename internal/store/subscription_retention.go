@@ -91,39 +91,53 @@ func (s *Store) reconcileSubscriptionSeenPaths(ctx context.Context) (int, int, e
 	if err := s.guardLocked(); err != nil {
 		return 0, 0, err
 	}
-	var skippedBlank int
-	if err := s.catalogR.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM subscription_seen_entry
-		WHERE path = '' AND seen_at_ms <> 0
-	`).Scan(&skippedBlank); err != nil {
-		return 0, 0, err
+	totalAffected, totalBlank := 0, 0
+	for _, plane := range s.allCatalogPlanesLocked() {
+		filterBlank := ""
+		filterSeen := ""
+		if !plane.encrypted {
+			filterBlank = ` AND subscription_id IN (SELECT id FROM subscription WHERE library_id IN (SELECT id FROM library WHERE encrypted = 0))`
+			filterSeen = ` AND sub.library_id IN (SELECT id FROM library WHERE encrypted = 0)`
+		}
+		var skippedBlank int
+		// #nosec G202 -- filterBlank is a closed literal SQL filter.
+		if err := plane.reader.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM subscription_seen_entry
+			WHERE path = '' AND seen_at_ms <> 0`+filterBlank).Scan(&skippedBlank); err != nil {
+			return 0, 0, err
+		}
+		tx, err := plane.writer.BeginTx(ctx, nil)
+		if err != nil {
+			return 0, 0, err
+		}
+		// #nosec G202 -- filterSeen is a closed literal SQL filter.
+		result, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
+			SELECT mf.media_id, ?, se.guid`+liveSubscriptionReceipts+filterSeen+` AND NOT `+receiptGUIDMayBeURL, subscriptionFeedGUIDScheme)
+		if err != nil {
+			_ = tx.Rollback()
+			return 0, 0, err
+		}
+		urlIDs, err := reconcileURLGUIDs(ctx, tx)
+		if err != nil {
+			_ = tx.Rollback()
+			return 0, 0, err
+		}
+		if err := repairLegacyFeedCatalogue(ctx, tx); err != nil {
+			_ = tx.Rollback()
+			return 0, 0, err
+		}
+		if err := tx.Commit(); err != nil {
+			return 0, 0, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return 0, 0, err
+		}
+		totalAffected += int(affected + urlIDs)
+		totalBlank += skippedBlank
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
-		SELECT mf.media_id, ?, se.guid`+liveSubscriptionReceipts+` AND NOT `+receiptGUIDMayBeURL, subscriptionFeedGUIDScheme)
-	if err != nil {
-		return 0, 0, err
-	}
-	urlIDs, err := reconcileURLGUIDs(ctx, tx)
-	if err != nil {
-		return 0, 0, err
-	}
-	if err := repairLegacyFeedCatalogue(ctx, tx); err != nil {
-		return 0, 0, err
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, 0, err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return 0, 0, err
-	}
-	return int(affected + urlIDs), skippedBlank, nil
+	return totalAffected, totalBlank, nil
 }
 
 func reconcileURLGUIDs(ctx context.Context, tx *sql.Tx) (int64, error) {
@@ -258,28 +272,69 @@ func (s *Store) subscriptionRetentionCandidates(ctx context.Context) ([]MediaID,
 	if err := s.flushSubscriptionRetentionActivityLocked(ctx); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
-		WITH entries AS (
-			SELECT sub.id AS subscription_id, sub.retention_kind, sub.retention_n, m.id AS media_id,
-			       se.seen_at_ms, se.feed_position,
-			       ROW_NUMBER() OVER (PARTITION BY sub.id, m.id
-			           ORDER BY se.seen_at_ms DESC, se.feed_position NULLS LAST) AS occurrence
-			`+liveSubscriptionReceipts+`
-			  AND sub.retention_kind IN (?, ?) AND `+retentionLibraryEligible+`
-		), heads AS (
-			SELECT media_id, retention_kind, retention_n,
-			       ROW_NUMBER() OVER (PARTITION BY subscription_id
-			           ORDER BY seen_at_ms DESC, feed_position NULLS LAST, media_id) AS rank
-			FROM entries WHERE occurrence = 1
-		)
-		SELECT DISTINCT media_id FROM heads
-		WHERE retention_kind = ? OR rank > retention_n
-		ORDER BY media_id
-	`, RetentionKeepLastN, RetentionDeleteAfterPlayed, RetentionDeleteAfterPlayed)
+	rows, err := s.catalogR.QueryContext(ctx, `SELECT id FROM library WHERE trashed_at_ms IS NULL AND encrypted != 0`)
 	if err != nil {
 		return nil, err
 	}
-	return scanRetentionIDs(rows)
+	liveEnc := map[LibraryID]bool{}
+	for rows.Next() {
+		var id LibraryID
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		liveEnc[id] = true
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var out []MediaID
+	for _, plane := range s.allCatalogPlanesLocked() {
+		libFilter := retentionLibraryEligible
+		if plane.encrypted {
+			if !liveEnc[plane.libraryID] {
+				continue
+			}
+			libFilter = `sub.library_id = ?`
+		}
+		query := `
+			WITH entries AS (
+				SELECT sub.id AS subscription_id, sub.retention_kind, sub.retention_n, m.id AS media_id,
+				       se.seen_at_ms, se.feed_position,
+				       ROW_NUMBER() OVER (PARTITION BY sub.id, m.id
+				           ORDER BY se.seen_at_ms DESC, se.feed_position NULLS LAST) AS occurrence
+				` + liveSubscriptionReceipts + `
+				  AND sub.retention_kind IN (?, ?) AND ` + libFilter + `
+			), heads AS (
+				SELECT media_id, retention_kind, retention_n,
+				       ROW_NUMBER() OVER (PARTITION BY subscription_id
+				           ORDER BY seen_at_ms DESC, feed_position NULLS LAST, media_id) AS rank
+				FROM entries WHERE occurrence = 1
+			)
+			SELECT DISTINCT media_id FROM heads
+			WHERE retention_kind = ? OR rank > retention_n
+			ORDER BY media_id
+		`
+		args := []any{RetentionKeepLastN, RetentionDeleteAfterPlayed}
+		if plane.encrypted {
+			args = append(args, plane.libraryID)
+		}
+		args = append(args, RetentionDeleteAfterPlayed)
+		// #nosec G202 -- libFilter is a closed literal clause.
+		rows, err := plane.reader.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		planeIDs, err := scanRetentionIDs(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, planeIDs...)
+	}
+	return out, nil
 }
 
 func scanRetentionIDs(rows *sql.Rows) ([]MediaID, error) {
@@ -305,10 +360,17 @@ func (s *Store) trashSubscriptionRetentionCandidate(ctx context.Context, id Medi
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	if _, ok, err := subscriptionRetentionPermits(ctx, s.catalogR, s.eventsR, id); err != nil || !ok {
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if errors.Is(err, errPlaneMediaNotFound) {
+		return false, nil
+	}
+	if err != nil {
 		return false, err
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if _, ok, err := subscriptionRetentionPermits(ctx, s.catalogR, plane.reader, s.eventsR, id); err != nil || !ok {
+		return false, err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
@@ -317,10 +379,12 @@ func (s *Store) trashSubscriptionRetentionCandidate(ctx context.Context, id Medi
 	if err != nil || !moved {
 		return false, err
 	}
-	if eventErr := s.appendMediaEventLocked(ctx, MediaEventDeleted, id, mediaDeletedPayload(activity.LibraryID), now); eventErr != nil {
-		slog.Warn("media outbox event append failed", "kind", MediaEventDeleted, "media", id, "error", eventErr)
+	if !plane.encrypted {
+		if eventErr := s.appendMediaEventLocked(ctx, MediaEventDeleted, id, mediaDeletedPayload(activity.LibraryID), now); eventErr != nil {
+			slog.Warn("media outbox event append failed", "kind", MediaEventDeleted, "media", id, "error", eventErr)
+		}
 	}
-	return true, s.publishSubscriptionRetentionActivityLocked(ctx, activity)
+	return true, s.publishSubscriptionRetentionActivityLocked(ctx, plane, activity)
 }
 
 func (s *Store) commitSubscriptionRetention(ctx context.Context, catalog *sql.Tx, id MediaID, now time.Time) (ActivityEntry, bool, error) {
@@ -332,7 +396,7 @@ func (s *Store) commitSubscriptionRetention(ctx context.Context, catalog *sql.Tx
 		return ActivityEntry{}, false, err
 	}
 	defer events.Rollback()
-	libraryID, ok, err := subscriptionRetentionPermits(ctx, catalog, events, id)
+	libraryID, ok, err := subscriptionRetentionPermits(ctx, s.catalogR, catalog, events, id)
 	if err != nil || !ok {
 		return ActivityEntry{}, false, err
 	}
@@ -360,40 +424,51 @@ func subscriptionRetentionActivity(operationID string, id MediaID, libraryID Lib
 	}
 }
 
-func (s *Store) publishSubscriptionRetentionActivityLocked(ctx context.Context, activity ActivityEntry) error {
-	if err := appendActivitySQL(ctx, s.eventsW, activity); err != nil {
+func (s *Store) publishSubscriptionRetentionActivityLocked(ctx context.Context, plane catalogPlane, activity ActivityEntry) error {
+	published := activity
+	if plane.encrypted {
+		// Encrypted Library Media IDs stay on the private plane; global
+		// activity retains only the opaque operation and Library identifier.
+		published.TargetID = ""
+	}
+	if err := appendActivitySQL(ctx, s.eventsW, published); err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `DELETE FROM subscription_retention_activity WHERE operation_id = ?`, activity.OperationID)
+	_, err := plane.writer.ExecContext(ctx, `DELETE FROM subscription_retention_activity WHERE operation_id = ?`, activity.OperationID)
 	return err
 }
 
 func (s *Store) flushSubscriptionRetentionActivityLocked(ctx context.Context) error {
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT operation_id, media_id, library_id, occurred_at_ms
-		FROM subscription_retention_activity ORDER BY occurred_at_ms, operation_id
-	`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	var pending []ActivityEntry
-	for rows.Next() {
-		var operationID string
-		var id MediaID
-		var libraryID LibraryID
-		var occurredAt int64
-		if err := rows.Scan(&operationID, &id, &libraryID, &occurredAt); err != nil {
+	for _, plane := range s.allCatalogPlanesLocked() {
+		rows, err := plane.reader.QueryContext(ctx, `
+			SELECT operation_id, media_id, library_id, occurred_at_ms
+			FROM subscription_retention_activity ORDER BY occurred_at_ms, operation_id
+		`)
+		if err != nil {
 			return err
 		}
-		pending = append(pending, subscriptionRetentionActivity(operationID, id, libraryID, time.UnixMilli(occurredAt).UTC()))
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, activity := range pending {
-		if err := s.publishSubscriptionRetentionActivityLocked(ctx, activity); err != nil {
+		var pending []ActivityEntry
+		for rows.Next() {
+			var operationID string
+			var id MediaID
+			var libraryID LibraryID
+			var occurredAt int64
+			if err := rows.Scan(&operationID, &id, &libraryID, &occurredAt); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			pending = append(pending, subscriptionRetentionActivity(operationID, id, libraryID, time.UnixMilli(occurredAt).UTC()))
+		}
+		if err := rows.Close(); err != nil {
 			return err
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, activity := range pending {
+			if err := s.publishSubscriptionRetentionActivityLocked(ctx, plane, activity); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -409,7 +484,6 @@ type retentionReference struct {
 	kind           RetentionKind
 	n              sql.NullInt64
 	libraryID      LibraryID
-	eligible       bool
 }
 
 // subscriptionRetentionPermits reports whether every Subscription that
@@ -417,24 +491,34 @@ type retentionReference struct {
 // cutoff, delete-after-played only once every follower has played it, and
 // keep-all never. A Favorite, Keep flag or pending imported star protects it
 // from every policy. Both writers are held for the final decision.
-func subscriptionRetentionPermits(ctx context.Context, catalog retentionQueryer, events queryRower, id MediaID) (LibraryID, bool, error) {
-	references, err := retentionReferences(ctx, catalog, id)
+func subscriptionRetentionPermits(ctx context.Context, catalogDB queryRower, planeCatalog retentionQueryer, events queryRower, id MediaID) (LibraryID, bool, error) {
+	references, err := retentionReferences(ctx, planeCatalog, id)
 	if err != nil || len(references) == 0 {
 		return "", false, err
 	}
 	var pendingStar, favorite bool
-	if err := catalog.QueryRowContext(ctx, `SELECT ? IN (`+retentionPendingStarIDs+`)`, id).Scan(&pendingStar); err != nil || pendingStar {
+	if err := planeCatalog.QueryRowContext(ctx, `SELECT ? IN (`+retentionPendingStarIDs+`)`, id).Scan(&pendingStar); err != nil || pendingStar {
 		return "", false, err
 	}
 	if err := events.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM media_favorite WHERE media_id = ?)`, id).Scan(&favorite); err != nil || favorite {
 		return "", false, err
 	}
+	eligibleByLibrary := make(map[LibraryID]bool, len(references))
 	for _, reference := range references {
+		eligible, cached := eligibleByLibrary[reference.libraryID]
+		if !cached {
+			if err := catalogDB.QueryRowContext(ctx, `
+				SELECT EXISTS (SELECT 1 FROM library WHERE id = ? AND trashed_at_ms IS NULL)
+			`, reference.libraryID).Scan(&eligible); err != nil {
+				return "", false, err
+			}
+			eligibleByLibrary[reference.libraryID] = eligible
+		}
 		ok := false
 		switch {
-		case !reference.eligible:
+		case !eligible:
 		case reference.kind == RetentionKeepLastN && reference.n.Valid:
-			ok, err = retentionPastKeepCutoff(ctx, catalog, events, reference.subscriptionID, id, reference.n.Int64)
+			ok, err = retentionPastKeepCutoff(ctx, planeCatalog, events, reference.subscriptionID, id, reference.n.Int64)
 		case reference.kind == RetentionDeleteAfterPlayed:
 			ok, err = retentionPlayedByEveryFollower(ctx, events, reference.subscriptionID, id)
 		}
@@ -447,7 +531,7 @@ func subscriptionRetentionPermits(ctx context.Context, catalog retentionQueryer,
 
 func retentionReferences(ctx context.Context, catalog retentionQueryer, id MediaID) ([]retentionReference, error) {
 	rows, err := catalog.QueryContext(ctx, `
-		SELECT DISTINCT sub.id, sub.retention_kind, sub.retention_n, m.library_id, `+retentionLibraryEligible+`
+		SELECT DISTINCT sub.id, sub.retention_kind, sub.retention_n, m.library_id
 		`+liveSubscriptionReceipts+` AND m.id = ?
 		ORDER BY sub.id
 	`, id)
@@ -458,7 +542,7 @@ func retentionReferences(ctx context.Context, catalog retentionQueryer, id Media
 	var references []retentionReference
 	for rows.Next() {
 		var reference retentionReference
-		if err := rows.Scan(&reference.subscriptionID, &reference.kind, &reference.n, &reference.libraryID, &reference.eligible); err != nil {
+		if err := rows.Scan(&reference.subscriptionID, &reference.kind, &reference.n, &reference.libraryID); err != nil {
 			return nil, err
 		}
 		references = append(references, reference)

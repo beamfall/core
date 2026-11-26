@@ -113,6 +113,7 @@ type App struct {
 	logger      *slog.Logger
 	setupToken  string
 	jobWake     *jobWake
+	artworkWake chan struct{}
 	// jobClaimSafetyInterval discovers jobs persisted outside this process. Local
 	// enqueue seams wake claimers immediately; the poll is deliberately slower
 	// so idle workers do not continuously query an empty queue.
@@ -333,6 +334,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		return nil, err
 	}
 	jobWake := newJobWake()
+	artworkWake := make(chan struct{}, 1)
 	inventory, err := plugin.OpenInventory(filepath.Join(cfg.DataDir, "plugins", "inventory"), executableBundles)
 	if err != nil {
 		_ = st.Close()
@@ -1116,6 +1118,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	precomputeSchedules.setSealed(sealedPredicate)
 	artworkService.SetSealed(sealedPredicate)
 	artworkService.SetEncrypted(encryptedPredicate)
+	subscriptionPoller.SetEncryptedIngest(appLibEncryptDBCipher{manager: libEncryptManager})
 	// Encrypted-Library crash-recovery derivative reconcile (ADR-0045 §reconcile,
 	// ENCPRIV-10d): install the app-layer purge seam BEFORE the boot-unseal loop
 	// below, so the first unseal of each Library already runs the reconcile. At the
@@ -1357,7 +1360,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		RemoteAccess:                 graphRemoteAccess,
 		PortMapping:                  graphPortMapping,
 		LibEncrypt:                   libEncryptManager,
-		EncryptedLibraryDBLifecycle:  hydrationBackfillOnUnseal{encryptedLibraryDBLifecycle: st, backfill: backfillHydration},
+		EncryptedLibraryDBLifecycle:  artworkReplayOnUnseal{encryptedLibraryDBLifecycle: hydrationBackfillOnUnseal{encryptedLibraryDBLifecycle: st, backfill: backfillHydration}, wake: artworkWake},
 		EncryptedGeneratedAssets:     assetService,
 		EncryptedDerivativePurgers:   []graph.EncryptedDerivativePurger{mediaHTTP, encryptedPrecomputePurger{cacheRoot: precomputeCacheRoot}},
 		ExtensionPusher:              extensionPusher,
@@ -1673,6 +1676,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		logger:                 logger,
 		setupToken:             setupToken,
 		jobWake:                jobWake,
+		artworkWake:            artworkWake,
 		jobClaimSafetyInterval: jobClaimSafetyInterval,
 		directHTTPS:            directHTTPS,
 		selfSigned:             selfSigned,
@@ -2109,14 +2113,25 @@ func (a *App) Run(ctx context.Context) (resultErr error) {
 		defer jobsDone.Done()
 		a.hostMetrics.Run(jobsCtx)
 	}()
-	// Artwork actions an identification committed before the last stop but
-	// never fetched complete now, each exactly once (CORE-0706).
+	// Artwork actions an identification committed before the last stop, on a
+	// newly unsealed Encrypted Library, or after a transient fetch failure
+	// replay until completed or attempt-capped (CORE-0706, CORE-3511).
 	if a.identify != nil {
 		jobsDone.Add(1)
 		go func() {
 			defer jobsDone.Done()
-			if _, err := a.identify.ReplayArtworkActions(jobsCtx); err != nil && jobsCtx.Err() == nil {
-				slog.Warn("identify: artwork action replay failed", "error", err.Error())
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				if _, err := a.identify.ReplayArtworkActions(jobsCtx); err != nil && jobsCtx.Err() == nil {
+					slog.Warn("identify: artwork action replay failed", "error", err.Error())
+				}
+				select {
+				case <-jobsCtx.Done():
+					return
+				case <-a.artworkWake:
+				case <-ticker.C:
+				}
 			}
 		}()
 	}

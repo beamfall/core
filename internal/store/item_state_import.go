@@ -45,12 +45,11 @@ func (s *Store) RecordItemStateImport(ctx context.Context, state ItemStateImport
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	// The ledger holds the feed's item GUIDs in the shared catalog, so an
-	// Encrypted Library's Subscription is refused like its other entry writes.
-	if err := s.refuseEncryptedSubscriptionLocked(ctx, state.SubscriptionID); err != nil {
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, state.SubscriptionID)
+	if err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT INTO item_state_import(profile_id, subscription_id, source, item_guid, played, has_progress, progress, starred, imported_at_ms, import_run_id, import_importer_id, import_match_method)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(profile_id, subscription_id, item_guid) DO UPDATE SET
@@ -112,47 +111,61 @@ func (s *Store) pendingItemStateImports(ctx context.Context) ([]pendingItemState
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT isi.profile_id, isi.subscription_id, isi.source, isi.item_guid,
-		       isi.played, isi.has_progress, isi.progress, isi.starred,
-		       isi.import_run_id, isi.import_importer_id, isi.import_match_method,
-		       mf.media_id, m.duration_seconds
-		FROM item_state_import isi
-		JOIN subscription_seen_entry se
-		  ON se.subscription_id = isi.subscription_id
-		 AND se.guid = isi.item_guid
-		 AND se.path <> ''
-		JOIN subscription sub ON sub.id = isi.subscription_id
-		JOIN media_file mf ON mf.path = se.path AND mf.missing_at_ms IS NULL
-		JOIN media m ON m.id = mf.media_id
-		 AND m.library_id = sub.library_id
-		 AND m.trashed_at_ms IS NULL
-		WHERE isi.applied_at_ms = 0
-		ORDER BY isi.profile_id, isi.subscription_id, isi.item_guid
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	var out []pendingItemStateImport
-	for rows.Next() {
-		var row pendingItemStateImport
-		var played, hasProgress, starred int
-		var runID, importerID, matchMethod sql.NullString
-		if err := rows.Scan(&row.ProfileID, &row.SubscriptionID, &row.Source, &row.ItemGUID,
-			&played, &hasProgress, &row.Progress, &starred,
-			&runID, &importerID, &matchMethod, &row.MediaID, &row.DurationSeconds); err != nil {
+	for _, plane := range s.allCatalogPlanesLocked() {
+		filterClause := ""
+		if !plane.encrypted {
+			filterClause = ` AND sub.library_id NOT IN (SELECT id FROM library WHERE encrypted <> 0)`
+		}
+		// #nosec G202 -- filterClause is a closed literal SQL filter.
+		rows, err := plane.reader.QueryContext(ctx, `
+			SELECT isi.profile_id, isi.subscription_id, isi.source, isi.item_guid,
+			       isi.played, isi.has_progress, isi.progress, isi.starred,
+			       isi.import_run_id, isi.import_importer_id, isi.import_match_method,
+			       mf.media_id, m.duration_seconds
+			FROM item_state_import isi
+			JOIN subscription_seen_entry se
+			  ON se.subscription_id = isi.subscription_id
+			 AND se.guid = isi.item_guid
+			 AND se.path <> ''
+			JOIN subscription sub ON sub.id = isi.subscription_id
+			JOIN media_file mf ON mf.path = se.path AND mf.missing_at_ms IS NULL
+			JOIN media m ON m.id = mf.media_id
+			 AND m.library_id = sub.library_id
+			 AND m.trashed_at_ms IS NULL
+			WHERE isi.applied_at_ms = 0`+filterClause+`
+			ORDER BY isi.profile_id, isi.subscription_id, isi.item_guid
+		`)
+		if err != nil {
 			return nil, err
 		}
-		row.Played = played != 0
-		row.HasProgress = hasProgress != 0
-		row.Starred = starred != 0
-		row.ImportRunID = runID.String
-		row.ImportImporterID = importerID.String
-		row.ImportMatchMethod = matchMethod.String
-		out = append(out, row)
+		for rows.Next() {
+			var row pendingItemStateImport
+			var played, hasProgress, starred int
+			var runID, importerID, matchMethod sql.NullString
+			if err := rows.Scan(&row.ProfileID, &row.SubscriptionID, &row.Source, &row.ItemGUID,
+				&played, &hasProgress, &row.Progress, &starred,
+				&runID, &importerID, &matchMethod, &row.MediaID, &row.DurationSeconds); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			row.Played = played != 0
+			row.HasProgress = hasProgress != 0
+			row.Starred = starred != 0
+			row.ImportRunID = runID.String
+			row.ImportImporterID = importerID.String
+			row.ImportMatchMethod = matchMethod.String
+			out = append(out, row)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *Store) applyItemStateImport(ctx context.Context, row pendingItemStateImport) (bool, error) {
@@ -181,7 +194,11 @@ func (s *Store) applyPendingImportedStar(ctx context.Context, row pendingItemSta
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	catalog, err := s.catalogW.BeginTx(ctx, nil)
+	plane, err := s.catalogPlaneForMediaLocked(ctx, row.MediaID)
+	if err != nil {
+		return false, err
+	}
+	catalog, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
@@ -262,7 +279,11 @@ func (s *Store) markItemStateImportApplied(ctx context.Context, row pendingItemS
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	result, err := s.catalogW.ExecContext(ctx, `
+	_, plane, err := s.catalogPlaneForSubscriptionLocked(ctx, row.SubscriptionID)
+	if err != nil {
+		return false, err
+	}
+	result, err := plane.writer.ExecContext(ctx, `
 		UPDATE item_state_import
 		SET applied_at_ms = ?, applied_media_id = ?
 		WHERE profile_id = ? AND subscription_id = ? AND item_guid = ?

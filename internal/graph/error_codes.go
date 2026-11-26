@@ -311,10 +311,11 @@ var clientErrorCodes = map[string]ErrorCode{
 	"display in party":                               ErrorCodeConflict,
 	"display already in a party":                     ErrorCodeConflict,
 	"commandID already used for a different command": ErrorCodeConflict,
-	"follow the subscription first":                  ErrorCodeConflict, // CORE-2958
-	"no backup key is waiting to be saved":           ErrorCodeConflict,
-	"the backup key changed; reveal it again":        ErrorCodeConflict,
-	"encrypted library is already provisioned":       ErrorCodeConflict,
+	"identification request ID was already used for a different identification":                    ErrorCodeConflict,
+	"follow the subscription first":                                                                ErrorCodeConflict, // CORE-2958
+	"no backup key is waiting to be saved":                                                         ErrorCodeConflict,
+	"the backup key changed; reveal it again":                                                      ErrorCodeConflict,
+	"encrypted library is already provisioned":                                                     ErrorCodeConflict,
 	"this item was merged into another item as a Version; undo the merge to split it back":         ErrorCodeConflict,
 	"an item in this batch was later merged into another item as a Version; undo that merge first": ErrorCodeConflict,
 	"job is not terminal": ErrorCodeConflict,

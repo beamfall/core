@@ -104,7 +104,12 @@ export function RecordInbox({
                       const scope = item.scope as SuppressionScope;
                       const target =
                         scope === "file"
-                          ? { scope, fingerprint: item.key, sourceHandle: item.sourceHandle }
+                          ? {
+                              scope,
+                              recordID: item.recordID || undefined,
+                              fingerprint: item.key,
+                              sourceHandle: item.sourceHandle,
+                            }
                           : scope === "candidate"
                             ? {
                                 scope,

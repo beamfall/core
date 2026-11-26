@@ -211,6 +211,7 @@ describe("UnmatchedPage", () => {
           pluginID: "filmtv",
           scraperID: "tmdb",
           candidateID: "outsider-2020",
+          requestId: expect.any(String),
         },
         undefined,
       );
@@ -277,6 +278,7 @@ describe("UnmatchedPage", () => {
           pluginID: "filmtv",
           scraperID: "tmdb",
           candidateID: "thing-1982",
+          requestId: expect.any(String),
         },
         undefined,
       ),

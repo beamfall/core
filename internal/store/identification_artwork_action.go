@@ -16,6 +16,7 @@ type ArtworkAction struct {
 	SourceURL string
 	PluginID  string
 	ScraperID string
+	Attempts  int
 }
 
 // enqueueArtworkActionsTx records the identification's artwork fetches as
@@ -67,18 +68,20 @@ func (s *Store) PendingArtworkActions(ctx context.Context, limit int) ([]Artwork
 			readers = append(readers, db.reader)
 		}
 	}
+	nowMS := s.serverNow().UTC().UnixMilli()
 	var out []ArtworkAction
 	for _, reader := range readers {
 		rows, err := reader.QueryContext(ctx, `
-			SELECT media_id, revision, slot, source_url, plugin_id, scraper_id
-			FROM media_artwork_action WHERE state = 'pending'
-			ORDER BY created_at_ms, media_id, slot LIMIT ?`, limit-len(out))
+			SELECT media_id, revision, slot, source_url, plugin_id, scraper_id, attempts
+			FROM media_artwork_action
+			WHERE state = 'pending' AND next_attempt_at_ms <= ?
+			ORDER BY next_attempt_at_ms, created_at_ms, media_id, slot LIMIT ?`, nowMS, limit-len(out))
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
 			var action ArtworkAction
-			if err := rows.Scan(&action.MediaID, &action.Revision, &action.Slot, &action.SourceURL, &action.PluginID, &action.ScraperID); err != nil {
+			if err := rows.Scan(&action.MediaID, &action.Revision, &action.Slot, &action.SourceURL, &action.PluginID, &action.ScraperID, &action.Attempts); err != nil {
 				_ = rows.Close()
 				return nil, err
 			}
@@ -111,7 +114,8 @@ func (s *Store) CompleteArtworkAction(ctx context.Context, action ArtworkAction,
 		return false, err
 	}
 	res, err := plane.writer.ExecContext(ctx, `
-		UPDATE media_artwork_action SET state = 'done', outcome = ?, completed_at_ms = ?
+		UPDATE media_artwork_action
+		SET state = 'done', outcome = ?, attempts = attempts + 1, completed_at_ms = ?
 		WHERE media_id = ? AND revision = ? AND slot = ? AND state = 'pending'`,
 		outcome, s.serverNow().UTC().UnixMilli(), action.MediaID, action.Revision, action.Slot)
 	if err != nil {
@@ -119,6 +123,47 @@ func (s *Store) CompleteArtworkAction(ctx context.Context, action ArtworkAction,
 	}
 	n, err := res.RowsAffected()
 	return n == 1, err
+}
+
+// RecordArtworkActionRetry records a failed artwork attempt while keeping the
+// action pending with backoff until maxAttempts is reached, at which point it
+// marks the action done with the failure outcome so permanent errors stop.
+func (s *Store) RecordArtworkActionRetry(ctx context.Context, action ArtworkAction, outcome string, retryAfter time.Duration, maxAttempts int) (requeued bool, err error) {
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, action.MediaID)
+	if err != nil {
+		return false, err
+	}
+	now := s.serverNow().UTC()
+	nextMS := now.Add(retryAfter).UnixMilli()
+	if maxAttempts > 1 {
+		res, err := plane.writer.ExecContext(ctx, `
+			UPDATE media_artwork_action
+			SET outcome = ?, attempts = attempts + 1, next_attempt_at_ms = ?
+			WHERE media_id = ? AND revision = ? AND slot = ? AND state = 'pending' AND attempts + 1 < ?`,
+			outcome, nextMS, action.MediaID, action.Revision, action.Slot, maxAttempts)
+		if err != nil {
+			return false, err
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return false, err
+		} else if n == 1 {
+			return true, nil
+		}
+	}
+	_, err = plane.writer.ExecContext(ctx, `
+		UPDATE media_artwork_action
+		SET state = 'done', outcome = ?, attempts = attempts + 1, completed_at_ms = ?
+		WHERE media_id = ? AND revision = ? AND slot = ? AND state = 'pending' AND attempts + 1 >= ?`,
+		outcome, now.UnixMilli(), action.MediaID, action.Revision, action.Slot, maxAttempts)
+	return false, err
 }
 
 // PendingArtworkActionsForMedia lists the Media's pending artwork actions on
@@ -133,9 +178,12 @@ func (s *Store) PendingArtworkActionsForMedia(ctx context.Context, id MediaID) (
 	if err != nil {
 		return nil, err
 	}
+	nowMS := s.serverNow().UTC().UnixMilli()
 	rows, err := plane.reader.QueryContext(ctx, `
-		SELECT media_id, revision, slot, source_url, plugin_id, scraper_id
-		FROM media_artwork_action WHERE media_id = ? AND state = 'pending' ORDER BY slot`, id)
+		SELECT media_id, revision, slot, source_url, plugin_id, scraper_id, attempts
+		FROM media_artwork_action
+		WHERE media_id = ? AND state = 'pending' AND next_attempt_at_ms <= ?
+		ORDER BY next_attempt_at_ms, slot`, id, nowMS)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +191,7 @@ func (s *Store) PendingArtworkActionsForMedia(ctx context.Context, id MediaID) (
 	var out []ArtworkAction
 	for rows.Next() {
 		var action ArtworkAction
-		if err := rows.Scan(&action.MediaID, &action.Revision, &action.Slot, &action.SourceURL, &action.PluginID, &action.ScraperID); err != nil {
+		if err := rows.Scan(&action.MediaID, &action.Revision, &action.Slot, &action.SourceURL, &action.PluginID, &action.ScraperID, &action.Attempts); err != nil {
 			return nil, err
 		}
 		out = append(out, action)

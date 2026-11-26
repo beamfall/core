@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -212,6 +213,10 @@ type Service struct {
 	queue             UnmatchedStore
 	pins              MatchPinStore
 	optionalAuthSkips sync.Map
+	// artworkMaxAttempts and artworkRetryBackoff bound post-commit artwork
+	// fetch retries; tests may override via SetArtworkRetry.
+	artworkMaxAttempts  int
+	artworkRetryBackoff func(attempt int) time.Duration
 	// writes serializes ordinal changes, lookups and hydration per Media item.
 	writes mediaWriteLocks
 }
@@ -277,6 +282,14 @@ func (s *Service) SetArtworkCandidates(store ArtworkCandidateStore) {
 // declared hydrations.
 func (s *Service) SetEntities(entities EntityStore) {
 	s.entities = entities
+}
+
+// SetArtworkRetry configures the bounded attempt limit and backoff schedule for
+// failed post-commit artwork fetches. Zero/nil restores defaults (5 attempts,
+// 1m/5m/15m/60m backoff).
+func (s *Service) SetArtworkRetry(maxAttempts int, backoff func(attempt int) time.Duration) {
+	s.artworkMaxAttempts = maxAttempts
+	s.artworkRetryBackoff = backoff
 }
 
 // SetFingerprints wires fingerprint-variable sourcing: Search and Apply read
@@ -437,7 +450,12 @@ func (s *Service) PreviewLookup(ctx context.Context, pluginID, scraperID, candid
 	if strings.TrimSpace(candidateID) == "" {
 		return Candidate{}, "", errors.New("identify: candidate ID is required")
 	}
-	clearOrdinal, err := s.shouldClearOrdinal(ctx, mediaID, candidateID, clearLocks, ordinal)
+	clearOrdinal, err := s.shouldClearOrdinal(ctx, FixMatchRequest{
+		MediaID:     mediaID,
+		CandidateID: candidateID,
+		ClearLocks:  clearLocks,
+		Ordinal:     ordinal,
+	})
 	if err != nil {
 		return Candidate{}, "", err
 	}
@@ -565,9 +583,29 @@ type mediaOrdinalReader interface {
 // Apply looks up the chosen candidate and writes its metadata onto the Media.
 // Visibility gating belongs to the caller.
 func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string) error {
-	unlock := s.writes.lock(mediaID)
+	return s.ApplyRequest(ctx, IdentifyRequest{
+		MediaID:     mediaID,
+		PluginID:    pluginID,
+		ScraperID:   scraperID,
+		CandidateID: candidateID,
+	})
+}
+
+// IdentifyRequest is one candidate identification with an optional client
+// RequestID for idempotent retry and optional Actor for revision attribution.
+type IdentifyRequest struct {
+	RequestID                        string
+	MediaID                          store.MediaID
+	PluginID, ScraperID, CandidateID string
+	Actor                            store.ProfileID
+}
+
+// ApplyRequest applies one identification with an optional RequestID so client
+// retries converge on the same revision without applying twice.
+func (s *Service) ApplyRequest(ctx context.Context, req IdentifyRequest) error {
+	unlock := s.writes.lock(req.MediaID)
 	defer unlock()
-	return s.apply(ctx, mediaID, pluginID, scraperID, candidateID, store.MediaMetadata{})
+	return s.applyCommit(ctx, req.MediaID, req.PluginID, req.ScraperID, req.CandidateID, store.MediaMetadata{OrdinalActor: req.Actor}, nil, req.RequestID)
 }
 
 // ApplyFixMatch uses the prospective ordinal for lookup and commits the manual
@@ -616,7 +654,7 @@ func (s *Service) applyFixMatch(ctx context.Context, req FixMatchRequest, atomic
 	clearLocks, ordinal, actor := req.ClearLocks, req.Ordinal, req.Actor
 	unlock := s.writes.lock(mediaID)
 	defer unlock()
-	clearOrdinal, err := s.shouldClearOrdinal(ctx, mediaID, candidateID, clearLocks, ordinal)
+	clearOrdinal, err := s.shouldClearOrdinal(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -630,7 +668,7 @@ func (s *Service) applyFixMatch(ctx context.Context, req FixMatchRequest, atomic
 	if atomic {
 		fix = &req
 	}
-	if err := s.applyCommit(ctx, mediaID, pluginID, scraperID, candidateID, edit, fix); err != nil {
+	if err := s.applyCommit(ctx, mediaID, pluginID, scraperID, candidateID, edit, fix, req.RequestID); err != nil {
 		return err
 	}
 	disposition := "kept"
@@ -643,19 +681,41 @@ func (s *Service) applyFixMatch(ctx context.Context, req FixMatchRequest, atomic
 	return nil
 }
 
-func (s *Service) shouldClearOrdinal(ctx context.Context, mediaID store.MediaID, candidateID string, clearLocks []string, ordinal *store.MediaOrdinal) (bool, error) {
-	if ordinal != nil {
+type revisionReader interface {
+	MediaIdentificationRevisions(context.Context, store.MediaID) ([]store.IdentificationRevision, error)
+}
+
+func (s *Service) shouldClearOrdinal(ctx context.Context, req FixMatchRequest) (bool, error) {
+	if req.Ordinal != nil {
 		return false, nil
 	}
-	if clearLocks != nil {
-		return slices.Contains(clearLocks, store.MediaOrdinalLockField), nil
+	if req.ClearLocks != nil {
+		return slices.Contains(req.ClearLocks, store.MediaOrdinalLockField), nil
+	}
+	// A retry with clearLocks omitted runs after attempt 1 already updated
+	// provenance, so recover whether attempt 1 cleared the ordinal.
+	if req.RequestID != "" && req.MediaID != "" {
+		if reader, ok := s.store.(revisionReader); ok {
+			if revisions, err := reader.MediaIdentificationRevisions(ctx, req.MediaID); err == nil {
+				for _, rev := range revisions {
+					if rev.RequestID != req.RequestID || rev.Kind != store.IdentificationKindFixMatch ||
+						rev.PluginID != req.PluginID || rev.ScraperID != req.ScraperID || rev.CandidateID != req.CandidateID {
+						continue
+					}
+					var detail store.FixMatchAudit
+					if err := json.Unmarshal([]byte(rev.DetailJSON), &detail); err == nil {
+						return detail.Ordinal == "cleared", nil
+					}
+				}
+			}
+		}
 	}
 	reader, ok := s.store.(ProvenanceReader)
-	if !ok || mediaID == "" {
+	if !ok || req.MediaID == "" {
 		return false, nil
 	}
-	current, _, err := reader.MediaMetadataProvenance(ctx, mediaID)
-	return current.CandidateID != candidateID, err
+	current, _, err := reader.MediaMetadataProvenance(ctx, req.MediaID)
+	return current.CandidateID != req.CandidateID, err
 }
 
 // ClearMediaOrdinal serializes unlock with lookups and writes for the same Media.
@@ -671,20 +731,49 @@ func (s *Service) ClearMediaOrdinal(ctx context.Context, mediaID store.MediaID) 
 	return writer.ClearMediaOrdinal(ctx, mediaID)
 }
 
-func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, edit store.MediaMetadata) error {
-	return s.applyCommit(ctx, mediaID, pluginID, scraperID, candidateID, edit, nil)
+type identificationCommitter interface {
+	CommitMediaIdentification(context.Context, store.MediaID, store.IdentificationCommit) (store.IdentificationReceipt, error)
 }
 
-func (s *Service) applyCommit(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, edit store.MediaMetadata, fix *FixMatchRequest) error {
+func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, edit store.MediaMetadata) error {
+	return s.applyCommit(ctx, mediaID, pluginID, scraperID, candidateID, edit, nil, "")
+}
+
+func (s *Service) applyCommit(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, edit store.MediaMetadata, fix *FixMatchRequest, requestID string) error {
 	if mediaID == "" {
 		return errors.New("identify: media ID is required")
 	}
 	if strings.TrimSpace(candidateID) == "" {
 		return errors.New("identify: candidate ID is required")
 	}
+	kind := store.IdentificationKindIdentify
+	if fix != nil {
+		kind = store.IdentificationKindFixMatch
+	}
+	intentDigest := identificationIntentDigest(kind, pluginID, scraperID, candidateID, edit)
+	replayed := false
+	if requestID != "" {
+		var err error
+		replayed, err = s.checkIdentificationReplay(ctx, mediaID, requestID, kind, pluginID, scraperID, candidateID, intentDigest)
+		if err != nil {
+			return err
+		}
+		// When no entity store is wired, the committed revision already holds
+		// the entire apply; skip the provider lookup on replay. When entities
+		// are wired, still finish idempotent entity hydration below so a retry
+		// after a transient entity-write failure converges cleanly without
+		// re-committing metadata or tripping over upstream metadata drift.
+		if replayed && s.entities == nil {
+			return nil
+		}
+	}
 	bundle, spec, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID, edit.OperatorOrdinal, edit.ClearOrdinal)
 	if err != nil {
 		return err
+	}
+	if replayed {
+		manual := s.effectiveOperatorOrdinal(ctx, mediaID, edit)
+		return s.applyEntities(ctx, mediaID, bundle, spec, result, manual)
 	}
 	metadata := metadataFromResult(result)
 	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil && metadata.SortTitle == nil {
@@ -719,9 +808,15 @@ func (s *Service) applyCommit(ctx context.Context, mediaID store.MediaID, plugin
 	if committer, ok := s.store.(fixMatchCommitter); fix != nil && ok {
 		if _, err := committer.CommitFixMatch(ctx, mediaID, store.FixMatchCommit{
 			IdentificationCommit: store.IdentificationCommit{
-				RequestID: fix.RequestID, Metadata: metadata, Provenance: provenance, Fields: fields,
+				RequestID: fix.RequestID, IntentDigest: intentDigest, Metadata: metadata, Provenance: provenance, Fields: fields,
 			},
 			Filter: fix.Filter,
+		}); err != nil {
+			return err
+		}
+	} else if committer, ok := s.store.(identificationCommitter); ok && requestID != "" {
+		if _, err := committer.CommitMediaIdentification(ctx, mediaID, store.IdentificationCommit{
+			RequestID: requestID, IntentDigest: intentDigest, Metadata: metadata, Provenance: provenance, Fields: fields,
 		}); err != nil {
 			return err
 		}
@@ -733,6 +828,68 @@ func (s *Service) applyCommit(ctx context.Context, mediaID store.MediaID, plugin
 	}
 	s.applyArtwork(ctx, mediaID, pluginID, scraperID, result)
 	return nil
+}
+
+func (s *Service) checkIdentificationReplay(ctx context.Context, mediaID store.MediaID, requestID, kind, pluginID, scraperID, candidateID, intentDigest string) (bool, error) {
+	reader, ok := s.store.(revisionReader)
+	if !ok {
+		return false, nil
+	}
+	revisions, err := reader.MediaIdentificationRevisions(ctx, mediaID)
+	if err != nil {
+		return false, err
+	}
+	for _, rev := range revisions {
+		if rev.RequestID != requestID {
+			continue
+		}
+		if rev.Kind != kind || rev.PluginID != pluginID || rev.ScraperID != scraperID || rev.CandidateID != candidateID {
+			return false, store.ErrIdentificationRequestConflict
+		}
+		var detail struct {
+			IntentDigest string `json:"intentDigest"`
+		}
+		if err := json.Unmarshal([]byte(rev.DetailJSON), &detail); err == nil && detail.IntentDigest != "" {
+			if detail.IntentDigest != intentDigest {
+				return false, store.ErrIdentificationRequestConflict
+			}
+			return true, nil
+		}
+		return false, nil
+	}
+	return false, nil
+}
+
+func identificationIntentDigest(kind, pluginID, scraperID, candidateID string, edit store.MediaMetadata) string {
+	var clearLocks []string
+	if len(edit.ClearLocks) > 0 {
+		clearLocks = slices.Clone(edit.ClearLocks)
+		slices.Sort(clearLocks)
+	}
+	payload, err := json.Marshal(struct {
+		Kind         string
+		PluginID     string
+		ScraperID    string
+		CandidateID  string
+		ClearLocks   []string
+		Ordinal      *store.MediaOrdinal
+		ClearOrdinal bool
+		Actor        store.ProfileID
+	}{
+		Kind:         kind,
+		PluginID:     pluginID,
+		ScraperID:    scraperID,
+		CandidateID:  candidateID,
+		ClearLocks:   clearLocks,
+		Ordinal:      edit.OperatorOrdinal,
+		ClearOrdinal: edit.ClearOrdinal,
+		Actor:        edit.OrdinalActor,
+	})
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
 }
 
 // identifiedMediaFields collects the scraper's plugin-declared Media field
@@ -1383,18 +1540,68 @@ func (s *Service) committedArtwork(result scrape.Result) map[string]string {
 	return out
 }
 
-func (s *Service) completeArtworkAction(ctx context.Context, actions ArtworkActionStore, action store.ArtworkAction) bool {
+// ArtworkActionRetrier is an optional extension on ArtworkActionStore that
+// keeps transiently failed fetches pending with backoff up to a retry cap.
+type ArtworkActionRetrier interface {
+	RecordArtworkActionRetry(context.Context, store.ArtworkAction, string, time.Duration, int) (bool, error)
+}
+
+const defaultMaxArtworkRetryAttempts = 5
+
+func (s *Service) artworkAttemptLimit() int {
+	if s.artworkMaxAttempts > 0 {
+		return s.artworkMaxAttempts
+	}
+	return defaultMaxArtworkRetryAttempts
+}
+
+func (s *Service) artworkBackoffForAttempt(attempt int) time.Duration {
+	if s.artworkRetryBackoff != nil {
+		return s.artworkRetryBackoff(attempt)
+	}
+	switch {
+	case attempt <= 1:
+		return time.Minute
+	case attempt == 2:
+		return 5 * time.Minute
+	case attempt == 3:
+		return 15 * time.Minute
+	default:
+		return time.Hour
+	}
+}
+
+func isRetryableArtworkOutcome(outcome string) bool {
+	return outcome == "fetch-failed" || outcome == "import-failed"
+}
+
+func (s *Service) completeArtworkAction(ctx context.Context, actions ArtworkActionStore, action store.ArtworkAction) (completed bool, progressed bool) {
 	outcome := s.applyArtworkSlot(ctx, action.MediaID, action.PluginID, action.ScraperID, action.Slot, action.SourceURL)
+	if isRetryableArtworkOutcome(outcome) {
+		if retrier, ok := actions.(ArtworkActionRetrier); ok {
+			delay := s.artworkBackoffForAttempt(action.Attempts + 1)
+			requeued, err := retrier.RecordArtworkActionRetry(ctx, action, outcome, delay, s.artworkAttemptLimit())
+			if err != nil {
+				slog.Debug("identify: artwork retry record failed", "slot", action.Slot, "error", err.Error())
+				return false, false
+			}
+			// If backoff > 0, retrying immediately in the same ReplayArtworkActions
+			// pass would spin; if backoff <= 0 (e.g. fast retry test), it stays due
+			// for the caller's next pass rather than looping inside one pass.
+			return !requeued, false
+		}
+	}
 	done, err := actions.CompleteArtworkAction(ctx, action, outcome)
 	if err != nil {
 		slog.Debug("identify: artwork action completion failed", "slot", action.Slot, "error", err.Error())
 	}
-	return done
+	return done, done
 }
 
-// ReplayArtworkActions applies every artwork action still pending, such as
-// those of an identification whose process stopped after its commit and
-// before its artwork fetches. Each completes once; it returns how many did.
+// ReplayArtworkActions applies every artwork action still pending and due, such
+// as those of an identification whose process stopped after its commit or whose
+// earlier artwork fetch failed. Each succeeds or exhausts attempts once; it
+// returns how many completed terminally.
 func (s *Service) ReplayArtworkActions(ctx context.Context) (int, error) {
 	actions, ok := s.artworkActions()
 	if !ok {
@@ -1409,11 +1616,14 @@ func (s *Service) ReplayArtworkActions(ctx context.Context) (int, error) {
 		progressed := false
 		for _, action := range pending {
 			unlock := s.writes.lock(action.MediaID)
-			if s.completeArtworkAction(ctx, actions, action) {
+			done, batchMore := s.completeArtworkAction(ctx, actions, action)
+			unlock()
+			if done {
 				completed++
+			}
+			if batchMore {
 				progressed = true
 			}
-			unlock()
 		}
 		if !progressed {
 			return completed, nil

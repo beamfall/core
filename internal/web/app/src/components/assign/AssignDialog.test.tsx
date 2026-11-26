@@ -180,7 +180,12 @@ describe("Assign metadata", () => {
       await user.click(dialog.getByRole("button", { name: "Apply" }));
       expect(await dialog.findByText("Applied")).toBeVisible();
       expect(fixMatch).toHaveBeenCalledWith(
-        { mediaID: "m1", ...ids, clearLocks: clear ? ["title"] : [] },
+        {
+          mediaID: "m1",
+          ...ids,
+          clearLocks: clear ? ["title"] : [],
+          requestId: expect.any(String),
+        },
         undefined,
       );
       // Toggling another field's lock never changes whether the ordinal is
@@ -219,7 +224,13 @@ describe("Assign metadata", () => {
     await dialog.findByText("A corrected overview.");
     await user.click(apply);
     expect(fixMatch).toHaveBeenCalledWith(
-      { mediaID: "m1", ...ids, candidateID: "tt00847879", clearLocks: [] },
+      {
+        mediaID: "m1",
+        ...ids,
+        candidateID: "tt00847879",
+        clearLocks: [],
+        requestId: expect.any(String),
+      },
       undefined,
     );
   });
@@ -245,7 +256,12 @@ describe("Assign metadata", () => {
       await within(table.getByRole("row", { name: /Item m3/ })).findByText("Applied"),
     ).toBeVisible();
     expect(vi.mocked(fixMatch).mock.calls.map(([vars]) => vars)).toEqual(
-      selection.map((item) => ({ ...item, ...ids, clearLocks: [] })),
+      selection.map((item) => ({
+        ...item,
+        ...ids,
+        clearLocks: [],
+        requestId: expect.any(String),
+      })),
     );
     expect(fixMatchPreview).toHaveBeenCalledTimes(3);
     expect(fixMatchLockedFields).toHaveBeenCalledTimes(3);
@@ -424,7 +440,7 @@ describe("Assign metadata", () => {
     await user.click(await screen.findByRole("checkbox", { name: /I confirm/ }));
     await user.click(screen.getByRole("button", { name: "Apply" }));
     expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
-      { mediaID: "m1", ...ids, clearLocks: [] },
+      { mediaID: "m1", ...ids, clearLocks: [], requestId: expect.any(String) },
       epoch.signal,
     );
     await act(async () => epoch.abort());
@@ -450,6 +466,29 @@ describe("Assign metadata", () => {
     );
     expect(view.dialog.getByRole("button", { name: "Apply" })).toBeDisabled();
     expect(fixMatch).not.toHaveBeenCalled();
+  });
+
+  it("reuses the same client requestId when retrying a failed apply", async () => {
+    const view = await open();
+    await preview(view);
+    const { user, dialog } = view;
+    const apply = dialog.getByRole("button", { name: "Apply" });
+    vi.mocked(fixMatch).mockRejectedValueOnce(new Error("transient timeout"));
+    await user.click(apply);
+    expect(await dialog.findByRole("status")).toHaveTextContent("Failed: transient timeout");
+    vi.mocked(fixMatch).mockResolvedValueOnce({
+      id: "m1",
+      title: movie.title,
+      year: movie.year,
+      favorited: false,
+    });
+    await user.click(apply);
+    expect(await dialog.findByText("Applied")).toBeVisible();
+    expect(fixMatch).toHaveBeenCalledTimes(2);
+    const firstReq = vi.mocked(fixMatch).mock.calls[0]?.[0].requestId;
+    const secondReq = vi.mocked(fixMatch).mock.calls[1]?.[0].requestId;
+    expect(firstReq).toBeTruthy();
+    expect(secondReq).toBe(firstReq);
   });
 });
 
@@ -534,7 +573,10 @@ describe("Assign catalog children", () => {
     ).toBeVisible();
     expect(fixMatch).not.toHaveBeenCalled();
     await user.click(dialog.getByRole("button", { name: "Apply" }));
-    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(expected, undefined);
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
+      { ...expected, requestId: expect.any(String) },
+      undefined,
+    );
   });
 
   it("previews a candidate without sending ordinals", async () => {
@@ -549,7 +591,7 @@ describe("Assign catalog children", () => {
       clearLocks: [],
     });
     expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
-      { mediaID: "m1", ...show, clearLocks: [] },
+      { mediaID: "m1", ...show, clearLocks: [], requestId: expect.any(String) },
       undefined,
     );
   });
@@ -633,7 +675,10 @@ describe("Assign catalog children", () => {
     expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith(expected);
     expect(await dialog.findByText("— → Release A-side · Bonus track 0")).toBeVisible();
     await user.click(dialog.getByRole("button", { name: "Apply" }));
-    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(expected, undefined);
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
+      { ...expected, requestId: expect.any(String) },
+      undefined,
+    );
   });
 
   it("retains an unnumbered child's sequence and requires a manual index before preview", async () => {
@@ -653,7 +698,10 @@ describe("Assign catalog children", () => {
     const expected = { mediaID: "m1", ...show, sequence: "2", index: 7, clearLocks: [] };
     expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith(expected);
     await user.click(dialog.getByRole("button", { name: "Apply" }));
-    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(expected, undefined);
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
+      { ...expected, requestId: expect.any(String) },
+      undefined,
+    );
   });
 
   it.each([true, false])("defaults the ordinal lock by candidate ID (same: %s)", async (same) => {
@@ -677,7 +725,7 @@ describe("Assign catalog children", () => {
     }
     await user.click(dialog.getByRole("button", { name: "Apply" }));
     expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
-      { mediaID: "m1", ...show, clearLocks: [] },
+      { mediaID: "m1", ...show, clearLocks: [], requestId: expect.any(String) },
       undefined,
     );
   });
@@ -718,6 +766,7 @@ describe("Assign catalog children", () => {
           mediaID: "m1",
           ...show,
           ...(replace ? { clearLocks: ["ordinal"], sequence: "2", index: 5 } : { clearLocks: [] }),
+          requestId: expect.any(String),
         },
         undefined,
       );
@@ -819,7 +868,14 @@ describe("Assign catalog children", () => {
     expect(apply).toBeEnabled();
     await user.click(apply);
     expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
-      { mediaID: "m1", ...show, clearLocks: ["ordinal"], sequence: "2", index: 5 },
+      {
+        mediaID: "m1",
+        ...show,
+        clearLocks: ["ordinal"],
+        sequence: "2",
+        index: 5,
+        requestId: expect.any(String),
+      },
       undefined,
     );
   });
@@ -882,6 +938,8 @@ describe("Assign catalog children", () => {
         .mock.calls.slice(-3)
         .map(([vars]) => vars),
     ).toEqual(expected);
-    expect(vi.mocked(fixMatch).mock.calls.map(([vars]) => vars)).toEqual(expected);
+    expect(vi.mocked(fixMatch).mock.calls.map(([vars]) => vars)).toEqual(
+      expected.map((vars) => ({ ...vars, requestId: expect.any(String) })),
+    );
   });
 });

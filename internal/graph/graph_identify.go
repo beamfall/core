@@ -167,6 +167,7 @@ func (h *Handler) fixMatch(ctx context.Context, scope auth.Scope, req request) (
 	pluginID := trimmedVariable(req, "pluginID")
 	scraperID := trimmedVariable(req, "scraperID")
 	candidateID := trimmedVariable(req, "candidateID")
+	requestID := trimmedVariable(req, "requestId")
 	if mediaID == "" || pluginID == "" || scraperID == "" || candidateID == "" {
 		return MediaInfo{}, clientError("mediaID, pluginID, scraperID, and candidateID are required")
 	}
@@ -187,11 +188,15 @@ func (h *Handler) fixMatch(ctx context.Context, scope auth.Scope, req request) (
 	// The identification, match pin, Unmatched-queue resolution and the
 	// fix-match audit revision commit together on the Media's own plane.
 	if err := h.identify.ApplyFixMatchRequest(ctx, identify.FixMatchRequest{
-		MediaID: media.ID, PluginID: pluginID, ScraperID: scraperID, CandidateID: candidateID,
+		RequestID: requestID,
+		MediaID:   media.ID, PluginID: pluginID, ScraperID: scraperID, CandidateID: candidateID,
 		ClearLocks: clearLocks, Ordinal: ordinal, Actor: scope.ProfileID, Filter: filter,
 	}); err != nil {
 		if errors.Is(err, store.ValidationError("unknown lockable field")) {
 			return MediaInfo{}, clientError("unknown lockable field")
+		}
+		if errors.Is(err, store.ErrIdentificationRequestConflict) {
+			return MediaInfo{}, clientError(err.Error())
 		}
 		return MediaInfo{}, err
 	}
@@ -339,17 +344,6 @@ func (h *Handler) fixMatchMedia(ctx context.Context, scope auth.Scope, mediaID s
 	media, err := h.store.Media(ctx, mediaID, scope.LibraryFilter())
 	if err != nil {
 		return store.Media{}, clientError("unknown media")
-	}
-	// Candidate provenance is only supported in the shared catalog.
-	encrypted, err := h.store.LibraryEncrypted(ctx, media.LibraryID)
-	if err != nil {
-		return store.Media{}, err
-	}
-	if encrypted {
-		return store.Media{}, &l10n.Error{
-			Key: l10n.FixMatchEncryptedLibrary,
-			Err: clientError("fix match is unavailable in encrypted libraries"),
-		}
 	}
 	return media, nil
 }

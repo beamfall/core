@@ -157,3 +157,55 @@ func TestSuppressUnmatchedRefusesUnknownRecord(t *testing.T) {
 		t.Fatalf("UnmatchedSuppressed = %v, %v; want no row written", suppressed, err)
 	}
 }
+
+// TestSuppressUnmatchedFileScopeRefusesWhenEncryptedLibrarySealed ensures
+// file-scoped suppressions without recordID/libraryID fail closed when any
+// Encrypted Library is sealed rather than falling back globally to catalog.db,
+// while confirmed plaintext catalog files still suppress cleanly.
+func TestSuppressUnmatchedFileScopeRefusesWhenEncryptedLibrarySealed(t *testing.T) {
+	ctx := t.Context()
+	st, encMedia := seededEncryptedMedia(t, "sealed-file-suppression")
+	defer func() { _ = st.Close() }()
+
+	plainLib, err := st.CreateLibrary(ctx, "Shared Plain Library", false, "", "profile-default")
+	if err != nil {
+		t.Fatalf("CreateLibrary(shared): %v", err)
+	}
+	sharedMedia, sharedFile, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: plainLib.ID, Path: "/media/shared-suppress.mkv", Title: "Shared",
+		Class: MediaClassVideo, Container: "mkv", Codec: "h264", ContentFingerprint: "sha256:shared-suppress",
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile(shared): %v", err)
+	}
+	if err := st.SealEncryptedLibraryDB(ctx, encMedia.LibraryID, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatalf("SealEncryptedLibraryDB: %v", err)
+	}
+
+	err = st.SuppressUnmatched(ctx, UnmatchedSuppression{
+		Scope: SuppressionScopeFile, Key: "sha256:sealed-unowned", SourceHandle: "/enc/sealed.mkv",
+	})
+	if !errors.Is(err, ErrEncryptedLibraryDBDisabled) {
+		t.Fatalf("SuppressUnmatched(file, sealed) = %v, want ErrEncryptedLibraryDBDisabled", err)
+	}
+	// A shared content fingerprint with a private SourceHandle from a sealed
+	// Encrypted Library must also fail closed rather than leaking the path into catalog.db.
+	err = st.SuppressUnmatched(ctx, UnmatchedSuppression{
+		Scope: SuppressionScopeFile, Key: sharedFile.ContentFingerprint, SourceHandle: "/enc/private-copy.mkv",
+	})
+	if !errors.Is(err, ErrEncryptedLibraryDBDisabled) {
+		t.Fatalf("SuppressUnmatched(file, shared fingerprint + sealed path) = %v, want ErrEncryptedLibraryDBDisabled", err)
+	}
+	if suppressed, err := st.UnmatchedSuppressed(ctx, SuppressionScopeFile, "sha256:sealed-unowned"); err != nil || suppressed {
+		t.Fatalf("sealed file suppression leaked to catalog: %v, %v", suppressed, err)
+	}
+
+	if err := st.SuppressUnmatched(ctx, UnmatchedSuppression{
+		Scope: SuppressionScopeFile, Key: sharedFile.ContentFingerprint, SourceHandle: sharedFile.Path,
+	}); err != nil {
+		t.Fatalf("SuppressUnmatched(file, shared catalog %s): %v", sharedMedia.ID, err)
+	}
+	if suppressed, err := st.UnmatchedSuppressed(ctx, SuppressionScopeFile, sharedFile.ContentFingerprint); err != nil || !suppressed {
+		t.Fatalf("shared file suppression = %v, %v; want true", suppressed, err)
+	}
+}

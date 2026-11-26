@@ -43,6 +43,7 @@ function suppressionTarget(
   if (scope === "file") {
     return {
       scope,
+      recordID: record.id,
       fingerprint: record.mediaID || record.id,
       sourceHandle: record.sourceHandle,
     };
@@ -65,6 +66,7 @@ function suppressionResetTarget(
   if (scope === "file") {
     return {
       scope,
+      recordID: active.recordID || record.id,
       fingerprint: active.key || record.mediaID || record.id,
       sourceHandle: active.sourceHandle || record.sourceHandle,
     };

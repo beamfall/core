@@ -22,6 +22,7 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -53,6 +54,17 @@ const PollJobKind store.JobKind = "subscription-poll"
 // only the Subscriptions that are due (ADR-0238 §2.2).
 const DefaultPollInterval = time.Hour
 
+const (
+	encryptedClassMediaBytes   = "media-bytes"
+	encryptedEnclosureMaxBytes = int64(128 << 20)
+)
+
+// EncryptedObjectIngest encrypts downloaded Subscription enclosure bytes on
+// disk for Encrypted Libraries under the content-fingerprint binding.
+type EncryptedObjectIngest interface {
+	EncryptObject(libraryID store.LibraryID, src io.Reader, ciphertextPath, objectClass, immutableObjectID string) error
+}
+
 // Poller fetches Subscription feeds and downloads new enclosures.
 type Poller struct {
 	store  *store.Store
@@ -74,6 +86,13 @@ type Poller struct {
 	// certification resolves a follower's ceilings when new entries are
 	// routed to its Play Queue; nil disables routing.
 	certification func([]store.ProfileCertificationCeiling) []store.CertificationConstraint
+	encryptor     EncryptedObjectIngest
+}
+
+// SetEncryptedIngest wires the object encryptor required when polling feeds
+// that download enclosures into Encrypted Libraries.
+func (p *Poller) SetEncryptedIngest(encryptor EncryptedObjectIngest) {
+	p.encryptor = encryptor
 }
 
 // SetCertificationResolver wires the resolver used when new entries are
@@ -191,9 +210,13 @@ func Handler(p *Poller) jobs.Handler {
 // backoff) and feed-move observations. Returns how many enclosures were
 // published, resumed crash residue included.
 func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscription) (int, error) {
-	// An Encrypted Library's feed entries cannot be recorded without reaching
-	// the shared catalog (CORE-0706): refuse before any fetch or download.
+	// Fail closed before any network fetch if the Subscription's Encrypted
+	// Library plane is sealed or still holds un-evacuated catalog rows.
 	if err := p.store.SubscriptionPrivacyCheck(ctx, subscription.ID); err != nil {
+		return 0, err
+	}
+	encrypted, err := p.store.LibraryEncrypted(ctx, subscription.LibraryID)
+	if err != nil {
 		return 0, err
 	}
 	now := p.now()
@@ -215,10 +238,15 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	}
 	// Resume before the conditional fetch: a payload staged and acknowledged
 	// by a crashed run must reach its destination even when the feed now
-	// answers 304 and the entry loop never runs.
-	published, err := p.resumeStagedPayloads(ctx, subscription, seen, now)
-	if err != nil {
-		return 0, err
+	// answers 304 and the entry loop never runs. Encrypted Libraries encrypt
+	// and import enclosures directly and never stage plaintext files or
+	// events-DB scan jobs.
+	published := 0
+	if !encrypted {
+		published, err = p.resumeStagedPayloads(ctx, subscription, seen, now)
+		if err != nil {
+			return 0, err
+		}
 	}
 	result, err := p.engine.FetchFeed(ctx, subscription.FeedURL, subscription.ETag, subscription.LastModified, authHeader)
 	if err != nil {
@@ -281,7 +309,11 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 			if !selected[entry.GUID] {
 				continue
 			}
-			entryErr = p.ingestEntry(ctx, subscription, entry, authHeader, catalogued, now, position)
+			if encrypted {
+				entryErr = p.ingestEncryptedEntry(ctx, subscription, entry, authHeader, catalogued, now, position)
+			} else {
+				entryErr = p.ingestEntry(ctx, subscription, entry, authHeader, catalogued, now, position)
+			}
 			if entryErr == nil {
 				downloaded++
 			}
@@ -356,6 +388,191 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 		return err
 	}
 	return p.publishStagedPayload(ctx, subscription, entry.GUID, staged, now)
+}
+
+// ingestEncryptedEntry downloads an enclosure directly into memory, hashes the
+// plaintext, encrypts straight from memory into a ciphertext file under
+// ObjectClassMediaBytes (never writing plaintext to disk), imports it onto the
+// owning encrypted plane, and commits the seen receipt only after publication
+// and import succeed so failures remain retryable.
+func (p *Poller) ingestEncryptedEntry(ctx context.Context, subscription store.Subscription, entry scrape.FeedEntry, authHeader string, catalogued bool, now time.Time, position int) error {
+	markFailed := func() {
+		if catalogued {
+			// Best effort: the poll already reports err, and a failed
+			// entry stays a download candidate.
+			_ = p.store.SetSubscriptionEntryDownload(ctx, subscription.ID, entry.GUID, store.EntryDownloadFailed, "")
+		}
+	}
+	if p.encryptor == nil {
+		if catalogued {
+			_ = p.store.SetSubscriptionEntryDownload(ctx, subscription.ID, entry.GUID, store.EntryDownloadQueued, "")
+			markFailed()
+		}
+		return store.ValidationError("encrypted subscription downloads require an object encryptor")
+	}
+	if err := os.MkdirAll(subscription.Root, 0o700); err != nil {
+		return err
+	}
+	key := stageKey(subscription.ID, entry.GUID)
+	if err := removeStageArtifacts(subscription.Root, key, encPartialSuffix); err != nil {
+		return err
+	}
+	if catalogued {
+		if err := p.store.SetSubscriptionEntryDownload(ctx, subscription.ID, entry.GUID, store.EntryDownloadQueued, ""); err != nil {
+			return err
+		}
+	}
+	enclosureAuth := ""
+	if scrape.SameOrigin(subscription.FeedURL, entry.EnclosureURL) {
+		enclosureAuth = authHeader
+	}
+	var buf bytes.Buffer
+	defer func() { clear(buf.Bytes()) }()
+	hasher := sha256.New()
+	sizeBytes, err := p.engine.DownloadResourceAuth(ctx, entry.EnclosureURL, io.MultiWriter(&buf, hasher), encryptedEnclosureMaxBytes, enclosureAuth)
+	if err != nil {
+		markFailed()
+		return err
+	}
+
+	fingerprint := "sha256:" + hex.EncodeToString(hasher.Sum(nil))
+	container := enclosureExtension(entry)
+	class := enclosureMediaClass(entry, container)
+	codec := defaultCodecForContainer(container, class)
+	durationSeconds := int(entry.DurationSeconds)
+
+	base := entryFilename(entry)
+	cipherPartial := filepath.Join(subscription.Root, stageArtifactName(key, base, encPartialSuffix))
+	defer func() { _ = os.Remove(cipherPartial) }()
+	err = p.encryptor.EncryptObject(subscription.LibraryID, bytes.NewReader(buf.Bytes()), cipherPartial, encryptedClassMediaBytes, fingerprint)
+	clear(buf.Bytes())
+	if err != nil {
+		markFailed()
+		return err
+	}
+	if err := syncFile(cipherPartial); err != nil {
+		markFailed()
+		return err
+	}
+
+	publishedTarget := availablePath(subscription.Root, base)
+	if err := linkOrCopyExclusive(cipherPartial, publishedTarget, 0o600, p.link); err != nil {
+		markFailed()
+		return err
+	}
+	_ = os.Remove(cipherPartial)
+	if err := syncDir(subscription.Root); err != nil {
+		_ = os.Remove(publishedTarget)
+		markFailed()
+		return err
+	}
+	cleanupPublished := func() {
+		_ = os.Remove(publishedTarget)
+		_ = syncDir(subscription.Root)
+		markFailed()
+	}
+
+	if catalogued {
+		if err := p.store.SetSubscriptionEntryDownload(ctx, subscription.ID, entry.GUID, store.EntryDownloadQueued, publishedTarget); err != nil {
+			cleanupPublished()
+			return err
+		}
+	}
+	if err := p.faultAt("encrypted-before-import"); err != nil {
+		cleanupPublished()
+		return err
+	}
+
+	title := strings.TrimSpace(entry.Title)
+	if title == "" {
+		title = base
+	}
+	modTime := now
+	if !entry.PublishedAt.IsZero() {
+		modTime = entry.PublishedAt.UTC()
+	}
+	if _, _, err := p.store.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID:           subscription.LibraryID,
+		Path:                publishedTarget,
+		Title:               title,
+		Class:               class,
+		Container:           container,
+		Codec:               codec,
+		ContentFingerprint:  fingerprint,
+		SizeBytes:           sizeBytes,
+		DurationSecondsHint: durationSeconds,
+		ModTime:             modTime,
+	}); err != nil {
+		cleanupPublished()
+		return err
+	}
+	if err := p.store.MarkSubscriptionFeedEntrySeen(ctx, subscription.ID, entry.GUID, publishedTarget, now, position); err != nil {
+		cleanupPublished()
+		return err
+	}
+	return nil
+}
+
+func enclosureMediaClass(entry scrape.FeedEntry, container string) store.MediaClass {
+	mimeType, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(entry.EnclosureType)), ";")
+	switch {
+	case strings.HasPrefix(mimeType, "video/"):
+		return store.MediaClassVideo
+	case strings.HasPrefix(mimeType, "image/"):
+		return store.MediaClassImage
+	case container == "mp4" || container == "m4v" || container == "webm" || container == "mpg":
+		return store.MediaClassVideo
+	default:
+		return store.MediaClassAudio
+	}
+}
+
+func defaultCodecForContainer(container string, class store.MediaClass) string {
+	switch container {
+	case "mp3":
+		return "mp3"
+	case "m4a", "aac":
+		return "aac"
+	case "ogg", "opus":
+		return "opus"
+	case "flac":
+		return "flac"
+	case "wav":
+		return "pcm"
+	case "mp4", "m4v", "mpg":
+		return "h264"
+	case "webm":
+		return "vp9"
+	default:
+		if class == store.MediaClassImage {
+			return ""
+		}
+		return container
+	}
+}
+
+func syncFile(path string) error {
+	f, err := os.Open(path) // #nosec G304 -- staged ciphertext path under the Subscription root
+	if err != nil {
+		return err
+	}
+	syncErr := f.Sync()
+	closeErr := f.Close()
+	if syncErr != nil {
+		return syncErr
+	}
+	return closeErr
+}
+
+func linkOrCopyExclusive(src, dst string, mode os.FileMode, link func(string, string) error) error {
+	if err := link(src, dst); err != nil {
+		if !errors.Is(err, syscall.EOPNOTSUPP) && !errors.Is(err, syscall.ENOTSUP) &&
+			!errors.Is(err, syscall.EPERM) && !errors.Is(err, syscall.EXDEV) && !errors.Is(err, syscall.EMLINK) {
+			return err
+		}
+		return copyExclusiveWithMode(src, dst, mode)
+	}
+	return nil
 }
 
 // downloadToStage streams the enclosure into a GUID-keyed partial file and
@@ -651,10 +868,11 @@ func availablePath(dir, name string) string {
 // name — the filesystem itself is the durable owner + GUID → destination
 // binding a resumed poll reads back after a crash.
 const (
-	stagePrefix    = store.SubscriptionStagePrefix
-	stageSeparator = store.SubscriptionStageSeparator
-	partialSuffix  = ".partial"
-	stagedSuffix   = store.SubscriptionStageSuffix
+	stagePrefix      = store.SubscriptionStagePrefix
+	stageSeparator   = store.SubscriptionStageSeparator
+	partialSuffix    = ".partial"
+	encPartialSuffix = ".enc.partial"
+	stagedSuffix     = store.SubscriptionStageSuffix
 )
 
 // stageKey derives a Subscription-owned staging namespace. The owner tag is
@@ -764,7 +982,7 @@ func removeStageArtifacts(root, key, suffix string) error {
 // receipt or resume would already have published it, so its unseen entry can
 // safely re-download if it returns to the feed.
 func sweepStaleArtifacts(root string, subscriptionID store.SubscriptionID) error {
-	for _, suffix := range []string{partialSuffix, stagedSuffix} {
+	for _, suffix := range []string{partialSuffix, encPartialSuffix, stagedSuffix} {
 		names, err := listStageArtifacts(root, suffix)
 		if err != nil {
 			return err
@@ -800,13 +1018,17 @@ func syncDir(dir string) error {
 
 // copyExclusive copies src to a newly created dst (O_EXCL), syncing it; a
 // failed copy removes the partial dst it created.
-func copyExclusive(src, dst string) (err error) {
+func copyExclusive(src, dst string) error {
+	return copyExclusiveWithMode(src, dst, 0o644) // #nosec G302 -- ordinary Library media file permissions match plaintext downloads
+}
+
+func copyExclusiveWithMode(src, dst string, mode os.FileMode) (err error) {
 	in, err := os.Open(src) // #nosec G304 -- staged payload path under the Subscription root
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) // #nosec G304 G302 -- sanitized target under the Subscription root; 0644 as an ordinary Library media file
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) // #nosec G304 G302 -- sanitized target under the Subscription root; caller specifies plaintext or ciphertext mode
 	if err != nil {
 		return err
 	}

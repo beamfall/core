@@ -473,10 +473,10 @@ type UnmatchedSuppressionInfo struct {
 	CreatedAt      string `json:"createdAt,omitempty"`
 }
 
-// unmatchedSuppressions lists the active suppressions, optionally narrowed to
-// one record's panel. Manager-gated by the dispatch registry.
-func (h *Handler) unmatchedSuppressions(ctx context.Context, _ auth.Scope, req request) ([]UnmatchedSuppressionInfo, error) {
-	suppressions, err := h.store.UnmatchedSuppressions(ctx, trimmedVariable(req, "recordID"))
+// unmatchedSuppressions lists the active suppressions visible to the caller,
+// optionally narrowed to one record's panel. Manager-gated by the dispatch registry.
+func (h *Handler) unmatchedSuppressions(ctx context.Context, scope auth.Scope, req request) ([]UnmatchedSuppressionInfo, error) {
+	suppressions, err := h.store.UnmatchedSuppressionsFiltered(ctx, trimmedVariable(req, "recordID"), scope.LibraryFilter())
 	if err != nil {
 		return nil, err
 	}
@@ -560,9 +560,21 @@ func (h *Handler) suppressionTarget(ctx context.Context, scope auth.Scope, req r
 		if fingerprint == "" {
 			return store.UnmatchedSuppression{}, clientError("fingerprint is required for the file scope")
 		}
+		sourceHandle := trimmedVariable(req, "sourceHandle")
+		var resolvedRecordID string
+		if recordID != "" {
+			record, err := h.visibleUnmatchedRecord(ctx, scope, recordID)
+			if err != nil {
+				return store.UnmatchedSuppression{}, err
+			}
+			resolvedRecordID = record.ID
+			if sourceHandle == "" {
+				sourceHandle = record.SourceHandle
+			}
+		}
 		return store.UnmatchedSuppression{
 			Scope: suppressionScope, Key: fingerprint,
-			SourceHandle: trimmedVariable(req, "sourceHandle"),
+			RecordID: resolvedRecordID, SourceHandle: sourceHandle,
 		}, nil
 	case store.SuppressionScopeCandidate:
 		candidateID := trimmedVariable(req, "candidateID")
