@@ -805,9 +805,13 @@ func parseMKVKeyframes(f *os.File) (KeyframeIndex, bool) {
 	}
 
 	var videoTrack uint64
-	var codecDelay uint64
+	// A track with a CodecDelay (primed AAC from FFmpeg's muxer, Opus) can move
+	// the container start below zero: FFmpeg 8 subtracts the delay from the
+	// track's timestamps and shifts every index time by it, FFmpeg 9 does not.
+	// The cue times alone cannot tell which, so ffprobe measures such a file.
+	delayed := false
 	iterEBML(tracksBuf, func(id uint64, body []byte) bool {
-		if id != 0xAE || videoTrack != 0 {
+		if id != 0xAE {
 			return true
 		}
 		var tNum, tType, delay uint64
@@ -822,14 +826,15 @@ func parseMKVKeyframes(f *os.File) (KeyframeIndex, bool) {
 			}
 			return true
 		})
-		if tType == 1 && tNum > 0 {
+		if delay > 0 {
+			delayed = true
+		}
+		if tType == 1 && tNum > 0 && videoTrack == 0 {
 			videoTrack = tNum
-			codecDelay = delay
-			return false
 		}
 		return true
 	})
-	if videoTrack == 0 || codecDelay > 0 {
+	if videoTrack == 0 || delayed {
 		return KeyframeIndex{}, false
 	}
 
