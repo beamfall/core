@@ -573,7 +573,47 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 // ApplyFixMatch uses the prospective ordinal for lookup and commits the manual
 // edit with the replacement. No other identification can interleave its
 // lookup or change the remembered candidate while this match is being applied.
+// It commits only the identification; the match pin, queue resolution and
+// fix-match audit belong to ApplyFixMatchRequest.
 func (s *Service) ApplyFixMatch(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, clearLocks []string, ordinal *store.MediaOrdinal, actor store.ProfileID) error {
+	return s.applyFixMatch(ctx, FixMatchRequest{
+		MediaID: mediaID, PluginID: pluginID, ScraperID: scraperID, CandidateID: candidateID,
+		ClearLocks: clearLocks, Ordinal: ordinal, Actor: actor,
+	}, false)
+}
+
+// FixMatchRequest is one operator Fix Match. RequestID makes a retry replay
+// the original commit instead of applying it twice; Filter is the caller's
+// visibility, re-checked inside the commit.
+type FixMatchRequest struct {
+	RequestID                        string
+	MediaID                          store.MediaID
+	PluginID, ScraperID, CandidateID string
+	ClearLocks                       []string
+	Ordinal                          *store.MediaOrdinal
+	Actor                            store.ProfileID
+	Filter                           store.LibraryFilter
+}
+
+// fixMatchCommitter commits the identification, match pin, Unmatched-queue
+// resolution and fix-match audit revision in one transaction.
+type fixMatchCommitter interface {
+	CommitFixMatch(context.Context, store.MediaID, store.FixMatchCommit) (store.IdentificationReceipt, error)
+}
+
+// ApplyFixMatchRequest applies a Fix Match. With a store that commits Fix
+// Match atomically, the metadata, pin, queue resolution and audit revision
+// land together and a replayed RequestID commits nothing new.
+func (s *Service) ApplyFixMatchRequest(ctx context.Context, req FixMatchRequest) error {
+	if _, ok := s.store.(fixMatchCommitter); !ok {
+		return errors.New("identify: Fix Match commit store unavailable")
+	}
+	return s.applyFixMatch(ctx, req, true)
+}
+
+func (s *Service) applyFixMatch(ctx context.Context, req FixMatchRequest, atomic bool) error {
+	mediaID, pluginID, scraperID, candidateID := req.MediaID, req.PluginID, req.ScraperID, req.CandidateID
+	clearLocks, ordinal, actor := req.ClearLocks, req.Ordinal, req.Actor
 	unlock := s.writes.lock(mediaID)
 	defer unlock()
 	clearOrdinal, err := s.shouldClearOrdinal(ctx, mediaID, candidateID, clearLocks, ordinal)
@@ -586,7 +626,11 @@ func (s *Service) ApplyFixMatch(ctx context.Context, mediaID store.MediaID, plug
 	edit := store.MediaMetadata{
 		ClearLocks: locks, OperatorOrdinal: ordinal, OrdinalActor: actor, ClearOrdinal: clearOrdinal,
 	}
-	if err := s.apply(ctx, mediaID, pluginID, scraperID, candidateID, edit); err != nil {
+	var fix *FixMatchRequest
+	if atomic {
+		fix = &req
+	}
+	if err := s.applyCommit(ctx, mediaID, pluginID, scraperID, candidateID, edit, fix); err != nil {
 		return err
 	}
 	disposition := "kept"
@@ -595,7 +639,7 @@ func (s *Service) ApplyFixMatch(ctx context.Context, mediaID store.MediaID, plug
 	} else if clearOrdinal {
 		disposition = "cleared"
 	}
-	slog.Info("identify: fixed match", "media", mediaID, "operatorOrdinal", disposition)
+	slog.Info("identify: fixed match", "operatorOrdinal", disposition)
 	return nil
 }
 
@@ -628,6 +672,10 @@ func (s *Service) ClearMediaOrdinal(ctx context.Context, mediaID store.MediaID) 
 }
 
 func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, edit store.MediaMetadata) error {
+	return s.applyCommit(ctx, mediaID, pluginID, scraperID, candidateID, edit, nil)
+}
+
+func (s *Service) applyCommit(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, edit store.MediaMetadata, fix *FixMatchRequest) error {
 	if mediaID == "" {
 		return errors.New("identify: media ID is required")
 	}
@@ -656,6 +704,7 @@ func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 	metadata.OperatorOrdinal = edit.OperatorOrdinal
 	metadata.OrdinalActor = edit.OrdinalActor
 	metadata.ClearOrdinal = edit.ClearOrdinal
+	metadata.Artwork = s.committedArtwork(result)
 	provenance := store.MediaMetadataProvenance{PluginID: pluginID, ScraperID: scraperID, CandidateID: candidateID}
 	// A request that cannot hydrate is refused before anything commits, so an
 	// ordinal edit is never published by a request that could not finish.
@@ -666,7 +715,17 @@ func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 		return fmt.Errorf("identify: scraper %q hydrates entities but no entity store is wired", spec.ID)
 	}
 	manual := s.effectiveOperatorOrdinal(ctx, mediaID, edit)
-	if err := s.store.ApplyMediaIdentification(ctx, mediaID, metadata, provenance, identifiedMediaFields(bundle, spec, result)); err != nil {
+	fields := identifiedMediaFields(bundle, spec, result)
+	if committer, ok := s.store.(fixMatchCommitter); fix != nil && ok {
+		if _, err := committer.CommitFixMatch(ctx, mediaID, store.FixMatchCommit{
+			IdentificationCommit: store.IdentificationCommit{
+				RequestID: fix.RequestID, Metadata: metadata, Provenance: provenance, Fields: fields,
+			},
+			Filter: fix.Filter,
+		}); err != nil {
+			return err
+		}
+	} else if err := s.store.ApplyMediaIdentification(ctx, mediaID, metadata, provenance, fields); err != nil {
 		return err
 	}
 	if err := s.applyEntities(ctx, mediaID, bundle, spec, result, manual); err != nil {
@@ -1275,63 +1334,144 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 	if len(result.Artwork) == 0 || s.fetcher == nil || s.artwork == nil {
 		return
 	}
+	if actions, ok := s.artworkActions(); ok {
+		pending, err := actions.PendingArtworkActionsForMedia(ctx, mediaID)
+		if err != nil {
+			slog.Debug("identify: pending artwork actions unavailable", "error", err.Error())
+			return
+		}
+		for _, action := range pending {
+			s.completeArtworkAction(ctx, actions, action)
+		}
+		return
+	}
 	for _, slot := range artwork.KnownSlots {
-		rawURL := result.Artwork[slot]
-		if rawURL == "" {
-			continue
-		}
-		if s.candidates != nil {
-			if err := s.candidates.UpsertArtworkCandidate(ctx, mediaID, slot, rawURL, pluginID, scraperID); err != nil {
-				slog.Debug("identify: artwork candidate upsert failed",
-					"media", string(mediaID), "slot", slot, "error", err.Error())
-			}
-		}
-		if s.artworkLocked(ctx, mediaID, slot) {
-			continue // an admin pinned this slot: keep their artwork
-		}
-		video := slot == artwork.SlotPoster && s.mediaIsVideo(ctx, mediaID)
-		if slot == artwork.SlotPoster && !s.posterTakesProviderArtwork(ctx, mediaID, video) {
-			continue
-		}
-		data, err := s.fetcher.FetchResource(ctx, rawURL)
-		if err != nil {
-			slog.Debug("identify: artwork fetch failed",
-				"media", string(mediaID), "slot", slot, "error", err.Error())
-			s.embeddedPosterFallback(ctx, mediaID, video)
-			continue
-		}
-		// A lock, pin or upload may land during the fetch, so the decision is
-		// made again under the slot's directory lock.
-		stillWanted := func() bool {
-			if s.artworkLocked(ctx, mediaID, slot) {
-				return false
-			}
-			switch {
-			case video:
-				return s.videoPosterReplaceable(ctx, mediaID)
-			case slot == artwork.SlotPoster:
-				return !s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)
-			}
-			return true
-		}
-		imported, err := s.importArtworkIf(ctx, mediaID, slot, data, stillWanted)
-		if err != nil {
-			slog.Debug("identify: artwork import failed",
-				"media", string(mediaID), "slot", slot, "error", err.Error())
-			s.embeddedPosterFallback(ctx, mediaID, video)
-			continue
-		}
-		if !imported {
-			continue
-		}
-		if s.candidates != nil {
-			id := store.ArtworkCandidateID(mediaID, slot, rawURL)
-			if err := s.candidates.MarkArtworkCandidateApplied(ctx, id); err != nil {
-				slog.Debug("identify: artwork candidate apply mark failed",
-					"media", string(mediaID), "slot", slot, "error", err.Error())
-			}
+		if rawURL := result.Artwork[slot]; rawURL != "" {
+			s.applyArtworkSlot(ctx, mediaID, pluginID, scraperID, slot, rawURL)
 		}
 	}
+}
+
+// ArtworkActionStore holds the durable post-commit artwork actions an
+// identification commits with its revision. *store.Store satisfies it.
+type ArtworkActionStore interface {
+	PendingArtworkActionsForMedia(context.Context, store.MediaID) ([]store.ArtworkAction, error)
+	PendingArtworkActions(context.Context, int) ([]store.ArtworkAction, error)
+	CompleteArtworkAction(context.Context, store.ArtworkAction, string) (bool, error)
+}
+
+func (s *Service) artworkActions() (ArtworkActionStore, bool) {
+	if s.fetcher == nil || s.artwork == nil {
+		return nil, false
+	}
+	actions, ok := s.store.(ArtworkActionStore)
+	return actions, ok
+}
+
+// committedArtwork is the identification's artwork to record as pending
+// actions with its commit, when a worker can drain them.
+func (s *Service) committedArtwork(result scrape.Result) map[string]string {
+	if _, ok := s.artworkActions(); !ok || len(result.Artwork) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for _, slot := range artwork.KnownSlots {
+		if rawURL := result.Artwork[slot]; rawURL != "" {
+			out[slot] = rawURL
+		}
+	}
+	return out
+}
+
+func (s *Service) completeArtworkAction(ctx context.Context, actions ArtworkActionStore, action store.ArtworkAction) bool {
+	outcome := s.applyArtworkSlot(ctx, action.MediaID, action.PluginID, action.ScraperID, action.Slot, action.SourceURL)
+	done, err := actions.CompleteArtworkAction(ctx, action, outcome)
+	if err != nil {
+		slog.Debug("identify: artwork action completion failed", "slot", action.Slot, "error", err.Error())
+	}
+	return done
+}
+
+// ReplayArtworkActions applies every artwork action still pending, such as
+// those of an identification whose process stopped after its commit and
+// before its artwork fetches. Each completes once; it returns how many did.
+func (s *Service) ReplayArtworkActions(ctx context.Context) (int, error) {
+	actions, ok := s.artworkActions()
+	if !ok {
+		return 0, nil
+	}
+	completed := 0
+	for {
+		pending, err := actions.PendingArtworkActions(ctx, 100)
+		if err != nil || len(pending) == 0 {
+			return completed, err
+		}
+		progressed := false
+		for _, action := range pending {
+			unlock := s.writes.lock(action.MediaID)
+			if s.completeArtworkAction(ctx, actions, action) {
+				completed++
+				progressed = true
+			}
+			unlock()
+		}
+		if !progressed {
+			return completed, nil
+		}
+	}
+}
+
+// applyArtworkSlot fetches and imports one slot's provider artwork and
+// reports the outcome recorded on its artwork action.
+func (s *Service) applyArtworkSlot(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, slot, rawURL string) string {
+	if s.candidates != nil {
+		if err := s.candidates.UpsertArtworkCandidate(ctx, mediaID, slot, rawURL, pluginID, scraperID); err != nil {
+			slog.Debug("identify: artwork candidate upsert failed", "slot", slot, "error", err.Error())
+		}
+	}
+	if s.artworkLocked(ctx, mediaID, slot) {
+		return "locked" // an admin pinned this slot: keep their artwork
+	}
+	video := slot == artwork.SlotPoster && s.mediaIsVideo(ctx, mediaID)
+	if slot == artwork.SlotPoster && !s.posterTakesProviderArtwork(ctx, mediaID, video) {
+		return "kept"
+	}
+	data, err := s.fetcher.FetchResource(ctx, rawURL)
+	if err != nil {
+		slog.Debug("identify: artwork fetch failed", "slot", slot, "error", err.Error())
+		s.embeddedPosterFallback(ctx, mediaID, video)
+		return "fetch-failed"
+	}
+	// A lock, pin or upload may land during the fetch, so the decision is
+	// made again under the slot's directory lock.
+	stillWanted := func() bool {
+		if s.artworkLocked(ctx, mediaID, slot) {
+			return false
+		}
+		switch {
+		case video:
+			return s.videoPosterReplaceable(ctx, mediaID)
+		case slot == artwork.SlotPoster:
+			return !s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)
+		}
+		return true
+	}
+	imported, err := s.importArtworkIf(ctx, mediaID, slot, data, stillWanted)
+	if err != nil {
+		slog.Debug("identify: artwork import failed", "slot", slot, "error", err.Error())
+		s.embeddedPosterFallback(ctx, mediaID, video)
+		return "import-failed"
+	}
+	if !imported {
+		return "kept"
+	}
+	if s.candidates != nil {
+		id := store.ArtworkCandidateID(mediaID, slot, rawURL)
+		if err := s.candidates.MarkArtworkCandidateApplied(ctx, id); err != nil {
+			slog.Debug("identify: artwork candidate apply mark failed", "slot", slot, "error", err.Error())
+		}
+	}
+	return "imported"
 }
 
 // posterTakesProviderArtwork reports whether a fetched provider poster

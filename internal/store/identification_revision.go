@@ -60,6 +60,63 @@ type IdentificationRevision struct {
 // Encrypted Library's Media commits on its own plane and emits no shared
 // event; a sealed plane's Media is refused as not found.
 func (s *Store) CommitMediaIdentification(ctx context.Context, id MediaID, commit IdentificationCommit) (IdentificationReceipt, error) {
+	return s.commitIdentification(ctx, id, commit, IdentificationKindIdentify, nil, nil)
+}
+
+// FixMatchCommit is a Fix Match: the identification plus the match pin and
+// Unmatched-queue resolution, visible under Filter.
+type FixMatchCommit struct {
+	IdentificationCommit
+	Filter LibraryFilter
+}
+
+// FixMatchAudit is the detail_json of a fix-match revision.
+type FixMatchAudit struct {
+	ClearedLocks     []string `json:"clearedLocks"`
+	Ordinal          string   `json:"ordinal"`
+	PinnedFiles      int64    `json:"pinnedFiles"`
+	UnmatchedCleared bool     `json:"unmatchedCleared"`
+}
+
+// CommitFixMatch applies a Fix Match in one transaction on the Media's own
+// plane: the identification, the match pin on every fingerprinted file, the
+// Unmatched-queue resolution and an immutable fix-match revision that audits
+// them. A replay of the same request commits nothing and returns the original
+// revision, so the audit converges to exactly one row per request.
+func (s *Store) CommitFixMatch(ctx context.Context, id MediaID, commit FixMatchCommit) (IdentificationReceipt, error) {
+	metadata := commit.Metadata
+	return s.commitIdentification(ctx, id, commit.IdentificationCommit, IdentificationKindFixMatch, &commit.Filter,
+		func(ctx context.Context, tx *sql.Tx) (string, error) {
+			audit := FixMatchAudit{ClearedLocks: append([]string{}, metadata.ClearLocks...), Ordinal: "kept"}
+			switch {
+			case metadata.OperatorOrdinal != nil:
+				audit.Ordinal = "set"
+			case metadata.ClearOrdinal:
+				audit.Ordinal = "cleared"
+			}
+			pinned, err := tx.ExecContext(ctx,
+				"UPDATE media_file SET match_pinned = 1 WHERE media_id = ? AND content_fingerprint <> ''", id)
+			if err != nil {
+				return "", err
+			}
+			if audit.PinnedFiles, err = pinned.RowsAffected(); err != nil {
+				return "", err
+			}
+			cleared, err := tx.ExecContext(ctx, "DELETE FROM unmatched_queue WHERE media_id = ?", id)
+			if err != nil {
+				return "", err
+			}
+			n, err := cleared.RowsAffected()
+			audit.UnmatchedCleared = n > 0
+			if err != nil {
+				return "", err
+			}
+			detail, err := json.Marshal(audit)
+			return string(detail), err
+		})
+}
+
+func (s *Store) commitIdentification(ctx context.Context, id MediaID, commit IdentificationCommit, kind string, filter *LibraryFilter, finish func(context.Context, *sql.Tx) (string, error)) (IdentificationReceipt, error) {
 	if err := validateMediaMetadata(id, commit.Metadata); err != nil {
 		return IdentificationReceipt{}, err
 	}
@@ -77,7 +134,7 @@ func (s *Store) CommitMediaIdentification(ctx context.Context, id MediaID, commi
 			return IdentificationReceipt{}, err
 		}
 	}
-	digest, err := identificationDigest(commit)
+	digest, err := identificationDigest(kind, commit)
 	if err != nil {
 		return IdentificationReceipt{}, err
 	}
@@ -90,6 +147,11 @@ func (s *Store) CommitMediaIdentification(ctx context.Context, id MediaID, commi
 	if err != nil {
 		return IdentificationReceipt{}, err
 	}
+	if filter != nil {
+		if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, id, *filter); err != nil {
+			return IdentificationReceipt{}, err
+		}
+	}
 	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return IdentificationReceipt{}, err
@@ -99,11 +161,21 @@ func (s *Store) CommitMediaIdentification(ctx context.Context, id MediaID, commi
 	if err != nil || done {
 		return receipt, err
 	}
-	if err := applyIdentificationTx(ctx, tx, id, commit, s.serverNow().UTC()); err != nil {
+	now := s.serverNow().UTC()
+	if err := applyIdentificationTx(ctx, tx, id, commit, now); err != nil {
 		return IdentificationReceipt{}, err
 	}
-	revision, err := appendIdentificationRevisionTx(ctx, tx, id, commit, digest, IdentificationKindIdentify, "{}", s.serverNow().UTC())
+	detail := "{}"
+	if finish != nil {
+		if detail, err = finish(ctx, tx); err != nil {
+			return IdentificationReceipt{}, err
+		}
+	}
+	revision, err := appendIdentificationRevisionTx(ctx, tx, id, commit, digest, kind, detail, now)
 	if err != nil {
+		return IdentificationReceipt{}, err
+	}
+	if err := enqueueArtworkActionsTx(ctx, tx, id, revision, commit, now); err != nil {
 		return IdentificationReceipt{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -215,9 +287,10 @@ func (s *Store) MediaIdentificationRevisions(ctx context.Context, id MediaID) ([
 
 // identificationDigest fingerprints the content a request commits, so a
 // replayed request ID is told apart from a reused one.
-func identificationDigest(commit IdentificationCommit) (string, error) {
+func identificationDigest(kind string, commit IdentificationCommit) (string, error) {
 	m := commit.Metadata
 	payload, err := json.Marshal(struct {
+		Kind                      string
 		Title, Summary, SortTitle *string
 		Year                      *int
 		ClearLocks                []string
@@ -226,8 +299,9 @@ func identificationDigest(commit IdentificationCommit) (string, error) {
 		Actor                     ProfileID
 		Provenance                MediaMetadataProvenance
 		Fields                    []MediaField
-	}{m.Title, m.Summary, m.SortTitle, m.Year, m.ClearLocks, m.OperatorOrdinal, m.ClearOrdinal, m.OrdinalActor,
-		commit.Provenance, commit.Fields})
+		Artwork                   map[string]string
+	}{kind, m.Title, m.Summary, m.SortTitle, m.Year, m.ClearLocks, m.OperatorOrdinal, m.ClearOrdinal, m.OrdinalActor,
+		commit.Provenance, commit.Fields, m.Artwork})
 	if err != nil {
 		return "", err
 	}

@@ -89,6 +89,7 @@ type App struct {
 	jobs            *jobs.Registry
 	hls             *playback.Sessions
 	hostMetrics     *hostmetrics.Sampler
+	identify        *identify.Service
 	governor        *governor.Governor
 	surfaces        *reveal.Registry
 	watcher         *watcher.Service
@@ -1659,6 +1660,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		jobs:                   jobRegistry,
 		hls:                    hlsSessions,
 		hostMetrics:            hostSampler,
+		identify:               identifyService,
 		governor:               resourceGovernor,
 		surfaces:               surfaces,
 		watcher:                watcherService,
@@ -2107,6 +2109,17 @@ func (a *App) Run(ctx context.Context) (resultErr error) {
 		defer jobsDone.Done()
 		a.hostMetrics.Run(jobsCtx)
 	}()
+	// Artwork actions an identification committed before the last stop but
+	// never fetched complete now, each exactly once (CORE-0706).
+	if a.identify != nil {
+		jobsDone.Add(1)
+		go func() {
+			defer jobsDone.Done()
+			if _, err := a.identify.ReplayArtworkActions(jobsCtx); err != nil && jobsCtx.Err() == nil {
+				slog.Warn("identify: artwork action replay failed", "error", err.Error())
+			}
+		}()
+	}
 	// Webhook Emitter: a long-lived consumer of the event outbox. It idles
 	// while no endpoint is enabled, so endpoints added in the console start
 	// without a restart. It shares the jobsCtx lifecycle so it stops and is
