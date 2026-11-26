@@ -44,7 +44,7 @@ func (e *Engine) FetchFeed(ctx context.Context, rawURL, etag, lastModified, auth
 		if err != nil {
 			return FeedResult{}, safeFetchError("building request", err)
 		}
-		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("User-Agent", e.userAgent)
 		sameOrigin := normalizedRedirectOrigin(current) == origin
 		if sameOrigin && strings.TrimSpace(authHeader) != "" {
 			req.Header.Set("Authorization", authHeader)
