@@ -241,6 +241,10 @@ func (s *feedDirectorySearcher) admitRequest() error {
 	if len(active) >= feedRequestsPerMin {
 		if changed {
 			if err := jsonstate.Save(s.budgetFile, active); err != nil {
+				var postSync *jsonstate.PostRenameSyncError
+				if errors.As(err, &postSync) {
+					s.reserved = active
+				}
 				return fmt.Errorf("persist feed request budget: %w", err)
 			}
 			s.reserved = active
@@ -249,6 +253,10 @@ func (s *feedDirectorySearcher) admitRequest() error {
 	}
 	active = append(active, maxDeadline)
 	if err := jsonstate.Save(s.budgetFile, active); err != nil {
+		var postSync *jsonstate.PostRenameSyncError
+		if errors.As(err, &postSync) {
+			s.reserved = active
+		}
 		return fmt.Errorf("persist feed request budget: %w", err)
 	}
 	s.reserved = active

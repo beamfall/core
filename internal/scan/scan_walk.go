@@ -230,16 +230,18 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 	if err := linkExtraRelationsForLibrary(ctx, st, req.LibraryID, state.extrasRoot); err != nil {
 		return Result{}, err
 	}
-	unverified, err := state.mergeVerifiedCopies()
-	if err != nil {
-		return state.stopped(err)
-	}
-	// A failed candidate read leaves no safe set for title grouping.
-	if unverified != nil {
-		err = state.mergeSplitVersions(unverified)
-	}
-	if err != nil {
-		return state.stopped(err)
+	if len(state.localExtractors) == 0 {
+		unverified, err := state.mergeVerifiedCopies()
+		if err != nil {
+			return state.stopped(err)
+		}
+		// A failed candidate read leaves no safe set for title grouping.
+		if unverified != nil {
+			err = state.mergeSplitVersions(unverified)
+		}
+		if err != nil {
+			return state.stopped(err)
+		}
 	}
 	state.countUnmatchedVersions()
 	return state.result, nil

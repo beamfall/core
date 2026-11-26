@@ -105,13 +105,16 @@ func (s *Store) ApplyLocalExtraction(ctx context.Context, in LocalExtractionInpu
 	}
 	defer tx.Rollback()
 
+	var fieldsWrote bool
 	for _, batch := range in.FieldBatches {
 		if len(batch) == 0 {
 			continue
 		}
-		if _, err := upsertMediaFieldsTx(ctx, tx, in.MediaID, batch, MutationSourceScan, false); err != nil {
+		batchWrote, err := upsertMediaFieldsTx(ctx, tx, in.MediaID, batch, MutationSourceScan, false)
+		if err != nil {
 			return err
 		}
+		fieldsWrote = fieldsWrote || batchWrote
 	}
 	if s.testLocalExtractAfterFieldsHook != nil {
 		if err := s.testLocalExtractAfterFieldsHook(); err != nil {
@@ -174,6 +177,9 @@ func (s *Store) ApplyLocalExtraction(ctx context.Context, in LocalExtractionInpu
 	for _, entity := range noted {
 		s.titleFolds.note(entity.LibraryID, entity.Kind, entity.ID, entity.Title)
 	}
+	if fieldsWrote && !plane.encrypted {
+		s.emitMediaUpdated(ctx, in.MediaID)
+	}
 	return nil
 }
 
@@ -187,6 +193,7 @@ type reconcileGroupedFile struct {
 	path               string
 	versionLabel       string
 	partOrdinal        int
+	missing            bool
 }
 
 type reconcileMediaGroup struct {
@@ -199,8 +206,8 @@ type reconcileMediaGroup struct {
 
 // ReconcileStandaloneLibraryMedia splits any live Media row in libraryID that
 // previously grouped multiple Parts/Versions (or carries a non-default
-// version_label / part_ordinal) into one standalone Media per file while
-// preserving curator collection/tag/entity links (CORE-3029).
+// live version_label / part_ordinal) into one standalone Media per file while
+// preserving certification, curator links, and missing-Version reservations (CORE-3029).
 func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID LibraryID) error {
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
 		return err
@@ -220,16 +227,19 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 
 	const groupedQuery = `
 		SELECT m.id, m.media_class, m.extra, m.title_identified,
-		       f.id, f.content_fingerprint, f.path, f.version_label, f.part_ordinal
+		       f.id, f.content_fingerprint, f.path, f.version_label, f.part_ordinal,
+		       f.missing_at_ms IS NOT NULL
 		FROM media m
 		JOIN media_file f ON f.media_id = m.id
 		WHERE m.library_id = ?
 		  AND m.trashed_at_ms IS NULL
+		  AND EXISTS (SELECT 1 FROM media_file lf WHERE lf.media_id = m.id AND lf.missing_at_ms IS NULL)
 		  AND (
 			(SELECT COUNT(*) FROM media_file allf WHERE allf.media_id = m.id) > 1
 			OR EXISTS (
 			  SELECT 1 FROM media_file gf
-			  WHERE gf.media_id = m.id AND (gf.version_label <> '' OR gf.part_ordinal <> 0)
+			  WHERE gf.media_id = m.id AND gf.missing_at_ms IS NULL
+			    AND (gf.version_label <> '' OR gf.part_ordinal <> 0)
 			)
 		  )
 		ORDER BY m.id,
@@ -244,9 +254,14 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 		JOIN media_file f ON f.media_id = m.id
 		WHERE m.library_id = ?
 		  AND m.trashed_at_ms IS NULL
+		  AND EXISTS (SELECT 1 FROM media_file lf WHERE lf.media_id = m.id AND lf.missing_at_ms IS NULL)
 		  AND (
-			f.version_label <> '' OR f.part_ordinal <> 0
-			OR (SELECT COUNT(*) FROM media_file allf WHERE allf.media_id = m.id) > 1
+			(SELECT COUNT(*) FROM media_file allf WHERE allf.media_id = m.id) > 1
+			OR EXISTS (
+			  SELECT 1 FROM media_file gf
+			  WHERE gf.media_id = m.id AND gf.missing_at_ms IS NULL
+			    AND (gf.version_label <> '' OR gf.part_ordinal <> 0)
+			)
 		  )
 	`, libraryID).Scan(&preCount); err != nil {
 		return err
@@ -286,14 +301,20 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 	encIdx := 0
 	for _, group := range groups {
 		primary := group.files[0]
-		if primary.versionLabel != "" || primary.partOrdinal != 0 {
+		liveCount := 0
+		for _, f := range group.files {
+			if !f.missing {
+				liveCount++
+			}
+		}
+		if !primary.missing && (primary.versionLabel != "" || primary.partOrdinal != 0) {
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE media_file SET version_label = '', part_ordinal = 0 WHERE id = ?
 			`, primary.fileID); err != nil {
 				return err
 			}
 		}
-		if len(group.files) > 1 {
+		if liveCount > 1 || (!primary.missing && (primary.versionLabel != "" || primary.partOrdinal != 0)) {
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE media
 				SET duration_seconds = 0, container = '', codec = '', video_width = 0, video_height = 0,
@@ -339,56 +360,104 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 			}
 
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO media(id, library_id, title, duration_seconds, container, codec, video_width, video_height, media_class, mutated_by, extra)
-				VALUES (?, ?, ?, 0, '', '', 0, 0, ?, 'scan', ?)
-			`, newID, libraryID, standaloneMediaTitle(file.path), group.mediaClass, group.extra); err != nil {
+				INSERT INTO media(id, library_id, title, summary, year, duration_seconds, container, codec, video_width, video_height, media_class, mutated_by, summary_identified, year_identified, extra)
+				SELECT ?, library_id, ?, summary, year, 0, '', '', 0, 0, media_class, 'scan', summary_identified, year_identified, extra
+				FROM media
+				WHERE id = ?
+			`, newID, standaloneMediaTitle(file.path), group.mediaID); err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE media_file SET media_id = ?, version_label = '', part_ordinal = 0 WHERE id = ?
-			`, newID, file.fileID); err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx, `
-				INSERT OR IGNORE INTO collection_media(collection_id, media_id, sort_order, added_at_ms)
-				SELECT collection_id, ?, sort_order, added_at_ms
-				FROM collection_media
-				WHERE media_id = ?
-			`, newID, group.mediaID); err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx, `
-				INSERT OR IGNORE INTO entity_relation(
-					from_entity_id, relation, to_media_id, attributes, sort_order, writer,
-					operator_locked_at_ms, operator_lock_activity_id, operator_lock_one
-				)
-				SELECT from_entity_id, relation, ?, attributes, sort_order, writer,
-				       operator_locked_at_ms, operator_lock_activity_id, operator_lock_one
-				FROM entity_relation
-				WHERE to_media_id = ?
-			`, newID, group.mediaID); err != nil {
-				return err
-			}
-			if !plane.encrypted {
+			if file.missing {
+				// Preserve missing legacy Version reservations so reconnecting offline
+				// disks still match MissingLegacyVersionFingerprints.
 				if _, err := tx.ExecContext(ctx, `
-					INSERT OR IGNORE INTO media_tag(media_id, tag_id)
-					SELECT ?, tag_id FROM media_tag WHERE media_id = ?
-				`, newID, group.mediaID); err != nil {
+					UPDATE media_file SET media_id = ? WHERE id = ?
+				`, newID, file.fileID); err != nil {
 					return err
 				}
+			} else {
 				if _, err := tx.ExecContext(ctx, `
-					INSERT OR IGNORE INTO access_grant(id, profile_id, media_id, request_id, actor_profile_id, created_at_ms, updated_at_ms)
-					SELECT id || ':' || ?, profile_id, ?, request_id, actor_profile_id, created_at_ms, updated_at_ms
-					FROM access_grant
-					WHERE media_id = ?
-				`, string(newID), newID, group.mediaID); err != nil {
+					UPDATE media_file SET media_id = ?, version_label = '', part_ordinal = 0 WHERE id = ?
+				`, newID, file.fileID); err != nil {
 					return err
 				}
+			}
+			if err := copySplitMediaMetadataAndLinksTx(ctx, tx, group.mediaID, newID, plane.encrypted); err != nil {
+				return err
 			}
 		}
 	}
 
 	return tx.Commit()
+}
+
+func copySplitMediaMetadataAndLinksTx(ctx context.Context, tx *sql.Tx, srcID, dstID MediaID, encrypted bool) error {
+	for _, stmt := range []string{
+		`INSERT OR IGNORE INTO media_field_text(media_id, field, field_type, value)
+		 SELECT ?, field, field_type, value FROM media_field_text
+		 WHERE media_id = ? AND field <> 'capture-date' AND field NOT LIKE 'local-extract:%'`,
+		`INSERT OR IGNORE INTO media_field_int(media_id, field, field_type, value)
+		 SELECT ?, field, field_type, value FROM media_field_int
+		 WHERE media_id = ? AND field <> 'capture-date' AND field NOT LIKE 'local-extract:%'`,
+		`INSERT OR IGNORE INTO media_field_real(media_id, field, field_type, value)
+		 SELECT ?, field, field_type, value FROM media_field_real
+		 WHERE media_id = ? AND field <> 'capture-date' AND field NOT LIKE 'local-extract:%'`,
+		`INSERT OR IGNORE INTO media_field_date(media_id, field, field_type, value_ms)
+		 SELECT ?, d.field, d.field_type, d.value_ms
+		 FROM media_field_date d
+		 WHERE d.media_id = ?
+		   AND (
+			d.field <> 'capture-date'
+			OR EXISTS (
+			  SELECT 1 FROM media_field_provenance p
+			  WHERE p.media_id = d.media_id AND p.field = 'capture-date' AND p.source IN ('manual', 'operator')
+			)
+		   )`,
+		`INSERT OR IGNORE INTO media_field_provenance(media_id, field, source, parser_owned)
+		 SELECT ?, field, source, parser_owned
+		 FROM media_field_provenance
+		 WHERE media_id = ?
+		   AND field NOT LIKE 'local-extract:%'
+		   AND field <> 'title'
+		   AND (field <> 'capture-date' OR source IN ('manual', 'operator'))`,
+		`INSERT OR IGNORE INTO media_field_rejection(media_id, field, field_type, value, rejected_at_ms)
+		 SELECT ?, field, field_type, value, rejected_at_ms
+		 FROM media_field_rejection
+		 WHERE media_id = ? AND field <> 'capture-date' AND field NOT LIKE 'local-extract:%'`,
+		`INSERT OR IGNORE INTO collection_media(collection_id, media_id, sort_order, added_at_ms)
+		 SELECT collection_id, ?, sort_order, added_at_ms
+		 FROM collection_media
+		 WHERE media_id = ?`,
+		`INSERT OR IGNORE INTO entity_relation(
+			from_entity_id, relation, to_media_id, attributes, sort_order, writer,
+			operator_locked_at_ms, operator_lock_activity_id, operator_lock_one
+		 )
+		 SELECT from_entity_id, relation, ?, attributes, sort_order, writer,
+		        operator_locked_at_ms, operator_lock_activity_id, operator_lock_one
+		 FROM entity_relation
+		 WHERE to_media_id = ?`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt, dstID, srcID); err != nil {
+			return err
+		}
+	}
+	if !encrypted {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO media_tag(media_id, tag_id)
+			SELECT ?, tag_id FROM media_tag WHERE media_id = ?
+		`, dstID, srcID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO access_grant(id, profile_id, media_id, request_id, actor_profile_id, created_at_ms, updated_at_ms)
+			SELECT id || ':' || ?, profile_id, ?, request_id, actor_profile_id, created_at_ms, updated_at_ms
+			FROM access_grant
+			WHERE media_id = ?
+		`, string(dstID), dstID, srcID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func loadGroupedMediaForReconcile(ctx context.Context, tx *sql.Tx, query string, libraryID LibraryID) ([]reconcileMediaGroup, error) {
@@ -404,7 +473,7 @@ func loadGroupedMediaForReconcile(ctx context.Context, tx *sql.Tx, query string,
 		var r reconcileGroupedFile
 		if err := rows.Scan(
 			&r.mediaID, &r.mediaClass, &r.extra, &r.titleIdentified,
-			&r.fileID, &r.contentFingerprint, &r.path, &r.versionLabel, &r.partOrdinal,
+			&r.fileID, &r.contentFingerprint, &r.path, &r.versionLabel, &r.partOrdinal, &r.missing,
 		); err != nil {
 			return nil, err
 		}

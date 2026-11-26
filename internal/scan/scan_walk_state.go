@@ -205,7 +205,7 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 		return
 	}
 	defer s.releaseBudget()
-	task.fill(ctx, s.st, s.prober, s.grabber, s.legacyReservations[task.path])
+	task.fill(ctx, s.req.LibraryID, s.st, s.prober, s.grabber, s.legacyReservations[task.path])
 	verified := task.err == nil
 	if task.err == errUnstableSample {
 		// The worker's normal fast-path lookup only sees the public catalog.

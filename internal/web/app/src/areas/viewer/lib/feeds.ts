@@ -162,6 +162,7 @@ export function isForbidden(err: unknown): boolean {
 
 const CREDENTIAL_QUERY_KEYS = new Set([
   "token",
+  "privatetoken",
   "accesstoken",
   "refreshtoken",
   "authtoken",
@@ -171,21 +172,34 @@ const CREDENTIAL_QUERY_KEYS = new Set([
   "oauthtoken",
   "securitytoken",
   "sessiontoken",
+  "clienttoken",
+  "usertoken",
+  "xauthtoken",
+  "personaltoken",
   "jwt",
   "auth",
   "authorization",
   "credential",
   "credentials",
   "apikey",
+  "xapikey",
   "key",
   "accesskey",
   "accesskeyid",
   "subscriptionkey",
+  "authkey",
+  "clientkey",
+  "userkey",
   "secret",
+  "secretkey",
+  "apisecret",
+  "accesssecret",
   "clientsecret",
   "oauthtokensecret",
   "password",
   "passwd",
+  "pass",
+  "pwd",
   "sessionid",
   "sig",
   "signature",
@@ -195,6 +209,8 @@ const CREDENTIAL_QUERY_KEYS = new Set([
   "xgoogcredential",
   "xgoogsignature",
 ]);
+
+const CREDENTIAL_QUERY_SUFFIXES = ["secret", "password", "passwd", "credential", "credentials"];
 
 /** A typed search box value that is a feed address rather than search words. */
 export function asFeedURL(input: string): string | null {
@@ -217,7 +233,10 @@ export function canDiscoverFeedURL(feedURL: string): boolean {
     }
     for (const key of url.searchParams.keys()) {
       const normalized = key.toLowerCase().replace(/[-_.]/g, "");
-      if (CREDENTIAL_QUERY_KEYS.has(normalized)) {
+      if (
+        CREDENTIAL_QUERY_KEYS.has(normalized) ||
+        CREDENTIAL_QUERY_SUFFIXES.some((suffix) => normalized.endsWith(suffix))
+      ) {
         return false;
       }
     }

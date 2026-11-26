@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -334,8 +335,10 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 	if err != nil {
 		return EndpointView{}, err
 	}
-	if err := jsonstate.Save(m.opts.ConfigPath, next); err != nil {
-		m.logger.Error("webhook configuration write failed", "error", err)
+	saveErr := jsonstate.Save(m.opts.ConfigPath, next)
+	var postSync *jsonstate.PostRenameSyncError
+	if saveErr != nil && !errors.As(saveErr, &postSync) {
+		m.logger.Error("webhook configuration write failed", "error", saveErr)
 		restore()
 		return EndpointView{}, ErrConfigDiagnostic
 	}
@@ -349,6 +352,10 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 	}
 	m.file = next
 	delete(m.problems, fe.ID)
+	if saveErr != nil {
+		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
+		return EndpointView{}, ErrConfigDiagnostic
+	}
 	return m.view(fe), nil
 }
 
@@ -497,8 +504,10 @@ func (m *Manager) DeleteEndpoint(id string) error {
 			running = append(running, ep)
 		}
 	}
-	if err := jsonstate.Save(m.opts.ConfigPath, next); err != nil {
-		m.logger.Error("webhook configuration write failed", "error", err)
+	saveErr := jsonstate.Save(m.opts.ConfigPath, next)
+	var postSync *jsonstate.PostRenameSyncError
+	if saveErr != nil && !errors.As(saveErr, &postSync) {
+		m.logger.Error("webhook configuration write failed", "error", saveErr)
 		return ErrConfigDiagnostic
 	}
 	if err := m.emitter.SetEndpoints(running); err != nil {
@@ -510,6 +519,10 @@ func (m *Manager) DeleteEndpoint(id string) error {
 		if err := m.opts.Secrets.SetSecret(removed.SecretRef, ""); err != nil {
 			m.logger.Warn("webhook secret removal failed", "endpoint", id, "error", ErrSecretDiagnostic)
 		}
+	}
+	if saveErr != nil {
+		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
+		return ErrConfigDiagnostic
 	}
 	return nil
 }
@@ -552,12 +565,18 @@ func (m *Manager) SetSettings(s Settings) (Settings, error) {
 	defer m.mu.Unlock()
 	next := m.file
 	next.PublicBaseURL = base
-	if err := jsonstate.Save(m.opts.ConfigPath, next); err != nil {
-		m.logger.Error("webhook configuration write failed", "error", err)
+	saveErr := jsonstate.Save(m.opts.ConfigPath, next)
+	var postSync *jsonstate.PostRenameSyncError
+	if saveErr != nil && !errors.As(saveErr, &postSync) {
+		m.logger.Error("webhook configuration write failed", "error", saveErr)
 		return Settings{}, ErrConfigDiagnostic
 	}
 	m.file = next
 	m.baseURL = base
+	if saveErr != nil {
+		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
+		return Settings{}, ErrConfigDiagnostic
+	}
 	return Settings{PublicBaseURL: base}, nil
 }
 

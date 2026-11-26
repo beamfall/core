@@ -494,8 +494,10 @@ func TestAdaptivePollIntervalUpgradeWithoutPollStatePreservesTTLBeyondMaxAge(t *
 	const etag = `"v1"`
 	var cc atomic.Value
 	cc.Store("public, max-age=14400") // 4h
+	var seenInm []string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenInm = append(seenInm, r.Header.Get("If-None-Match"))
 		if header, _ := cc.Load().(string); header != "" {
 			w.Header().Set("Cache-Control", header)
 		}
@@ -524,8 +526,11 @@ func TestAdaptivePollIntervalUpgradeWithoutPollStatePreservesTTLBeyondMaxAge(t *
 		t.Fatal(err)
 	}
 	sub = reloadSubscription(t, st, sub.ID)
+	if len(seenInm) != 1 || seenInm[0] != "" {
+		t.Fatalf("upgrade poll without poll_state sent If-None-Match=%v, want empty unconditional refetch", seenInm)
+	}
 	if got := sub.Health.NextPollAt.Sub(t2); got != 30*time.Minute {
-		t.Fatalf("upgrade 304 interval with max-age=4h = %v, want 30m from preserved <ttl>", got)
+		t.Fatalf("upgrade 200 refetch interval with max-age=4h = %v, want 30m from <ttl>", got)
 	}
 }
 
@@ -923,5 +928,103 @@ func TestAdaptivePollSteady304UsesPollStateWithoutQueryingEntries(t *testing.T) 
 	}
 	if entryLoads.Load() != 1 {
 		t.Fatalf("steady 304 queried subscription_entry %d extra times, want 0", entryLoads.Load()-1)
+	}
+}
+
+func TestAdaptivePollEmptySubscriptionBecomesDormantAfter180Days(t *testing.T) {
+	ctx := context.Background()
+	addedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := addedAt.Add(200 * 24 * time.Hour)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<rss><channel><title>Empty</title></channel></rss>`))
+	}))
+	t.Cleanup(server.Close)
+
+	st := storetest.Open(t)
+	sub, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local",
+		FeedURL:   server.URL + "/empty.xml",
+		Root:      t.TempDir(),
+	}, addedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poller := healthPoller(st, scrape.New(scrape.WithInsecureLoopback()), &testClock{now: now})
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+	if got := sub.Health.NextPollAt.Sub(now); got != MaxPollInterval {
+		t.Fatalf("200-day-old empty feed interval = %v, want %v (dormant)", got, MaxPollInterval)
+	}
+}
+
+func TestAdaptivePollUndatedUpgradeRefetchPreservesCataloguedDate(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 11, 22, 0, 0, 0, 0, time.UTC)
+	dormantPub := now.Add(-200 * 24 * time.Hour)
+	includeDate := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if includeDate {
+			_, _ = w.Write([]byte(`<rss><channel><title>Old</title><item><guid>ep-old</guid><title>Ep Old</title><pubDate>` +
+				dormantPub.Format(time.RFC1123Z) + `</pubDate><enclosure url="https://example.com/ep.mp3" length="10" type="audio/mpeg"/></item></channel></rss>`))
+			return
+		}
+		_, _ = w.Write([]byte(`<rss><channel><title>Old</title><item><guid>ep-old</guid><title>Ep Old</title><enclosure url="https://example.com/ep.mp3" length="10" type="audio/mpeg"/></item></channel></rss>`))
+	}))
+	t.Cleanup(server.Close)
+
+	st := storetest.Open(t)
+	sub := addHealthSubscription(t, st, server.URL+"/feed.xml")
+	poller := healthPoller(st, scrape.New(scrape.WithInsecureLoopback()), &testClock{now: now})
+	// Poll 1 catalogues ep-old with dormantPub.
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+	// Simulate pre-poll_state upgrade: delete poll_state and clear date in second response.
+	if err := st.SaveSubscriptionPollState(ctx, sub.ID, store.SubscriptionPollState{}, now); err != nil {
+		t.Fatal(err)
+	}
+	includeDate = false
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+	if got := sub.Health.NextPollAt.Sub(now); got != MaxPollInterval {
+		t.Fatalf("interval after undated refresh = %v, want %v (dormant date preserved)", got, MaxPollInterval)
+	}
+}
+
+func TestAdaptivePollURLChangeDiscardsForeignPollHistory(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 11, 22, 0, 0, 0, 0, time.UTC)
+	dormantPub := now.Add(-200 * 24 * time.Hour)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/old.xml":
+			w.Header().Set("ETag", `"old"`)
+			_, _ = w.Write([]byte(rssWithDates("", dormantPub)))
+		case "/new-empty.xml":
+			_, _ = w.Write([]byte(`<rss><channel><title>Fresh Empty</title></channel></rss>`))
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	st := storetest.Open(t)
+	sub := addHealthSubscription(t, st, server.URL+"/old.xml")
+	poller := healthPoller(st, scrape.New(scrape.WithInsecureLoopback()), &testClock{now: now})
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+	// Point Subscription to a fresh empty feed URL; foreign dormant history must not apply.
+	sub.FeedURL = server.URL + "/new-empty.xml"
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+	if got := sub.Health.NextPollAt.Sub(now); got != DefaultPollInterval {
+		t.Fatalf("fresh URL interval = %v, want %v (no foreign history inherited)", got, DefaultPollInterval)
 	}
 }

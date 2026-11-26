@@ -311,11 +311,14 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 // Media title follows the feed unless identification locked it; probe facts
 // of a downloaded file are never overwritten by the feed's guesses.
 func refreshSubscriptionEntryTx(ctx context.Context, tx *sql.Tx, id SubscriptionID, guid string, mediaID MediaID, title string, entry FeedCatalogEntry) error {
+	pubMS := unixMilliOrZero(entry.PublishedAt)
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE subscription_entry
-		SET feed_position = ?, published_at_ms = ?, enclosure_url = ?, enclosure_type = ?, enclosure_length = ?
+		SET feed_position = ?,
+		    published_at_ms = CASE WHEN ? > 0 THEN ? ELSE published_at_ms END,
+		    enclosure_url = ?, enclosure_type = ?, enclosure_length = ?
 		WHERE subscription_id = ? AND guid = ?
-	`, entry.Position, unixMilliOrZero(entry.PublishedAt), entry.EnclosureURL, entry.EnclosureType,
+	`, entry.Position, pubMS, pubMS, entry.EnclosureURL, entry.EnclosureType,
 		max(0, entry.EnclosureLength), id, guid); err != nil {
 		return err
 	}

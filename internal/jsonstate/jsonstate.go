@@ -5,7 +5,45 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 )
+
+// PostRenameSyncError indicates that the state file was atomically renamed into
+// place on disk, but syncing its parent directory failed afterward. Callers
+// that pair file updates with external mutations should treat the new file as
+// installed rather than rolling back companion state that the new file uses.
+type PostRenameSyncError struct {
+	Err error
+}
+
+func (e *PostRenameSyncError) Error() string {
+	return "jsonstate: post-rename directory sync: " + e.Err.Error()
+}
+
+func (e *PostRenameSyncError) Unwrap() error { return e.Err }
+
+var (
+	syncDirMu   sync.Mutex
+	syncDirFunc = syncDir
+)
+
+// WithSyncDirForTest replaces parent-directory fsyncing in tests and returns a
+// cleanup callback restoring the prior implementation.
+func WithSyncDirForTest(fn func(string) error) func() {
+	syncDirMu.Lock()
+	prev := syncDirFunc
+	if fn != nil {
+		syncDirFunc = fn
+	} else {
+		syncDirFunc = syncDir
+	}
+	syncDirMu.Unlock()
+	return func() {
+		syncDirMu.Lock()
+		syncDirFunc = prev
+		syncDirMu.Unlock()
+	}
+}
 
 // Load reads a JSON state file into out. Missing files are fresh state.
 func Load[T any](path string, out *T) (bool, error) {
@@ -59,7 +97,13 @@ func Save(path string, state any) error {
 		_ = os.Remove(tmpName)
 		return err
 	}
-	return syncDir(filepath.Dir(path))
+	syncDirMu.Lock()
+	syncFn := syncDirFunc
+	syncDirMu.Unlock()
+	if err := syncFn(filepath.Dir(path)); err != nil {
+		return &PostRenameSyncError{Err: err}
+	}
+	return nil
 }
 
 func syncDir(dir string) error {

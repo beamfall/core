@@ -1,6 +1,7 @@
 import { type FormEvent, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { graphqlErrorCode } from "@/lib/api";
 import {
   type FeedSearchResult,
   type FeedSubscription,
@@ -67,6 +68,12 @@ export function FeedFollowPanel({
       }
       setState({ kind: "results", query: value, results });
     } catch (err) {
+      if (feedURL && graphqlErrorCode(err) !== "INVALID") {
+        // Keep direct Follow available when discovery fails on quota (THROTTLED),
+        // the 1 MiB discovery cap, or an upstream error for a valid HTTPS feed URL.
+        setState({ kind: "address", feedURL });
+        return;
+      }
       setState({ kind: "failed", message: feedSearchErrorMessage(err) });
     }
   }

@@ -3,6 +3,7 @@ package scrape
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -100,6 +101,26 @@ func TestParseFeedUpdateHints(t *testing.T) {
 			xml:          `<feed xmlns="http://www.w3.org/2005/Atom" xmlns:podcast="https://podcastindex.org/namespace/1.0"><title>F</title><podcast:updateFrequency>Every 6 hours</podcast:updateFrequency></feed>`,
 			wantInterval: 6 * time.Hour,
 		},
+		{
+			name:         "foreign namespace updateFrequency ignored in favor of ttl",
+			xml:          `<rss xmlns:other="https://example.com/custom"><channel><title>F</title><other:updateFrequency>Daily</other:updateFrequency><ttl>15</ttl></channel></rss>`,
+			wantInterval: 15 * time.Minute,
+		},
+		{
+			name:         "unqualified updateFrequency ignored in favor of ttl",
+			xml:          `<rss><channel><title>F</title><updateFrequency>Daily</updateFrequency><ttl>15</ttl></channel></rss>`,
+			wantInterval: 15 * time.Minute,
+		},
+		{
+			name:         "podcast updateFrequency rrule hourly byminute",
+			xml:          `<rss xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel><title>F</title><podcast:updateFrequency rrule="FREQ=HOURLY;BYMINUTE=0,30">Half hourly</podcast:updateFrequency></channel></rss>`,
+			wantInterval: 30 * time.Minute,
+		},
+		{
+			name:         "podcast updateFrequency rrule with unhandled modifier falls through to ttl",
+			xml:          `<rss xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel><title>F</title><podcast:updateFrequency rrule="FREQ=HOURLY;BYMINUTE=0,30;BYSECOND=15">Custom</podcast:updateFrequency><ttl>20</ttl></channel></rss>`,
+			wantInterval: 20 * time.Minute,
+		},
 	}
 
 	for _, tc := range cases {
@@ -194,5 +215,24 @@ func TestFetchFeedCacheControlMaxAge(t *testing.T) {
 				t.Fatalf("MaxAge = %v, want %v", res.MaxAge, tc.want)
 			}
 		})
+	}
+}
+
+func TestCheckDocumentURLRejectsInvalidPortsAndExtendedCredentialParams(t *testing.T) {
+	engine := New()
+	for _, raw := range []string{
+		"https://example.com:99999/feed.xml",
+		"https://example.com:0/feed.xml",
+		"https://example.com/feed.xml?private_token=x",
+		"https://example.com/feed.xml?X-API-Key=x",
+		"https://example.com/feed.xml?my_custom_secret=x",
+	} {
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			t.Fatalf("url.Parse(%q): %v", raw, err)
+		}
+		if err := engine.CheckDocumentURL(parsed); err == nil {
+			t.Errorf("CheckDocumentURL(%q) accepted, want refusal", raw)
+		}
 	}
 }

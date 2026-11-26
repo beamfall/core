@@ -192,15 +192,22 @@ describe("FeedFollowPanel", () => {
     await user.clear(screen.getByRole("searchbox"));
     await user.type(
       screen.getByRole("searchbox"),
-      "https://example.org/private.xml?token=abc{Enter}",
+      "https://example.org/private.xml?private_token=abc{Enter}",
+    );
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(
+      screen.getByRole("searchbox"),
+      "https://example.org/private.xml?X-API-Key=abc{Enter}",
     );
     expect(searchFeeds).not.toHaveBeenCalled();
   });
 
-  it("runs discovery for clean HTTPS addresses and falls back to direct follow when none match", async () => {
+  it("runs discovery for clean HTTPS addresses and keeps direct follow when none match or discovery fails", async () => {
     const user = userEvent.setup();
     vi.mocked(searchFeeds)
       .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(throttled())
+      .mockRejectedValueOnce(new Error("discovery byte cap exceeded"))
       .mockResolvedValueOnce([
         {
           title: "Daily Apple",
@@ -218,6 +225,16 @@ describe("FeedFollowPanel", () => {
       downloadPolicy: "latest",
       latestN: 3,
     });
+
+    // THROTTLED discovery on a valid HTTPS feed still falls back to direct follow.
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), "https://example.org/throttled.xml{Enter}");
+    expect(await screen.findByRole("button", { name: "Follow Feed address" })).toBeInTheDocument();
+
+    // Upstream/size cap failure during discovery also keeps direct follow available.
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), "https://example.org/huge.xml{Enter}");
+    expect(await screen.findByRole("button", { name: "Follow Feed address" })).toBeInTheDocument();
 
     await user.clear(screen.getByRole("searchbox"));
     await user.type(

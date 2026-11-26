@@ -64,7 +64,7 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 			Complete:       nextState.Complete,
 			UpdateInterval: nextState.UpdateInterval,
 		}
-		return adaptivePollInterval(cachedDoc, nextState.MaxAge, pubDates, now), &nextState, nil
+		return adaptivePollInterval(cachedDoc, nextState.MaxAge, pubDates, subscription.AddedAt, now), &nextState, nil
 	}
 
 	loadEntries := p.store.SubscriptionEntryPollDates
@@ -76,23 +76,27 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 		return 0, nil, err
 	}
 	if !result.NotModified {
-		retained, pubDates := mergeFeedEntryDates(document, entries, prevState.Entries)
+		var priorEntries []store.SubscriptionPollEntryDate
+		if prevState.FeedURLHash == "" || prevState.FeedURLHash == store.PollFeedURLHash(subscription.FeedURL) {
+			priorEntries = prevState.Entries
+		}
+		retained, pubDates := mergeFeedEntryDates(document, entries, priorEntries)
 		state := &store.SubscriptionPollState{
 			Complete:       document.Complete,
 			UpdateInterval: document.UpdateInterval,
 			MaxAge:         result.MaxAge,
 			Entries:        retained,
 		}
-		return adaptivePollInterval(document, result.MaxAge, pubDates, now), state, nil
+		return adaptivePollInterval(document, result.MaxAge, pubDates, subscription.AddedAt, now), state, nil
 	}
 	pubDates := storedEntryPubDates(entries)
-	if isFeedDormant(pubDates, now) {
+	if isFeedDormant(pubDates, subscription.AddedAt, now) {
 		state := &store.SubscriptionPollState{
 			Entries: retainPollEntryDates(storedPollEntryDates(entries)),
 		}
 		return MaxPollInterval, state, nil
 	}
-	fallbackNoTTL := adaptivePollInterval(scrape.FeedDocument{}, 0, pubDates, now)
+	fallbackNoTTL := adaptivePollInterval(scrape.FeedDocument{}, 0, pubDates, subscription.AddedAt, now)
 	var cachedDoc scrape.FeedDocument
 	if prev, hasPrev := previousHealthyPollInterval(subscription); hasPrev && prev != DefaultPollInterval && prev != fallbackNoTTL {
 		// Pre-CORE-2956 rows lacked poll_state; a healthy interval distinct from
@@ -108,7 +112,7 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 			Entries:        retainPollEntryDates(storedPollEntryDates(entries)),
 		}
 	}
-	return adaptivePollInterval(cachedDoc, result.MaxAge, pubDates, now), nextState, nil
+	return adaptivePollInterval(cachedDoc, result.MaxAge, pubDates, subscription.AddedAt, now), nextState, nil
 }
 
 // adaptivePollInterval chooses the healthy poll interval in
@@ -117,8 +121,8 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 //  2. explicit updateFrequency, RSS <ttl>, or sy:updatePeriod/sy:updateFrequency;
 //  3. HTTP Cache-Control: max-age as a lower bound;
 //  4. observed cadence (half the median gap between the last 10 unique publication dates).
-func adaptivePollInterval(document scrape.FeedDocument, maxAge time.Duration, pubDates []time.Time, now time.Time) time.Duration {
-	if document.Complete || isFeedDormant(pubDates, now) {
+func adaptivePollInterval(document scrape.FeedDocument, maxAge time.Duration, pubDates []time.Time, addedAt, now time.Time) time.Duration {
+	if document.Complete || isFeedDormant(pubDates, addedAt, now) {
 		return MaxPollInterval
 	}
 	if document.UpdateInterval > 0 {
@@ -268,7 +272,7 @@ func storedEntryPubDates(entries []store.SubscriptionEntry) []time.Time {
 	return dates
 }
 
-func isFeedDormant(pubDates []time.Time, now time.Time) bool {
+func isFeedDormant(pubDates []time.Time, addedAt, now time.Time) bool {
 	var latest time.Time
 	for _, ts := range pubDates {
 		if ts.IsZero() {
@@ -279,7 +283,7 @@ func isFeedDormant(pubDates []time.Time, now time.Time) bool {
 		}
 	}
 	if latest.IsZero() {
-		return false
+		return !addedAt.IsZero() && now.Sub(addedAt) >= DormantFeedAfter
 	}
 	return now.Sub(latest) >= DormantFeedAfter
 }

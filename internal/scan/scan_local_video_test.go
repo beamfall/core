@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -407,5 +408,142 @@ func TestScanMultiExtractorPartialFailureLeavesNoPartialWrites(t *testing.T) {
 	}
 	if entities, err := st.EntitiesForMedia(ctx, mediaID, "", store.LibraryFilter{AllLibraries: true}); err != nil || len(entities) != 1 {
 		t.Fatalf("retry entities = %+v (%v), want 1", entities, err)
+	}
+}
+
+// TestScanRepeatedScansWithVerifiedByteCopiesStayStandaloneWithoutChurn checks
+// that identical-byte legacy SHA-256 and sample copies in a local-extractor
+// library stay standalone across repeated scans without mergeVerifiedCopies
+// re-merging and re-splitting them.
+func TestScanRepeatedScansWithVerifiedByteCopiesStayStandaloneWithoutChurn(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	sharedBytes := []byte("identical camera roll video clip bytes across copies")
+	aPath := writeScanFile(t, root, "copy-a.mov", sharedBytes)
+	bPath := writeScanFile(t, root, "copy-b.mov", sharedBytes)
+	st := storetest.Open(t)
+	libraryID, resolver := imageRuleLibrary(t, st, []store.MediaClass{store.MediaClassImage, store.MediaClassVideo})
+	req := Request{LibraryID: libraryID, Root: root}
+	prober := &countingProber{probe: ffmpeg.Probe{
+		Container: "mov", VideoCodec: "hevc", DurationSeconds: 10, HasVideo: true,
+	}}
+	extractor := &toggleLocalExtractor{date: "2025-10-01T12:00:00Z"}
+	extractors := map[string][]LocalExtractor{imageRuleFixturePlugin: {extractor}}
+
+	// Seed copy-a as a legacy sha256 fingerprint copy alongside copy-b's sample1
+	// fingerprint to exercise VersionCopyCandidates + mergeVerifiedCopies on scan.
+	legacyDigest, err := store.HashMediaFileContentContext(ctx, aPath)
+	if err != nil {
+		t.Fatalf("hash copy-a: %v", err)
+	}
+	osHash, err := OSHash(aPath)
+	if err != nil {
+		t.Fatalf("oshash copy-a: %v", err)
+	}
+	aInfo, err := os.Stat(aPath)
+	if err != nil {
+		t.Fatalf("stat copy-a: %v", err)
+	}
+	if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID:           libraryID,
+		Path:                aPath,
+		Title:               "copy-a",
+		Container:           "mov",
+		Codec:               "hevc",
+		Class:               store.MediaClassVideo,
+		ContentFingerprint:  legacyDigest,
+		DurationSecondsHint: 10,
+		VideoWidthHint:      1920,
+		VideoHeightHint:     1080,
+		OSHash:              osHash,
+		SizeBytes:           aInfo.Size(),
+		ModTime:             aInfo.ModTime().UTC(),
+	}); err != nil {
+		t.Fatalf("seed legacy copy-a: %v", err)
+	}
+
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, extractors, req); err != nil {
+		t.Fatalf("scan 1: %v", err)
+	}
+	files1, err := st.MediaFilesForLibrary(ctx, libraryID)
+	if err != nil || len(files1) != 2 {
+		t.Fatalf("scan 1 files = %+v, %v", files1, err)
+	}
+	idByPath1 := map[string]store.MediaID{}
+	for _, f := range files1 {
+		idByPath1[f.Path] = f.MediaID
+	}
+	if idByPath1[aPath] == idByPath1[bPath] {
+		t.Fatalf("duplicate copies merged on scan 1: %v", idByPath1)
+	}
+
+	// Subsequent unchanged scans must keep the exact same 2 MediaIDs without re-probing.
+	for _, round := range []string{"scan 2", "scan 3"} {
+		if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, extractors, req); err != nil {
+			t.Fatalf("%s: %v", round, err)
+		}
+		files, err := st.MediaFilesForLibrary(ctx, libraryID)
+		if err != nil || len(files) != 2 {
+			t.Fatalf("%s files = %+v, %v", round, files, err)
+		}
+		for _, f := range files {
+			if f.MediaID != idByPath1[f.Path] {
+				t.Fatalf("%s churned MediaID for %s: got %s, want %s", round, f.Path, f.MediaID, idByPath1[f.Path])
+			}
+		}
+	}
+	if prober.calls != 2 || len(extractor.calls) != 2 {
+		t.Fatalf("unchanged copy rescans re-ran work: probes=%d calls=%d, want 2/2", prober.calls, len(extractor.calls))
+	}
+}
+
+// TestScanUnlockedEncryptedLibraryExtractsClipOnce checks that unchanged clips in
+// an unsealed encrypted library hit the library-scoped fast path and skip repeat
+// probing and local extraction once the completion marker commits.
+func TestScanUnlockedEncryptedLibraryExtractsClipOnce(t *testing.T) {
+	ctx := t.Context()
+	dataDir := storetest.MigratedDataDir(t)
+	st, err := store.Open(ctx, dataDir, store.Options{
+		SeedDevelopmentData:               true,
+		EnableEncryptedLibraryDBLifecycle: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	libraryID, resolver := imageRuleLibrary(t, st, []store.MediaClass{store.MediaClassImage, store.MediaClassVideo})
+	if err := st.SetLibraryBacking(ctx, libraryID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	cipher := scanCatalogCipher{libencrypt.NewManagerWithParams(scanSecrets{}, libencrypt.TestArgon2Params)}
+	if _, err := cipher.Provision(string(libraryID), libencrypt.UnsealModeAuto, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
+		t.Fatal(err)
+	}
+
+	root := t.TempDir()
+	writeScanFile(t, root, "secret-clip.mov", []byte("encrypted clip bytes"))
+	req := Request{LibraryID: libraryID, Root: root}
+	prober := &countingProber{probe: ffmpeg.Probe{
+		Container: "mov", VideoCodec: "hevc", DurationSeconds: 14, HasVideo: true,
+	}}
+	extractor := &toggleLocalExtractor{}
+	extractors := map[string][]LocalExtractor{imageRuleFixturePlugin: {extractor}}
+
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, extractors, req); err != nil {
+		t.Fatalf("encrypted scan 1: %v", err)
+	}
+	if prober.calls != 1 || len(extractor.calls) != 1 {
+		t.Fatalf("encrypted scan 1 probes=%d calls=%d, want 1/1", prober.calls, len(extractor.calls))
+	}
+
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, extractors, req); err != nil {
+		t.Fatalf("encrypted scan 2: %v", err)
+	}
+	if prober.calls != 1 || len(extractor.calls) != 1 {
+		t.Fatalf("encrypted rescan repeated work: probes=%d calls=%d, want 1/1", prober.calls, len(extractor.calls))
 	}
 }

@@ -46,17 +46,36 @@ func (e *Engine) CheckDocumentURL(u *url.URL) error {
 	if u.User != nil {
 		return errors.New("scrape: refused URL with user credentials")
 	}
+	if rawPort := u.Port(); rawPort != "" {
+		port, err := strconv.Atoi(rawPort)
+		if err != nil || port < 1 || port > 65535 {
+			return errors.New("scrape: refused URL with invalid port")
+		}
+	}
 	params, err := url.ParseQuery(u.RawQuery)
 	if err != nil {
 		return errors.New("scrape: refused invalid URL query")
 	}
 	for key := range params {
-		switch documentQueryKeySeparators.Replace(strings.ToLower(key)) {
-		case "token", "accesstoken", "refreshtoken", "authtoken", "bearertoken", "idtoken", "apitoken", "oauthtoken",
-			"securitytoken", "sessiontoken", "jwt", "auth", "authorization", "credential", "credentials",
-			"apikey", "key", "accesskey", "accesskeyid", "subscriptionkey", "secret", "clientsecret", "oauthtokensecret",
-			"password", "passwd", "sessionid", "sig", "signature", "xamzcredential", "xamzsecuritytoken", "xamzsignature",
+		norm := documentQueryKeySeparators.Replace(strings.ToLower(key))
+		switch norm {
+		case "token", "privatetoken", "accesstoken", "refreshtoken", "authtoken", "bearertoken",
+			"idtoken", "apitoken", "oauthtoken", "securitytoken", "sessiontoken", "clienttoken",
+			"usertoken", "xauthtoken", "personaltoken",
+			"jwt", "auth", "authorization", "credential", "credentials",
+			"apikey", "xapikey", "key", "accesskey", "accesskeyid", "subscriptionkey",
+			"authkey", "clientkey", "userkey",
+			"secret", "secretkey", "apisecret", "accesssecret", "clientsecret", "oauthtokensecret",
+			"password", "passwd", "pass", "pwd", "sessionid", "sig", "signature",
+			"xamzcredential", "xamzsecuritytoken", "xamzsignature",
 			"xgoogcredential", "xgoogsignature":
+			return errors.New("scrape: refused URL with query credentials")
+		}
+		if strings.HasSuffix(norm, "secret") ||
+			strings.HasSuffix(norm, "password") ||
+			strings.HasSuffix(norm, "passwd") ||
+			strings.HasSuffix(norm, "credential") ||
+			strings.HasSuffix(norm, "credentials") {
 			return errors.New("scrape: refused URL with query credentials")
 		}
 	}
@@ -633,7 +652,10 @@ func childText(scope *xmlNode, name string) string {
 	return strings.TrimSpace(matched[0].text)
 }
 
-const syndicationNamespace = "http://purl.org/rss/1.0/modules/syndication/"
+const (
+	syndicationNamespace = "http://purl.org/rss/1.0/modules/syndication/"
+	podcastNamespace     = "https://podcastindex.org/namespace/1.0"
+)
 
 func parseFeedUpdateHints(docRoot, channel *xmlNode) (time.Duration, bool) {
 	var (
@@ -648,7 +670,7 @@ func parseFeedUpdateHints(docRoot, channel *xmlNode) (time.Duration, bool) {
 	)
 	for _, child := range channel.children {
 		_, local, hasPrefix := splitXMLPrefix(child.name)
-		if isSyndicationElement(docRoot, channel, child) {
+		if isElementNamespace(docRoot, channel, child, syndicationNamespace, "sy") {
 			switch local {
 			case "updatePeriod":
 				if hasSyPeriod || syInvalid {
@@ -677,7 +699,7 @@ func parseFeedUpdateHints(docRoot, channel *xmlNode) (time.Duration, bool) {
 		}
 		switch local {
 		case "updateFrequency":
-			if !complete && updateFreqDur == 0 {
+			if !complete && updateFreqDur == 0 && isElementNamespace(docRoot, channel, child, podcastNamespace, "podcast") {
 				dur, done, ok := parseUpdateFrequencyNode(child)
 				if ok {
 					updateFreqDur = dur
@@ -714,7 +736,7 @@ func parseFeedUpdateHints(docRoot, channel *xmlNode) (time.Duration, bool) {
 	return 0, false
 }
 
-func isSyndicationElement(docRoot, channel, child *xmlNode) bool {
+func isElementNamespace(docRoot, channel, child *xmlNode, wantNamespace, fallbackPrefix string) bool {
 	prefix, _, hasPrefix := splitXMLPrefix(child.name)
 	attr := "xmlns"
 	if hasPrefix {
@@ -725,10 +747,10 @@ func isSyndicationElement(docRoot, channel, child *xmlNode) bool {
 			continue
 		}
 		if val, ok := node.attrs[attr]; ok {
-			return strings.TrimSpace(val) == syndicationNamespace
+			return strings.TrimSpace(val) == wantNamespace
 		}
 	}
-	return hasPrefix && prefix == "sy"
+	return hasPrefix && fallbackPrefix != "" && prefix == fallbackPrefix
 }
 
 func splitXMLPrefix(name string) (prefix, local string, hasPrefix bool) {
@@ -824,15 +846,20 @@ func isValidRRuleByDay(tok string) bool {
 
 func parseRRuleInterval(raw string) (time.Duration, bool) {
 	var (
-		freq      string
-		interval  int64 = 1
-		seenDays        = map[string]bool{}
-		seenHours       = map[int]bool{}
+		freq        string
+		interval    int64 = 1
+		seenDays          = map[string]bool{}
+		seenHours         = map[int]bool{}
+		seenMinutes       = map[int]bool{}
 	)
 	for _, part := range strings.Split(raw, ";") {
-		key, val, found := strings.Cut(strings.TrimSpace(part), "=")
-		if !found {
+		part = strings.TrimSpace(part)
+		if part == "" {
 			continue
+		}
+		key, val, found := strings.Cut(part, "=")
+		if !found {
+			return 0, false
 		}
 		key = strings.ToUpper(strings.TrimSpace(key))
 		val = strings.ToUpper(strings.TrimSpace(val))
@@ -868,21 +895,55 @@ func parseRRuleInterval(raw string) (time.Duration, bool) {
 				}
 				seenHours[h] = true
 			}
+		case "BYMINUTE":
+			for _, item := range strings.Split(val, ",") {
+				tok := strings.TrimSpace(item)
+				if tok == "" {
+					continue
+				}
+				m, err := strconv.Atoi(tok)
+				if err != nil || m < 0 || m > 59 {
+					return 0, false
+				}
+				seenMinutes[m] = true
+			}
+		default:
+			// Decline recurrence parts we do not explicitly interpret so unknown
+			// constraints (BYSECOND, BYMONTHDAY, COUNT, etc.) never miscompute.
+			return 0, false
 		}
 	}
 	var unit time.Duration
 	occurrences := int64(1)
 	switch freq {
 	case "SECONDLY":
+		if len(seenDays) > 0 || len(seenHours) > 0 || len(seenMinutes) > 0 {
+			return 0, false
+		}
 		unit = time.Second
 	case "MINUTELY":
+		if len(seenDays) > 0 || len(seenHours) > 0 || len(seenMinutes) > 0 {
+			return 0, false
+		}
 		unit = time.Minute
 	case "HOURLY":
+		if len(seenDays) > 0 || len(seenHours) > 0 {
+			return 0, false
+		}
 		unit = time.Hour
+		if len(seenMinutes) > 0 {
+			occurrences *= int64(len(seenMinutes))
+		}
 	case "DAILY":
+		if len(seenDays) > 0 {
+			return 0, false
+		}
 		unit = 24 * time.Hour
 		if len(seenHours) > 0 {
-			occurrences = int64(len(seenHours))
+			occurrences *= int64(len(seenHours))
+		}
+		if len(seenMinutes) > 0 {
+			occurrences *= int64(len(seenMinutes))
 		}
 	case "WEEKLY":
 		unit = 7 * 24 * time.Hour
@@ -892,12 +953,24 @@ func parseRRuleInterval(raw string) (time.Duration, bool) {
 		if len(seenHours) > 0 {
 			occurrences *= int64(len(seenHours))
 		}
+		if len(seenMinutes) > 0 {
+			occurrences *= int64(len(seenMinutes))
+		}
 	case "MONTHLY":
+		if len(seenDays) > 0 {
+			return 0, false
+		}
 		unit = 30 * 24 * time.Hour
 		if len(seenHours) > 0 {
 			occurrences *= int64(len(seenHours))
 		}
+		if len(seenMinutes) > 0 {
+			occurrences *= int64(len(seenMinutes))
+		}
 	case "YEARLY":
+		if len(seenDays) > 0 || len(seenHours) > 0 || len(seenMinutes) > 0 {
+			return 0, false
+		}
 		unit = 365 * 24 * time.Hour
 	default:
 		return 0, false

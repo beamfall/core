@@ -98,7 +98,7 @@ type probeOutcome struct {
 // hash. Store access here is read-only; the store serializes it internally
 // (one write connection, ADR-0011 §1), so concurrent fills are safe alongside
 // the consumer's ordered writes.
-func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, grabber FrameGrabber, reservations []store.StoredFingerprint) {
+func (t *workerTask) fill(ctx context.Context, libraryID store.LibraryID, st *store.Store, prober Prober, grabber FrameGrabber, reservations []store.StoredFingerprint) {
 	stored, err := st.MediaFileFingerprintByPath(ctx, t.path)
 	if err != nil {
 		t.err = err
@@ -123,6 +123,26 @@ func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, g
 		return
 	}
 	t.fingerprint = fingerprint
+	// Encrypted media_file rows are intentionally omitted from the global
+	// plain path lookup so rename-over detection still re-verifies bytes; once
+	// the file's fingerprint is confirmed unchanged, promote it to the fast
+	// path before probing or frame grabbing so we don't re-extract metadata.
+	if !t.stored.OK {
+		libStored, err := st.MediaFileFingerprintInLibrary(ctx, libraryID, t.path)
+		if err != nil {
+			t.err = err
+			return
+		}
+		if libStored.OK &&
+			libStored.ContentFingerprint == fingerprint &&
+			libStored.SizeBytes == t.info.size &&
+			!libStored.ModTime.IsZero() &&
+			libStored.ModTime.Equal(modTimeMS) {
+			t.stored = libStored
+			t.fastPath = true
+			return
+		}
+	}
 	oshash, err := OSHash(t.path)
 	if err != nil {
 		t.err = err

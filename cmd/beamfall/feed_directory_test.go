@@ -531,6 +531,7 @@ func TestFeedDirectoryFiltersUnsafeHitsBeforeCaching(t *testing.T) {
 			  {"collectionName":"Userinfo","feedUrl":%q},
 			  {"collectionName":"Token","feedUrl":"https://example.com/feed.xml?token=x"},
 			  {"collectionName":"API token","feedUrl":"https://example.com/feed.xml?api_token=x"},
+			  {"collectionName":"Private token","feedUrl":"https://example.com/feed.xml?private_token=x"},
 			  {"collectionName":"Relative","feedUrl":"/feed.xml"},
 			  {"collectionName":"Invalid","feedUrl":"https://bad host/feed.xml"},
 			  {"collectionName":"Daily","feedUrl":"https://example.com/feed.xml?lang=en"}
@@ -538,6 +539,7 @@ func TestFeedDirectoryFiltersUnsafeHitsBeforeCaching(t *testing.T) {
 		case "/extended":
 			_, _ = io.WriteString(w, `{"feeds":[
 			  {"title":"API key","url":"https://example.com/extra.xml?%41PI-Key=x"},
+			  {"title":"Header key","url":"https://example.com/extra.xml?X-API-Key=x"},
 			  {"title":"Extra","url":"https://example.com/extra.xml"}
 			]}`)
 		}
@@ -784,6 +786,9 @@ func TestFeedDirectoryRejectsURLShapesAndAllowsPlainPunctuatedText(t *testing.T)
 		"feed://host/feed?token=x",
 		"feed://bad host/feed?token=x",
 		"https://" + "user" + ":pass@host/feed",
+		"https://host:99999/feed.xml",
+		"https://host/feed.xml?private_token=x",
+		"https://host/feed.xml?X-API-Key=x",
 		"http:host/feed?token=x",
 	} {
 		if _, err := searcher.SearchFeeds(t.Context(), rejected); !errors.Is(err, graph.ErrFeedSearchInvalidURL) {
@@ -801,5 +806,17 @@ func TestFeedDirectoryRejectsURLShapesAndAllowsPlainPunctuatedText(t *testing.T)
 	}
 	if primary.Load() != 2 || extended.Load() != 2 {
 		t.Fatalf("plain text searches primary=%d extended=%d, want 2/2", primary.Load(), extended.Load())
+	}
+
+	// Post-rename directory sync error must fail closed without sending an upstream request.
+	syncErr := errors.New("budget dir fsync failed")
+	restoreSync := jsonstate.WithSyncDirForTest(func(string) error { return syncErr })
+	if _, err := searcher.SearchFeeds(t.Context(), "blocked-by-sync"); err == nil || !errors.Is(err, syncErr) {
+		restoreSync()
+		t.Fatalf("SearchFeeds on post-rename dir sync failure = %v, want syncErr", err)
+	}
+	restoreSync()
+	if primary.Load() != 2 || extended.Load() != 2 {
+		t.Fatalf("directory request sent despite failed durability sync: primary=%d extended=%d", primary.Load(), extended.Load())
 	}
 }

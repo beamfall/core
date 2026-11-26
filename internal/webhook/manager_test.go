@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/beamfall/core/internal/jsonstate"
 )
 
 // memSecrets is an in-memory SecretStore.
@@ -279,5 +281,153 @@ func TestRedactURL(t *testing.T) {
 		if got := redactURL(in); got != want {
 			t.Errorf("redactURL(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestManagerHandlesPreAndPostRenameDirectorySyncFailures(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "webhook-endpoints.json")
+	statePath := filepath.Join(dir, "webhook-dead-letter.json")
+	secrets := &memSecrets{values: map[string]string{}}
+
+	m, err := OpenManager(ManagerOptions{
+		ConfigPath: configPath,
+		StatePath:  statePath,
+		Secrets:    secrets,
+		Events:     &fixedEvents{},
+		Client:     &recordingDoer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldVal := "val-a"
+	created, err := m.SaveEndpoint(EndpointInput{
+		Format: "slack",
+		URL:    "https://hooks.slack.example/services/old",
+		Secret: &oldVal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRef := m.file.Endpoints[0].SecretRef
+
+	// Post-rename syncDir failure: new config IS on disk, so runtime and secret
+	// must stay on the new values instead of restoring the old signing secret.
+	injected := errors.New("dir fsync EIO")
+	restoreSync := jsonstate.WithSyncDirForTest(func(string) error { return injected })
+	newVal := "val-b"
+	if _, err := m.SaveEndpoint(EndpointInput{
+		ID:     created.ID,
+		Format: "slack",
+		URL:    "https://hooks.slack.example/services/new",
+		Secret: &newVal,
+	}); err == nil {
+		restoreSync()
+		t.Fatal("expected error on post-rename syncDir failure")
+	}
+	restoreSync()
+
+	// Runtime and secret store must both reflect the installed new endpoint and secret.
+	if got := m.emitter.endpoints(); len(got) != 1 || got[0].URL != "https://hooks.slack.example/services/new" {
+		t.Fatalf("runtime emitter after post-rename sync error = %+v", got)
+	}
+	if gotSec, err := secrets.Secret(oldRef); err != nil || gotSec != newVal {
+		t.Fatalf("secret after post-rename sync error = (%q, %v), want %q (not restored to old)", gotSec, err, newVal)
+	}
+
+	// Retry cleanly once syncDir recovers.
+	retried, err := m.SaveEndpoint(EndpointInput{
+		ID:     created.ID,
+		Format: "slack",
+		URL:    "https://hooks.slack.example/services/new",
+		Secret: &newVal,
+	})
+	if err != nil || retried.URL != "https://hooks.slack.example/…" {
+		t.Fatalf("retry SaveEndpoint = (%+v, %v)", retried, err)
+	}
+
+	// Restart from disk agrees with runtime & secrets.
+	restarted, err := OpenManager(ManagerOptions{
+		ConfigPath: configPath,
+		StatePath:  statePath,
+		Secrets:    secrets,
+		Events:     &fixedEvents{},
+		Client:     &recordingDoer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eps := restarted.Endpoints(); len(eps) != 1 || eps[0].URL != "https://hooks.slack.example/…" {
+		t.Fatalf("restarted endpoints = %+v", eps)
+	}
+	if len(restarted.file.Endpoints) != 1 || restarted.file.Endpoints[0].URL != "https://hooks.slack.example/services/new" {
+		t.Fatalf("restarted file endpoints = %+v", restarted.file.Endpoints)
+	}
+	if gotSec, err := secrets.Secret(restarted.file.Endpoints[0].SecretRef); err != nil || gotSec != newVal {
+		t.Fatalf("restarted secret = (%q, %v), want %q", gotSec, err, newVal)
+	}
+
+	// Post-rename syncDir failure on DeleteEndpoint removes runtime endpoint & secret cleanly.
+	delRef := restarted.file.Endpoints[0].SecretRef
+	restoreDelSync := jsonstate.WithSyncDirForTest(func(string) error { return injected })
+	if err := restarted.DeleteEndpoint(created.ID); err == nil {
+		restoreDelSync()
+		t.Fatal("expected error on DeleteEndpoint post-rename sync failure")
+	}
+	restoreDelSync()
+	if got := restarted.emitter.endpoints(); len(got) != 0 {
+		t.Fatalf("runtime emitter after post-rename DeleteEndpoint sync error = %+v, want empty", got)
+	}
+	if _, err := secrets.Secret(delRef); err == nil {
+		t.Fatalf("deleted endpoint secret %q still present after post-rename DeleteEndpoint", delRef)
+	}
+
+	// Pre-rename failure on another manager (config path is an existing directory)
+	// MUST restore old secret and keep old runtime state.
+	preDir := t.TempDir()
+	preConfig := filepath.Join(preDir, "webhook-endpoints.json")
+	preSecrets := &memSecrets{values: map[string]string{}}
+	preM, err := OpenManager(ManagerOptions{
+		ConfigPath: preConfig,
+		StatePath:  filepath.Join(preDir, "webhook-dead-letter.json"),
+		Secrets:    preSecrets,
+		Events:     &fixedEvents{},
+		Client:     &recordingDoer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v0, err := preM.SaveEndpoint(EndpointInput{
+		Format: "slack",
+		URL:    "https://hooks.slack.example/services/v0",
+		Secret: &oldVal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preRef := preM.file.Endpoints[0].SecretRef
+	// Force pre-rename failure by replacing ConfigPath with a directory.
+	if err := os.Remove(preConfig); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(preConfig, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := preM.SaveEndpoint(EndpointInput{
+		ID:     v0.ID,
+		Format: "slack",
+		URL:    "https://hooks.slack.example/services/v1",
+		Secret: &newVal,
+	}); err == nil {
+		t.Fatal("expected pre-rename failure when ConfigPath is a directory")
+	}
+	if gotSec, err := preSecrets.Secret(preRef); err != nil || gotSec != oldVal {
+		t.Fatalf("secret after pre-rename failure = (%q, %v), want %q restored", gotSec, err, oldVal)
+	}
+	if eps := preM.Endpoints(); len(eps) != 1 || eps[0].URL != "https://hooks.slack.example/…" {
+		t.Fatalf("runtime endpoints after pre-rename failure = %+v", eps)
+	}
+	if got := preM.emitter.endpoints(); len(got) != 1 || got[0].URL != "https://hooks.slack.example/services/v0" {
+		t.Fatalf("runtime emitter after pre-rename failure = %+v", got)
 	}
 }
