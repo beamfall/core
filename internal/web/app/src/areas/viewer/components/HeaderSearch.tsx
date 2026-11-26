@@ -24,7 +24,13 @@ import {
 } from "../lib/searchRows";
 import { isSpoilerCandidate, useSpoilerGuard } from "../lib/spoilerGuard";
 import { useLiveSearch, useSearchShortcut } from "../lib/useLiveSearch";
-import { navTitleFor, type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
+import {
+  navTitleFor,
+  type PlayerNavState,
+  playQueueOf,
+  queueWindow,
+  rememberFullCatalogQueue,
+} from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 
 /** One action on a result row: open the item, or play it. */
@@ -108,8 +114,11 @@ export function HeaderSearch() {
       const state: PlayerNavState = { title: navTitleFor(identity, item.title) };
       // A one-item queue still goes, so it ends an earlier Play all queue.
       if (identity && queue.length > 0) {
-        state.queue = queueWindow(queue, item.id);
+        const windowed = queueWindow(queue, item.id);
+        const catalogKey = rememberFullCatalogQueue(identity, windowed, queue);
+        state.queue = windowed;
         state.queueIdentity = identity;
+        if (catalogKey) state.catalogKey = catalogKey;
       }
       navigate(searchRowPlayPath(item), { state });
     } else {

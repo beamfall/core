@@ -25,6 +25,7 @@ import {
   type PlayerNavState,
   type PlayQueueItem,
   queueWindow,
+  rememberFullCatalogQueue,
 } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
@@ -231,9 +232,15 @@ export function MediaItemCard({
   // The siblings as the player's queue (previous/next and the pre-minted next
   // stream), bound to the viewer identity. A one-item queue still goes, so it
   // ends an earlier Play all queue. The detail page forwards it to its Play.
-  function queueState(): Pick<PlayerNavState, "queue" | "queueIdentity"> {
+  function queueState(): Pick<PlayerNavState, "queue" | "queueIdentity" | "catalogKey"> {
     if (!identity || !queue || queue.length === 0) return {};
-    return { queue: queueWindow(queue, item.id), queueIdentity: identity };
+    const windowed = queueWindow(queue, item.id);
+    const catalogKey = rememberFullCatalogQueue(identity, windowed, queue);
+    return {
+      queue: windowed,
+      queueIdentity: identity,
+      ...(catalogKey ? { catalogKey } : {}),
+    };
   }
 
   // Carry the title forward so the player's info overlay can name the Media
@@ -336,6 +343,8 @@ export function MediaItemCard({
       primaryLabel={primaryLabel}
       isMedia={isMedia}
       isAudio={item.mediaClass === "audio"}
+      mediaClass={item.mediaClass}
+      lockState={item.locked ? "locked" : "unlocked"}
       containerID={item.container?.id}
       href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
       target={itemTargetFor(item)}

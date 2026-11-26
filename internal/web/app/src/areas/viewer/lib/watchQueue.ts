@@ -1,5 +1,8 @@
+import { useSyncExternalStore } from "react";
+import { getIdentityEpochSignal } from "@/lib/api";
 import type { SourceItem } from "@/lib/graphql/types";
 import { viewerIdentityRevealed } from "@/lib/viewerCache";
+import { pinNextInShuffleOrder } from "../player/nowPlaying";
 
 // The play queue a catalog surface hands the player (CORE-1143). A card that
 // starts playback carries the playable siblings it was shown with — an album's
@@ -50,6 +53,8 @@ export interface PlayerNavState {
   queue?: PlayQueueItem[];
   /** The viewer identity the queue was listed for; a queue without it is ignored. */
   queueIdentity?: string;
+  /** Provenance key tying a `queueWindow`-truncated slice back to its full catalog list. */
+  catalogKey?: string;
   tracks?: StartTracks;
   /**
    * The identity of one explicit playback start (Play or Start over on a
@@ -219,6 +224,7 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
     title?: unknown;
     queue?: unknown;
     queueIdentity?: unknown;
+    catalogKey?: unknown;
     tracks?: unknown;
     startID?: unknown;
   };
@@ -246,6 +252,9 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
     title,
     queue,
     ...(queue ? { queueIdentity: identity as string } : {}),
+    ...(queue && typeof raw.catalogKey === "string" && raw.catalogKey
+      ? { catalogKey: raw.catalogKey }
+      : {}),
     ...(tracks ? { tracks } : {}),
     ...(typeof raw.startID === "string" && raw.startID ? { startID: raw.startID } : {}),
   };
@@ -269,8 +278,6 @@ function readStartTracks(raw: unknown): StartTracks | undefined {
     ? undefined
     : tracks;
 }
-
-import { pinNextInShuffleOrder } from "../player/nowPlaying";
 
 /**
  * Inserts `item` immediately after `currentID` in `queue`, removing any other
@@ -304,13 +311,206 @@ export function insertQueueNext(
   return [...before, item, ...after];
 }
 
+export type QueuePlacementAction = "next" | "end";
+
 export type PlayNextHandler = (
   item: PlayQueueItem,
   identity: string | null,
+  placement?: QueuePlacementAction,
 ) => Promise<boolean> | boolean;
 
 let activePlayNextHandler: PlayNextHandler | null = null;
 const stagedByIdentity = new Map<string, PlayQueueItem[]>();
+
+// Complete untruncated catalog queues before `queueWindow` truncation, stored once
+// per full catalog list per identity epoch and bound to explicit `catalogKey`
+// provenance carried through nav state so an un-truncated playlist sharing the
+// same visible slice never expands to another list (CORE-2845).
+const MAX_FULL_CATALOG_ENTRIES = 16;
+interface FullCatalogEntry {
+  catalogKey: string;
+  identity: string;
+  epoch: AbortSignal | undefined;
+  items: readonly PlayQueueItem[];
+}
+const fullCatalogEntries: FullCatalogEntry[] = [];
+let pinnedActiveCatalog: FullCatalogEntry | null = null;
+let catalogNamespace = createCatalogNamespace();
+let nextCatalogSeq = 0;
+
+function createCatalogNamespace(): string {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function sameFullCatalog(a: readonly PlayQueueItem[], b: readonly PlayQueueItem[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  const len = a.length;
+  if (len === 0) return true;
+  const mid = Math.floor(len / 2);
+  if (a[0]?.id !== b[0]?.id || a[mid]?.id !== b[mid]?.id || a[len - 1]?.id !== b[len - 1]?.id) {
+    return false;
+  }
+  for (let i = 0; i < len; i++) {
+    if (a[i]?.id !== b[i]?.id) return false;
+  }
+  return true;
+}
+
+function pruneStaleCatalogQueues(epoch: AbortSignal | undefined): void {
+  for (let i = fullCatalogEntries.length - 1; i >= 0; i--) {
+    const entry = fullCatalogEntries[i]!;
+    if (entry.epoch !== epoch || entry.epoch?.aborted) {
+      fullCatalogEntries.splice(i, 1);
+    }
+  }
+  if (
+    pinnedActiveCatalog &&
+    (pinnedActiveCatalog.epoch !== epoch || pinnedActiveCatalog.epoch?.aborted)
+  ) {
+    pinnedActiveCatalog = null;
+  }
+}
+
+function findFullCatalogEntry(
+  identity: string | null | undefined,
+  currentQueue: readonly PlayQueueItem[] | undefined,
+  catalogKey: string | undefined,
+): FullCatalogEntry | undefined {
+  if (!identity || !currentQueue || currentQueue.length === 0 || !catalogKey) return undefined;
+  const epoch = getIdentityEpochSignal();
+  if (epoch?.aborted) return undefined;
+  if (
+    pinnedActiveCatalog &&
+    pinnedActiveCatalog.catalogKey === catalogKey &&
+    pinnedActiveCatalog.identity === identity &&
+    pinnedActiveCatalog.epoch === epoch &&
+    !pinnedActiveCatalog.epoch?.aborted &&
+    pinnedActiveCatalog.items.length > currentQueue.length
+  ) {
+    return pinnedActiveCatalog;
+  }
+  for (let i = fullCatalogEntries.length - 1; i >= 0; i--) {
+    const entry = fullCatalogEntries[i]!;
+    if (
+      entry.catalogKey === catalogKey &&
+      entry.identity === identity &&
+      entry.epoch === epoch &&
+      !entry.epoch?.aborted &&
+      entry.items.length > currentQueue.length
+    ) {
+      return entry;
+    }
+  }
+  return undefined;
+}
+
+export function rememberFullCatalogQueue(
+  identity: string | null | undefined,
+  windowed: readonly PlayQueueItem[],
+  full: readonly PlayQueueItem[],
+): string | undefined {
+  if (!identity || full.length <= windowed.length || windowed.length === 0) return undefined;
+  const epoch = getIdentityEpochSignal();
+  if (epoch?.aborted) return undefined;
+  pruneStaleCatalogQueues(epoch);
+  const existingIndex = fullCatalogEntries.findIndex(
+    (entry) =>
+      entry.identity === identity && entry.epoch === epoch && sameFullCatalog(entry.items, full),
+  );
+  if (existingIndex >= 0) {
+    const existing = fullCatalogEntries[existingIndex]!;
+    if (existingIndex !== fullCatalogEntries.length - 1) {
+      fullCatalogEntries.splice(existingIndex, 1);
+      fullCatalogEntries.push(existing);
+    }
+    return existing.catalogKey;
+  }
+  const catalogKey = `${catalogNamespace}:${++nextCatalogSeq}`;
+  fullCatalogEntries.push({
+    catalogKey,
+    identity,
+    epoch,
+    items: full,
+  });
+  while (fullCatalogEntries.length > MAX_FULL_CATALOG_ENTRIES) {
+    fullCatalogEntries.shift();
+  }
+  return catalogKey;
+}
+
+export function fullCatalogQueueFor(
+  identity: string | null | undefined,
+  currentQueue: readonly PlayQueueItem[] | undefined,
+  catalogKey?: string,
+): readonly PlayQueueItem[] | undefined {
+  if (!identity || !currentQueue || currentQueue.length === 0) return currentQueue;
+  return findFullCatalogEntry(identity, currentQueue, catalogKey)?.items ?? currentQueue;
+}
+
+export function pinActiveCatalogQueue(
+  identity: string | null | undefined,
+  currentQueue: readonly PlayQueueItem[] | undefined,
+  catalogKey?: string,
+): void {
+  const entry = findFullCatalogEntry(identity, currentQueue, catalogKey);
+  if (entry) pinnedActiveCatalog = entry;
+}
+
+/** Windows `queue` for history state while preserving the full list in memory (CORE-2845). */
+export function windowedQueueState(
+  identity: string | null | undefined,
+  queue: readonly PlayQueueItem[] | undefined,
+  id: string,
+): Pick<PlayerNavState, "queue" | "queueIdentity" | "catalogKey"> {
+  if (!identity || !queue || queue.length === 0) return {};
+  const windowed = queueWindow(queue, id);
+  const catalogKey = rememberFullCatalogQueue(identity, windowed, queue);
+  return {
+    queue: windowed,
+    queueIdentity: identity,
+    ...(catalogKey ? { catalogKey } : {}),
+  };
+}
+
+let activePlayingMediaID: string | null = null;
+let activePlayingEpoch: AbortSignal | undefined;
+const activePlayingListeners = new Set<() => void>();
+
+export function setActivePlayingMediaID(id: string | null): void {
+  const epoch = getIdentityEpochSignal();
+  const next = id || null;
+  if (activePlayingMediaID === next && activePlayingEpoch === epoch) return;
+  activePlayingMediaID = next;
+  activePlayingEpoch = epoch;
+  for (const listener of activePlayingListeners) listener();
+}
+
+export function getActivePlayingMediaID(): string | null {
+  const epoch = getIdentityEpochSignal();
+  if (epoch?.aborted || (activePlayingMediaID !== null && activePlayingEpoch !== epoch)) {
+    return null;
+  }
+  return activePlayingMediaID;
+}
+
+function subscribeActivePlaying(listener: () => void): () => void {
+  activePlayingListeners.add(listener);
+  return () => {
+    activePlayingListeners.delete(listener);
+  };
+}
+
+/** Reactive currently playing Media ID (null when idle or across identity epochs). */
+export function useActivePlayingMediaID(): string | null {
+  return useSyncExternalStore(
+    subscribeActivePlaying,
+    getActivePlayingMediaID,
+    getActivePlayingMediaID,
+  );
+}
 
 export function setActivePlayNextHandler(handler: PlayNextHandler | null): void {
   activePlayNextHandler = handler;
@@ -355,6 +555,11 @@ export function consumeStagedPlayNext(
 export function resetPlayNextForTest(): void {
   activePlayNextHandler = null;
   stagedByIdentity.clear();
+  fullCatalogEntries.length = 0;
+  pinnedActiveCatalog = null;
+  catalogNamespace = createCatalogNamespace();
+  nextCatalogSeq = 0;
+  setActivePlayingMediaID(null);
 }
 
 /**
@@ -366,5 +571,17 @@ export async function dispatchPlayNextToActivePlayer(
   identity: string | null | undefined,
 ): Promise<boolean> {
   if (!activePlayNextHandler) return false;
-  return await activePlayNextHandler(item, identity ?? null);
+  return await activePlayNextHandler(item, identity ?? null, "next");
+}
+
+/**
+ * Dispatches an Add to queue (move to tail) request to the active player;
+ * returns true when an active player handled it (CORE-2845).
+ */
+export async function dispatchAddToQueueToActivePlayer(
+  item: PlayQueueItem,
+  identity: string | null | undefined,
+): Promise<boolean> {
+  if (!activePlayNextHandler) return false;
+  return await activePlayNextHandler(item, identity ?? null, "end");
 }

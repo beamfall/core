@@ -12,7 +12,7 @@ import {
   type PlayerNavState,
   type PlayQueueItem,
   playQueueOf,
-  queueWindow,
+  windowedQueueState,
 } from "./watchQueue";
 
 // Listening layout rules (CORE-1635). Core stays domain-agnostic: the layout is
@@ -348,5 +348,5 @@ export function playState(
   const title = navTitleFor(identity ?? null, item.title);
   if (!identity || queue.length === 0) return { title };
   const merged = applyStagedPlayNext(identity, queue, item, options?.consumeStaged === true);
-  return { title, queue: queueWindow(merged, item.id), queueIdentity: identity };
+  return { title, ...windowedQueueState(identity, merged, item.id) };
 }

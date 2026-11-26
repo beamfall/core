@@ -5,7 +5,7 @@
 // selections never read it back (a search result carries the public address
 // the person is about to follow, nothing more).
 
-import { graphql } from "@/lib/api";
+import { getExpectedProfile, graphql } from "@/lib/api";
 import type {
   FeedSearchResult,
   FeedSubscription,
@@ -34,9 +34,11 @@ const SUBSCRIPTION_FOLLOW_QUERY =
 const SUBSCRIPTION_ENTRIES_QUERY =
   "query SubscriptionEntries($subscriptionID: String!) { subscriptionEntries(subscriptionID: $subscriptionID) { mediaID title publishedAt feedPosition enclosureLength downloadState availability played } }";
 const QUEUE_NEXT_MUTATION =
-  'mutation QueueNext($mediaIDs: [String!]!) { queueAddMany(mediaIDs: $mediaIDs, placement: "next") { currentEntryID } }';
+  'mutation QueueNext($mediaIDs: [String!]!, $expectedProfileID: String) { queueAddMany(mediaIDs: $mediaIDs, placement: "next", expectedProfileID: $expectedProfileID) { currentEntryID } }';
 const QUEUE_ADD_POSITION_MUTATION =
-  "mutation QueueAddAt($mediaID: String!, $position: Int!) { queueAdd(mediaID: $mediaID, position: $position) { id } }";
+  "mutation QueueAddAt($mediaID: String!, $position: Int, $expectedProfileID: String) { queueAdd(mediaID: $mediaID, position: $position, expectedProfileID: $expectedProfileID) { id } }";
+const QUEUE_ADD_MANY_END_MUTATION =
+  'mutation QueueAddManyEnd($mediaIDs: [String!]!, $expectedProfileID: String) { queueAddMany(mediaIDs: $mediaIDs, placement: "end", expectedProfileID: $expectedProfileID) { currentEntryID entries { id mediaID } } }';
 
 /** Search the activated plugins' feed directories. Adult Profile or manager device. */
 export async function searchFeeds(query: string): Promise<FeedSearchResult[]> {
@@ -150,11 +152,55 @@ export async function setFollow(subscriptionID: string, on: boolean): Promise<Fo
   return data.setFollow;
 }
 
-/** Put one Media right after the current item of the Profile's play queue (CORE-3250). */
-export async function queuePlayNextMedia(mediaID: string, position?: number): Promise<void> {
+function resolvedExpectedProfile(expectedProfileID?: string): string | undefined {
+  return expectedProfileID ?? getExpectedProfile?.();
+}
+
+/** Put one Media right after the current item of the Profile's play queue (CORE-3250, CORE-2845). */
+export async function queuePlayNextMedia(
+  mediaID: string,
+  position?: number,
+  expectedProfileID?: string,
+): Promise<void> {
+  const profile = resolvedExpectedProfile(expectedProfileID);
   if (position !== undefined) {
-    await graphql<{ queueAdd: unknown }>(QUEUE_ADD_POSITION_MUTATION, { mediaID, position });
+    await graphql<{ queueAdd: unknown }>(
+      QUEUE_ADD_POSITION_MUTATION,
+      profile ? { mediaID, position, expectedProfileID: profile } : { mediaID, position },
+    );
     return;
   }
-  await graphql<{ queueAddMany: unknown }>(QUEUE_NEXT_MUTATION, { mediaIDs: [mediaID] });
+  await graphql<{ queueAddMany: unknown }>(
+    QUEUE_NEXT_MUTATION,
+    profile ? { mediaIDs: [mediaID], expectedProfileID: profile } : { mediaIDs: [mediaID] },
+  );
+}
+
+/** Add one Media to the tail (or a specific position) of the Profile's play queue (CORE-2845). */
+export async function queueAddMedia(
+  mediaID: string,
+  position?: number,
+  expectedProfileID?: string,
+): Promise<void> {
+  const profile = resolvedExpectedProfile(expectedProfileID);
+  const variables: Record<string, unknown> = { mediaID };
+  if (position !== undefined) variables.position = position;
+  if (profile) variables.expectedProfileID = profile;
+  await graphql<{ queueAdd: unknown }>(QUEUE_ADD_POSITION_MUTATION, variables);
+}
+
+/** Append an ordered batch of Media IDs to the tail of the Profile's play queue (CORE-2845). */
+export async function queueAddManyEnd(
+  mediaIDs: readonly string[],
+  expectedProfileID?: string,
+): Promise<{ currentEntryID?: string | null; entries?: { id: string; mediaID: string }[] }> {
+  if (mediaIDs.length === 0) return {};
+  const profile = resolvedExpectedProfile(expectedProfileID);
+  const data = await graphql<{
+    queueAddMany: { currentEntryID?: string | null; entries?: { id: string; mediaID: string }[] };
+  }>(
+    QUEUE_ADD_MANY_END_MUTATION,
+    profile ? { mediaIDs: [...mediaIDs], expectedProfileID: profile } : { mediaIDs: [...mediaIDs] },
+  );
+  return data.queueAddMany ?? {};
 }

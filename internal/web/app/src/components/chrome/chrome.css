@@ -1785,8 +1785,9 @@
   }
 }
 
-/* A failed card action, shown over the artwork once the menu has closed. */
-[data-register="viewer"] .bf-card-action-error {
+/* A failed or confirmed card action, shown over the artwork once the menu has closed. */
+[data-register="viewer"] .bf-card-action-error,
+[data-register="viewer"] .bf-card-action-status {
   position: absolute;
   top: 40px;
   right: 6px;

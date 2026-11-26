@@ -8,9 +8,11 @@ import { fetchMediaRows } from "@/lib/graphql/browse";
 import type { CollectionInfo, GenericMediaInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { type CardLockState, MediaItemCardMenu } from "../components/MediaItemCardMenu";
 import { ViewerActions } from "../components/ViewerActions";
 import { fetchEntryLocks } from "../lib/collections";
 import { mediaPath } from "../lib/mediaAddress";
+import { mediaLinkState } from "../lib/mediaDetail";
 import {
   loadPlaylists,
   memberOrder,
@@ -33,7 +35,8 @@ export function PlaylistPage() {
   const t = useT();
   const navigate = useNavigate();
   const { playlistId = "" } = useParams();
-  const { manifest, isManager } = useSession();
+  const { manifest, isManager, session } = useSession();
+  const profileID = session?.profileID;
   const identity = useViewerIdentity();
   const libraryKey = (manifest?.libraries ?? []).map((library) => library.id).join("\n");
   const [playlist, setPlaylist] = useState<CollectionInfo | null | undefined>(undefined);
@@ -144,8 +147,27 @@ export function PlaylistPage() {
             <ol className="bf-track-list" aria-label={playlist.name}>
               {listed.map((entry, index) => {
                 const position = order.indexOf(entry.id);
+                const row = rows[entry.id];
+                const lockState: CardLockState =
+                  locks instanceof Map && locks.has(entry.id)
+                    ? locks.get(entry.id)
+                      ? "locked"
+                      : "unlocked"
+                    : "unknown";
+                const entryItemPath = mediaPath("media", entry.id);
+                const inQueue = queue.some((item) => item.id === entry.id);
+                const openDetails = () =>
+                  navigate(entryItemPath, {
+                    state: {
+                      ...mediaLinkState(
+                        { id: entry.id, kind: "media", title: entry.title },
+                        identity,
+                      ),
+                      ...playState(identity, inQueue ? queue : [], entry),
+                    },
+                  });
                 return (
-                  <li key={entry.id} className="bf-track">
+                  <li key={entry.id} className="bf-card-shell bf-track">
                     <button
                       type="button"
                       className="bf-track-row"
@@ -158,9 +180,30 @@ export function PlaylistPage() {
                         <span className="bf-track-title">{entry.title}</span>
                       </span>
                       <span className="bf-track-duration">
-                        {formatDuration(rows[entry.id]?.durationSeconds)}
+                        {formatDuration(row?.durationSeconds)}
                       </span>
                     </button>
+                    <div className="bf-child-actions">
+                      <MediaItemCardMenu
+                        title={entry.title}
+                        primaryLabel={t("play")}
+                        isMedia
+                        isAudio={row?.mediaClass !== "video" && row?.mediaClass !== "image"}
+                        mediaClass={row?.mediaClass}
+                        lockState={lockState}
+                        expectedProfileID={profileID}
+                        credits={row?.credits}
+                        href={
+                          new URL(
+                            `${import.meta.env.BASE_URL}${entryItemPath.slice(1)}`,
+                            window.location.origin,
+                          ).href
+                        }
+                        target={{ mediaID: entry.id }}
+                        onPrimary={lockState === "unlocked" ? () => play(entry) : undefined}
+                        onDetails={openDetails}
+                      />
+                    </div>
                     {isManager && (
                       <span className="bf-track-tools">
                         <Button

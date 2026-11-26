@@ -17,7 +17,13 @@ import {
   useSpoilerGuard,
 } from "../lib/spoilerGuard";
 import { runtimeParts } from "../lib/viewerFields";
-import { navTitleFor, type PlayQueueItem, playQueueOf, queueWindow } from "../lib/watchQueue";
+import {
+  navTitleFor,
+  type PlayQueueItem,
+  playQueueOf,
+  queueWindow,
+  rememberFullCatalogQueue,
+} from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 import { SpoilerContainerToggle, SpoilerRevealButton, SpoilerStill } from "./SpoilerGuard";
@@ -130,9 +136,14 @@ function ChildRow({
   const navigate = useNavigate();
   const path = mediaPath("media", item.id);
   function queueState() {
-    return identity && queue.length > 0
-      ? { queue: queueWindow(queue, item.id), queueIdentity: identity }
-      : {};
+    if (!identity || queue.length === 0) return {};
+    const windowed = queueWindow(queue, item.id);
+    const catalogKey = rememberFullCatalogQueue(identity, windowed, queue);
+    return {
+      queue: windowed,
+      queueIdentity: identity,
+      ...(catalogKey ? { catalogKey } : {}),
+    };
   }
   function openDetails() {
     navigate(path, { state: { ...mediaLinkState(item, identity), ...queueState() } });
@@ -226,6 +237,8 @@ function ChildRow({
             primaryLabel={t("play")}
             isMedia
             isAudio={item.mediaClass === "audio"}
+            mediaClass={item.mediaClass}
+            lockState={item.locked ? "locked" : "unlocked"}
             containerID={item.container?.id}
             href={
               new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href

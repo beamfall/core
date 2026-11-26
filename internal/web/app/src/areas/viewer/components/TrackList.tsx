@@ -8,6 +8,7 @@ import { activateLink } from "../lib/activateLink";
 import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState } from "../lib/mediaDetail";
 import {
+  AUDIO_CLASS,
   audioQueue,
   formatDuration,
   playState,
@@ -141,6 +142,8 @@ export function TrackList({
                   primaryLabel={t("play")}
                   isMedia
                   isAudio
+                  mediaClass={item.mediaClass ?? AUDIO_CLASS}
+                  lockState={item.locked ? "locked" : "unlocked"}
                   credits={row.credits}
                   containerID={item.container?.id}
                   href={

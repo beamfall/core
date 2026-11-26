@@ -408,7 +408,7 @@ export async function fetchSimilarMedia(
 // --- Search ---------------------------------------------------------------
 
 const SEARCH_QUERY =
-  "query Search($query: String!) { search(query: $query) { id kind title summary artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query Search($query: String!) { search(query: $query) { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** Search — keyword catalog search (reveal-filtered server-side). */
 export async function search(term: string): Promise<SourceItem[]> {
@@ -419,7 +419,7 @@ export async function search(term: string): Promise<SourceItem[]> {
 }
 
 const SEARCH_RESULT_QUERY =
-  "query SearchResult($query: String!, $mode: SearchMode, $offset: Int, $limit: Int, $libraryIDs: [String!]) { searchResult(query: $query, mode: $mode, offset: $offset, limit: $limit, libraryIDs: $libraryIDs) { mode hasMore restrictedResultsPresent items { id kind title summary score artwork { poster } artworkSlots libraryID libraryTitle year mediaClass certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline subtitle sequence index container { id title artwork { poster } } entityKind entityKindDisplayName engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
+  "query SearchResult($query: String!, $mode: SearchMode, $offset: Int, $limit: Int, $libraryIDs: [String!]) { searchResult(query: $query, mode: $mode, offset: $offset, limit: $limit, libraryIDs: $libraryIDs) { mode hasMore restrictedResultsPresent items { id kind title summary score artwork { poster } artworkSlots locked libraryID libraryTitle year mediaClass certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline subtitle sequence index container { id title artwork { poster } } entityKind entityKindDisplayName engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
 
 /**
  * searchResult — the explainable, mode-aware search (ADR-0041 #106). `mode`

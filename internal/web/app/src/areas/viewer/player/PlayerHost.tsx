@@ -4,18 +4,14 @@ import {
   Suspense,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { queuePlayNextMedia } from "@/lib/graphql";
-import { MUSIC_QUEUE_PARAM } from "../lib/musicQueue";
 import {
-  insertQueueNext,
+  dispatchAddToQueueToActivePlayer,
+  dispatchPlayNextToActivePlayer,
   type PlayQueueItem,
-  readPlayerNavState,
-  setActivePlayNextHandler,
 } from "../lib/watchQueue";
 import { LazyHostedPlayer } from "./LazyPlayerPage";
 import "./mini-player.css";
@@ -96,38 +92,17 @@ export function PlayerHost({ children }: { children: ReactNode }) {
     audioRef.current = audio;
   }, []);
   const playNext = useCallback(async (item: PlayQueueItem, identity: string | null) => {
-    const current = entryRef.current;
-    if (!current) return false;
-    const isServerQueue = new URLSearchParams(current.search).has(MUSIC_QUEUE_PARAM);
-    if (isServerQueue) {
-      await queuePlayNextMedia(item.id);
-      return true;
-    }
-    const navState = readPlayerNavState(current.state, identity);
-    const nextQueue = insertQueueNext(navState.queue, current.mediaId, navState.title, item);
-    const baseState = current.state && typeof current.state === "object" ? current.state : {};
-    const updated: WatchEntry = {
-      ...current,
-      state: {
-        ...baseState,
-        ...navState,
-        queue: nextQueue,
-        ...(identity ? { queueIdentity: identity } : {}),
-      },
-    };
-    entryRef.current = updated;
-    setEntry(updated);
-    return true;
+    if (!entryRef.current) return false;
+    return dispatchPlayNextToActivePlayer(item, identity);
+  }, []);
+  const addToQueue = useCallback(async (item: PlayQueueItem, identity: string | null) => {
+    if (!entryRef.current) return false;
+    return dispatchAddToQueueToActivePlayer(item, identity);
   }, []);
 
-  useEffect(() => {
-    setActivePlayNextHandler(playNext);
-    return () => setActivePlayNextHandler(null);
-  }, [playNext]);
-
   const controls = useMemo(
-    () => ({ attach, detach, stop, playNext }),
-    [attach, detach, stop, playNext],
+    () => ({ attach, detach, stop, playNext, addToQueue }),
+    [attach, detach, stop, playNext, addToQueue],
   );
   const docked = !!entry && !attached;
 
