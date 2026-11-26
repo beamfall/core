@@ -1,6 +1,7 @@
 import { Check, Play } from "lucide-react";
 import { useMemo } from "react";
 import { Link, useNavigate } from "react-router";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
@@ -178,16 +179,18 @@ export function ContainerMediaRows({
               {!item.locked && (
                 <div className="bf-child-actions">
                   <SpoilerRevealButton itemID={item.id} title={item.title} state={guard} />
-                  <button
-                    type="button"
-                    className="bf-row-play"
-                    aria-label={t("mediaDetailPlayLabel", { title: item.title })}
-                    onClick={() => play(item)}
-                    onPointerEnter={preloadPlayer}
-                    onFocus={preloadPlayer}
-                  >
-                    <Play aria-hidden />
-                  </button>
+                  <ActionTooltip label={t("mediaDetailPlayLabel", { title: item.title })}>
+                    <button
+                      type="button"
+                      className="bf-row-play"
+                      aria-label={t("mediaDetailPlayLabel", { title: item.title })}
+                      onClick={() => play(item)}
+                      onPointerEnter={preloadPlayer}
+                      onFocus={preloadPlayer}
+                    >
+                      <Play aria-hidden />
+                    </button>
+                  </ActionTooltip>
                   <MediaItemCardMenu
                     title={item.title}
                     primaryLabel={t("play")}

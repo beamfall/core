@@ -4,6 +4,7 @@ import { Link, useLocation } from "react-router";
 import { ServerActivity } from "@/components/beamfall/ServerActivity";
 import { Dialog as DialogPrimitive } from "@/components/ui/astryx-primitives";
 import { Badge } from "@/components/ui/badge";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import { getBeamfallHost } from "@/lib/beamfallHost";
 import { useHeadingDocumentTitle } from "@/lib/documentTitle";
 import { useDisplayLocale, useT } from "@/lib/i18n";
@@ -204,18 +205,20 @@ export function AppShell({
       <SkipLink />
       <header className={"bf-header" + (revealed ? " is-revealed" : "")}>
         {hasSidebar && (
-          <button
-            ref={menuButtonRef}
-            type="button"
-            className="bf-icon-button bf-menu-button"
-            aria-label={t("navLabel")}
-            aria-haspopup={phone ? "dialog" : undefined}
-            aria-controls={!phone || drawerOpen ? sidebarId : undefined}
-            aria-expanded={phone ? drawerOpen : !collapsed}
-            onClick={toggleSidebar}
-          >
-            <Menu aria-hidden className="size-5" />
-          </button>
+          <ActionTooltip label={t("navLabel")} side="bottom">
+            <button
+              ref={menuButtonRef}
+              type="button"
+              className="bf-icon-button bf-menu-button"
+              aria-label={t("navLabel")}
+              aria-haspopup={phone ? "dialog" : undefined}
+              aria-controls={!phone || drawerOpen ? sidebarId : undefined}
+              aria-expanded={phone ? drawerOpen : !collapsed}
+              onClick={toggleSidebar}
+            >
+              <Menu aria-hidden className="size-5" />
+            </button>
+          </ActionTooltip>
         )}
         <Link to="/" className="bf-brand" aria-label={t("brand")}>
           <span aria-hidden className="bf-mark" />
@@ -243,21 +246,22 @@ export function AppShell({
             </Link>
           )}
           {register === "viewer" && session && !needsEnroll && (
-            <Link
-              to="/notifications"
-              className={
-                "bf-icon-button" + (location.pathname === "/notifications" ? " is-active" : "")
-              }
-              aria-label={t("notificationsUnreadAria", { count: unreadLabel })}
-              title={t("notifications")}
-            >
-              <Bell aria-hidden className="size-[18px]" />
-              {unreadNotifications > 0 && (
-                <span className="bf-notification-count" aria-hidden>
-                  {unreadLabel}
-                </span>
-              )}
-            </Link>
+            <ActionTooltip label={t("notifications")} side="bottom">
+              <Link
+                to="/notifications"
+                className={
+                  "bf-icon-button" + (location.pathname === "/notifications" ? " is-active" : "")
+                }
+                aria-label={t("notificationsUnreadAria", { count: unreadLabel })}
+              >
+                <Bell aria-hidden className="size-[18px]" />
+                {unreadNotifications > 0 && (
+                  <span className="bf-notification-count" aria-hidden>
+                    {unreadLabel}
+                  </span>
+                )}
+              </Link>
+            </ActionTooltip>
           )}
           {session && <AccountMenu showActivity={phone} />}
         </div>

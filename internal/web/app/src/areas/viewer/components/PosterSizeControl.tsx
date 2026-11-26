@@ -1,4 +1,5 @@
 import { POSTER_SIZES, type PosterSize, usePosterSize } from "@/components/chrome/posterSize";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 
@@ -21,19 +22,22 @@ export function PosterSizeControl({ className = "" }: { className?: string }) {
       aria-label={t("libraryPosterSizeLabel")}
       className={`flex items-center gap-1 ${className}`}
     >
-      {POSTER_SIZES.map((option) => (
-        <button
-          key={option}
-          type="button"
-          className="bf-chip bf-chip-square"
-          aria-label={t(SIZE_LABELS[option].name)}
-          title={t(SIZE_LABELS[option].name)}
-          aria-pressed={size === option}
-          onClick={() => setSize(option)}
-        >
-          {t(SIZE_LABELS[option].short)}
-        </button>
-      ))}
+      {POSTER_SIZES.map((option) => {
+        const label = t(SIZE_LABELS[option].name);
+        return (
+          <ActionTooltip key={option} label={label}>
+            <button
+              type="button"
+              className="bf-chip bf-chip-square"
+              aria-label={label}
+              aria-pressed={size === option}
+              onClick={() => setSize(option)}
+            >
+              {t(SIZE_LABELS[option].short)}
+            </button>
+          </ActionTooltip>
+        );
+      })}
     </div>
   );
 }

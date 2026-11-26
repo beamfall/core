@@ -11,4 +11,5 @@ export { Menu } from "@base-ui/react/menu";
 export { Popover } from "@base-ui/react/popover";
 export { Select } from "@base-ui/react/select";
 export { Slider } from "@base-ui/react/slider";
+export { Tooltip } from "@base-ui/react/tooltip";
 export { Tabs } from "@/components/ui/tabs";

@@ -443,11 +443,17 @@
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
-  transition: background-color var(--duration-fast) var(--ease-standard);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 
-[data-register="viewer"] .bf-row-play:hover {
-  background: var(--control-bg-hover);
+@media (hover: hover) {
+  [data-register="viewer"] .bf-row-play:hover:not(:disabled),
+  [data-register="viewer"] .bf-child-actions .bf-card-more:hover {
+    background: var(--control-bg-hover);
+    border-color: var(--border-strong);
+  }
 }
 
 [data-register="viewer"] .bf-row-play svg {

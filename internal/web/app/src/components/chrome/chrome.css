@@ -673,6 +673,39 @@
   padding: 6px 0;
 }
 
+/* Hover / focus tooltip for icon-only action buttons (WCAG 1.4.13 hoverable). */
+.bf-tooltip-layer {
+  z-index: 90;
+  pointer-events: auto;
+}
+
+.bf-tooltip {
+  max-inline-size: 260px;
+  padding: 5px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-field);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  box-shadow: 0 8px 20px color-mix(in oklab, var(--bg-root) 65%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bf-tooltip {
+    transition:
+      opacity var(--duration-fast) var(--ease-standard),
+      transform var(--duration-fast) var(--ease-standard);
+  }
+
+  .bf-tooltip[data-starting-style],
+  .bf-tooltip[data-ending-style] {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
 .bf-sidebar.is-collapsed .bf-side-label,
 .bf-sidebar.is-collapsed .bf-side-heading {
   position: absolute;
