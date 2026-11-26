@@ -37,9 +37,13 @@ The web viewer SHALL resolve a watch or detail address by its token and SHALL ac
 ID. An unqualified address spelling a sampled Media ID SHALL try that ID first and fall back to the
 SHA-256 Media ID with the same digits only after a confirmed miss. Once the item is loaded, the
 viewer SHALL replace the address in place without adding a history entry or restarting playback.
-While resolving an ambiguous bookmark, the viewer MAY display cached sampled detail. The viewer
-SHALL retry transient lookup failures while the address and viewer identity remain current, and
-show the existing unavailable state for permanent failures.
+
+#### Scenario: Ambiguous bookmark and lookup failures
+
+- **WHEN** the viewer resolves an ambiguous bookmark
+- **THEN** it MAY display cached sampled detail meanwhile
+- **AND** it retries transient lookup failures while the address and viewer identity remain current
+- **AND** it shows the existing unavailable state for permanent failures
 
 #### Scenario: Legacy bare-ID link
 

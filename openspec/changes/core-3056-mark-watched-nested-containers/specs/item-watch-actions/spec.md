@@ -3,13 +3,17 @@
 ### Requirement: A Profile can mark an item watched or unwatched
 
 The `setWatched` mutation SHALL set the calling Profile's watched state for one visible Media, or
-for every visible Media a visible Entity relates to directly or through its child Entities: a
-same-Kind child under a declared parent relation, or a child of another container Kind in the same
-Library that nests in it by a relation the Library's plugin declares between the two container
-Kinds. Marking
+for every visible Media a visible Entity relates to directly or through its child Entities. Marking
 watched SHALL clear the resume position and count one play when the Media was not already watched.
 Marking unwatched SHALL clear the watched state, the resume position and the play count. The mark
 SHALL survive a projection rebuild and SHALL NOT change another Profile's state.
+
+#### Scenario: Child Entities in reach
+
+- **WHEN** `setWatched` targets an Entity
+- **THEN** its child Entities count: a same-Kind child under a declared parent relation, or a child
+  of another container Kind in the same Library that nests in it by a relation the Library's plugin
+  declares between the two container Kinds
 
 #### Scenario: Mark one Media watched
 

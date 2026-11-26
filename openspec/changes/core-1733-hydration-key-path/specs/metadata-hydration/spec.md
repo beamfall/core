@@ -3,12 +3,17 @@
 ### Requirement: Hydration is keyed on the file's content fingerprint
 
 The scan SHALL pass the content fingerprint and path of the file it hydrates to the local metadata
-hydration hook. When the hook's mapper declares a fingerprint field, the hydration seam SHALL
-build a hydration key from the content fingerprint and a digest of the plan the mapper produced
-from the file's tags and path, read the key recorded at the last hydration and ask the mapper how
-to write: skip, write absent fields only, or replace. Both write cases SHALL record the current
-key. An empty content fingerprint SHALL give an empty key. A mapper that declares no fingerprint
-field SHALL keep the absent-only write.
+hydration hook. When the hook's mapper declares a fingerprint field, the hydration seam SHALL build
+a hydration key from the content fingerprint and a digest of the mapper's plan, compare it with the
+key recorded at the last hydration and ask the mapper how to write: skip, write absent fields only,
+or replace.
+
+#### Scenario: Keys are recorded and absent fingerprints are tolerated
+
+- **WHEN** a mapper writes in either the absent-only or the replace case
+- **THEN** the current key is recorded
+- **AND** an empty content fingerprint gives an empty key
+- **AND** a mapper that declares no fingerprint field keeps the absent-only write
 
 #### Scenario: A re-tagged file shows its new tags
 

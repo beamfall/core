@@ -5,12 +5,17 @@
 The graph SHALL answer `relatedMedia(mediaID, limit)` with Media that share at least two of the
 named Media's first four category-archetype credits and first three person-archetype credits (in the
 server's credit order), at least one of them a category credit, ordered by how many of those credits
-they share, most first, ties in first-read order. The named Media SHALL NOT be listed. Extras (Media
-with the Extra bit, or the Extra side of an `extra-of` relation) SHALL NOT be listed. Media with the
-same title (case and surrounding space ignored) and year SHALL be listed once, as the first-ranked
-of them, and Media with the named Media's own title and year SHALL NOT be listed. Media that share
-only one credit SHALL NOT be listed, so the result MAY be shorter than the limit or empty. The limit
-SHALL default to 20 and be capped at 50.
+they share, most first, ties in first-read order. The limit SHALL default to 20 and be capped at 50.
+
+#### Scenario: Exclusions and duplicates
+
+- **WHEN** related Media are listed
+- **THEN** the named Media is not listed
+- **AND** Extras (the Extra bit, or the Extra side of an `extra-of` relation) are not listed
+- **AND** Media with the same title (case and surrounding space ignored) and year are listed once, as
+  the first-ranked of them, and Media with the named Media's own title and year are not listed
+- **AND** Media that share only one credit are not listed, so the result MAY be shorter than the
+  limit or empty
 
 #### Scenario: Ranked by shared credits
 

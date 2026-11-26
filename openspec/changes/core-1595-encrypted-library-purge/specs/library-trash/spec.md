@@ -47,16 +47,19 @@ entities removed.
 
 A purge SHALL remove, in one catalog transaction, the Library, its Media and their file records,
 external ids, embeddings and artwork candidates, its entities, its profile grants, root-folder
-records and scan schedule. It SHALL then remove the watch history, progress and other engagement
-records of the removed Media and the server-generated artwork of the removed Media and entities. It
-SHALL NOT delete, move or modify any file under the Library's root folders.
+records and scan schedule. It SHALL then remove the engagement records and server-generated artwork
+of the removed Media and entities. It SHALL NOT delete, move or modify any file under the Library's
+root folders.
 
-An encrypted Library's private database is server state, not a file under its root folders. Its
-purge SHALL remove nothing before the catalog transaction commits, so a failure up to the commit
-leaves the Library restorable. After the commit it SHALL remove the private database's plaintext
-working copy with its WAL and SHM files, its ciphertext and its pre-migration backups, and SHALL
-destroy the Library's key material. A step that fails SHALL be retried by the next retention sweep
-or server start until all of them have succeeded, so the Library is never left half deleted.
+#### Scenario: An encrypted Library's private database is purged after the commit
+
+- **WHEN** an encrypted Library is purged
+- **THEN** nothing is removed before the catalog transaction commits, so a failure up to the commit
+  leaves the Library restorable
+- **AND** after the commit the plaintext working copy with its WAL and SHM files, the ciphertext and
+  the pre-migration backups are removed and the Library's key material is destroyed
+- **AND** a step that fails is retried by the next retention sweep or server start until all have
+  succeeded, so the Library is never left half deleted
 
 #### Scenario: Files on disk survive a purge
 

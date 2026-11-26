@@ -3,12 +3,16 @@
 ### Requirement: Loading, missing and failed states
 
 While the page has nothing to paint it SHALL show a skeleton marked busy with the stage's shape:
-backdrop space, poster frame, title, facts, actions and overview. A page painted from the opening
-card SHALL keep the backdrop, facts and overview space reserved until the item arrives, and the
-Details section SHALL render before rows that load on their own, so loading does not move what is
-already painted. When the server reports the item unknown or not visible to the Profile, the page
-SHALL show the generic "not available" state without revealing which. When the request fails for
-another reason, the page SHALL show an error with a retry control.
+backdrop space, poster frame, title, facts, actions and overview. When the server reports the item
+unknown or not visible to the Profile, the page SHALL show the generic "not available" state without
+revealing which. When the request fails for another reason, the page SHALL show an error with a
+retry control.
+
+#### Scenario: Loading does not move painted content
+
+- **WHEN** the page is painted from the opening card
+- **THEN** the backdrop, facts and overview space stay reserved until the item arrives
+- **AND** the Details section renders before rows that load on their own
 
 #### Scenario: Unknown item
 

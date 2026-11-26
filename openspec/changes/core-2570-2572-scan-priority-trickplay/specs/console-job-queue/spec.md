@@ -6,11 +6,17 @@ The Console job queue SHALL list running, yielded and queued jobs first, then ea
 no later run of the same kind and folder finished cleanly, with its error text, then the remaining
 history folded into one row per job kind (its newest run and a run count). Each row SHALL show when
 the job was queued, started or finished as a relative time and, once started, its elapsed duration.
-Running jobs SHALL label elapsed time as
-"{duration} since first start", including waits and yields. Running and yielded jobs with more
-than one attempt SHALL append "attempt {attempts}". Yielded jobs SHALL keep their paused note
-without a duration. Finished jobs SHALL say "took {duration}" for at most one attempt and
-"took {duration} over {attempts} attempts" for multiple attempts. On a phone the progress text SHALL stay on one line beside a legible bar.
+On a phone the progress text SHALL stay on one line beside a legible bar.
+
+#### Scenario: Duration labels
+
+- **WHEN** a job row shows its duration
+- **THEN** a running job labels elapsed time as "{duration} since first start", including waits and
+  yields
+- **AND** running and yielded jobs with more than one attempt append "attempt {attempts}"
+- **AND** yielded jobs keep their paused note without a duration
+- **AND** a finished job says "took {duration}" for at most one attempt and
+  "took {duration} over {attempts} attempts" for multiple attempts
 
 #### Scenario: Recurring polls
 

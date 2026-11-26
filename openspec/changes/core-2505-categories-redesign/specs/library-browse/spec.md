@@ -5,9 +5,13 @@
 `facets` SHALL list the groupings, the decades and the quality tiers present in the library's
 visible set before filtering. A grouping SHALL be a category-archetype entity kind declared by the
 Library's plugin, reported with its kind, the plugin's display name, its values in title order and,
-parallel to the values, `counts`: the number of distinct visible Media each value reaches. When a
-kind reaches more values than the facet cap, the reported values SHALL be the most used ones, ties
-broken by title. A kind with no value in reach, and a Library without a plugin, SHALL report none.
+parallel to the values, `counts`: the number of distinct visible Media each value reaches.
+
+#### Scenario: Capped and empty groupings
+
+- **WHEN** a kind reaches more values than the facet cap
+- **THEN** the reported values are the most used ones, ties broken by title
+- **AND** a kind with no value in reach, and a Library without a plugin, report none
 
 #### Scenario: Groupings come from the plugin
 

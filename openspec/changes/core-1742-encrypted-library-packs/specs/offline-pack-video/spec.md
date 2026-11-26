@@ -4,13 +4,23 @@
 
 `createOfflinePack` SHALL accept an optional `quality` of `original`, `high`, `medium` or `low`, and
 SHALL refuse any other value before queueing a job. At `high`, `medium` and `low` the server SHALL
-transcode each video item to an MP4 no taller than 1080, 720 and 480 lines respectively. Audio
-items SHALL keep their original bytes at every quality. In an unsealed encrypted Library the caller
-can see, an `original` pack SHALL resolve and build as it does in a public Library, sizing each item
-from its authenticated plaintext, and a `high`, `medium` or `low` pack SHALL build without the
-plaintext source or transcode reaching disk. A sealed Library, or one the caller cannot see, SHALL
-contribute no items, and a build SHALL stop with no pack and no staged output if the Library is
-sealed or the caller loses access to it before the pack is written.
+transcode each video item to an MP4 no taller than 1080, 720 and 480 lines respectively. Audio items
+SHALL keep their original bytes at every quality.
+
+#### Scenario: Packs from an encrypted Library
+
+- **WHEN** the caller can see an unsealed encrypted Library
+- **THEN** an `original` pack resolves and builds as in a public Library, sizing each item from its
+  authenticated plaintext
+- **AND** a `high`, `medium` or `low` pack builds without the plaintext source or transcode
+  reaching disk
+
+#### Scenario: Sealed or inaccessible Library
+
+- **WHEN** a Library is sealed or the caller cannot see it
+- **THEN** it contributes no items
+- **AND** a build stops with no pack and no staged output if the Library is sealed or the caller
+  loses access before the pack is written
 
 #### Scenario: Unknown quality
 
