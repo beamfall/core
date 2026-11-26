@@ -1,4 +1,6 @@
 {
+  "feed_search.invalid_url": "Introduce una URL de sitio web válida.",
+  "feed_search.throttled": "Demasiadas búsquedas de feeds. Inténtalo de nuevo en breve.",
   "fix_match.ambiguous_parent": "Esa clave del elemento principal indica varios elementos que abren listas diferentes.",
   "fix_match.encrypted_library": "La corrección de coincidencias no está disponible en bibliotecas cifradas.",
   "fix_match.extra_parent": "La clave del elemento principal debe omitirse en el nivel 1.",

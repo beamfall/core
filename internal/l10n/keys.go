@@ -8,6 +8,11 @@ type Key string
 const WorkflowCapabilityDisabled Key = "workflow.capability_disabled"
 
 const (
+	FeedSearchInvalidURL Key = "feed_search.invalid_url"
+	FeedSearchThrottled  Key = "feed_search.throttled"
+)
+
+const (
 	InvalidMediaRelation         Key = "media_relation.invalid_input"
 	OperatorRelationUndoConflict Key = "media_relation.undo_conflict"
 )

@@ -1,4 +1,6 @@
 {
+  "feed_search.invalid_url": "Saisissez une URL de site web valide.",
+  "feed_search.throttled": "Trop de recherches de flux. Réessayez dans un instant.",
   "fix_match.ambiguous_parent": "Cette clé de parent désigne plusieurs éléments qui ouvrent des listes différentes.",
   "fix_match.encrypted_library": "La correction de la correspondance est indisponible dans les bibliothèques chiffrées.",
   "fix_match.extra_parent": "La clé du parent doit être omise au niveau 1.",
