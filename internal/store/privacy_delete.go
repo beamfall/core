@@ -317,7 +317,7 @@ func (s *Store) deleteProfileCatalogAndSaveStateLocked(ctx context.Context, stat
 	if err := deleteMyCatalogFootprintTx(ctx, tx, state.ProfileID); err != nil {
 		return err
 	}
-	if err := recordPlaneErasuresTx(ctx, tx, state.ProfileID, timeToMillis(s.serverNow().UTC())); err != nil {
+	if err := recordPlaneErasuresTx(ctx, tx, state.ProfileID, timeToMillis(s.serverNow().UTC()), false); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(state)
@@ -423,13 +423,17 @@ type planeErasure struct {
 	// CutoffMS bounds the erase to rows created before the delete, so rows the
 	// Profile creates later in a still-sealed plane survive its next unseal.
 	CutoffMS int64 `json:"cutoffMS"`
+	// ProfileDeleted marks a whole-Profile deletion rather than a footprint
+	// erase: the plane also drops the Profile's Channels, as the catalog's
+	// ON DELETE CASCADE does for shared ones.
+	ProfileDeleted bool `json:"profileDeleted,omitempty"`
 }
 
 func planeErasurePrefix(libraryID LibraryID) string {
 	return privacyPlaneErasePrefix + string(libraryID) + ":"
 }
 
-func recordPlaneErasuresTx(ctx context.Context, tx *sql.Tx, profileID ProfileID, cutoffMS int64) error {
+func recordPlaneErasuresTx(ctx context.Context, tx *sql.Tx, profileID ProfileID, cutoffMS int64, profileDeleted bool) error {
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM library WHERE encrypted != 0 ORDER BY id`)
 	if err != nil {
 		return err
@@ -446,7 +450,7 @@ func recordPlaneErasuresTx(ctx context.Context, tx *sql.Tx, profileID ProfileID,
 		return err
 	}
 	for _, libraryID := range libraries {
-		raw, err := json.Marshal(planeErasure{LibraryID: libraryID, ProfileID: profileID, CutoffMS: cutoffMS})
+		raw, err := json.Marshal(planeErasure{LibraryID: libraryID, ProfileID: profileID, CutoffMS: cutoffMS, ProfileDeleted: profileDeleted})
 		if err != nil {
 			return err
 		}
@@ -515,6 +519,18 @@ func (s *Store) applyPlaneErasuresLocked(ctx context.Context, plane catalogPlane
 			UPDATE smart_collection SET created_by_profile_id = NULL
 			WHERE created_by_profile_id = ? AND created_at_ms <= ?`, e.ProfileID, e.CutoffMS); err != nil {
 			return nil, err
+		}
+		// Identification commits record the ordinal's actor on the Media's own
+		// plane (CORE-0706); the catalog clears its copy in the footprint erase.
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE media_operator_ordinal SET actor_profile_id = NULL
+			WHERE actor_profile_id = ? AND set_at_ms <= ?`, e.ProfileID, e.CutoffMS); err != nil {
+			return nil, err
+		}
+		if e.ProfileDeleted {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM channel WHERE profile_id = ? AND created_at_ms <= ?`, e.ProfileID, e.CutoffMS); err != nil {
+				return nil, err
+			}
 		}
 		keys = append(keys, e.key)
 	}

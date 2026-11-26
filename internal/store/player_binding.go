@@ -264,11 +264,21 @@ func (s *Store) DeleteProfile(ctx context.Context, id ProfileID) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM server_config WHERE key = ?`, profileEntryPINConfigKey(id)); err != nil {
 		return err
 	}
+	// Encrypted Library planes hold this Profile's saved filters, stations,
+	// Channels and ordinal attributions with no foreign key to the shared
+	// profile row: owe each plane the erase, applied below to unsealed planes
+	// and at the next unseal to sealed ones.
+	if err := recordPlaneErasuresTx(ctx, tx, id, timeToMillis(s.serverNow().UTC()), true); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM profile WHERE id = ?`, id); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
+	}
+	if err := s.eraseProfileFromUnsealedPlanesLocked(ctx); err != nil && s.logger != nil {
+		s.logger.WarnContext(ctx, "deleted Profile's encrypted-library rows not yet erased; the next unseal retries", "error", err)
 	}
 
 	for _, devID := range boundDevices {
