@@ -40,8 +40,8 @@ describe("routes built from known Media IDs", () => {
     ["viewer/pages/MediaDetailPage.tsx", ["view", "watch", "media"]],
     ["viewer/pages/MyDataPage.tsx", ["media"]],
     ["viewer/pages/NotificationsPage.tsx", ["watch"]],
-    ["viewer/pages/PlayerPage.tsx", ["view", "watch", "watch", "media", "watch"]],
-    ["viewer/pages/PlaylistPage.tsx", ["watch"]],
+    ["viewer/pages/PlayerPage.tsx", ["view", "watch", "watch", "media", "watch", "watch"]],
+    ["viewer/pages/PlaylistPage.tsx", ["media", "watch"]],
     ["viewer/remote/RemoteReceiver.tsx", ["watch"]],
     ["console/lib/previewMedia.ts", ["watch"]],
   ])("%s encodes each known-ID route", (file, routes) => {
