@@ -171,8 +171,9 @@ type Manager struct {
 	leasing   sync.Mutex
 	leases    map[string]*libraryLease
 
-	mu       sync.RWMutex
-	unsealed map[string][]byte // library id -> plaintext DEK (in memory only)
+	mu               sync.RWMutex
+	unsealed         map[string][]byte // library id -> plaintext DEK (in memory only)
+	knownProvisioned map[string]bool   // libraries provisioned/observed in this process
 }
 
 // RewrapCipher rewrites ciphertext from the current DEK to the freshly generated
@@ -214,10 +215,11 @@ func NewManager(secrets SecretStore) *Manager {
 // pass TestArgon2Params for speed — never in production).
 func NewManagerWithParams(secrets SecretStore, params Argon2Params) *Manager {
 	return &Manager{
-		secrets:  secrets,
-		argon2:   params,
-		leases:   map[string]*libraryLease{},
-		unsealed: map[string][]byte{},
+		secrets:          secrets,
+		argon2:           params,
+		leases:           map[string]*libraryLease{},
+		unsealed:         map[string][]byte{},
+		knownProvisioned: map[string]bool{},
 	}
 }
 
@@ -598,7 +600,26 @@ func (m *Manager) BootUnseal(libraryIDs []string) (sealed []string) {
 func (m *Manager) storeDEK(libraryID string, dek []byte) {
 	m.mu.Lock()
 	m.unsealed[libraryID] = dek
+	m.knownProvisioned[libraryID] = true
 	m.mu.Unlock()
+}
+
+func (m *Manager) markKnownProvisioned(libraryID string) {
+	m.mu.Lock()
+	m.knownProvisioned[libraryID] = true
+	m.mu.Unlock()
+}
+
+func (m *Manager) forgetKnownProvisioned(libraryID string) {
+	m.mu.Lock()
+	delete(m.knownProvisioned, libraryID)
+	m.mu.Unlock()
+}
+
+func (m *Manager) isKnownProvisioned(libraryID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.knownProvisioned[libraryID]
 }
 
 func (m *Manager) storeBundle(libraryID string, b keyBundle) error {
@@ -768,11 +789,15 @@ func (m *Manager) newBundle(mode UnsealMode, passphrase string, dek, kek []byte,
 }
 
 // loadBundle reads + parses the key bundle. A missing bundle is ErrNotProvisioned
-// so callers can distinguish "never set up" from a real read error.
+// for never-provisioned libraries, but stays an error (not ErrNotProvisioned)
+// when this process already knows the library was provisioned.
 func (m *Manager) loadBundle(libraryID string) (keyBundle, error) {
 	raw, err := m.readOwnerSecret(libraryID, secretKindBundle)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
+			if m.isKnownProvisioned(libraryID) {
+				return keyBundle{}, fmt.Errorf("libencrypt: key bundle missing for provisioned library: %w", err)
+			}
 			return keyBundle{}, ErrNotProvisioned
 		}
 		return keyBundle{}, err
@@ -781,6 +806,7 @@ func (m *Manager) loadBundle(libraryID string) (keyBundle, error) {
 	if err := json.Unmarshal([]byte(raw), &b); err != nil {
 		return keyBundle{}, fmt.Errorf("libencrypt: corrupt key bundle: %w", err)
 	}
+	m.markKnownProvisioned(libraryID)
 	return b, nil
 }
 
