@@ -608,6 +608,19 @@ PY
     case "$promoted_jobs" in
       ''|*[!0-9]*) echo "ERROR: RACE_SHORT_PROMOTED_JOBS must be a whole number" >&2; exit 2 ;;
     esac
+    ordinary_p="${RACE_SHORT_ORDINARY_P:-4}"
+    case "$ordinary_p" in
+      ''|*[!0-9]*) echo "ERROR: RACE_SHORT_ORDINARY_P must be a positive integer" >&2; exit 2 ;;
+    esac
+    if [ "$ordinary_p" -lt 1 ]; then
+      echo "ERROR: RACE_SHORT_ORDINARY_P must be a positive integer" >&2
+      exit 2
+    fi
+    ordinary_timeout="${RACE_SHORT_ORDINARY_TIMEOUT:-600s}"
+    if [[ ! "$ordinary_timeout" =~ ^([0-9]+(ns|us|ms|s|m|h))+$ ]] || [[ ! "$ordinary_timeout" =~ [1-9] ]]; then
+      echo "ERROR: RACE_SHORT_ORDINARY_TIMEOUT must be a positive Go duration (for example, 600s or 30m)" >&2
+      exit 2
+    fi
     if [ "$pkg_count" -gt 0 ]; then
       printf '%s\n' "${pkgs[@]}" >>"$runnable_log"
     fi
@@ -635,7 +648,7 @@ PY
       echo "==> race-test short: -race -short over $pkg_count packages + $hot_pkg_count focused hot packages (excludes graph/store/web; capped parallelism)"
     fi
     if [ "$pkg_count" -gt 0 ]; then
-      echo "resolved ordinary: go test -race -short -count=1 -p 4 -parallel 2 -test.timeout=600s ${pkgs[*]}"
+      echo "resolved ordinary: go test -race -short -count=1 -p $ordinary_p -parallel 2 -test.timeout=$ordinary_timeout ${pkgs[*]}"
     fi
     if [ "$promoted_pkg_count" -gt 0 ]; then
       echo "resolved promoted: go test -race -short -count=1 -p 1 -parallel 2 -test.timeout=3600s ${promoted_pkgs[*]}"
@@ -657,11 +670,11 @@ PY
     if [ "$pkg_count" -gt 0 ] && [ "$promoted_pkg_count" -gt 0 ] &&
       [ "${RACE_SHORT_OVERLAP:-1}" = 1 ]; then
       overlap=1
-      start_side_phase "$ordinary_log" -race -short -count=1 -p 4 -parallel 2 \
-        -test.timeout=600s -json "${pkgs[@]}"
+      start_side_phase "$ordinary_log" -race -short -count=1 -p "$ordinary_p" -parallel 2 \
+        -test.timeout="$ordinary_timeout" -json "${pkgs[@]}"
     elif [ "$pkg_count" -gt 0 ]; then
-      run_race_phase truncate -race -short -count=1 -p 4 -parallel 2 \
-        -test.timeout=600s -json "${pkgs[@]}"
+      run_race_phase truncate -race -short -count=1 -p "$ordinary_p" -parallel 2 \
+        -test.timeout="$ordinary_timeout" -json "${pkgs[@]}"
       ordinary_status=$?
     fi
     promoted_status=0
