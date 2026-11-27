@@ -289,4 +289,102 @@ describe("ItemMetadataPage", () => {
     renderAt("/manage/items/missing");
     expect(await screen.findByText("Could not load this item.")).toBeVisible();
   });
+
+  it("ignores stale responses when switching items before the first finishes", async () => {
+    let resolveFirst!: (value: MediaMetadataInfo) => void;
+    let resolveFirstFields!: (
+      value: { name: string; type: string; value: string; label: { en: string } }[],
+    ) => void;
+    let resolveFirstArtwork!: (
+      value: { id: string; slot: string; applied: boolean; previewURL: string }[],
+    ) => void;
+
+    vi.mocked(fetchMediaMetadata).mockImplementation((id) => {
+      if (id === "media-1") {
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return Promise.resolve(info({ mediaID: "media-2", title: "Second Item", year: 2022 }));
+    });
+    vi.mocked(fetchMediaFields).mockImplementation((id) => {
+      if (id === "media-1") {
+        return new Promise((resolve) => {
+          resolveFirstFields = resolve;
+        });
+      }
+      return Promise.resolve([
+        { name: "genres", type: "text", value: "Sci-Fi", label: { en: "Genres" } },
+      ]);
+    });
+    vi.mocked(fetchArtworkCandidates).mockImplementation((id, slot) => {
+      if (id === "media-1" && slot === "poster") {
+        return new Promise((resolve) => {
+          resolveFirstArtwork = resolve;
+        });
+      }
+      return Promise.resolve([]);
+    });
+    vi.mocked(editMediaMetadata).mockResolvedValue(
+      info({ mediaID: "media-2", title: "Updated Second", year: 2022, locks: locks(["title"]) }),
+    );
+
+    renderAt("/manage/items/media-1");
+    const mediaInput = screen.getByLabelText("Media ID");
+    await userEvent.clear(mediaInput);
+    await userEvent.type(mediaInput, "media-2{Enter}");
+    await userEvent.click(screen.getByRole("button", { name: "Load" }));
+
+    expect(await screen.findByLabelText("Title")).toHaveValue("Second Item");
+    expect(screen.getByLabelText("Genres")).toHaveValue("Sci-Fi");
+
+    resolveFirst(info({ mediaID: "media-1", title: "Stale First Item", year: 1990 }));
+    resolveFirstFields([
+      { name: "genres", type: "text", value: "Stale Genre", label: { en: "Genres" } },
+    ]);
+    resolveFirstArtwork([
+      {
+        id: "stale-cand",
+        slot: "poster",
+        applied: false,
+        previewURL: "/api/media/artwork-candidate/stale-cand",
+      },
+    ]);
+
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Second Item"));
+    expect(screen.getByLabelText("Genres")).toHaveValue("Sci-Fi");
+
+    const title = screen.getByLabelText("Title");
+    await userEvent.clear(title);
+    await userEvent.type(title, "Updated Second");
+    await userEvent.click(screen.getAllByRole("button", { name: "Save" })[0]);
+
+    await waitFor(() =>
+      expect(editMediaMetadata).toHaveBeenCalledWith("media-2", { title: "Updated Second" }),
+    );
+  });
+
+  it("ignores a stale rejection when switching items", async () => {
+    let rejectFirst!: (reason?: unknown) => void;
+    vi.mocked(fetchMediaMetadata).mockImplementation((id) => {
+      if (id === "media-1") {
+        return new Promise((_resolve, reject) => {
+          rejectFirst = reject;
+        });
+      }
+      return Promise.resolve(info({ mediaID: "media-2", title: "Second Item" }));
+    });
+
+    renderAt("/manage/items/media-1");
+    const mediaInput = screen.getByLabelText("Media ID");
+    await userEvent.clear(mediaInput);
+    await userEvent.type(mediaInput, "media-2{Enter}");
+    await userEvent.click(screen.getByRole("button", { name: "Load" }));
+
+    expect(await screen.findByLabelText("Title")).toHaveValue("Second Item");
+    rejectFirst(new Error("late failure"));
+
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Second Item"));
+    expect(screen.queryByText("Could not load this item.")).not.toBeInTheDocument();
+  });
 });

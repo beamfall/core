@@ -155,6 +155,10 @@ export function MediaMetadataEditor({
     setError("");
     setArtwork({});
     setFields([]);
+    setFieldDraft({});
+    setDraft({ title: "", sortTitle: "", summary: "", year: "" });
+    setBrokenPreviews(new Set());
+    setBusy(false);
     setInfo(undefined);
     fetchMediaMetadata(mediaID)
       .then((next) => {
@@ -181,8 +185,10 @@ export function MediaMetadataEditor({
 
   // refreshLocks re-reads only the lock state, so an artwork or plugin-field
   // change never discards unsaved edits in the details form.
-  const refreshLocks = async () => {
-    setLocks((await fetchMediaMetadata(mediaID)).locks);
+  const refreshLocks = async (seq: number) => {
+    const next = await fetchMediaMetadata(mediaID);
+    if (loadSeq.current !== seq) return;
+    setLocks(next.locks);
   };
 
   const changed = () => {
@@ -197,34 +203,45 @@ export function MediaMetadataEditor({
 
   const onToggleLock = async (field: string) => {
     if (busy) return;
+    const seq = loadSeq.current;
     begin();
     setBusy(true);
     try {
-      setLocks(await setMediaFieldLock(mediaID, field, !locked(field)));
+      const next = await setMediaFieldLock(mediaID, field, !locked(field));
+      if (loadSeq.current !== seq) return;
+      setLocks(next);
     } catch {
+      if (loadSeq.current !== seq) return;
       setError(t("itemMetadataLockFailed"));
     } finally {
-      setBusy(false);
+      if (loadSeq.current === seq) setBusy(false);
     }
   };
 
   const onRevert = async (field: string) => {
+    const seq = loadSeq.current;
     begin();
     setBusy(true);
     try {
-      setLocks(await setMediaFieldLock(mediaID, field, false, true));
+      const nextLocks = await setMediaFieldLock(mediaID, field, false, true);
+      if (loadSeq.current !== seq) return;
+      setLocks(nextLocks);
       if (info?.refreshable) {
-        applyInfo(await refreshMediaMetadata(mediaID));
-        await loadAll(mediaID);
+        const refreshed = await refreshMediaMetadata(mediaID);
+        if (loadSeq.current !== seq) return;
+        applyInfo(refreshed);
+        await loadAll(mediaID, seq);
+        if (loadSeq.current !== seq) return;
         setStatus(t("itemMetadataReverted"));
       } else {
         setStatus(t("itemMetadataRevertedUnlocked"));
       }
       changed();
     } catch {
+      if (loadSeq.current !== seq) return;
       setError(t("itemMetadataRevertFailed"));
     } finally {
-      setBusy(false);
+      if (loadSeq.current === seq) setBusy(false);
     }
   };
 
@@ -253,15 +270,19 @@ export function MediaMetadataEditor({
       setStatus(t("itemMetadataNoChanges"));
       return;
     }
+    const seq = loadSeq.current;
     setBusy(true);
     try {
-      applyInfo(await editMediaMetadata(mediaID, edit));
+      const saved = await editMediaMetadata(mediaID, edit);
+      if (loadSeq.current !== seq) return;
+      applyInfo(saved);
       setStatus(t("itemMetadataSaved"));
       onChanged?.();
     } catch {
+      if (loadSeq.current !== seq) return;
       setError(t("itemMetadataSaveFailed"));
     } finally {
-      setBusy(false);
+      if (loadSeq.current === seq) setBusy(false);
     }
   };
 
@@ -274,71 +295,93 @@ export function MediaMetadataEditor({
       setStatus(t("itemMetadataNoChanges"));
       return;
     }
+    const seq = loadSeq.current;
     setBusy(true);
     try {
       await bulkEditApply([mediaID], edits);
-      await refreshLocks();
-      await loadFields(mediaID);
+      if (loadSeq.current !== seq) return;
+      await refreshLocks(seq);
+      if (loadSeq.current !== seq) return;
+      await loadFields(mediaID, seq);
+      if (loadSeq.current !== seq) return;
       setStatus(t("itemMetadataSaved"));
       onChanged?.();
     } catch {
+      if (loadSeq.current !== seq) return;
       setError(t("itemMetadataSaveFailed"));
     } finally {
-      setBusy(false);
+      if (loadSeq.current === seq) setBusy(false);
     }
   };
 
   const onChooseArtwork = async (slot: string, lock: string, candidate: ArtworkCandidate) => {
     if (busy) return;
+    const seq = loadSeq.current;
     begin();
     setBusy(true);
     try {
       await pinArtworkCandidate(mediaID, slot, candidate.id);
+      if (loadSeq.current !== seq) return;
       if (lockArtworkOnPin) {
-        setLocks(await setMediaFieldLock(mediaID, lock, true));
+        const nextLocks = await setMediaFieldLock(mediaID, lock, true);
+        if (loadSeq.current !== seq) return;
+        setLocks(nextLocks);
       } else {
-        await refreshLocks();
+        await refreshLocks(seq);
+        if (loadSeq.current !== seq) return;
       }
-      await loadSlot(mediaID, slot);
+      await loadSlot(mediaID, slot, seq);
+      if (loadSeq.current !== seq) return;
       changed();
     } catch {
+      if (loadSeq.current !== seq) return;
       setError(t("couldNotPinArtworkCandidate"));
     } finally {
-      setBusy(false);
+      if (loadSeq.current === seq) setBusy(false);
     }
   };
 
   const onUploadArtwork = async (slot: string, file: File | undefined) => {
     if (!file) return;
+    const seq = loadSeq.current;
     begin();
     setBusy(true);
     try {
       await uploadMediaArtwork(mediaID, slot, file);
-      await refreshLocks();
-      await loadSlot(mediaID, slot);
+      if (loadSeq.current !== seq) return;
+      await refreshLocks(seq);
+      if (loadSeq.current !== seq) return;
+      await loadSlot(mediaID, slot, seq);
+      if (loadSeq.current !== seq) return;
       setStatus(t("itemMetadataArtworkUploaded"));
       changed();
     } catch {
+      if (loadSeq.current !== seq) return;
       setError(t("itemMetadataArtworkUploadFailed"));
     } finally {
-      setBusy(false);
+      if (loadSeq.current === seq) setBusy(false);
       const input = fileInputs.current[slot];
       if (input) input.value = "";
     }
   };
 
   const onRefresh = async () => {
+    const seq = loadSeq.current;
     begin();
     setBusy(true);
     try {
-      applyInfo(await refreshMediaMetadata(mediaID));
-      await loadAll(mediaID);
+      const refreshed = await refreshMediaMetadata(mediaID);
+      if (loadSeq.current !== seq) return;
+      applyInfo(refreshed);
+      await loadAll(mediaID, seq);
+      if (loadSeq.current !== seq) return;
       setStatus(t("itemMetadataRefreshed"));
       changed();
     } catch {
+      if (loadSeq.current !== seq) return;
       setError(t("itemMetadataRefreshFailed"));
     } finally {
-      setBusy(false);
+      if (loadSeq.current === seq) setBusy(false);
     }
   };
 

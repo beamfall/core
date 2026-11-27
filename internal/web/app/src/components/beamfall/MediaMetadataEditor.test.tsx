@@ -209,4 +209,35 @@ describe("MediaMetadataEditor", () => {
     expect(pinArtworkCandidate).toHaveBeenCalledWith("media-1", "poster", "cand-1");
     expect(setMediaFieldLock).not.toHaveBeenCalled();
   });
+
+  it("drops stale metadata and onInfoLoaded callbacks when mediaID prop changes", async () => {
+    let resolveFirst!: (value: MediaMetadataInfo) => void;
+    vi.mocked(fetchMediaMetadata).mockImplementation((id) => {
+      if (id === "media-1") {
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return Promise.resolve(info({ mediaID: "media-2", title: "Second Item" }));
+    });
+    const onInfoLoaded = vi.fn();
+    const { rerender } = render(
+      <I18nProvider>
+        <MediaMetadataEditor mediaID="media-1" onInfoLoaded={onInfoLoaded} />
+      </I18nProvider>,
+    );
+
+    rerender(
+      <I18nProvider>
+        <MediaMetadataEditor mediaID="media-2" onInfoLoaded={onInfoLoaded} />
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByDisplayValue("Second Item")).toBeInTheDocument();
+    resolveFirst(info({ mediaID: "media-1", title: "Stale First Item" }));
+
+    await waitFor(() => expect(screen.getByDisplayValue("Second Item")).toBeInTheDocument());
+    expect(onInfoLoaded).toHaveBeenCalledWith(expect.objectContaining({ mediaID: "media-2" }));
+    expect(onInfoLoaded).not.toHaveBeenCalledWith(expect.objectContaining({ mediaID: "media-1" }));
+  });
 });
