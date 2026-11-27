@@ -5,6 +5,7 @@ import { sectionMatchesLens, useExperienceLens } from "@/components/chrome/exper
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { FieldFilters, Layout, Section } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { useServerRecoveryEpoch } from "@/lib/serverConnection";
 import { useSession } from "@/lib/session";
 import { HiddenAwareEmpty } from "../actions/HiddenControls";
 import { applyRenderFocus } from "../lib/renderFocus";
@@ -49,6 +50,8 @@ export function LayoutView({
 }) {
   const t = useT();
   const { manifest, isManager, refresh } = useSession();
+  const recoveryEpoch = useServerRecoveryEpoch();
+  const seenRecoveryEpochRef = useRef(recoveryEpoch);
   const { activeLens, libraryIDFilter } = useExperienceLens();
   const homeLensLibraryIDs = home && !libraryID ? libraryIDFilter : undefined;
   const navigationType = useNavigationType();
@@ -191,6 +194,17 @@ export function LayoutView({
     aggregateEmpty && hydratable.some((section) => stateFor(section) === "failed");
 
   const settledEmpty = aggregateEmpty && !aggregateFailed;
+  useEffect(() => {
+    if (seenRecoveryEpochRef.current === recoveryEpoch) return;
+    seenRecoveryEpochRef.current = recoveryEpoch;
+    if (!layout && !manifest) {
+      void refresh();
+      return;
+    }
+    setConnectionLost(false);
+    setHydration({ layout, states: {} });
+    setAttempt((n) => n + 1);
+  }, [recoveryEpoch, layout, manifest, refresh]);
   // Sections render in manifest order. The server leads a default Home with
   // Continue Watching (CORE-2825) and applies the Profile's own order when it
   // has saved one (CORE-1972), so the client never reorders.

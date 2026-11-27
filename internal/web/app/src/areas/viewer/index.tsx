@@ -47,12 +47,41 @@ import { PlayerHost } from "./player/PlayerHost";
 import "./player/player-deferred.css";
 import { RemoteMessage, useRemoteReceiver } from "./remote/RemoteReceiver";
 
-function ViewerSessionError({ onRetry }: { onRetry: () => Promise<void> }) {
+function ViewerSessionError({ error, onRetry }: { error: string; onRetry: () => Promise<void> }) {
   const t = useT();
+  const transient = !error.startsWith("compat-");
+
+  useEffect(() => {
+    if (!transient) return;
+    let alive = true;
+    let delayMs = 2000;
+    let timer = 0;
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        if (!alive) return;
+        void Promise.resolve(onRetry()).finally(() => {
+          if (!alive) return;
+          delayMs = Math.min(delayMs * 2, 30000);
+          schedule();
+        });
+      }, delayMs);
+    };
+    schedule();
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [transient, onRetry]);
+
   return (
     <AppShell>
       <div className="mx-auto max-w-xl space-y-3 py-12">
         <ErrorState message="couldNotReachServer" />
+        {transient && (
+          <p role="status" aria-live="polite" className="text-sm text-[var(--text-secondary)]">
+            {t("reconnecting")}
+          </p>
+        )}
         <Button type="button" variant="outline" onClick={() => void onRetry()}>
           {t("jobRetryAction")}
         </Button>
@@ -136,7 +165,7 @@ export function ViewerArea() {
   // mounted indefinitely.
   if (!session) {
     if (!error) return <ViewerSessionPending />;
-    return <ViewerSessionError onRetry={refresh} />;
+    return <ViewerSessionError error={error} onRetry={refresh} />;
   }
 
   // "Who's watching?" (CORE-1196): a server with more than one Profile opens on

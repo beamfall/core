@@ -600,11 +600,13 @@ export function subscribeEvents(
   onEvent: (event: MessageEvent) => void,
   onError?: (err: Event) => void,
   onState?: (state: EventStreamState) => void,
+  onAuthError?: (status: number, payload: unknown) => void,
 ): () => void {
   return openEventStream("/api/events", {
     onEvent,
     onError,
     onState,
+    onAuthError,
     // Each connection names the Profile this tab shows, and the server ends a
     // stream whose session moved to another one; the refused reconnect reloads
     // the tab (CORE-2923).

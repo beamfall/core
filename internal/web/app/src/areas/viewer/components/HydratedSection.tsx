@@ -142,10 +142,6 @@ export function HydratedSection({
     const fail = () => {
       onConnectionLost?.();
       if (cached?.length) return;
-      if (cached) {
-        onHydrationStateChange?.("empty");
-        return;
-      }
       setItems([]);
       onHydrationStateChange?.("failed");
     };

@@ -230,6 +230,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // registered once per mount) while still seeing the live Reveal state.
   const revealedRef = useRef(false);
   revealedRef.current = session?.revealed ?? false;
+  const hasSessionRef = useRef(false);
+  hasSessionRef.current = Boolean(session);
 
   useEffect(
     () =>
@@ -300,7 +302,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       fetchManifest(signal).then(
         (next) => {
           if (!signal.aborted && seq === refreshSeqRef.current) {
-            setManifest((current) => (current ? next : current));
+            setManifest((current) => (hasSessionRef.current ? next : current));
           }
         },
         () => {},

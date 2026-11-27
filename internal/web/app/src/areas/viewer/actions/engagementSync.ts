@@ -1,5 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { subscribeEvents } from "@/lib/api";
+import { requestManifestRefresh } from "@/lib/manifestRefresh";
+import { reportEventStreamState } from "@/lib/serverConnection";
 
 // One counter that moves whenever the bound Profile's watched, watchlist or
 // rating state changes — in this tab (an item action just succeeded) or on
@@ -60,16 +62,36 @@ export function isEngagementInvalidation(data: unknown): boolean {
 export function useEngagementEvents(onEvent?: (event: MessageEvent) => void): void {
   const handler = useRef(onEvent);
   handler.current = onEvent;
-  useEffect(
-    () =>
-      subscribeEvents((event) => {
+  useEffect(() => {
+    const unsubscribe = subscribeEvents(
+      (event) => {
         if (
           event.type === FULL_REFRESH_KIND ||
           (event.type === INVALIDATE_KIND && isEngagementInvalidation(event.data))
         )
           notifyEngagementChanged();
         handler.current?.(event);
-      }),
-    [],
-  );
+      },
+      undefined,
+      (state) => {
+        const recovered = reportEventStreamState(state);
+        if (recovered) {
+          requestManifestRefresh();
+          notifyEngagementChanged();
+          navigator.serviceWorker
+            ?.getRegistration?.()
+            .then((reg) => reg?.update())
+            .catch(() => {});
+        }
+      },
+      () => {
+        reportEventStreamState("reconnecting");
+        requestManifestRefresh();
+      },
+    );
+    return () => {
+      unsubscribe();
+      reportEventStreamState("live");
+    };
+  }, []);
 }

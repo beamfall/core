@@ -518,5 +518,21 @@ describe("AppShell library sidebar", () => {
         "/console/operations",
       );
     });
+
+    it("shows a reconnecting status banner when the server event stream drops and hides it on recovery", async () => {
+      const { reportEventStreamState, resetServerConnectionForTest } = await import(
+        "@/lib/serverConnection"
+      );
+      resetServerConnectionForTest();
+      renderShell();
+      expect(screen.queryByText("Reconnecting…")).toBeNull();
+
+      reportEventStreamState("reconnecting");
+      expect(await screen.findByText("Reconnecting…")).toBeVisible();
+
+      reportEventStreamState("live");
+      await waitFor(() => expect(screen.queryByText("Reconnecting…")).toBeNull());
+      resetServerConnectionForTest();
+    });
   });
 });
