@@ -157,6 +157,13 @@ var vocabAllowedLines = map[string][]vocabAllowed{
 		{"podcast", `podcast-index-key`},
 		{"podcast", `podcast-index-secret`},
 	},
+	"cmd/beamfall/feed_trending.go": {
+		{"podcasts", `api.podcastindex.org/api/1.0/podcasts/trending`},
+		{"podcasts", `/podcasts/top/%d/podcasts.json`},
+		{"podcast", `entity=podcast`},
+		{"podcast", `podcast-index-key`},
+		{"podcast", `podcast-index-secret`},
+	},
 	"internal/conductor/conductor.go": {
 		{"podcast", `queue composition stays plugin-owned (music/podcast)`},
 	},

@@ -6,6 +6,7 @@ set -euo pipefail
 # Keep ordinary diff-scoping assertions deterministic inside release CI; the
 # release-mode cases below opt in explicitly.
 export GATE_MODE=normal GITHUB_WORKFLOW=
+unset RACE_SHORT_ORDINARY_TIMEOUT RACE_SHORT_ORDINARY_P
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"
@@ -566,6 +567,225 @@ if evidence.get("scope") != "full":
 PY
 grep -Fq 'github.com/beamfall/core/internal/unrelated' "$RACE_TEST_LOG" \
   || fail "race-short go.mod fallback omitted an unrelated full-tree package"
+grep -Fq -- 'resolved ordinary: go test -race -short -count=1 -p 4 -parallel 2 -test.timeout=600s ' "$TMP/race-full.out" \
+  || fail "race-short default ordinary flags drifted from -p 4 -test.timeout=600s"
+grep -Fq -- 'test -race -short -count=1 -p 4 -parallel 2 -test.timeout=600s -json ' "$RACE_TEST_LOG" \
+  || fail "race-short default go test ordinary flags drifted from -p 4 -test.timeout=600s"
+
+# Hosted CI overrides (RACE_SHORT_ORDINARY_TIMEOUT / RACE_SHORT_ORDINARY_P)
+# adjust the ordinary phase in both sequential and overlap modes without
+# altering the promoted or focused phases.
+: >"$RACE_TEST_LOG"
+( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+    RACE_SHORT_ORDINARY_TIMEOUT=1800s RACE_SHORT_ORDINARY_P=2 \
+    GATE_DIFF_BASE="$RACE_BASE" GATE_DIFF_HEAD=HEAD script/race-test.sh short ) \
+  >"$TMP/race-full-override.out" 2>&1 || {
+    cat "$TMP/race-full-override.out" >&2
+    fail "race-short ordinary override full fallback failed"
+  }
+grep -Fq -- 'resolved ordinary: go test -race -short -count=1 -p 2 -parallel 2 -test.timeout=1800s ' "$TMP/race-full-override.out" \
+  || fail "race-short did not honor RACE_SHORT_ORDINARY_TIMEOUT/P in explain output"
+grep -Fq -- 'test -race -short -count=1 -p 2 -parallel 2 -test.timeout=1800s -json ' "$RACE_TEST_LOG" \
+  || fail "race-short did not pass overridden ordinary flags to go test"
+grep -Fq -- 'test -race -short -count=1 -p 4 -parallel 2 -test.timeout=600s -run ' "$RACE_TEST_LOG" \
+  || fail "race-short ordinary override mutated focused hot-package flags"
+
+# Verify overlap mode (ordinary + promoted running concurrently) honors the
+# ordinary overrides too.
+git -C "$RACE_REPO" checkout -qb overlap-override "$RACE_BASE"
+printf '\n// overlap ordinary change\n' >>"$RACE_REPO/internal/foo/foo.go"
+printf '\n// overlap promoted change\n' >>"$RACE_REPO/internal/graph/graph.go"
+git -C "$RACE_REPO" add internal/foo/foo.go internal/graph/graph.go
+git -C "$RACE_REPO" -c user.name=t -c user.email=t@e.com commit -qm overlap-change
+: >"$RACE_TEST_LOG"
+( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+    RACE_SHORT_ORDINARY_TIMEOUT=1500s RACE_SHORT_ORDINARY_P=2 \
+    RACE_SHORT_OVERLAP=1 RACE_SHORT_PROMOTED_SHARDS=1 \
+    GATE_DIFF_BASE="$RACE_BASE" GATE_DIFF_HEAD=HEAD script/race-test.sh short ) \
+  >"$TMP/race-overlap-override.out" 2>&1 || {
+    cat "$TMP/race-overlap-override.out" >&2
+    fail "race-short overlap override failed"
+  }
+grep -Fq -- 'test -race -short -count=1 -p 2 -parallel 2 -test.timeout=1500s -json github.com/beamfall/core/internal/consumer github.com/beamfall/core/internal/foo' "$RACE_TEST_LOG" \
+  || fail "race-short overlap mode did not pass overridden ordinary flags"
+grep -Fq -- 'test -race -short -count=1 -p 1 -parallel 2 -test.timeout=3600s -json github.com/beamfall/core/internal/graph' "$RACE_TEST_LOG" \
+  || fail "race-short overlap mode mutated promoted flags"
+grep -Fq -- 'test -race -short -count=1 -p 4 -parallel 2 -test.timeout=600s -run ' "$RACE_TEST_LOG" \
+  || fail "race-short overlap mode mutated focused flags"
+
+# Invalid ordinary overrides must fail closed before running go test.
+for bad_env in \
+  "RACE_SHORT_ORDINARY_TIMEOUT=0s" \
+  "RACE_SHORT_ORDINARY_TIMEOUT=600" \
+  "RACE_SHORT_ORDINARY_TIMEOUT=-10s" \
+  "RACE_SHORT_ORDINARY_TIMEOUT=600s -v" \
+  "RACE_SHORT_ORDINARY_P=0" \
+  "RACE_SHORT_ORDINARY_P=abc"; do
+  : >"$RACE_TEST_LOG"
+  key="${bad_env%%=*}"
+  val="${bad_env#*=}"
+  if ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+      env "$key=$val" GATE_DIFF_BASE="$RACE_BASE" GATE_DIFF_HEAD=HEAD \
+      script/race-test.sh short ) >"$TMP/race-bad-override.out" 2>&1; then
+    fail "race-short accepted invalid override $bad_env"
+  fi
+  [ ! -s "$RACE_TEST_LOG" ] || fail "race-short invoked go test after invalid override $bad_env"
+done
+
+# Hosted GitHub Actions gate/race workflow invariants: full history checkout,
+# diff-scope resolution (including pull_request merge commits and all-zero
+# push before SHA guard), and hosted CI ordinary timeout/parallelism overrides.
+GATE_WORKFLOW_RESOLVER="$TMP/resolve-race-diff-scope.sh"
+python3 - "$ROOT/.github/workflows/gate.yml" "$GATE_WORKFLOW_RESOLVER" <<'PY'
+from pathlib import Path
+import re
+import sys
+import textwrap
+
+workflow = Path(sys.argv[1]).read_text(encoding="utf-8")
+resolver_out = Path(sys.argv[2])
+
+match = re.search(r"^  race:\n(?P<body>.*?)(?:^  [A-Za-z0-9_-]+:\n|\Z)", workflow, re.MULTILINE | re.DOTALL)
+if not match:
+    raise SystemExit("gate_scope_test: missing race job in .github/workflows/gate.yml")
+race_job = match.group("body")
+
+if "fetch-depth: 0" not in race_job:
+    raise SystemExit("gate_scope_test: gate.yml race job must use fetch-depth: 0 on actions/checkout")
+if 'RACE_SHORT_ORDINARY_TIMEOUT: "1800s"' not in race_job and "RACE_SHORT_ORDINARY_TIMEOUT: '1800s'" not in race_job and "RACE_SHORT_ORDINARY_TIMEOUT: 1800s" not in race_job:
+    raise SystemExit("gate_scope_test: gate.yml race job must override RACE_SHORT_ORDINARY_TIMEOUT to 1800s")
+if 'RACE_SHORT_ORDINARY_P: "2"' not in race_job and "RACE_SHORT_ORDINARY_P: '2'" not in race_job and "RACE_SHORT_ORDINARY_P: 2" not in race_job:
+    raise SystemExit("gate_scope_test: gate.yml race job must cap RACE_SHORT_ORDINARY_P to 2")
+
+step_match = re.search(
+    r"- name:\s*resolve race diff scope\b(?P<step>.*?)(?=\n[ \t]*- name:|\Z)",
+    race_job,
+    re.DOTALL,
+)
+if not step_match:
+    raise SystemExit("gate_scope_test: gate.yml race job missing 'resolve race diff scope' step")
+run_match = re.search(
+    r"\n\s+run:\s*\|\n(?P<script>(?:[ \t]{10,}[^\n]*(?:\n|\Z)|[ \t]*\n)+)",
+    step_match.group("step"),
+)
+if not run_match:
+    raise SystemExit("gate_scope_test: 'resolve race diff scope' step missing multiline run block")
+script = textwrap.dedent(run_match.group("script")) + "\n"
+resolver_out.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + script, encoding="utf-8")
+PY
+chmod +x "$GATE_WORKFLOW_RESOLVER"
+
+CI_REPO="$TMP/ci-scope-repo"
+mkdir -p "$CI_REPO/script" "$CI_REPO/internal/foo" "$CI_REPO/internal/unrelated"
+cp "$ROOT/script/race-test.sh" "$CI_REPO/script/race-test.sh"
+chmod +x "$CI_REPO/script/race-test.sh"
+cat >"$CI_REPO/go.mod" <<'EOF'
+module github.com/beamfall/core
+
+go 1.26
+EOF
+printf 'package foo\nfunc Value() int { return 1 }\n' >"$CI_REPO/internal/foo/foo.go"
+printf 'package unrelated\nfunc Value() int { return 2 }\n' >"$CI_REPO/internal/unrelated/unrelated.go"
+git -C "$CI_REPO" init -qb main
+git -C "$CI_REPO" add .
+git -C "$CI_REPO" -c user.name=t -c user.email=t@e.com commit -qm main1
+CI_MAIN1="$(git -C "$CI_REPO" rev-parse HEAD)"
+
+# PR branched from main1 while main later advances to main2.
+git -C "$CI_REPO" checkout -qb pr-branch "$CI_MAIN1"
+printf '\n// pr change\n' >>"$CI_REPO/internal/foo/foo.go"
+git -C "$CI_REPO" add internal/foo/foo.go
+git -C "$CI_REPO" -c user.name=t -c user.email=t@e.com commit -qm pr-tip
+CI_PR_HEAD="$(git -C "$CI_REPO" rev-parse HEAD)"
+
+git -C "$CI_REPO" checkout -q main
+printf '\n// main2 change\n' >>"$CI_REPO/internal/unrelated/unrelated.go"
+git -C "$CI_REPO" add internal/unrelated/unrelated.go
+git -C "$CI_REPO" -c user.name=t -c user.email=t@e.com commit -qm main2
+CI_MAIN2="$(git -C "$CI_REPO" rev-parse HEAD)"
+
+# GitHub pull_request checkout checks out the merge commit Merge(main2, pr-tip).
+git -C "$CI_REPO" checkout -qb pr-merge "$CI_MAIN2"
+git -C "$CI_REPO" merge --no-ff -q -m "merge pr" "$CI_PR_HEAD"
+CI_PR_MERGE="$(git -C "$CI_REPO" rev-parse HEAD)"
+
+run_ci_resolver() {
+  local env_file="$1"
+  : >"$env_file"
+  ( cd "$CI_REPO" && GITHUB_ENV="$env_file" bash "$GATE_WORKFLOW_RESOLVER" )
+}
+
+CI_ENV="$TMP/ci-github.env"
+EVENT_NAME=pull_request PR_BASE="$CI_MAIN2" PUSH_BEFORE="" HEAD_SHA="$CI_PR_MERGE" \
+  run_ci_resolver "$CI_ENV"
+grep -Fxq "GATE_DIFF_BASE=$CI_MAIN2" "$CI_ENV" \
+  || fail "gate.yml resolver did not use PR base for merge commit"
+grep -Fxq "GATE_DIFF_HEAD=$CI_PR_MERGE" "$CI_ENV" \
+  || fail "gate.yml resolver did not use checked-out merge HEAD"
+
+: >"$RACE_TEST_LOG"
+(
+  set -a; . "$CI_ENV"; set +a
+  cd "$CI_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+    RACE_SHORT_ORDINARY_TIMEOUT=1800s RACE_SHORT_ORDINARY_P=2 \
+    script/race-test.sh short
+) >"$TMP/ci-pr-race.out" 2>&1 || {
+  cat "$TMP/ci-pr-race.out" >&2
+  fail "resolved PR diff scope failed in race-test.sh"
+}
+python3 - "$RACE_EVIDENCE/race-short-discovery.json" <<'PY'
+import json
+import sys
+
+evidence = json.load(open(sys.argv[1], encoding="utf-8"))
+if evidence.get("scope") != "diff" or evidence.get("changed_packages") != ["github.com/beamfall/core/internal/foo"]:
+    raise SystemExit(f"gate_scope_test: CI PR merge commit did not stay diff-scoped: {evidence!r}")
+PY
+grep -Fq 'github.com/beamfall/core/internal/foo' "$RACE_TEST_LOG" \
+  || fail "CI PR diff scope omitted changed package"
+if grep -Fq 'github.com/beamfall/core/internal/unrelated' "$RACE_TEST_LOG"; then
+  fail "CI PR diff scope ran unrelated package"
+fi
+
+# Checkout directly on PR_HEAD behind main2 falls back cleanly via merge-base.
+git -C "$CI_REPO" checkout -q "$CI_PR_HEAD"
+EVENT_NAME=pull_request PR_BASE="$CI_MAIN2" PUSH_BEFORE="" HEAD_SHA="$CI_PR_HEAD" \
+  run_ci_resolver "$CI_ENV"
+grep -Fxq "GATE_DIFF_BASE=$CI_MAIN1" "$CI_ENV" \
+  || fail "gate.yml resolver did not fall back to merge-base when HEAD is behind PR base"
+grep -Fxq "GATE_DIFF_HEAD=$CI_PR_HEAD" "$CI_ENV" \
+  || fail "gate.yml resolver did not preserve HEAD on merge-base fallback"
+
+# Normal push sets before/sha.
+git -C "$CI_REPO" checkout -q "$CI_MAIN2"
+EVENT_NAME=push PR_BASE="" PUSH_BEFORE="$CI_MAIN1" HEAD_SHA="$CI_MAIN2" \
+  run_ci_resolver "$CI_ENV"
+grep -Fxq "GATE_DIFF_BASE=$CI_MAIN1" "$CI_ENV" \
+  || fail "gate.yml resolver did not pass push before SHA"
+grep -Fxq "GATE_DIFF_HEAD=$CI_MAIN2" "$CI_ENV" \
+  || fail "gate.yml resolver did not pass push head SHA"
+
+# First push with all-zero before SHA leaves GATE_DIFF_BASE empty cleanly.
+EVENT_NAME=push PR_BASE="" PUSH_BEFORE="0000000000000000000000000000000000000000" HEAD_SHA="$CI_MAIN2" \
+  run_ci_resolver "$CI_ENV"
+grep -Fxq "GATE_DIFF_BASE=" "$CI_ENV" \
+  || fail "gate.yml resolver did not clear all-zero push before SHA"
+grep -Fxq "GATE_DIFF_HEAD=$CI_MAIN2" "$CI_ENV" \
+  || fail "gate.yml resolver did not preserve push head SHA on initial branch push"
+: >"$RACE_TEST_LOG"
+(
+  set -a; . "$CI_ENV"; set +a
+  cd "$CI_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+    RACE_SHORT_ORDINARY_TIMEOUT=1800s RACE_SHORT_ORDINARY_P=2 \
+    script/race-test.sh short
+) >"$TMP/ci-push-zero.out" 2>&1 || {
+  cat "$TMP/ci-push-zero.out" >&2
+  fail "all-zero push before SHA fallback failed in race-test.sh"
+}
+grep -Fq 'full scope (GATE_DIFF_BASE unset)' "$TMP/ci-push-zero.out" \
+  || fail "all-zero push before SHA did not fall back cleanly as GATE_DIFF_BASE unset"
+grep -Fq -- 'test -race -short -count=1 -p 2 -parallel 2 -test.timeout=1800s -json ' "$RACE_TEST_LOG" \
+  || fail "all-zero push full scope did not receive hosted CI ordinary flags"
 unset RACE_TEST_LOG
 
 # 4. Dispatch proof. `GATE_PREFLIGHT=1` must reach the lane and stop there, and

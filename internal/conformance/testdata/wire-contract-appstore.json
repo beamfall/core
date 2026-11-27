@@ -1883,6 +1883,11 @@
       "tier": "session"
     },
     {
+      "field": "trendingfeeds",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "unassigntag",
       "effect": "write",
       "tier": "session"
@@ -64888,6 +64893,44 @@
         },
         {
           "name": "trashedAt",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "trendingfeeds",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "language",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "region",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "children": [
+        {
+          "name": "artworkURL",
+          "kind": "scalar"
+        },
+        {
+          "name": "description",
+          "kind": "scalar"
+        },
+        {
+          "name": "feedURL",
+          "kind": "scalar"
+        },
+        {
+          "name": "source",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
           "kind": "scalar"
         }
       ]

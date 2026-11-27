@@ -1950,6 +1950,11 @@
     "tier": "session"
   },
   {
+    "field": "trendingfeeds",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "unassigntag",
     "effect": "write",
     "tier": "session"

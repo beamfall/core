@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
 import {
   type FeedSubscription,
+  fetchTrendingFeeds,
   followFeed,
   queuePlayNextMedia,
   refreshSubscription,
@@ -44,6 +45,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => {
   return {
     ...actual,
     searchFeeds: vi.fn(),
+    fetchTrendingFeeds: vi.fn(),
     followFeed: vi.fn(),
     queuePlayNextMedia: vi.fn(),
     refreshSubscription: vi.fn(),
@@ -55,6 +57,8 @@ vi.mock("@/lib/session", () => ({ useViewerIdentity: () => "viewer-1" }));
 
 beforeEach(() => {
   vi.mocked(searchFeeds).mockReset();
+  vi.mocked(fetchTrendingFeeds).mockReset();
+  vi.mocked(fetchTrendingFeeds).mockResolvedValue([]);
   vi.mocked(followFeed).mockReset();
   vi.mocked(queuePlayNextMedia).mockReset();
   vi.mocked(refreshSubscription).mockReset();
@@ -142,6 +146,33 @@ describe("feed helpers", () => {
 });
 
 describe("FeedFollowPanel", () => {
+  it("lists Trending shows when a directory is enabled and follows one in a click", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchTrendingFeeds).mockResolvedValue([
+      {
+        title: "Big Show",
+        feedURL: "https://feeds.example.org/big.xml",
+        description: "Popular",
+        source: "directory-index",
+      },
+    ]);
+    vi.mocked(followFeed).mockResolvedValue(subscription());
+    wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
+
+    expect(await screen.findByRole("heading", { name: "Trending" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Follow Big Show" }));
+    expect(followFeed).toHaveBeenCalledWith(
+      "https://feeds.example.org/big.xml",
+      expect.objectContaining({ libraryID: "lib-1", downloadPolicy: "latest" }),
+    );
+  });
+
+  it("shows no Trending section when none is enabled", async () => {
+    wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
+    await screen.findByRole("search");
+    expect(screen.queryByRole("heading", { name: "Trending" })).not.toBeInTheDocument();
+  });
+
   it("searches, shows results and follows with the default Latest 3 policy", async () => {
     const user = userEvent.setup();
     vi.mocked(searchFeeds).mockResolvedValue([

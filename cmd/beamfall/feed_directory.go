@@ -42,7 +42,8 @@ type feedDirectorySearcher struct {
 	now      func() time.Time
 	// lookup lets the owning plugin resolve a directory page link through
 	// this searcher's budgeted fetcher. matched=false falls back to discovery.
-	lookup func(context.Context, *url.URL) (results []graph.FeedSearchResult, matched bool, err error)
+	trending *trendingState
+	lookup   func(context.Context, *url.URL) (results []graph.FeedSearchResult, matched bool, err error)
 
 	mu       sync.Mutex
 	cache    map[string]cachedFeedSearch

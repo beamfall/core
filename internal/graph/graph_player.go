@@ -591,6 +591,7 @@ var walkUpBlockedFields = map[string]bool{
 	"searchentities":      true,
 	"searchresult":        true,
 	"searchfeeds":         true,
+	"trendingfeeds":       true,
 	"semanticcapability":  true,
 	"entity":              true,
 	"entityrelations":     true,

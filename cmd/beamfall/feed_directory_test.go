@@ -662,7 +662,7 @@ func TestFeedDirectoryAppleLookup(t *testing.T) {
 	hooks.MigrationSourceFactories = make(map[app.MigrationSourceKey]app.MigrationSourceFactory)
 	addPodcastHooks(&hooks)
 	engine := scrape.New(scrape.WithInsecureLoopback())
-	searcher, ok := hooks.FeedSearcher.New(engine, nil, filepath.Join(t.TempDir(), "budget.json")).(*feedDirectorySearcher)
+	searcher, ok := hooks.FeedSearcher.New(engine, nil, filepath.Join(t.TempDir(), "budget.json"), app.FeedSearcherOptions{}).(*feedDirectorySearcher)
 	if !ok {
 		t.Fatal("compiled feed hook did not build a budgeted directory searcher")
 	}

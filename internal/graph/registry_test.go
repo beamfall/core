@@ -344,6 +344,7 @@ var originalScopedFields = []string{
 	"search",
 	"searchentities",
 	"searchfeeds",
+	"trendingfeeds", // CORE-3554
 	"searchresult",
 	"semanticcapability",
 	"setaccessschedule",

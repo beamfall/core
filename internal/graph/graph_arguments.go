@@ -961,6 +961,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"search":             fieldArguments["search"],
 	"searchentities":     fieldArguments["searchentities"],
 	"searchfeeds":        fieldArguments["searchfeeds"],
+	"trendingfeeds":      fieldArguments["trendingfeeds"],
 	"searchresult":       fieldArguments["searchresult"],
 	"semanticcapability": {},
 	"serverinfo":         {},

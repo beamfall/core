@@ -22,35 +22,35 @@ const SHIPPED = new Set(
 // After a catalog change (or a merge conflict in these constants: take either side), run
 // `npm run strings:rerecord` (CORE-2455). It rewrites only the BASE_* constants below from the
 // current catalogs, then runs this file.
-const BASE_SERIALIZED_LENGTH = 1_186_278;
-const BASE_REGISTRY_SHA256 = "29fc8d3d40a1c76adde76c617437df07a74d6eb341b9f9ab5334452d031addb6";
-const BASE_KEY_ORDER_SHA256 = "b08789e1668e16c85ff4f13e216171b0e41f195fc8650ce1246f548925a74f6e";
+const BASE_SERIALIZED_LENGTH = 1_186_450;
+const BASE_REGISTRY_SHA256 = "6c91b4236b8e613882f00c77e2ab39601de946926d225e057248bbbf21727b19";
+const BASE_KEY_ORDER_SHA256 = "2274f89a9b8c289b243c719a0251fc578f2f4bfbb543983263b41c8e2e9e45d1";
 const BASE_PLACEHOLDER_SHA256 = "e55ef8f2a0a3e79cf98c9e35fe910923a5c4eddf1809c8674bb73e137ca7f72e";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 3_990,
-    partialSha256: "5f5aecfe89f6c4f2652c20075a8d50e79514e3678942552cf7e80d977679a74a",
-    resolvedSha256: "4b61d250d65165b58c111f5e1d9fc804cc826bb5e057f52f872e1478895a99e4",
+    partialCount: 3_991,
+    partialSha256: "4ed9e674a856b8e36b4e6c0ca229f56d4fa50fc242d2b4572f1c0f2d78e96dc5",
+    resolvedSha256: "df7968fa6a6e244ae45d3396c379f6ab56742c94a8346b1fd5cdea1b251e1175",
   },
   fr: {
-    partialCount: 3_990,
-    partialSha256: "4f115bcf73f93fcb9cb4e1b9c5a8f9e157eb9cab31c28a6d991fb608eb1e8a83",
-    resolvedSha256: "86f3f694b32bb558bf2f1945a06c749f13a82caf289b1ac94664716cc5df9168",
+    partialCount: 3_991,
+    partialSha256: "955bf42512c9aa0bb1699052a5963236ca57e35669b5f4e0897ad74a91a46f4b",
+    resolvedSha256: "ed8056642a56f274d2c03cd1f6b4c8229acd20b054a78833d6ce75f67b5e631f",
   },
   de: {
-    partialCount: 3_990,
-    partialSha256: "15ca18e7bb5a86d75d8eb30f76c074a3098ff051fb2b337e670d2dc7dac77e16",
-    resolvedSha256: "50fd9e1e63902a0e008cdb830024a19bb9eff632c29ca743e744c8e3f3d5558c",
+    partialCount: 3_991,
+    partialSha256: "3505ef84aa9ba79530d330113c23b4a3ef958b14d245e31fa59768b143fa636b",
+    resolvedSha256: "c66c578d56d5204b8989dcef7c84b1158fb9cb58ccc6aba015092ebc6987fe29",
   },
   es: {
-    partialCount: 3_990,
-    partialSha256: "823159c32786b04d1c1d9a091e0a44e4ec42b6af3728992f7398a7402580d849",
-    resolvedSha256: "bc1328c102720214284ea62ca37e5071105dc5305ccb0e90f26a945172e20bbd",
+    partialCount: 3_991,
+    partialSha256: "4be68a7598169c970aca3089b32b4664a217ad9a6f6da1bd5378d583ac9a5073",
+    resolvedSha256: "e747967d1ab12ef983b06b965de2e80a8c3bab202205f4814a654d806fc7f65e",
   },
   pt: {
-    partialCount: 3_990,
-    partialSha256: "63f28b020526ce086069f471d0b343f8d235e6e35072483ffbbfabd8fdecf903",
-    resolvedSha256: "80c39b310c894f8bdd59fd238673135792ea9837ef90c3d7a4db38b5849c1173",
+    partialCount: 3_991,
+    partialSha256: "5ba4fe0c5d7b32534092388fbbf707d7f8cb9134d9586569651d56f0ca7b94c4",
+    resolvedSha256: "ccf82577cfcff0334ea85955a20f2ee521508aa4cdf80e7cf5495c8d10453108",
   },
 } as const satisfies Record<
   Locale,

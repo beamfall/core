@@ -9,6 +9,7 @@ import { graphql } from "@/lib/api";
 import type {
   FeedSearchResult,
   FeedSubscription,
+  FeedTrendingResult,
   FollowInfo,
   SubscriptionEntry,
   SubscriptionRefreshInfo,
@@ -19,6 +20,8 @@ const FEED_SUBSCRIPTION_FIELDS =
 
 const SEARCH_FEEDS_QUERY =
   "query SearchFeeds($query: String!) { searchFeeds(query: $query) { title feedURL artworkURL description } }";
+const TRENDING_FEEDS_QUERY =
+  "query TrendingFeeds($region: String, $language: String) { trendingFeeds(region: $region, language: $language) { title feedURL artworkURL description source } }";
 const FEED_SUBSCRIPTIONS_QUERY = `query FeedSubscriptions($libraryID: String!) { subscriptions(libraryID: $libraryID) { ${FEED_SUBSCRIPTION_FIELDS} } }`;
 const FEED_SUBSCRIPTION_IDS_QUERY =
   "query FeedSubscriptionIDs($libraryID: String!) { subscriptions(libraryID: $libraryID) { id } }";
@@ -44,6 +47,20 @@ export async function searchFeeds(query: string): Promise<FeedSearchResult[]> {
     query,
   });
   return data.searchFeeds ?? [];
+}
+
+/** Popular feeds from the directories the operator enabled (CORE-3554); an
+ * empty list when none is. Region and language are two-letter codes taken from
+ * the display locale, the only thing the server forwards. */
+export async function fetchTrendingFeeds(
+  region?: string,
+  language?: string,
+): Promise<FeedTrendingResult[]> {
+  const data = await graphql<{ trendingFeeds: FeedTrendingResult[] | null }>(TRENDING_FEEDS_QUERY, {
+    region,
+    language,
+  });
+  return data.trendingFeeds ?? [];
 }
 
 /** The followed feeds of one Library, with health and catalogue counts. */

@@ -202,13 +202,14 @@ func addPodcastHooks(hooks *app.Hooks) {
 	hooks.FeedSearcher = &app.FeedSearcherHook{
 		PluginID:          pluginID,
 		RequiredScraperID: "itunes-directory",
-		New: func(engine *scrape.Engine, secrets app.SecretSource, budgetFile string) graph.FeedSearcher {
+		New: func(engine *scrape.Engine, secrets app.SecretSource, budgetFile string, opts app.FeedSearcherOptions) graph.FeedSearcher {
 			endpoint, template, _ := feedDirectoryScraper("itunes-directory")
 			searcher := newFeedDirectorySearcher(engine, secrets, endpoint, template, budgetFile, time.Now)
 			searcher.lookup = func(ctx context.Context, link *url.URL) ([]graph.FeedSearchResult, bool, error) {
 				found, matched, err := feeds.ResolveDirectoryLink(ctx, searcher, link)
 				return feedSearchResults(found), matched, err
 			}
+			searcher.trending = newTrendingState(opts.AppleChart)
 			return searcher
 		},
 	}

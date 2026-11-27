@@ -1,14 +1,16 @@
-import { type FormEvent, useId, useState } from "react";
+import { type FormEvent, useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { graphqlErrorCode } from "@/lib/api";
 import {
   type FeedSearchResult,
   type FeedSubscription,
+  type FeedTrendingResult,
+  fetchTrendingFeeds,
   followFeed,
   searchFeeds,
 } from "@/lib/graphql";
-import { useT } from "@/lib/i18n";
+import { useDisplayLocale, useT } from "@/lib/i18n";
 import {
   asFeedURL,
   canDiscoverFeedURL,
@@ -41,6 +43,8 @@ export function FeedFollowPanel({
 }) {
   const t = useT();
   const id = useId();
+  const locale = useDisplayLocale();
+  const [trending, setTrending] = useState<FeedTrendingResult[]>([]);
   const [input, setInput] = useState("");
   const [state, setState] = useState<SearchState>({ kind: "idle" });
   const [policy, setPolicy] = useState<string>("latest");
@@ -48,6 +52,18 @@ export function FeedFollowPanel({
   const [followed, setFollowed] = useState<Set<string>>(() => new Set());
   // null: no failure; "" a failure without a classified cause.
   const [followFailed, setFollowFailed] = useState<string | null>(null);
+
+  // Trending is best-effort: no source enabled, or a failure, shows nothing.
+  useEffect(() => {
+    let live = true;
+    const [language, region] = locale.split("-");
+    fetchTrendingFeeds(region?.toLowerCase(), language?.toLowerCase())
+      .then((results) => live && setTrending(results))
+      .catch(() => live && setTrending([]));
+    return () => {
+      live = false;
+    };
+  }, [locale]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -109,6 +125,30 @@ export function FeedFollowPanel({
       >
         {done ? t("feedsFollowingNow") : t("feedsFollow")}
       </Button>
+    );
+  }
+
+  function resultList(results: FeedSearchResult[]) {
+    return (
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {results.map((result) => {
+          const title = result.title || t("feedsUntitled");
+          return (
+            <li key={result.feedURL} className="flex items-center gap-3">
+              <FeedArtwork title={title} src={result.artworkURL} />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="font-medium">{title}</span>
+                {result.description && (
+                  <span className="break-words text-sm text-[var(--text-muted)]">
+                    {brief(result.description)}
+                  </span>
+                )}
+              </div>
+              {followButton(result.feedURL, title)}
+            </li>
+          );
+        })}
+      </ul>
     );
   }
 
@@ -188,26 +228,14 @@ export function FeedFollowPanel({
           </li>
         </ul>
       )}
-      {state.kind === "results" && state.results.length > 0 && (
-        <ul className="m-0 flex list-none flex-col gap-2 p-0">
-          {state.results.map((result) => {
-            const title = result.title || t("feedsUntitled");
-            return (
-              <li key={result.feedURL} className="flex items-center gap-3">
-                <FeedArtwork title={title} src={result.artworkURL} />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-medium">{title}</span>
-                  {result.description && (
-                    <span className="break-words text-sm text-[var(--text-muted)]">
-                      {brief(result.description)}
-                    </span>
-                  )}
-                </div>
-                {followButton(result.feedURL, title)}
-              </li>
-            );
-          })}
-        </ul>
+      {state.kind === "results" && state.results.length > 0 && resultList(state.results)}
+      {state.kind === "idle" && trending.length > 0 && (
+        <section aria-labelledby={`${id}-trending`} className="flex flex-col gap-2">
+          <h3 id={`${id}-trending`} className="m-0 text-base font-semibold">
+            {t("feedsTrendingHeading")}
+          </h3>
+          {resultList(trending)}
+        </section>
       )}
     </section>
   );
