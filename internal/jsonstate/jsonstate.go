@@ -63,13 +63,16 @@ func Save(path string, state any) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	_, statErr := os.Stat(dir)
+	createdDir := errors.Is(statErr, os.ErrNotExist)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	// A unique temp per Save (not a fixed ".tmp" sibling) keeps concurrent
 	// saves from interleaving into the same staging file, and the Sync before
 	// Rename keeps a crash from promoting a truncated file.
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".jsonstate-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".jsonstate-*.tmp")
 	if err != nil {
 		return err
 	}
@@ -100,8 +103,13 @@ func Save(path string, state any) error {
 	syncDirMu.Lock()
 	syncFn := syncDirFunc
 	syncDirMu.Unlock()
-	if err := syncFn(filepath.Dir(path)); err != nil {
+	if err := syncFn(dir); err != nil {
 		return &PostRenameSyncError{Err: err}
+	}
+	if createdDir {
+		if err := syncFn(filepath.Dir(dir)); err != nil {
+			return &PostRenameSyncError{Err: err}
+		}
 	}
 	return nil
 }

@@ -267,3 +267,34 @@ func TestReportAndBlockRetainInstalledStateOnPostRenameSyncFailure(t *testing.T)
 		t.Fatalf("blocks after pre-rename error = %d, want 0", len(preSvc.Blocks(p1)))
 	}
 }
+
+func TestReportCleanupPostRenameSyncFailureReturnsNilWithoutDuplicate(t *testing.T) {
+	path := tempStore(t)
+	svc, err := Open(path, ContactInfo{})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	p1 := Scope{ProfileID: "p1", DeviceID: "d1"}
+
+	var calls int
+	restoreSync := jsonstate.WithSyncDirForTest(func(string) error {
+		calls++
+		if calls == 3 {
+			// Save 1 calls syncDir twice (newly created moderation/ dir + parent DataDir);
+			// call 3 is Save 2 (clearPendingSyncLocked).
+			return errors.New("cleanup dir fsync EIO")
+		}
+		return nil
+	})
+	defer restoreSync()
+
+	if err := svc.Report(p1, ReportRequest{TargetType: "media", TargetID: "m1", Reason: "spam"}); err != nil {
+		t.Fatalf("Report with cleanup-only post-rename sync failure = %v, want nil", err)
+	}
+	if !svc.state.PendingSync || !svc.unsyncedPersist {
+		t.Fatalf("expected PendingSync=true and unsyncedPersist=true after cleanup sync failure, got (%v, %v)", svc.state.PendingSync, svc.unsyncedPersist)
+	}
+	if got := len(svc.state.Reports); got != 1 {
+		t.Fatalf("reports = %d, want 1", got)
+	}
+}

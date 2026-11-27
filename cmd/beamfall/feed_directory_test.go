@@ -859,4 +859,41 @@ func TestFeedDirectoryReturnsPastedAtomFeedBeforeEntryAlternates(t *testing.T) {
 	if len(results) != 1 || results[0].FeedURL != atomServer.URL+"/feed.atom" || results[0].Title != "Direct Atom" {
 		t.Fatalf("SearchFeeds(atom) = %+v, want pasted Atom URL %q", results, atomServer.URL+"/feed.atom")
 	}
+
+	// Temporary 302 redirect from /feed.atom to /snapshot.atom must still return the pasted URL.
+	var redirectServer *httptest.Server
+	redirectServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/feed.atom":
+			http.Redirect(w, r, redirectServer.URL+"/snapshot.atom", http.StatusFound)
+		case "/snapshot.atom":
+			w.Header().Set("Content-Type", "application/atom+xml")
+			_, _ = io.WriteString(w, `<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Redirected Atom</title></feed>`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer redirectServer.Close()
+
+	redirectResults, err := searcher.SearchFeeds(t.Context(), redirectServer.URL+"/feed.atom")
+	if err != nil {
+		t.Fatalf("SearchFeeds(redirect atom): %v", err)
+	}
+	if len(redirectResults) != 1 || redirectResults[0].FeedURL != redirectServer.URL+"/feed.atom" {
+		t.Fatalf("SearchFeeds(redirect atom) = %+v, want pasted URL %q", redirectResults, redirectServer.URL+"/feed.atom")
+	}
+
+	// A <base target="_blank"> without href must not consume seenBase before <base href="/feeds/">.
+	basePage, err := url.Parse("https://website.example/shows/page.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, hrefs := scanHTMLFeedLinks([]byte(`<html><head><base target="_blank"><base href="/feeds/"><link rel="alternate" type="application/rss+xml" href="updates.xml"></head></html>`), basePage)
+	if len(hrefs) != 1 {
+		t.Fatalf("scanHTMLFeedLinks hrefs = %v, want 1 link", hrefs)
+	}
+	resolved, err := base.Parse(hrefs[0])
+	if err != nil || resolved.Path != "/feeds/updates.xml" {
+		t.Fatalf("resolved base+href = (%v, %v), want path /feeds/updates.xml", resolved, err)
+	}
 }

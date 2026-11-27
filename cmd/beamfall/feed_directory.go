@@ -399,14 +399,14 @@ func (s *feedDirectorySearcher) discoverWebsiteFeed(ctx context.Context, link *u
 	if err != nil {
 		return nil, err
 	}
-	if doc, parseErr := scrape.ParseFeed(data); parseErr == nil && s.engine.CheckDocumentURL(page) == nil {
+	if doc, parseErr := scrape.ParseFeed(data); parseErr == nil && s.engine.CheckDocumentURL(page) == nil && s.engine.CheckDocumentURL(link) == nil {
 		title := doc.Title
 		if title == "" {
-			title = page.Hostname()
+			title = link.Hostname()
 		}
 		return []graph.FeedSearchResult{{
 			Title:       title,
-			FeedURL:     page.String(),
+			FeedURL:     link.String(),
 			Description: doc.Description,
 			ArtworkURL:  doc.ArtworkURL,
 		}}, nil
@@ -443,8 +443,8 @@ func scanHTMLFeedLinks(data []byte, page *url.URL) (*url.URL, []string) {
 				foreignDepth++
 			case "base":
 				if templateDepth == 0 && foreignDepth == 0 && !seenBase {
-					seenBase = true
 					if parsed := parseBaseHref(t.Attr, page); parsed != nil {
+						seenBase = true
 						base = parsed
 					}
 				}
@@ -463,8 +463,8 @@ func scanHTMLFeedLinks(data []byte, page *url.URL) (*url.URL, []string) {
 			switch t.Data {
 			case "base":
 				if !seenBase {
-					seenBase = true
 					if parsed := parseBaseHref(t.Attr, page); parsed != nil {
+						seenBase = true
 						base = parsed
 					}
 				}

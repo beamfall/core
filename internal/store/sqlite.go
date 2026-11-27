@@ -3312,10 +3312,12 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	if err := upsertMediaFileTx(ctx, tx, file, now); err != nil {
 		return Media{}, MediaFile{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM media_field_provenance WHERE media_id = ? AND field = ?
-	`, mediaID, legacyPartReservationField); err != nil {
-		return Media{}, MediaFile{}, false, err
+	if !strings.HasPrefix(imported.ContentFingerprint, "sha256:") {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM media_field_provenance WHERE media_id = ? AND field = ?
+		`, mediaID, legacyPartReservationField); err != nil {
+			return Media{}, MediaFile{}, false, err
+		}
 	}
 	if boundEntry {
 		if _, err := tx.ExecContext(ctx, `

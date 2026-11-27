@@ -730,4 +730,22 @@ func TestReconcileStandaloneLibraryMediaSplitEventsMarkersEncryptedAndSlotNormal
 	if reEnc1Again.ID != e1ID {
 		t.Fatalf("second encrypted sample1: reconnect changed Media ID = %s, want %s", reEnc1Again.ID, e1ID)
 	}
+	// ReplaceDetectedMarkers on an unlocked encrypted media must no-op cleanly without FK 787.
+	if err := st.ReplaceDetectedMarkers(ctx, e1ID, "chapter-import", []Marker{{Title: "Intro", StartSeconds: 0, EndSeconds: &end}}, filter, now); err != nil {
+		t.Fatalf("ReplaceDetectedMarkers on encrypted media = %v, want nil", err)
+	}
+	// Legacy split sha256:part2 must retain its reservation across a second disconnect/reconnect.
+	if err := st.MarkMediaFileMissing(ctx, pubLib.ID, p2Path); err != nil {
+		t.Fatal(err)
+	}
+	reFileAgain, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: pubLib.ID, Path: p2Path, ContentFingerprint: "sha256:part2",
+		Title: "part2", Class: MediaClassVideo, DurationSecondsHint: 10, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reFileAgain.ID != splitP2ID {
+		t.Fatalf("second legacy sha256 reconnect changed Media ID = %s, want %s", reFileAgain.ID, splitP2ID)
+	}
 }

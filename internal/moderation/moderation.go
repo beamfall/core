@@ -179,7 +179,14 @@ func (s *Service) Block(scope Scope, req BlockRequest) error {
 				if err := s.persistLocked(); err != nil {
 					return err
 				}
-				return s.clearPendingSyncLocked()
+				if err := s.clearPendingSyncLocked(); err != nil {
+					var postSync *jsonstate.PostRenameSyncError
+					if errors.As(err, &postSync) {
+						return nil
+					}
+					return err
+				}
+				return nil
 			}
 			return nil // idempotent
 		}
@@ -213,7 +220,14 @@ func (s *Service) persistTransitionLocked(revert func()) error {
 		}
 		return err
 	}
-	return s.clearPendingSyncLocked()
+	if err := s.clearPendingSyncLocked(); err != nil {
+		var postSync *jsonstate.PostRenameSyncError
+		if errors.As(err, &postSync) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *Service) clearPendingSyncLocked() error {
