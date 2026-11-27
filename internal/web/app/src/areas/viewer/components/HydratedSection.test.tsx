@@ -452,4 +452,31 @@ describe("HydratedSection Continue Watching removal (CORE-2017)", () => {
       "/media/t2",
     );
   });
+
+  it("reports failed rather than empty when a cached empty section fails to revalidate", async () => {
+    const identity = JSON.stringify(["viewer", "p1", "adult", false]);
+    const key = sectionCacheKey(section, "lib1", "", undefined);
+    identityMock.identity = identity;
+    writeViewerCache(identity, key, []);
+    vi.mocked(fetchSectionItems).mockRejectedValue(new Error("offline"));
+    const onHydrationStateChange = vi.fn();
+    const onConnectionLost = vi.fn();
+
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <HydratedSection
+            section={section}
+            libraryID="lib1"
+            entityID=""
+            onHydrationStateChange={onHydrationStateChange}
+            onConnectionLost={onConnectionLost}
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    await waitFor(() => expect(onConnectionLost).toHaveBeenCalledTimes(1));
+    expect(onHydrationStateChange).toHaveBeenLastCalledWith("failed");
+  });
 });

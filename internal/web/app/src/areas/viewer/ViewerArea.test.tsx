@@ -205,6 +205,32 @@ describe("ViewerArea Profile scope", () => {
     expect(mocks.sessionState.refresh).toHaveBeenCalledOnce();
   });
 
+  it("shows reconnecting and auto-retries transient session errors without manual reload", async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.sessionState = {
+        ...mocks.sessionState,
+        error: "current session failed",
+        session: null,
+      };
+      render(
+        <I18nProvider initialLocale="en">
+          <MemoryRouter initialEntries={["/"]}>
+            <ViewerArea />
+          </MemoryRouter>
+        </I18nProvider>,
+      );
+
+      expect(screen.getByRole("status")).toHaveTextContent("Reconnecting…");
+      expect(mocks.sessionState.refresh).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(mocks.sessionState.refresh).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not mount a no-profile route between overlapping identity epochs", () => {
     const view = render(
       <MemoryRouter initialEntries={["/"]}>

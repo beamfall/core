@@ -251,4 +251,40 @@ describe("LayoutView state isolation and empty-card stability", () => {
     const card = await screen.findByRole("link", { name: "Alpha" });
     await waitFor(() => expect(card).toHaveFocus());
   });
+
+  it("recovers failed sections automatically when the server event stream reconnects (CORE-2161)", async () => {
+    const { reportEventStreamState, resetServerConnectionForTest } = await import(
+      "@/lib/serverConnection"
+    );
+    resetServerConnectionForTest();
+    vi.mocked(fetchSectionItems).mockRejectedValue(new Error("server restarting"));
+    mockSession.mockReturnValue({ manifest: { libraries: [] }, isManager: false });
+    const shelf: Section = {
+      id: "recent-recovery",
+      kind: "shelf",
+      title: { en: "Recently Added" },
+      artworkSlot: "poster",
+      source: { kind: "recent" } as Section["source"],
+    };
+
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LayoutView layout={{ id: "lib-recovery", sections: [shelf] }} libraryID="lib-recovery" />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeVisible();
+
+    reportEventStreamState("reconnecting");
+    vi.mocked(fetchSectionItems).mockResolvedValue([
+      { id: "m1", kind: "media", title: "Recovered Alpha", artwork: { poster: "" } },
+    ]);
+    reportEventStreamState("live");
+
+    expect(await screen.findByRole("link", { name: "Recovered Alpha" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    resetServerConnectionForTest();
+  });
 });

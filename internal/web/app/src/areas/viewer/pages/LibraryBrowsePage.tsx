@@ -7,6 +7,7 @@ import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
+import { useServerRecoveryEpoch } from "@/lib/serverConnection";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { SlideshowButton } from "../../slideshow/SlideshowButton";
 import {
@@ -203,6 +204,8 @@ function LibraryBrowse({
   // reload the window in place, keeping the count so the scroll position holds.
   const engagementEpoch = useEngagementEpoch();
   const seenEpochRef = useRef(engagementEpoch);
+  const recoveryEpoch = useServerRecoveryEpoch();
+  const seenRecoveryEpochRef = useRef(recoveryEpoch);
   const [refreshTick, setRefreshTick] = useState(0);
   // Turning Hide watched on or off changes what a read with no watch filter
   // returns, so that read starts over too.
@@ -256,6 +259,18 @@ function LibraryBrowse({
     loadPage(0);
     setRefreshTick((tick) => tick + 1);
   }, [engagementEpoch, hideWatched.version, hiddenKey, followsEngagement, unfiltered, loadPage]);
+
+  useEffect(() => {
+    if (seenRecoveryEpochRef.current === recoveryEpoch) return;
+    seenRecoveryEpochRef.current = recoveryEpoch;
+    if (!failed) return;
+    generationRef.current += 1;
+    pagesRef.current = new Map();
+    pendingRef.current = new Set();
+    setFailed(false);
+    loadPage(0);
+    setRefreshTick((tick) => tick + 1);
+  }, [recoveryEpoch, failed, loadPage]);
 
   const itemCount = total ?? 0;
   const listRef = useRef<HTMLUListElement | null>(null);

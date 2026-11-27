@@ -11,6 +11,7 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug } from "@/lib/nodePath";
 import { useRegister } from "@/lib/register";
 import { formatServerBuild, useServerBuild } from "@/lib/serverBuild";
+import { useServerConnectionState } from "@/lib/serverConnection";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
 import { LibrarySidebar, type SidebarGroup, sidebarGroupId } from "./LibrarySidebar";
@@ -92,6 +93,7 @@ export function AppShell({
   const location = useLocation();
   const { register } = useRegister();
   const { session, manifest, isManager, revealed, needsEnroll } = useSession();
+  const connectionState = useServerConnectionState();
   // Cached across remounts: every route mounts its own AppShell, and the bell
   // must not refetch the inbox on each navigation.
   const unreadNotifications = useUnreadNotifications(
@@ -324,10 +326,16 @@ export function AppShell({
           />
         )}
         <div className="bf-content">
-          {needsEnroll && (
+          {needsEnroll ? (
             <div role="status" className="bf-banner">
               {t("enrollLead")}
             </div>
+          ) : (
+            connectionState === "reconnecting" && (
+              <div role="status" aria-live="polite" className="bf-banner">
+                {t("reconnecting")}
+              </div>
+            )
           )}
 
           <main id={MAIN_CONTENT_ID} tabIndex={-1} className="bf-main px-4 py-6">

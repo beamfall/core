@@ -17,6 +17,8 @@ export interface EventStreamHandlers {
   headers?: () => Record<string, string>;
   /** A 409 refusal of a connection, with the extra headers it was sent with. */
   onRefused?: (sent: Record<string, string>, status: number, payload: unknown) => void;
+  /** Called on 401/403 so the session layer can renew or rebind instead of looping. */
+  onAuthError?: (status: number, payload: unknown) => void;
 }
 
 const FIRST_RETRY_MS = 1000;
@@ -73,7 +75,7 @@ export function openEventStream(url: string, handlers: EventStreamHandlers): () 
   let lastEventId = "";
   let retryMs = FIRST_RETRY_MS;
 
-  const readOnce = async () => {
+  const readOnce = async (): Promise<boolean> => {
     const extra = handlers.headers?.() ?? {};
     const headers: Record<string, string> = { ...extra, Accept: "text/event-stream" };
     if (lastEventId) headers["Last-Event-ID"] = lastEventId;
@@ -85,6 +87,10 @@ export function openEventStream(url: string, handlers: EventStreamHandlers): () 
     });
     if (response.status === 409 && handlers.onRefused) {
       handlers.onRefused(extra, response.status, await response.json().catch(() => undefined));
+    }
+    if ((response.status === 401 || response.status === 403) && handlers.onAuthError) {
+      handlers.onAuthError(response.status, await response.json().catch(() => undefined));
+      return false;
     }
     const contentType = response.headers.get("content-type") ?? "";
     if (!response.ok || !response.body || !contentType.includes("text/event-stream")) {
@@ -105,7 +111,7 @@ export function openEventStream(url: string, handlers: EventStreamHandlers): () 
     const decoder = new TextDecoder();
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) return;
+      if (done) return true;
       feed(decoder.decode(value, { stream: true }));
     }
   };
@@ -113,7 +119,8 @@ export function openEventStream(url: string, handlers: EventStreamHandlers): () 
   const run = async () => {
     while (!signal.aborted) {
       try {
-        await readOnce();
+        const shouldContinue = await readOnce();
+        if (!shouldContinue) return;
       } catch {
         // Fall through to the reconnect below; an abort ends the loop.
       }

@@ -134,4 +134,30 @@ describe("openEventStream", () => {
     close();
     expect(onEvent).not.toHaveBeenCalled();
   });
+
+  it("invokes onAuthError and stops reconnecting on 401/403", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ message: "unauthorized" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const onAuthError = vi.fn();
+    const onState = vi.fn();
+    const close = openEventStream("/api/events", {
+      onEvent: () => {},
+      onState,
+      onAuthError,
+    });
+    await vi.waitFor(() =>
+      expect(onAuthError).toHaveBeenCalledWith(401, { message: "unauthorized" }),
+    );
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onState).not.toHaveBeenCalledWith("reconnecting");
+    close();
+  });
 });
