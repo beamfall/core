@@ -492,6 +492,9 @@ func TestPlayedSourceKinds(t *testing.T) {
 	if len(most) != 2 || most[0].ID != "media-alpha" || most[0].Summary != "2 plays" {
 		t.Fatalf("most-played = %#v, want media-alpha first with 2 plays", most)
 	}
+	if most[0].MediaClass != MediaClassVideo {
+		t.Fatalf("most[0].MediaClass = %q, want %q", most[0].MediaClass, MediaClassVideo)
+	}
 	managedMost, err := st.SourceItems(context.Background(), filter, SourceQuery{Kind: "most-played", ProfileID: "profile-managed"})
 	if err != nil {
 		t.Fatal(err)

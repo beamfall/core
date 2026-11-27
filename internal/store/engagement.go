@@ -714,6 +714,9 @@ func (s *Store) matchedEngagementPage(ctx context.Context, query string, args []
 			}
 			item := c.build(media)
 			item.LibraryID = media.LibraryID
+			if item.MediaClass == "" {
+				item.MediaClass = media.Class
+			}
 			items = append(items, item)
 			if limit > 0 && len(items) >= limit {
 				return true, nil
