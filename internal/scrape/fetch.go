@@ -52,11 +52,32 @@ func (e *Engine) CheckDocumentURL(u *url.URL) error {
 			return errors.New("scrape: refused URL with invalid port")
 		}
 	}
-	params, err := url.ParseQuery(u.RawQuery)
-	if err != nil {
-		return errors.New("scrape: refused invalid URL query")
+	if err := checkDocumentQueryCredentials(u.RawQuery); err != nil {
+		return err
 	}
-	for key := range params {
+	return e.vetURL(u)
+}
+
+func checkDocumentQueryCredentials(rawQuery string) error {
+	if rawQuery == "" {
+		return nil
+	}
+	// Accept opaque semicolon-separated query parameters (such as ?a=1;b=2) that
+	// followFeed permits while still rejecting credential-bearing keys and bad escapes.
+	for _, pair := range strings.FieldsFunc(rawQuery, func(r rune) bool { return r == '&' || r == ';' }) {
+		if pair == "" {
+			continue
+		}
+		rawKey, rawVal, _ := strings.Cut(pair, "=")
+		key, err := url.QueryUnescape(rawKey)
+		if err != nil {
+			return errors.New("scrape: refused invalid URL query")
+		}
+		if rawVal != "" {
+			if _, err := url.QueryUnescape(rawVal); err != nil {
+				return errors.New("scrape: refused invalid URL query")
+			}
+		}
 		norm := documentQueryKeySeparators.Replace(strings.ToLower(key))
 		switch norm {
 		case "token", "privatetoken", "feedtoken", "accesstoken", "refreshtoken", "authtoken", "bearertoken",
@@ -79,7 +100,7 @@ func (e *Engine) CheckDocumentURL(u *url.URL) error {
 			return errors.New("scrape: refused URL with query credentials")
 		}
 	}
-	return e.vetURL(u)
+	return nil
 }
 
 // FetchDocumentLimited fetches a capped document and returns its final URL.
@@ -407,6 +428,10 @@ type FeedDocument struct {
 	// UnguidedPubDates holds non-zero publication timestamps of feed items
 	// that omitted both an explicit GUID and an enclosure.
 	UnguidedPubDates []time.Time
+	// UndatedTextKeys holds deterministic content digests of undated items
+	// that omitted both an explicit GUID and an enclosure (kept out of
+	// Entries/cataloguing while still letting adaptive polling detect new posts).
+	UndatedTextKeys []string
 }
 
 // ParseFeedEntries extracts every entry's GUID, title, and enclosure from an
@@ -460,12 +485,12 @@ func ParseFeed(data []byte) (FeedDocument, error) {
 	}
 	document.UpdateInterval, document.Complete = parseFeedUpdateHints(root.children[0], channel)
 	if items := findElements([]*xmlNode{root}, "item"); len(items) > 0 {
-		document.Entries, document.UnguidedPubDates = rssEntries(items)
+		document.Entries, document.UnguidedPubDates, document.UndatedTextKeys = rssEntries(items)
 		return document, nil
 	}
 	// No <item> elements: either an Atom feed or an empty RSS one — Atom's
 	// <entry> lookup returns the empty list for both.
-	document.Entries, document.UnguidedPubDates = atomEntries(findElements([]*xmlNode{root}, "entry"))
+	document.Entries, document.UnguidedPubDates, document.UndatedTextKeys = atomEntries(findElements([]*xmlNode{root}, "entry"))
 	return document, nil
 }
 
@@ -537,9 +562,10 @@ func parseEnclosureLength(value string) int64 {
 	return n
 }
 
-func rssEntries(items []*xmlNode) ([]FeedEntry, []time.Time) {
+func rssEntries(items []*xmlNode) ([]FeedEntry, []time.Time, []string) {
 	entries := make([]FeedEntry, 0, len(items))
 	var unguided []time.Time
+	var undatedKeys []string
 	for _, item := range items {
 		entry := FeedEntry{
 			GUID:            childText(item, "guid"),
@@ -557,25 +583,29 @@ func rssEntries(items []*xmlNode) ([]FeedEntry, []time.Time) {
 			entry.EnclosureType = enclosures[0].attrs["type"]
 			entry.EnclosureLength = parseEnclosureLength(enclosures[0].attrs["length"])
 		}
+		link := childText(item, "link")
 		if entry.GUID == "" && entry.EnclosureURL != "" {
-			entry.deriveGUID(childText(item, "link"), childText(item, "pubDate"))
+			entry.deriveGUID(link, childText(item, "pubDate"))
 		}
 		if entry.GUID == "" {
 			if !entry.PublishedAt.IsZero() {
 				unguided = append(unguided, entry.PublishedAt)
+			} else if key := deriveUndatedTextKey("rss", link, entry.Title, entry.Description); key != "" {
+				undatedKeys = append(undatedKeys, key)
 			}
 			continue
 		}
 		entries = append(entries, entry)
 	}
-	return entries, unguided
+	return entries, unguided, undatedKeys
 }
 
 // atomEntries maps Atom's vocabulary onto the same FeedEntry shape: <id> is
 // the identity, and the enclosure is the first <link rel="enclosure">.
-func atomEntries(items []*xmlNode) ([]FeedEntry, []time.Time) {
+func atomEntries(items []*xmlNode) ([]FeedEntry, []time.Time, []string) {
 	entries := make([]FeedEntry, 0, len(items))
 	var unguided []time.Time
+	var undatedKeys []string
 	for _, item := range items {
 		entry := FeedEntry{
 			GUID:            childText(item, "id"),
@@ -596,18 +626,31 @@ func atomEntries(items []*xmlNode) ([]FeedEntry, []time.Time) {
 				break
 			}
 		}
+		link := atomEntryLink(item)
 		if entry.GUID == "" && entry.EnclosureURL != "" {
-			entry.deriveGUID(atomEntryLink(item), childText(item, "published"))
+			entry.deriveGUID(link, childText(item, "published"))
 		}
 		if entry.GUID == "" {
 			if !entry.PublishedAt.IsZero() {
 				unguided = append(unguided, entry.PublishedAt)
+			} else if key := deriveUndatedTextKey("atom", link, entry.Title, entry.Description); key != "" {
+				undatedKeys = append(undatedKeys, key)
 			}
 			continue
 		}
 		entries = append(entries, entry)
 	}
-	return entries, unguided
+	return entries, unguided, undatedKeys
+}
+
+func deriveUndatedTextKey(kind, link, title, description string) string {
+	link = strings.TrimSpace(link)
+	title = strings.ToLower(strings.Join(strings.Fields(title), " "))
+	description = strings.TrimSpace(description)
+	if link == "" && title == "" && description == "" {
+		return ""
+	}
+	return fmt.Sprintf("urn:beamfall:feed-text:%x", sha256.Sum256([]byte(kind+"\x00"+link+"\x00"+title+"\x00"+description)))
 }
 
 func atomEntryLink(item *xmlNode) string {

@@ -252,3 +252,40 @@ func TestCheckDocumentURLRejectsInvalidPortsAndExtendedCredentialParams(t *testi
 		}
 	}
 }
+
+func TestCheckDocumentURLAndUndatedTextPosts(t *testing.T) {
+	engine := New()
+	allowed, err := url.Parse("https://example.com/feed.xml?a=1;b=2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.CheckDocumentURL(allowed); err != nil {
+		t.Fatalf("CheckDocumentURL(semicolon query) refused: %v", err)
+	}
+	for _, bad := range []string{
+		"https://example.com/feed.xml?a=1;feed_token=secret",
+		"https://example.com/feed.xml?bad=%ZZ",
+	} {
+		parsed, parseErr := url.Parse(bad)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		if err := engine.CheckDocumentURL(parsed); err == nil {
+			t.Fatalf("CheckDocumentURL(%q) accepted, want refusal", bad)
+		}
+	}
+
+	doc, err := ParseFeed([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Notes</title>
+  <item><title>Note Without GUID Or Enclosure</title><link>https://example.com/note-1</link></item>
+</channel></rss>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Entries) != 0 {
+		t.Fatalf("Entries = %+v, want 0 (text-only post excluded from catalogue)", doc.Entries)
+	}
+	if len(doc.UndatedTextKeys) != 1 {
+		t.Fatalf("UndatedTextKeys = %+v, want 1", doc.UndatedTextKeys)
+	}
+}

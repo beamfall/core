@@ -788,6 +788,9 @@ func TestFeedDirectoryRejectsURLShapesAndAllowsPlainPunctuatedText(t *testing.T)
 		"https://" + "user" + ":pass@host/feed",
 		"https://host:99999/feed.xml",
 		"https://host/feed.xml?private_token=x",
+		"feeds.example.org/my show/feed.xml?feed_token=abc",
+		"my show?token=secret",
+		"feeds.example.org/my podcast",
 		"https://host/feed.xml?X-API-Key=x",
 		"feeds.example.org/show?feed_token=abc",
 		"feeds.example.org/feed.xml",
@@ -821,5 +824,12 @@ func TestFeedDirectoryRejectsURLShapesAndAllowsPlainPunctuatedText(t *testing.T)
 	restoreSync()
 	if primary.Load() != 2 || extended.Load() != 2 {
 		t.Fatalf("directory request sent despite failed durability sync: primary=%d extended=%d", primary.Load(), extended.Load())
+	}
+
+	for _, allowed := range []string{"What is this? Why?", "Who? 100% done?", "Re:Zero radio show"} {
+		results, err := searcher.SearchFeeds(t.Context(), allowed)
+		if err != nil || len(results) == 0 {
+			t.Fatalf("prose search %q = (%+v, %v), want directory results", allowed, results, err)
+		}
 	}
 }

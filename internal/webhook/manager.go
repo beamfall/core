@@ -328,6 +328,7 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 		}
 	}
 	createSig := ""
+	matchedUnsyncedCreate := false
 	if index < 0 {
 		createSig = endpointCreateKey(fe, secret)
 		if existingID, ok := m.unsyncedCreates[createSig]; ok {
@@ -336,6 +337,7 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 					index, prior = i, candidate
 					fe.ID = candidate.ID
 					fe.SecretRef = candidate.SecretRef
+					matchedUnsyncedCreate = true
 					if in.Secret == nil && prior.SecretRef != "" {
 						if value, err := m.opts.Secrets.Secret(prior.SecretRef); err == nil {
 							secret = value
@@ -349,22 +351,33 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 			return EndpointView{}, ErrConfigDiagnostic
 		}
 	}
+	isCreate := index < 0 || matchedUnsyncedCreate
 	switch {
 	case secret == "":
 		fe.SecretRef = ""
-	case prior.SecretRef == "":
-		fe.SecretRef = "webhook-" + fe.ID
-	case in.Secret != nil:
-		// Rotate to a fresh secret ref instead of overwriting prior.SecretRef in
-		// place so a crash before directory durability never pairs the old URL
-		// with the new token.
+	case matchedUnsyncedCreate && prior.SecretRef != "":
+		fe.SecretRef = prior.SecretRef
+	case prior.SecretRef == "" && index < 0:
+		if _, stale := m.staleSecretRefs["webhook-"+fe.ID]; !stale {
+			fe.SecretRef = "webhook-" + fe.ID
+		} else {
+			ref, refErr := newSecretRef(fe.ID)
+			if refErr != nil {
+				return EndpointView{}, ErrSecretDiagnostic
+			}
+			fe.SecretRef = ref
+		}
+	case in.Secret != nil || prior.SecretRef == "":
+		// Rotate to a fresh secret ref instead of reusing or overwriting an
+		// existing endpoint's ref so a crash before directory durability never
+		// pairs an older recoverable config with the new token.
 		ref, refErr := newSecretRef(fe.ID)
 		if refErr != nil {
 			return EndpointView{}, ErrSecretDiagnostic
 		}
 		fe.SecretRef = ref
 	}
-	if index < 0 {
+	if isCreate {
 		fe.PendingCreateKey = createSig
 	} else {
 		fe.PendingCreateKey = ""
@@ -398,15 +411,21 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 		return EndpointView{}, ErrConfigDiagnostic
 	}
 
+	isNewSecretRef := fe.SecretRef != "" && !refInUse(m.file, fe.SecretRef)
 	restore, err := m.writeSecret(in.Secret != nil || prior.SecretRef != fe.SecretRef, fe.SecretRef, secret)
 	if err != nil {
+		if isNewSecretRef {
+			m.trackOrphanSecretRefLocked(fe.SecretRef)
+		}
 		return EndpointView{}, err
 	}
 	saveErr := jsonstate.Save(m.opts.ConfigPath, next)
 	var postSync *jsonstate.PostRenameSyncError
 	if saveErr != nil && !errors.As(saveErr, &postSync) {
 		m.logger.Error("webhook configuration write failed", "error", saveErr)
-		restore()
+		if !restore() && isNewSecretRef {
+			m.trackOrphanSecretRefLocked(fe.SecretRef)
+		}
 		return EndpointView{}, ErrConfigDiagnostic
 	}
 	if err := m.emitter.SetEndpoints(running); err != nil {
@@ -419,24 +438,41 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 		m.staleSecretRefs[retiredRef] = struct{}{}
 	}
 	if saveErr != nil {
-		if index < 0 && createSig != "" {
+		if isCreate && createSig != "" {
 			m.unsyncedCreates[createSig] = fe.ID
 		}
 		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
 		return m.view(fe), errors.Join(ErrConfigDiagnostic, saveErr)
 	}
-	m.clearUnsyncedCreateID(fe.ID)
 	m.purgeStaleSecretRefs(next)
-	if fe.PendingCreateKey != "" || hadStaleBeforeSave {
+	wasPendingCreate := fe.PendingCreateKey != ""
+	if wasPendingCreate || hadStaleBeforeSave {
 		cleaned := next
 		cleaned.Endpoints = append([]fileEndpoint(nil), next.Endpoints...)
 		cleaned.Endpoints[savedIdx].PendingCreateKey = ""
 		cleaned.StaleSecretRefs = m.sortedStaleRefs(cleaned, "", "")
-		if cleanErr := jsonstate.Save(m.opts.ConfigPath, cleaned); cleanErr == nil || errors.As(cleanErr, &postSync) {
+		if cleanErr := jsonstate.Save(m.opts.ConfigPath, cleaned); cleanErr != nil {
+			if wasPendingCreate {
+				if errors.As(cleanErr, &postSync) {
+					m.file = cleaned
+					fe = cleaned.Endpoints[savedIdx]
+				}
+				if createSig != "" {
+					m.unsyncedCreates[createSig] = fe.ID
+				}
+				m.logger.Error("webhook configuration cleanup save failed", "error", cleanErr)
+				return m.view(fe), errors.Join(ErrConfigDiagnostic, cleanErr)
+			}
+			if errors.As(cleanErr, &postSync) {
+				m.file = cleaned
+				fe = cleaned.Endpoints[savedIdx]
+			}
+		} else {
 			m.file = cleaned
 			fe = cleaned.Endpoints[savedIdx]
 		}
 	}
+	m.clearUnsyncedCreateID(fe.ID)
 	return m.view(fe), nil
 }
 
@@ -593,8 +629,8 @@ func (m *Manager) runningSetWith(next fileConfig, editedID string, edited Endpoi
 // writeSecret stores the edited endpoint's secret file when it changed and
 // returns a function that puts the previous value back, for a config save
 // that fails after the secret is written.
-func (m *Manager) writeSecret(changed bool, ref, value string) (func(), error) {
-	noop := func() {}
+func (m *Manager) writeSecret(changed bool, ref, value string) (func() bool, error) {
+	noop := func() bool { return true }
 	if !changed || ref == "" {
 		return noop, nil
 	}
@@ -606,11 +642,35 @@ func (m *Manager) writeSecret(changed bool, ref, value string) (func(), error) {
 		m.logger.Error("webhook secret write failed", "error", ErrSecretDiagnostic)
 		return noop, ErrSecretDiagnostic
 	}
-	return func() {
+	return func() bool {
 		if err := m.opts.Secrets.SetSecret(ref, previous); err != nil {
 			m.logger.Error("webhook secret restore failed", "error", ErrSecretDiagnostic)
+			return false
 		}
+		return true
 	}, nil
+}
+
+// trackOrphanSecretRefLocked records a newly written unreferenced secret ref
+// whose store write or rollback failed after writing the secret file, so a
+// restart or subsequent durable save reclaims it cleanly.
+func (m *Manager) trackOrphanSecretRefLocked(ref string) {
+	if ref == "" || refInUse(m.file, ref) {
+		return
+	}
+	if _, err := m.opts.Secrets.Secret(ref); err != nil {
+		return
+	}
+	if err := m.opts.Secrets.SetSecret(ref, ""); err == nil {
+		return
+	}
+	m.staleSecretRefs[ref] = struct{}{}
+	next := m.file
+	next.StaleSecretRefs = m.sortedStaleRefs(next, ref, "")
+	var postSync *jsonstate.PostRenameSyncError
+	if saveErr := jsonstate.Save(m.opts.ConfigPath, next); saveErr == nil || errors.As(saveErr, &postSync) {
+		m.file = next
+	}
 }
 
 func refInUse(fc fileConfig, ref string) bool {

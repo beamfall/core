@@ -202,15 +202,25 @@ func TestReportAndBlockRetainInstalledStateOnPostRenameSyncFailure(t *testing.T)
 		restoreSync()
 		t.Fatal("expected post-rename sync error on Block")
 	}
-	// Retrying the same Block while directory sync is still failing must retry persistence
-	// and keep reporting the sync error instead of treating the undurable state as clean.
-	if err := svc.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err == nil {
+	// Retrying the same Block while directory sync is still failing — even after
+	// reopening from disk — must retry persistence and keep reporting the sync error.
+	reopenedPending, err := Open(path, ContactInfo{})
+	if err != nil {
 		restoreSync()
-		t.Fatal("expected duplicate Block retry to surface still-failing sync error")
+		t.Fatalf("reopen pending: %v", err)
+	}
+	if err := reopenedPending.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err == nil {
+		restoreSync()
+		t.Fatal("expected duplicate Block retry after reopen to surface still-failing sync error")
 	}
 	restoreSync()
-	if err := svc.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err != nil {
+	if err := reopenedPending.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err != nil {
 		t.Fatalf("duplicate Block retry after recovery = %v, want nil", err)
+	}
+	svc = reopenedPending
+	raw, readErr := os.ReadFile(path) // #nosec G304 -- temp test store path
+	if readErr != nil || strings.Contains(string(raw), "pendingSync") {
+		t.Fatalf("pendingSync marker remained on disk after durable retry: err=%v raw=%s", readErr, raw)
 	}
 
 	// Both are already committed on disk and must remain in runtime memory so a

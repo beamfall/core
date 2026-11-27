@@ -232,7 +232,12 @@ export function canDiscoverFeedURL(feedURL: string): boolean {
     if (url.protocol !== "https:" || url.username !== "" || url.password !== "") {
       return false;
     }
-    for (const key of url.searchParams.keys()) {
+    const rawQuery = url.search.startsWith("?") ? url.search.slice(1) : "";
+    for (const pair of rawQuery.split(/[&;]/)) {
+      if (!pair) continue;
+      const eq = pair.indexOf("=");
+      const rawKey = eq >= 0 ? pair.slice(0, eq) : pair;
+      const key = decodeURIComponent(rawKey.replace(/\+/g, " "));
       const normalized = key.toLowerCase().replace(/[-_.]/g, "");
       if (
         CREDENTIAL_QUERY_KEYS.has(normalized) ||

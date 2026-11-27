@@ -455,6 +455,7 @@ type SubscriptionPollState struct {
 	URLChangedAt     time.Time                   `json:"url_changed_at,omitempty"`
 	LastNewEntryAt   time.Time                   `json:"last_new_entry_at,omitempty"`
 	SeenUndatedGUIDs []string                    `json:"seen_undated_guids,omitempty"`
+	UndatedDigest    string                      `json:"undated_digest,omitempty"`
 	Complete         bool                        `json:"complete,omitempty"`
 	UpdateInterval   time.Duration               `json:"update_interval_ns,omitempty"`
 	MaxAge           time.Duration               `json:"max_age_ns,omitempty"`

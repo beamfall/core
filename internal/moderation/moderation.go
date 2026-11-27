@@ -99,9 +99,10 @@ type Scope struct {
 // state is the persisted form: a version stamp plus the bounded reports feed
 // and the unbounded block list.
 type state struct {
-	Version int      `json:"version"`
-	Reports []Report `json:"reports"`
-	Blocks  []Block  `json:"blocks"`
+	Version     int      `json:"version"`
+	Reports     []Report `json:"reports"`
+	Blocks      []Block  `json:"blocks"`
+	PendingSync bool     `json:"pendingSync,omitempty"`
 }
 
 // Service is a file-backed moderation store plus the published contact info.
@@ -128,6 +129,7 @@ func Open(path string, contact ContactInfo) (*Service, error) {
 	}
 	st.Version = 1
 	s.state = st
+	s.unsyncedPersist = st.PendingSync
 	return s, nil
 }
 
@@ -140,6 +142,7 @@ func (s *Service) Report(scope Scope, req ReportRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	previous := append([]Report(nil), s.state.Reports...)
+	prevPending := s.state.PendingSync
 	s.state.Reports = append(s.state.Reports, Report{
 		TargetType:        req.TargetType,
 		TargetID:          req.TargetID,
@@ -151,17 +154,10 @@ func (s *Service) Report(scope Scope, req ReportRequest) error {
 	if len(s.state.Reports) > maxReports {
 		s.state.Reports = s.state.Reports[len(s.state.Reports)-maxReports:]
 	}
-	if err := s.persistLocked(); err != nil {
-		var postSync *jsonstate.PostRenameSyncError
-		if errors.As(err, &postSync) {
-			s.unsyncedPersist = true
-		} else {
-			s.state.Reports = previous
-		}
-		return err
-	}
-	s.unsyncedPersist = false
-	return nil
+	return s.persistTransitionLocked(func() {
+		s.state.Reports = previous
+		s.state.PendingSync = prevPending
+	})
 }
 
 // Block records a per-Profile block. It is idempotent: blocking the same target
@@ -177,10 +173,7 @@ func (s *Service) Block(scope Scope, req BlockRequest) error {
 	for _, b := range s.state.Blocks {
 		if b.ProfileID == string(scope.ProfileID) && b.TargetType == req.TargetType && b.TargetID == req.TargetID {
 			if s.unsyncedPersist {
-				if err := s.persistLocked(); err != nil {
-					return err
-				}
-				s.unsyncedPersist = false
+				return s.clearPendingSyncLocked()
 			}
 			return nil // idempotent
 		}
@@ -189,6 +182,7 @@ func (s *Service) Block(scope Scope, req BlockRequest) error {
 		return ErrBlockLimit
 	}
 	previous := append([]Block(nil), s.state.Blocks...)
+	prevPending := s.state.PendingSync
 	s.state.Blocks = append(s.state.Blocks, Block{
 		TargetType: req.TargetType,
 		TargetID:   req.TargetID,
@@ -196,13 +190,31 @@ func (s *Service) Block(scope Scope, req BlockRequest) error {
 		ProfileID:  string(scope.ProfileID),
 		DeviceID:   string(scope.DeviceID),
 	})
+	return s.persistTransitionLocked(func() {
+		s.state.Blocks = previous
+		s.state.PendingSync = prevPending
+	})
+}
+
+func (s *Service) persistTransitionLocked(revert func()) error {
+	s.state.PendingSync = true
 	if err := s.persistLocked(); err != nil {
 		var postSync *jsonstate.PostRenameSyncError
 		if errors.As(err, &postSync) {
 			s.unsyncedPersist = true
 		} else {
-			s.state.Blocks = previous
+			revert()
 		}
+		return err
+	}
+	return s.clearPendingSyncLocked()
+}
+
+func (s *Service) clearPendingSyncLocked() error {
+	s.state.PendingSync = false
+	if err := s.persistLocked(); err != nil {
+		s.state.PendingSync = true
+		s.unsyncedPersist = true
 		return err
 	}
 	s.unsyncedPersist = false

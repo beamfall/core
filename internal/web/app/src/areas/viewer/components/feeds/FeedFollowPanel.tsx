@@ -68,9 +68,10 @@ export function FeedFollowPanel({
       }
       setState({ kind: "results", query: value, results });
     } catch (err) {
-      if (feedURL && graphqlErrorCode(err) !== "INVALID") {
+      if (feedURL && (graphqlErrorCode(err) !== "INVALID" || hasOpaqueQuery(feedURL))) {
         // Keep direct Follow available when discovery fails on quota (THROTTLED),
-        // the 1 MiB discovery cap, or an upstream error for a valid HTTPS feed URL.
+        // the 1 MiB discovery cap, an upstream error, or an opaque query that
+        // followFeed still accepts for a valid HTTPS feed URL.
         setState({ kind: "address", feedURL });
         return;
       }
@@ -226,6 +227,14 @@ function FeedArtwork({ title, src }: { title: string; src?: string | null }) {
       {title.trim().charAt(0).toUpperCase()}
     </span>
   );
+}
+
+function hasOpaqueQuery(feedURL: string): boolean {
+  try {
+    return new URL(feedURL).search.includes(";");
+  } catch {
+    return false;
+  }
 }
 
 /** A search result's description cut to a few lines' worth at a word break,

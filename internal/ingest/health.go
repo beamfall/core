@@ -94,23 +94,27 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 		eligibleEntries := filterPollEntriesSince(preEntries, historyResetAt, urlChanged)
 		var priorEntries []store.SubscriptionPollEntryDate
 		var priorUndated []string
+		var prevUndatedDigest string
 		var lastNewEntryAt time.Time
 		if !urlChanged {
 			priorEntries = prevState.Entries
 			priorUndated = prevState.SeenUndatedGUIDs
+			prevUndatedDigest = prevState.UndatedDigest
 			lastNewEntryAt = prevState.LastNewEntryAt
 		}
-		if documentHasNewUndatedEntry(document, eligibleEntries, priorUndated) {
+		if documentHasNewUndatedEntry(document, eligibleEntries, priorUndated, prevUndatedDigest) {
 			lastNewEntryAt = now
 		}
 		if persistedFirstSeen := latestUndatedFirstSeen(eligibleEntries); persistedFirstSeen.After(lastNewEntryAt) {
 			lastNewEntryAt = persistedFirstSeen
 		}
 		retained, pubDates := mergeFeedEntryDates(document, eligibleEntries, priorEntries)
+		undatedKeys, _ := documentUndatedKeys(document)
 		state := &store.SubscriptionPollState{
 			URLChangedAt:     historyResetAt,
 			LastNewEntryAt:   lastNewEntryAt,
 			SeenUndatedGUIDs: mergeSeenUndatedGUIDs(document, eligibleEntries, priorUndated),
+			UndatedDigest:    undatedSetDigest(undatedKeys),
 			Complete:         document.Complete,
 			UpdateInterval:   document.UpdateInterval,
 			MaxAge:           result.MaxAge,
@@ -127,9 +131,11 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 	pubDates := storedEntryPubDates(entries)
 	var lastNewEntryAt time.Time
 	var priorUndated []string
+	var prevUndatedDigest string
 	if !urlChanged {
 		lastNewEntryAt = prevState.LastNewEntryAt
 		priorUndated = prevState.SeenUndatedGUIDs
+		prevUndatedDigest = prevState.UndatedDigest
 	}
 	if persistedFirstSeen := latestUndatedFirstSeen(entries); persistedFirstSeen.After(lastNewEntryAt) {
 		lastNewEntryAt = persistedFirstSeen
@@ -139,6 +145,7 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 			URLChangedAt:     historyResetAt,
 			LastNewEntryAt:   lastNewEntryAt,
 			SeenUndatedGUIDs: mergeSeenUndatedGUIDs(scrape.FeedDocument{}, entries, priorUndated),
+			UndatedDigest:    prevUndatedDigest,
 			Entries:          retainPollEntryDates(storedPollEntryDates(entries)),
 		}
 		return MaxPollInterval, state, nil
@@ -157,6 +164,7 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 			URLChangedAt:     historyResetAt,
 			LastNewEntryAt:   lastNewEntryAt,
 			SeenUndatedGUIDs: mergeSeenUndatedGUIDs(scrape.FeedDocument{}, entries, priorUndated),
+			UndatedDigest:    prevUndatedDigest,
 			UpdateInterval:   cachedDoc.UpdateInterval,
 			MaxAge:           result.MaxAge,
 			Entries:          retainPollEntryDates(storedPollEntryDates(entries)),
@@ -341,7 +349,7 @@ func filterPollEntriesSince(entries []store.SubscriptionEntry, resetAt time.Time
 	return filtered
 }
 
-const maxSeenUndatedGUIDs = 512
+const maxSeenUndatedGUIDs = 4096
 
 func undatedEntryKey(entry scrape.FeedEntry) string {
 	id := strings.TrimSpace(entry.GUID)
@@ -357,8 +365,46 @@ func undatedEntryKey(entry scrape.FeedEntry) string {
 	return pollEntryKey(id)
 }
 
-func documentHasNewUndatedEntry(document scrape.FeedDocument, priorDBEntries []store.SubscriptionEntry, priorUndated []string) bool {
-	if len(document.Entries) == 0 {
+func documentUndatedKeys(document scrape.FeedDocument) (keys []string, hasBlank bool) {
+	for _, entry := range document.Entries {
+		if !entry.PublishedAt.IsZero() {
+			continue
+		}
+		key := undatedEntryKey(entry)
+		if key == "" {
+			hasBlank = true
+			continue
+		}
+		keys = append(keys, key)
+	}
+	for _, textKey := range document.UndatedTextKeys {
+		if textKey = strings.TrimSpace(textKey); textKey != "" {
+			keys = append(keys, pollEntryKey(textKey))
+		}
+	}
+	return keys, hasBlank
+}
+
+func undatedSetDigest(keys []string) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	unique := slices.Clone(keys)
+	slices.Sort(unique)
+	unique = slices.Compact(unique)
+	sum := sha256.Sum256([]byte(strings.Join(unique, "\n")))
+	return hex.EncodeToString(sum[:])
+}
+
+func documentHasNewUndatedEntry(document scrape.FeedDocument, priorDBEntries []store.SubscriptionEntry, priorUndated []string, prevDigest string) bool {
+	keys, hasBlank := documentUndatedKeys(document)
+	if hasBlank {
+		return true
+	}
+	if len(keys) == 0 {
+		return false
+	}
+	if prevDigest != "" && undatedSetDigest(keys) == prevDigest {
 		return false
 	}
 	knownKeys := make(map[string]bool, len(priorDBEntries)+len(priorUndated))
@@ -372,12 +418,8 @@ func documentHasNewUndatedEntry(document scrape.FeedDocument, priorDBEntries []s
 			knownKeys[pollEntryKey(entry.GUID)] = true
 		}
 	}
-	for _, entry := range document.Entries {
-		if !entry.PublishedAt.IsZero() {
-			continue
-		}
-		key := undatedEntryKey(entry)
-		if key == "" || !knownKeys[key] {
+	for _, key := range keys {
+		if !knownKeys[key] {
 			return true
 		}
 	}
@@ -385,8 +427,9 @@ func documentHasNewUndatedEntry(document scrape.FeedDocument, priorDBEntries []s
 }
 
 func mergeSeenUndatedGUIDs(document scrape.FeedDocument, priorDBEntries []store.SubscriptionEntry, priorUndated []string) []string {
-	seen := make(map[string]bool, len(document.Entries)+len(priorUndated))
-	merged := make([]string, 0, min(maxSeenUndatedGUIDs, len(document.Entries)+len(priorUndated)))
+	docKeys, _ := documentUndatedKeys(document)
+	seen := make(map[string]bool, len(docKeys)+len(priorUndated))
+	merged := make([]string, 0, min(maxSeenUndatedGUIDs, len(docKeys)+len(priorUndated)))
 	add := func(key string) {
 		if key == "" || seen[key] || len(merged) >= maxSeenUndatedGUIDs {
 			return
@@ -394,10 +437,8 @@ func mergeSeenUndatedGUIDs(document scrape.FeedDocument, priorDBEntries []store.
 		seen[key] = true
 		merged = append(merged, key)
 	}
-	for _, entry := range document.Entries {
-		if entry.PublishedAt.IsZero() {
-			add(undatedEntryKey(entry))
-		}
+	for _, key := range docKeys {
+		add(key)
 	}
 	for _, k := range priorUndated {
 		add(k)

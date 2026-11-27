@@ -570,3 +570,165 @@ func TestManagerHandlesPreAndPostRenameDirectorySyncFailures(t *testing.T) {
 		t.Fatalf("endpoints after 50th retry = %d, want %d", len(capM.Endpoints()), maxEndpoints)
 	}
 }
+
+type orphanOnFailSecrets struct {
+	*memSecrets
+	failSet bool
+}
+
+func (o *orphanOnFailSecrets) SetSecret(ref, value string) error {
+	if value == "" {
+		if o.failSet {
+			return errors.New("secret clear dir fsync EIO")
+		}
+		return o.memSecrets.SetSecret(ref, "")
+	}
+	if err := o.memSecrets.SetSecret(ref, value); err != nil {
+		return err
+	}
+	if o.failSet {
+		return errors.New("secret dir fsync EIO")
+	}
+	return nil
+}
+
+func TestManagerSecretClearRotateRetryAndOrphanCleanup(t *testing.T) {
+	// 1. Clear under PostRenameSyncError followed by assigning new URL + token must
+	// allocate a fresh ref instead of overwriting the still-recoverable deterministic ref.
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "webhook-endpoints.json")
+	statePath := filepath.Join(dir, "webhook-dead-letter.json")
+	secrets := &orphanOnFailSecrets{memSecrets: &memSecrets{values: map[string]string{}}}
+	m, err := OpenManager(ManagerOptions{
+		ConfigPath: cfg, StatePath: statePath, Secrets: secrets, Events: &fixedEvents{}, Client: &recordingDoer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	origVal := "sec-old"
+	created, err := m.SaveEndpoint(EndpointInput{
+		Format: "slack", URL: "https://hooks.slack.example/services/orig", Secret: &origVal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detRef := m.file.Endpoints[0].SecretRef
+	empty := ""
+	injected := errors.New("dir fsync EIO")
+	restoreSync := jsonstate.WithSyncDirForTest(func(string) error { return injected })
+	if _, err := m.SaveEndpoint(EndpointInput{
+		ID: created.ID, Format: "slack", URL: "https://hooks.slack.example/services/orig", Secret: &empty,
+	}); err == nil {
+		restoreSync()
+		t.Fatal("expected clear syncDir error")
+	}
+	restoreSync()
+
+	// Assigning new URL + token now must NOT reuse or overwrite detRef while it could be needed.
+	newVal := "sec-new"
+	restoreSync = jsonstate.WithSyncDirForTest(func(string) error { return injected })
+	if _, err := m.SaveEndpoint(EndpointInput{
+		ID: created.ID, Format: "slack", URL: "https://hooks.slack.example/services/reassigned", Secret: &newVal,
+	}); err == nil {
+		restoreSync()
+		t.Fatal("expected assign syncDir error")
+	}
+	restoreSync()
+	if m.file.Endpoints[0].SecretRef == detRef {
+		t.Fatalf("SecretRef reused %q after unsynced clear, want fresh ref", detRef)
+	}
+	if got, err := secrets.Secret(detRef); err != nil || got != origVal {
+		t.Fatalf("original ref %q = (%q, %v), want %q preserved", detRef, got, err, origVal)
+	}
+
+	// 2. Installed rotated secret whose dir sync fails leaves orphan tracked across
+	// restart and deleted on the next durable save.
+	secrets.failSet = true
+	rotVal := "sec-orphan"
+	if _, err := m.SaveEndpoint(EndpointInput{
+		ID: created.ID, Format: "slack", URL: "https://hooks.slack.example/services/rot", Secret: &rotVal,
+	}); err == nil {
+		t.Fatal("expected SetSecret error on orphan injection")
+	}
+	secrets.failSet = false
+	var orphanRefs []string
+	for k, v := range secrets.values {
+		if v == rotVal {
+			orphanRefs = append(orphanRefs, k)
+		}
+	}
+	if len(orphanRefs) != 1 {
+		t.Fatalf("orphan refs = %v, want 1 installed orphan", orphanRefs)
+	}
+	reopened, err := OpenManager(ManagerOptions{
+		ConfigPath: cfg, StatePath: statePath, Secrets: secrets, Events: &fixedEvents{}, Client: &recordingDoer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanVal := "sec-clean"
+	if _, err := reopened.SaveEndpoint(EndpointInput{
+		ID: created.ID, Format: "slack", URL: "https://hooks.slack.example/services/rot", Secret: &cleanVal,
+	}); err != nil {
+		t.Fatalf("durable retry after orphan: %v", err)
+	}
+	if _, err := secrets.Secret(orphanRefs[0]); err == nil {
+		t.Fatalf("orphan ref %q survived restart and durable retry", orphanRefs[0])
+	}
+	if _, err := secrets.Secret(detRef); err == nil {
+		t.Fatalf("stale detRef %q survived durable retry", detRef)
+	}
+
+	// 3. Consecutive PostRenameSyncErrors on create preserve PendingCreateKey across reopen;
+	// cleanup failure on create does not return nil; once clean, identical create mints new ID.
+	cDir := t.TempDir()
+	cCfg := filepath.Join(cDir, "webhook-endpoints.json")
+	cState := filepath.Join(cDir, "webhook-dead-letter.json")
+	cSec := &memSecrets{values: map[string]string{}}
+	cm, err := OpenManager(ManagerOptions{
+		ConfigPath: cCfg, StatePath: cState, Secrets: cSec, Events: &fixedEvents{}, Client: &recordingDoer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := EndpointInput{Format: "slack", URL: "https://hooks.slack.example/services/c1", Secret: &origVal}
+	restoreSync = jsonstate.WithSyncDirForTest(func(string) error { return injected })
+	cView1, err := cm.SaveEndpoint(in)
+	if err == nil || cView1.ID == "" {
+		restoreSync()
+		t.Fatalf("1st create = (%+v, %v)", cView1, err)
+	}
+	cView2, err := cm.SaveEndpoint(in)
+	restoreSync()
+	if err == nil || cView2.ID != cView1.ID {
+		t.Fatalf("2nd consecutive failed create = (%+v, %v), want reused %q + error", cView2, err, cView1.ID)
+	}
+	cm2, err := OpenManager(ManagerOptions{
+		ConfigPath: cCfg, StatePath: cState, Secrets: cSec, Events: &fixedEvents{}, Client: &recordingDoer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Inject failure only on the 2nd save (the PendingCreateKey cleanup save): must NOT return nil.
+	syncCalls := 0
+	restoreClean := jsonstate.WithSyncDirForTest(func(string) error {
+		syncCalls++
+		if syncCalls >= 2 {
+			return injected
+		}
+		return nil
+	})
+	cView3, err := cm2.SaveEndpoint(in)
+	restoreClean()
+	if err == nil || cView3.ID != cView1.ID {
+		t.Fatalf("create with cleanup sync failure = (%+v, %v), want reused %q + error", cView3, err, cView1.ID)
+	}
+	cView4, err := cm2.SaveEndpoint(in)
+	if err != nil || cView4.ID != cView1.ID {
+		t.Fatalf("clean create retry = (%+v, %v), want %q", cView4, err, cView1.ID)
+	}
+	cViewNext, err := cm2.SaveEndpoint(in)
+	if err != nil || cViewNext.ID == cView1.ID || len(cm2.Endpoints()) != 2 {
+		t.Fatalf("deliberate identical create after clean ack = (%+v, %v), endpoints=%d, want 2 distinct endpoints", cViewNext, err, len(cm2.Endpoints()))
+	}
+}

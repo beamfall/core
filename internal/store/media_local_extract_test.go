@@ -572,3 +572,146 @@ func TestReconcileStandaloneLibraryMediaAllOfflineCuratedAndScanFieldRules(t *te
 		t.Fatalf("returning legacy parts changed Media IDs: got (%s, %s), want (%s, %s)", re1.ID, re2.ID, p1SplitID, p2SplitID)
 	}
 }
+
+func TestReconcileStandaloneLibraryMediaSplitEventsMarkersEncryptedAndSlotNormalize(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	root := t.TempDir()
+	pubLib, err := st.CreateLibraryWithRoots(ctx, "Standalone", false, "", "profile-default", []string{root}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1Path := filepath.Join(root, "part1.mov")
+	p2Path := filepath.Join(root, "part2.mov")
+	pubMedia, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: pubLib.ID, Path: p1Path, ContentFingerprint: "sha256:part1",
+		Title: "Combined", Class: MediaClassVideo, DurationSecondsHint: 20, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if _, err := st.catalogW.ExecContext(ctx, `
+		INSERT INTO media_file(id, content_fingerprint, media_id, path, version_label, part_ordinal, size_bytes, missing_at_ms, last_seen_at_ms)
+		VALUES ('sha256:part2', 'sha256:part2', ?, ?, '', 1, 200, ?, ?)
+	`, pubMedia.ID, p2Path, now.UnixMilli(), now.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	filter := LibraryFilter{AllLibraries: true}
+	end := 12.0
+	for _, method := range []string{"part-boundary", "chapter-import"} {
+		if err := st.ReplaceDetectedMarkers(ctx, pubMedia.ID, method, []Marker{{Title: method, StartSeconds: 0, EndSeconds: &end}}, filter, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.CreateMarker(ctx, Marker{MediaID: pubMedia.ID, Title: "Manual", StartSeconds: 5}, filter, now); err != nil {
+		t.Fatal(err)
+	}
+
+	eventsBefore := len(mediaOutboxEvents(t, st))
+	if err := st.ReconcileStandaloneLibraryMedia(ctx, pubLib.ID); err != nil {
+		t.Fatalf("ReconcileStandaloneLibraryMedia public: %v", err)
+	}
+	var splitP2ID MediaID
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT media_id FROM media_file WHERE path = ?`, p2Path).Scan(&splitP2ID); err != nil {
+		t.Fatal(err)
+	}
+	eventsAfter := mediaOutboxEvents(t, st)[eventsBefore:]
+	if got := countMediaEvents(eventsAfter, MediaEventCreated, splitP2ID); got != 1 {
+		t.Fatalf("split sibling media.created count = %d, want 1", got)
+	}
+	markers, err := st.MarkersForMedia(ctx, pubMedia.ID, filter)
+	if err != nil || len(markers) != 1 || markers[0].Title != "Manual" {
+		t.Fatalf("surviving clip markers after split = %+v, err=%v; want only manual marker", markers, err)
+	}
+	_, reFile, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: pubLib.ID, Path: p2Path, ContentFingerprint: "sha256:part2",
+		Title: "part2", Class: MediaClassVideo, DurationSecondsHint: 10, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reFile.MediaID != splitP2ID || reFile.PartOrdinal != 0 || reFile.VersionLabel != "" {
+		t.Fatalf("reconnected split Part 2 = %+v, want MediaID=%s ordinal=0 label=''", reFile, splitP2ID)
+	}
+	firstFP, err := firstVersionFingerprintSQL(ctx, st.catalogR, splitP2ID)
+	if err != nil || firstFP != "sha256:part2" {
+		t.Fatalf("firstVersionFingerprintSQL(%s) = (%q, %v), want sha256:part2", splitP2ID, firstFP, err)
+	}
+
+	// Encrypted offline sample1: group keeps both split encrypted Media IDs without emitting outbox events.
+	encRoot := t.TempDir()
+	encLib, err := st.CreateLibraryWithRoots(ctx, "Private", false, "", "profile-default", []string{encRoot}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetLibraryBacking(ctx, encLib.ID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, encLib.ID, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatal(err)
+	}
+	ep1 := filepath.Join(encRoot, "enc-pt1.mov")
+	ep2 := filepath.Join(encRoot, "enc-pt2.mov")
+	encMedia, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: encLib.ID, Path: ep1, ContentFingerprint: "sample1:ep1",
+		Title: "Enc Group", Class: MediaClassVideo, DurationSecondsHint: 15, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.mu.RLock()
+	encPlane, err := st.catalogPlaneForLibraryLocked(ctx, encLib.ID)
+	st.mu.RUnlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := encPlane.writer.ExecContext(ctx, `UPDATE media_file SET missing_at_ms = ? WHERE media_id = ?`, now.UnixMilli(), encMedia.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := encPlane.writer.ExecContext(ctx, `
+		INSERT INTO media_file(id, content_fingerprint, media_id, path, version_label, part_ordinal, size_bytes, missing_at_ms, last_seen_at_ms)
+		VALUES ('sample1:ep2', 'sample1:ep2', ?, ?, '', 1, 200, ?, ?)
+	`, encMedia.ID, ep2, now.UnixMilli(), now.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	eventsBeforeEnc := len(mediaOutboxEvents(t, st))
+	if err := st.ReconcileStandaloneLibraryMedia(ctx, encLib.ID); err != nil {
+		t.Fatalf("ReconcileStandaloneLibraryMedia encrypted: %v", err)
+	}
+	if got := len(mediaOutboxEvents(t, st)) - eventsBeforeEnc; got != 0 {
+		t.Fatalf("encrypted split emitted %d outbox events, want 0", got)
+	}
+	var e1ID, e2ID MediaID
+	if err := encPlane.reader.QueryRowContext(ctx, `SELECT media_id FROM media_file WHERE path = ?`, ep1).Scan(&e1ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := encPlane.reader.QueryRowContext(ctx, `SELECT media_id FROM media_file WHERE path = ?`, ep2).Scan(&e2ID); err != nil {
+		t.Fatal(err)
+	}
+	if e1ID == e2ID {
+		t.Fatalf("encrypted offline parts did not split")
+	}
+	reEnc1, reEncF1, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: encLib.ID, Path: ep1, ContentFingerprint: "sample1:ep1",
+		Title: "enc-pt1", Class: MediaClassVideo, DurationSecondsHint: 8, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reEnc2, reEncF2, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: encLib.ID, Path: ep2, ContentFingerprint: "sample1:ep2",
+		Title: "enc-pt2", Class: MediaClassVideo, DurationSecondsHint: 7, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reEnc1.ID != e1ID || reEnc2.ID != e2ID || reEncF1.PartOrdinal != 0 || reEncF2.PartOrdinal != 0 {
+		t.Fatalf("reconnected encrypted split parts = (%s/%d, %s/%d), want (%s/0, %s/0)", reEnc1.ID, reEncF1.PartOrdinal, reEnc2.ID, reEncF2.PartOrdinal, e1ID, e2ID)
+	}
+}

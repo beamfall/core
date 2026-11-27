@@ -130,40 +130,74 @@ func (s *feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) (
 }
 
 func (s *feedDirectorySearcher) isSchemelessAddressOrCredentialQuery(text string, parsed *url.URL, parseErr error) bool {
-	if text == "" || strings.ContainsAny(text, " \t\r\n") {
+	if text == "" {
 		return false
 	}
-	if parseErr == nil && parsed != nil && parsed.RawQuery != "" {
-		probe := &url.URL{Scheme: "https", Host: "example.invalid", RawQuery: parsed.RawQuery}
-		if s.engine.CheckDocumentURL(probe) != nil {
-			return true
+	// Check query parameters for credentials BEFORE checking whitespace, so a
+	// schemeless URL with spaces in its path and ?feed_token=... never leaks to
+	// external search providers while prose questions ("Why?") stay allowed.
+	rawQuery := ""
+	if qIdx := strings.IndexByte(text, '?'); qIdx >= 0 {
+		rawQuery = text[qIdx+1:]
+		if fragIdx := strings.IndexByte(rawQuery, '#'); fragIdx >= 0 {
+			rawQuery = rawQuery[:fragIdx]
 		}
+	} else if parseErr == nil && parsed != nil {
+		rawQuery = parsed.RawQuery
 	}
-	if strings.Contains(text, "@") {
-		return true
+	hasSpace := strings.ContainsAny(text, " \t\r\n")
+	if rawQuery != "" {
+		if !hasSpace {
+			probe := &url.URL{Scheme: "https", Host: "example.invalid", RawQuery: rawQuery}
+			if s.engine.CheckDocumentURL(probe) != nil {
+				return true
+			}
+		} else {
+			for _, pair := range strings.FieldsFunc(rawQuery, func(r rune) bool { return r == '&' || r == ';' }) {
+				rawKey, _, hasEq := strings.Cut(pair, "=")
+				if !hasEq || rawKey == "" {
+					continue
+				}
+				key, err := url.QueryUnescape(strings.TrimSpace(rawKey))
+				if err != nil {
+					key = strings.TrimSpace(rawKey)
+				}
+				probe := &url.URL{Scheme: "https", Host: "example.invalid", RawQuery: url.QueryEscape(key) + "=x"}
+				if s.engine.CheckDocumentURL(probe) != nil {
+					return true
+				}
+			}
+		}
 	}
 	head := text
 	if i := strings.IndexAny(head, "?#"); i >= 0 {
 		head = head[:i]
 	}
-	firstSeg, rest, hasSlash := strings.Cut(head, "/")
-	if strings.Contains(firstSeg, ".") && (hasSlash || strings.ContainsAny(text, "?#") || strings.Contains(firstSeg, ":")) {
-		return true
-	}
-	_ = rest
-	if host, port, hasColon := strings.Cut(firstSeg, ":"); hasColon && host != "" && port != "" {
-		allDigits := true
-		for i := range len(port) {
-			if port[i] < '0' || port[i] > '9' {
-				allDigits = false
-				break
-			}
-		}
-		if allDigits {
+	firstSeg, _, hasSlash := strings.Cut(head, "/")
+	if !strings.ContainsAny(firstSeg, " \t\r\n") {
+		if strings.Contains(firstSeg, "@") {
 			return true
 		}
+		if strings.Contains(firstSeg, ".") && (hasSlash || strings.ContainsAny(text, "?#") || strings.Contains(firstSeg, ":")) {
+			return true
+		}
+		if host, port, hasColon := strings.Cut(firstSeg, ":"); hasColon && host != "" && port != "" {
+			allDigits := true
+			for i := range len(port) {
+				if port[i] < '0' || port[i] > '9' {
+					allDigits = false
+					break
+				}
+			}
+			if allDigits {
+				return true
+			}
+		}
 	}
-	return false
+	if hasSpace {
+		return false
+	}
+	return strings.Contains(text, "@")
 }
 
 func (s *feedDirectorySearcher) searchCached(ctx context.Context, key string, search func(context.Context) ([]graph.FeedSearchResult, error)) ([]graph.FeedSearchResult, error) {

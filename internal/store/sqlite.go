@@ -3269,7 +3269,19 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	// probe facts alone: they describe that first Version (see
 	// firstVersionFingerprintSQL), whose file playback trusts them for.
 	keepTitle, keepProbeFacts := false, false
+	splitReserved := 0
 	if mediaID != "" && detachedFrom == "" {
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS(SELECT 1 FROM media_field_provenance WHERE media_id = ? AND field = ?)
+		`, mediaID, legacyPartReservationField).Scan(&splitReserved); err != nil {
+			return Media{}, MediaFile{}, false, err
+		}
+		if splitReserved != 0 {
+			// Split standalone reservations keep non-zero version/part slots only
+			// while offline; reconnect restores the default standalone slot so
+			// firstVersionFingerprintSQL and playback lookups match immediately.
+			versionLabel, partOrdinal = "", 0
+		}
 		first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
 		if err != nil {
 			return Media{}, MediaFile{}, false, err
@@ -3312,9 +3324,9 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 			return Media{}, MediaFile{}, false, err
 		}
 	}
-	if detachedFrom != "" {
-		// A detached file is the only file of its new Media: it takes the
-		// default slot whatever Version it held before.
+	if detachedFrom != "" || splitReserved != 0 {
+		// A detached or split-reconnected standalone file is the only file of
+		// its Media: it takes the default slot whatever Version/Part it held before.
 		if _, err := tx.ExecContext(ctx,
 			"UPDATE media_file SET version_label = '', part_ordinal = 0 WHERE content_fingerprint = ?",
 			imported.ContentFingerprint); err != nil {

@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/beamfall/core/internal/serverrole"
 )
@@ -299,6 +301,7 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 	}
 
 	encIdx := 0
+	var createdPublicIDs []MediaID
 	for _, group := range groups {
 		primary := group.files[0]
 		liveCount := 0
@@ -333,6 +336,9 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 				DELETE FROM media_field_provenance
 				WHERE media_id = ? AND field LIKE ? AND field <> ?
 			`, group.mediaID, localExtractionProvenancePrefix+"%", localExtractionProvenancePrefix+primary.contentFingerprint); err != nil {
+				return err
+			}
+			if err := resetGroupMarkersTx(ctx, tx, plane, group.mediaID, []string{"part-boundary", "chapter-import"}); err != nil {
 				return err
 			}
 		}
@@ -390,8 +396,8 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 				return err
 			}
 			if file.missing {
-				// Preserve missing legacy Version reservations so reconnecting offline
-				// disks still match MissingLegacyVersionFingerprints.
+				// Preserve missing Version/Part reservations until reconnect so
+				// offline files keep their Media identity regardless of digest format.
 				if _, err := tx.ExecContext(ctx, `
 					UPDATE media_file SET media_id = ? WHERE id = ?
 				`, newID, file.fileID); err != nil {
@@ -407,7 +413,7 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 			if err := copySplitMediaMetadataAndLinksTx(ctx, tx, group.mediaID, newID, plane.encrypted); err != nil {
 				return err
 			}
-			if file.missing && file.versionLabel == "" && file.partOrdinal == 0 && strings.HasPrefix(file.contentFingerprint, "sha256:") {
+			if file.missing {
 				if _, err := tx.ExecContext(ctx, `
 					INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, ?)
 					ON CONFLICT(media_id, field) DO NOTHING
@@ -415,8 +421,11 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 					return err
 				}
 			}
+			if !plane.encrypted {
+				createdPublicIDs = append(createdPublicIDs, newID)
+			}
 		}
-		if len(group.files) > 1 && primary.missing && primary.versionLabel == "" && primary.partOrdinal == 0 && strings.HasPrefix(primary.contentFingerprint, "sha256:") {
+		if len(group.files) > 1 && primary.missing {
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, ?)
 				ON CONFLICT(media_id, field) DO NOTHING
@@ -426,7 +435,18 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if len(createdPublicIDs) > 0 {
+		eventTime := time.Now().UTC()
+		for _, id := range createdPublicIDs {
+			if eventErr := s.appendMediaEventLocked(ctx, MediaEventCreated, id, nil, eventTime); eventErr != nil {
+				slog.Warn("media outbox event append failed", "kind", MediaEventCreated, "media", id, "error", eventErr)
+			}
+		}
+	}
+	return nil
 }
 
 func copySplitMediaMetadataAndLinksTx(ctx context.Context, tx *sql.Tx, srcID, dstID MediaID, encrypted bool) error {
@@ -503,21 +523,41 @@ func copySplitMediaMetadataAndLinksTx(ctx context.Context, tx *sql.Tx, srcID, ds
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO media_relation(from_media_id, relation, to_media_id, attributes)
-		SELECT ?, relation, to_media_id, attributes
-		FROM media_relation
-		WHERE from_media_id = ? AND to_media_id <> ?
-	`, dstID, srcID, dstID); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO media_relation(from_media_id, relation, to_media_id, attributes)
-		SELECT from_media_id, relation, ?, attributes
-		FROM media_relation
-		WHERE to_media_id = ? AND from_media_id <> ?
-	`, dstID, srcID, dstID); err != nil {
-		return err
+	if encrypted {
+		// Encrypted library catalogs omit media_relation.attributes (0002_routed_private_catalog.sql).
+		if _, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO media_relation(from_media_id, relation, to_media_id)
+			SELECT ?, relation, to_media_id
+			FROM media_relation
+			WHERE from_media_id = ? AND to_media_id <> ?
+		`, dstID, srcID, dstID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO media_relation(from_media_id, relation, to_media_id)
+			SELECT from_media_id, relation, ?
+			FROM media_relation
+			WHERE to_media_id = ? AND from_media_id <> ?
+		`, dstID, srcID, dstID); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO media_relation(from_media_id, relation, to_media_id, attributes)
+			SELECT ?, relation, to_media_id, attributes
+			FROM media_relation
+			WHERE from_media_id = ? AND to_media_id <> ?
+		`, dstID, srcID, dstID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO media_relation(from_media_id, relation, to_media_id, attributes)
+			SELECT from_media_id, relation, ?, attributes
+			FROM media_relation
+			WHERE to_media_id = ? AND from_media_id <> ?
+		`, dstID, srcID, dstID); err != nil {
+			return err
+		}
 	}
 	if !encrypted {
 		if _, err := tx.ExecContext(ctx, `

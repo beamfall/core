@@ -17,7 +17,14 @@ import {
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { nodePath } from "@/lib/nodePath";
-import { asFeedURL, catalogueView, formatBytes, isForbidden, isRateLimited } from "../../lib/feeds";
+import {
+  asFeedURL,
+  canDiscoverFeedURL,
+  catalogueView,
+  formatBytes,
+  isForbidden,
+  isRateLimited,
+} from "../../lib/feeds";
 import {
   insertQueueNext,
   type PlayQueueItem,
@@ -725,5 +732,33 @@ describe("FeedCatalogue", () => {
     expect(where.startsWith("/watch/m-1|")).toBe(true);
     const state = JSON.parse(where.slice(where.indexOf("|") + 1));
     expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["m-1", "m-3", "m-2"]);
+  });
+});
+
+describe("opaque semicolon query discovery and direct follow (CORE-2970)", () => {
+  it("allows benign semicolon queries in canDiscoverFeedURL while still blocking semicolon credentials", () => {
+    expect(canDiscoverFeedURL("https://example.org/feed.xml?a=1;b=2")).toBe(true);
+    expect(canDiscoverFeedURL("https://example.org/feed.xml?a=1;feed_token=secret")).toBe(false);
+  });
+
+  it("preserves direct Follow when searchFeeds returns INVALID for an opaque semicolon query", async () => {
+    const user = userEvent.setup();
+    vi.mocked(searchFeeds).mockRejectedValue(
+      new ApiError("invalid URL query", 200, {
+        errors: [{ message: "invalid URL query", extensions: { code: "INVALID" } }],
+      }),
+    );
+    vi.mocked(followFeed).mockResolvedValue(subscription());
+
+    wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
+    await user.type(screen.getByRole("searchbox"), "https://example.org/feed.xml?a=1;b=2");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(await screen.findByText("https://example.org/feed.xml?a=1;b=2")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Follow/i }));
+    expect(followFeed).toHaveBeenCalledWith(
+      "https://example.org/feed.xml?a=1;b=2",
+      expect.objectContaining({ libraryID: "lib-1" }),
+    );
   });
 });

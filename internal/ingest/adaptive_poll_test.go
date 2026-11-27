@@ -1225,3 +1225,81 @@ func TestAdaptivePollDormancyMixedDatedTextOnlyAndCataloguedRecovery(t *testing.
 		t.Fatalf("recovery with newer catalogued FirstSeenAt interval = %v, want 15m", got)
 	}
 }
+
+func TestAdaptivePoll513UndatedTextItemsAndNewUndatedRSSTextPost(t *testing.T) {
+	ctx := context.Background()
+	day0 := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	day200 := day0.Add(200 * 24 * time.Hour)
+
+	var b strings.Builder
+	b.WriteString(`<rss><channel><title>Many Undated</title><ttl>15</ttl>`)
+	for i := 0; i < 513; i++ {
+		fmt.Fprintf(&b, `<item><guid>u-%d</guid><title>Item %d</title></item>`, i, i)
+	}
+	b.WriteString(`</channel></rss>`)
+	feed513 := b.String()
+
+	hasNewTextPost := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/many.xml":
+			_, _ = w.Write([]byte(feed513))
+		case "/textpost.xml":
+			extra := ""
+			if hasNewTextPost {
+				extra = `<item><title>Fresh Text Post</title><link>https://example.org/posts/2</link></item>`
+			}
+			_, _ = w.Write([]byte(`<rss><channel><title>Text</title><ttl>15</ttl><item><title>Initial Post</title><link>https://example.org/posts/1</link></item>` + extra + `</channel></rss>`))
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	st := storetest.Open(t)
+	clock := &testClock{now: day0}
+	poller := healthPoller(st, scrape.New(scrape.WithInsecureLoopback()), clock)
+
+	manySub, err := st.AddSubscription(ctx, store.Subscription{LibraryID: "library-local", FeedURL: server.URL + "/many.xml", Root: t.TempDir()}, day0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := poller.pollSubscription(ctx, manySub); err != nil {
+		t.Fatal(err)
+	}
+	clock.now = day200
+	manySub = reloadSubscription(t, st, manySub.ID)
+	if _, err := poller.pollSubscription(ctx, manySub); err != nil {
+		t.Fatal(err)
+	}
+	manySub = reloadSubscription(t, st, manySub.ID)
+	if got := manySub.Health.NextPollAt.Sub(day200); got != MaxPollInterval {
+		t.Fatalf("513 unchanged undated items interval at day200 = %v, want %v (dormant)", got, MaxPollInterval)
+	}
+
+	// Dormant text-only RSS feed with no GUID/enclosure must wake from 24h to 15m TTL
+	// when a new undated RSS text post appears.
+	clock.now = day0
+	textSub, err := st.AddSubscription(ctx, store.Subscription{LibraryID: "library-local", FeedURL: server.URL + "/textpost.xml", Root: t.TempDir()}, day0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := poller.pollSubscription(ctx, textSub); err != nil {
+		t.Fatal(err)
+	}
+	clock.now = day200
+	textSub = reloadSubscription(t, st, textSub.ID)
+	if _, err := poller.pollSubscription(ctx, textSub); err != nil {
+		t.Fatal(err)
+	}
+	textSub = reloadSubscription(t, st, textSub.ID)
+	if got := textSub.Health.NextPollAt.Sub(day200); got != MaxPollInterval {
+		t.Fatalf("dormant text-post feed before new item = %v, want %v", got, MaxPollInterval)
+	}
+	hasNewTextPost = true
+	if _, err := poller.pollSubscription(ctx, textSub); err != nil {
+		t.Fatal(err)
+	}
+	textSub = reloadSubscription(t, st, textSub.ID)
+	if got := textSub.Health.NextPollAt.Sub(day200); got != 15*time.Minute {
+		t.Fatalf("new undated RSS text post without GUID/enclosure interval = %v, want 15m", got)
+	}
+}
