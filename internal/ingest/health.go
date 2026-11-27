@@ -102,7 +102,7 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 			prevUndatedDigest = prevState.UndatedDigest
 			lastNewEntryAt = prevState.LastNewEntryAt
 		}
-		if documentHasNewUndatedEntry(document, eligibleEntries, priorUndated, prevUndatedDigest) {
+		if documentHasNewUndatedEntry(document, eligibleEntries, priorEntries, priorUndated, prevUndatedDigest) {
 			lastNewEntryAt = now
 		}
 		if persistedFirstSeen := latestUndatedFirstSeen(eligibleEntries); persistedFirstSeen.After(lastNewEntryAt) {
@@ -396,7 +396,7 @@ func undatedSetDigest(keys []string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func documentHasNewUndatedEntry(document scrape.FeedDocument, priorDBEntries []store.SubscriptionEntry, priorUndated []string, prevDigest string) bool {
+func documentHasNewUndatedEntry(document scrape.FeedDocument, priorDBEntries []store.SubscriptionEntry, priorDated []store.SubscriptionPollEntryDate, priorUndated []string, prevDigest string) bool {
 	keys, hasBlank := documentUndatedKeys(document)
 	if hasBlank {
 		return true
@@ -407,10 +407,15 @@ func documentHasNewUndatedEntry(document scrape.FeedDocument, priorDBEntries []s
 	if prevDigest != "" && undatedSetDigest(keys) == prevDigest {
 		return false
 	}
-	knownKeys := make(map[string]bool, len(priorDBEntries)+len(priorUndated))
+	knownKeys := make(map[string]bool, len(priorDBEntries)+len(priorDated)+len(priorUndated))
 	for _, k := range priorUndated {
 		if k != "" {
 			knownKeys[k] = true
+		}
+	}
+	for _, entry := range priorDated {
+		if entry.Key != "" {
+			knownKeys[entry.Key] = true
 		}
 	}
 	for _, entry := range priorDBEntries {
@@ -428,10 +433,11 @@ func documentHasNewUndatedEntry(document scrape.FeedDocument, priorDBEntries []s
 
 func mergeSeenUndatedGUIDs(document scrape.FeedDocument, priorDBEntries []store.SubscriptionEntry, priorUndated []string) []string {
 	docKeys, _ := documentUndatedKeys(document)
+	limit := max(maxSeenUndatedGUIDs, len(docKeys))
 	seen := make(map[string]bool, len(docKeys)+len(priorUndated))
-	merged := make([]string, 0, min(maxSeenUndatedGUIDs, len(docKeys)+len(priorUndated)))
+	merged := make([]string, 0, min(limit, len(docKeys)+len(priorUndated)))
 	add := func(key string) {
-		if key == "" || seen[key] || len(merged) >= maxSeenUndatedGUIDs {
+		if key == "" || seen[key] || len(merged) >= limit {
 			return
 		}
 		seen[key] = true

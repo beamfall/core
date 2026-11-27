@@ -19,7 +19,6 @@ import (
 	"github.com/beamfall/core/internal/jsonstate"
 	"github.com/beamfall/core/internal/scrape"
 	"golang.org/x/net/html"
-	"golang.org/x/net/html/atom"
 	"golang.org/x/net/idna"
 )
 
@@ -400,19 +399,20 @@ func (s *feedDirectorySearcher) discoverWebsiteFeed(ctx context.Context, link *u
 	if err != nil {
 		return nil, err
 	}
-	document, err := html.Parse(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
+	if doc, parseErr := scrape.ParseFeed(data); parseErr == nil && s.engine.CheckDocumentURL(page) == nil {
+		title := doc.Title
+		if title == "" {
+			title = page.Hostname()
+		}
+		return []graph.FeedSearchResult{{
+			Title:       title,
+			FeedURL:     page.String(),
+			Description: doc.Description,
+			ArtworkURL:  doc.ArtworkURL,
+		}}, nil
 	}
-	base := documentBaseURL(document, page)
-	for node := range document.Descendants() {
-		if !isDocumentElement(node, atom.Link) {
-			continue
-		}
-		href := rssAlternateLink(node.Attr)
-		if href == "" {
-			continue
-		}
+	base, hrefs := scanHTMLFeedLinks(data, page)
+	for _, href := range hrefs {
 		feed, err := base.Parse(href)
 		if err == nil && s.engine.CheckDocumentURL(feed) == nil {
 			return []graph.FeedSearchResult{{Title: page.Hostname(), FeedURL: feed.String()}}, nil
@@ -421,34 +421,86 @@ func (s *feedDirectorySearcher) discoverWebsiteFeed(ctx context.Context, link *u
 	return nil, nil
 }
 
-func documentBaseURL(document *html.Node, page *url.URL) *url.URL {
-	for node := range document.Descendants() {
-		if !isDocumentElement(node, atom.Base) {
-			continue
+func scanHTMLFeedLinks(data []byte, page *url.URL) (*url.URL, []string) {
+	base := page
+	seenBase := false
+	var hrefs []string
+	templateDepth := 0
+	foreignDepth := 0
+	tok := html.NewTokenizer(bytes.NewReader(data))
+	for {
+		tt := tok.Next()
+		if tt == html.ErrorToken {
+			break
 		}
-		for _, attr := range node.Attr {
-			if attr.Key != "href" {
+		switch tt {
+		case html.StartTagToken:
+			t := tok.Token()
+			switch t.Data {
+			case "template":
+				templateDepth++
+			case "svg", "math":
+				foreignDepth++
+			case "base":
+				if templateDepth == 0 && foreignDepth == 0 && !seenBase {
+					seenBase = true
+					if parsed := parseBaseHref(t.Attr, page); parsed != nil {
+						base = parsed
+					}
+				}
+			case "link":
+				if templateDepth == 0 && foreignDepth == 0 {
+					if href := rssAlternateLink(t.Attr); href != "" {
+						hrefs = append(hrefs, href)
+					}
+				}
+			}
+		case html.SelfClosingTagToken:
+			if templateDepth != 0 || foreignDepth != 0 {
 				continue
 			}
-			if base, err := page.Parse(strings.TrimSpace(attr.Val)); err == nil && base.Scheme != "data" && base.Scheme != "javascript" {
-				return base
+			t := tok.Token()
+			switch t.Data {
+			case "base":
+				if !seenBase {
+					seenBase = true
+					if parsed := parseBaseHref(t.Attr, page); parsed != nil {
+						base = parsed
+					}
+				}
+			case "link":
+				if href := rssAlternateLink(t.Attr); href != "" {
+					hrefs = append(hrefs, href)
+				}
 			}
-			return page
+		case html.EndTagToken:
+			t := tok.Token()
+			switch t.Data {
+			case "template":
+				if templateDepth > 0 {
+					templateDepth--
+				}
+			case "svg", "math":
+				if foreignDepth > 0 {
+					foreignDepth--
+				}
+			}
 		}
 	}
-	return page
+	return base, hrefs
 }
 
-func isDocumentElement(node *html.Node, tag atom.Atom) bool {
-	if node.Type != html.ElementNode || node.DataAtom != tag || node.Namespace != "" {
-		return false
-	}
-	for ancestor := range node.Ancestors() {
-		if ancestor.DataAtom == atom.Template && ancestor.Namespace == "" {
-			return false
+func parseBaseHref(attrs []html.Attribute, page *url.URL) *url.URL {
+	for _, attr := range attrs {
+		if attr.Key != "href" {
+			continue
 		}
+		if base, err := page.Parse(strings.TrimSpace(attr.Val)); err == nil && base.Scheme != "data" && base.Scheme != "javascript" {
+			return base
+		}
+		return nil
 	}
-	return true
+	return nil
 }
 
 func rssAlternateLink(attrs []html.Attribute) string {

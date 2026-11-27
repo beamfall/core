@@ -213,11 +213,20 @@ func TestReportAndBlockRetainInstalledStateOnPostRenameSyncFailure(t *testing.T)
 		restoreSync()
 		t.Fatal("expected duplicate Block retry after reopen to surface still-failing sync error")
 	}
+	reopenedAgain, err := Open(path, ContactInfo{})
+	if err != nil {
+		restoreSync()
+		t.Fatalf("second reopen pending: %v", err)
+	}
+	if err := reopenedAgain.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err == nil {
+		restoreSync()
+		t.Fatal("expected duplicate Block retry after 2nd reopen to surface still-failing sync error")
+	}
 	restoreSync()
-	if err := reopenedPending.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err != nil {
+	if err := reopenedAgain.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err != nil {
 		t.Fatalf("duplicate Block retry after recovery = %v, want nil", err)
 	}
-	svc = reopenedPending
+	svc = reopenedAgain
 	raw, readErr := os.ReadFile(path) // #nosec G304 -- temp test store path
 	if readErr != nil || strings.Contains(string(raw), "pendingSync") {
 		t.Fatalf("pendingSync marker remained on disk after durable retry: err=%v raw=%s", readErr, raw)

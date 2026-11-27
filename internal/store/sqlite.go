@@ -3183,6 +3183,7 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		  AND (
 		    f.version_label <> ''
 		    OR f.part_ordinal > 0
+		    OR f.content_fingerprint NOT GLOB 'sha256:*'
 		    OR EXISTS (
 		      SELECT 1 FROM media_file peer
 		      WHERE peer.media_id = f.media_id AND peer.id <> f.id

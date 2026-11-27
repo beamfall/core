@@ -833,3 +833,30 @@ func TestFeedDirectoryRejectsURLShapesAndAllowsPlainPunctuatedText(t *testing.T)
 		}
 	}
 }
+
+func TestFeedDirectoryReturnsPastedAtomFeedBeforeEntryAlternates(t *testing.T) {
+	atomServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/atom+xml")
+		_, _ = io.WriteString(w, `<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Direct Atom</title>
+  <entry>
+    <id>entry-1</id>
+    <title>Episode 1</title>
+    <link rel="alternate" type="application/rss+xml" href="https://other.example.org/rss.xml"/>
+    <link rel="enclosure" type="audio/mpeg" href="https://cdn.example.org/ep1.mp3"/>
+  </entry>
+</feed>`)
+	}))
+	defer atomServer.Close()
+
+	engine := directoryTestFetcher{Engine: scrape.New(scrape.WithInsecureLoopback())}
+	searcher := newTestFeedDirectorySearcher(t, engine, directoryTestSecrets{}, "", "", time.Now)
+	results, err := searcher.SearchFeeds(t.Context(), atomServer.URL+"/feed.atom")
+	if err != nil {
+		t.Fatalf("SearchFeeds(atom): %v", err)
+	}
+	if len(results) != 1 || results[0].FeedURL != atomServer.URL+"/feed.atom" || results[0].Title != "Direct Atom" {
+		t.Fatalf("SearchFeeds(atom) = %+v, want pasted Atom URL %q", results, atomServer.URL+"/feed.atom")
+	}
+}

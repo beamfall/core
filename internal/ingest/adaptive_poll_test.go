@@ -1302,4 +1302,78 @@ func TestAdaptivePoll513UndatedTextItemsAndNewUndatedRSSTextPost(t *testing.T) {
 	if got := textSub.Health.NextPollAt.Sub(day200); got != 15*time.Minute {
 		t.Fatalf("new undated RSS text post without GUID/enclosure interval = %v, want 15m", got)
 	}
+
+	// Additional dormancy edge cases: (a) removing 1 of 4097 old undated text posts,
+	// (b) removing pubDate from an existing dated GUID, and (c) editing only description
+	// behind a stable permalink must all stay dormant (24h) at day200.
+	var b4097 strings.Builder
+	b4097.WriteString(`<rss><channel><title>4097</title><ttl>15</ttl>`)
+	for i := 0; i < 4097; i++ {
+		fmt.Fprintf(&b4097, `<item><guid>g-%d</guid><title>T %d</title></item>`, i, i)
+	}
+	b4097.WriteString(`</channel></rss>`)
+	var b4096 strings.Builder
+	b4096.WriteString(`<rss><channel><title>4097</title><ttl>15</ttl>`)
+	for i := 1; i < 4097; i++ {
+		fmt.Fprintf(&b4096, `<item><guid>g-%d</guid><title>T %d</title></item>`, i, i)
+	}
+	b4096.WriteString(`</channel></rss>`)
+
+	dropFirst := false
+	stripDate := false
+	editDesc := false
+	edgeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/4097.xml":
+			if dropFirst {
+				_, _ = w.Write([]byte(b4096.String()))
+			} else {
+				_, _ = w.Write([]byte(b4097.String()))
+			}
+		case "/stripdate.xml":
+			pub := `<pubDate>` + day0.Format(time.RFC1123Z) + `</pubDate>`
+			if stripDate {
+				pub = ""
+			}
+			_, _ = w.Write([]byte(`<rss><channel><title>D</title><ttl>15</ttl><item><guid>dated-1</guid><title>Ep</title>` + pub + `<enclosure url="https://example.org/a.mp3" length="10" type="audio/mpeg"/></item></channel></rss>`))
+		case "/permalink.xml":
+			desc := "old description"
+			if editDesc {
+				desc = "updated description"
+			}
+			_, _ = w.Write([]byte(`<rss><channel><title>P</title><ttl>15</ttl><item><title>Stable Post</title><link>https://example.org/posts/stable</link><description>` + desc + `</description></item></channel></rss>`))
+		}
+	}))
+	t.Cleanup(edgeServer.Close)
+
+	for _, tc := range []struct {
+		name   string
+		path   string
+		mutate func()
+	}{
+		{"drop first of 4097", "/4097.xml", func() { dropFirst = true }},
+		{"strip pubDate from existing GUID", "/stripdate.xml", func() { stripDate = true }},
+		{"edit description behind stable permalink", "/permalink.xml", func() { editDesc = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock.now = day0
+			sub, err := st.AddSubscription(ctx, store.Subscription{LibraryID: "library-local", FeedURL: edgeServer.URL + tc.path, Root: t.TempDir()}, day0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := poller.pollSubscription(ctx, sub); err != nil {
+				t.Fatal(err)
+			}
+			clock.now = day200
+			tc.mutate()
+			sub = reloadSubscription(t, st, sub.ID)
+			if _, err := poller.pollSubscription(ctx, sub); err != nil {
+				t.Fatal(err)
+			}
+			sub = reloadSubscription(t, st, sub.ID)
+			if got := sub.Health.NextPollAt.Sub(day200); got != MaxPollInterval {
+				t.Fatalf("%s interval at day200 = %v, want %v (dormant)", tc.name, got, MaxPollInterval)
+			}
+		})
+	}
 }

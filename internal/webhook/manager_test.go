@@ -573,7 +573,15 @@ func TestManagerHandlesPreAndPostRenameDirectorySyncFailures(t *testing.T) {
 
 type orphanOnFailSecrets struct {
 	*memSecrets
-	failSet bool
+	failSet  bool
+	failRead bool
+}
+
+func (o *orphanOnFailSecrets) Secret(ref string) (string, error) {
+	if o.failRead {
+		return "", errors.New("secret read failed")
+	}
+	return o.memSecrets.Secret(ref)
 }
 
 func (o *orphanOnFailSecrets) SetSecret(ref, value string) error {
@@ -641,9 +649,10 @@ func TestManagerSecretClearRotateRetryAndOrphanCleanup(t *testing.T) {
 		t.Fatalf("original ref %q = (%q, %v), want %q preserved", detRef, got, err, origVal)
 	}
 
-	// 2. Installed rotated secret whose dir sync fails leaves orphan tracked across
-	// restart and deleted on the next durable save.
+	// 2. Installed rotated secret whose dir sync fails (even if Secret read also errors)
+	// leaves orphan tracked across restart and deleted on the next durable save.
 	secrets.failSet = true
+	secrets.failRead = true
 	rotVal := "sec-orphan"
 	if _, err := m.SaveEndpoint(EndpointInput{
 		ID: created.ID, Format: "slack", URL: "https://hooks.slack.example/services/rot", Secret: &rotVal,
@@ -651,6 +660,7 @@ func TestManagerSecretClearRotateRetryAndOrphanCleanup(t *testing.T) {
 		t.Fatal("expected SetSecret error on orphan injection")
 	}
 	secrets.failSet = false
+	secrets.failRead = false
 	var orphanRefs []string
 	for k, v := range secrets.values {
 		if v == rotVal {
@@ -709,7 +719,9 @@ func TestManagerSecretClearRotateRetryAndOrphanCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Inject failure only on the 2nd save (the PendingCreateKey cleanup save): must NOT return nil.
+	// Inject PostRenameSyncError on the 2nd save (cleanup after Save 1 already
+	// durably committed and cleaned replaced the file without PendingCreateKey):
+	// acknowledges durable create and reopening mints a new ID for identical create.
 	syncCalls := 0
 	restoreClean := jsonstate.WithSyncDirForTest(func(string) error {
 		syncCalls++
@@ -720,15 +732,17 @@ func TestManagerSecretClearRotateRetryAndOrphanCleanup(t *testing.T) {
 	})
 	cView3, err := cm2.SaveEndpoint(in)
 	restoreClean()
-	if err == nil || cView3.ID != cView1.ID {
-		t.Fatalf("create with cleanup sync failure = (%+v, %v), want reused %q + error", cView3, err, cView1.ID)
+	if err != nil || cView3.ID != cView1.ID {
+		t.Fatalf("create with post-rename cleanup sync failure = (%+v, %v), want reused %q and nil", cView3, err, cView1.ID)
 	}
-	cView4, err := cm2.SaveEndpoint(in)
-	if err != nil || cView4.ID != cView1.ID {
-		t.Fatalf("clean create retry = (%+v, %v), want %q", cView4, err, cView1.ID)
+	cm3, err := OpenManager(ManagerOptions{
+		ConfigPath: cCfg, StatePath: cState, Secrets: cSec, Events: &fixedEvents{}, Client: &recordingDoer{},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	cViewNext, err := cm2.SaveEndpoint(in)
-	if err != nil || cViewNext.ID == cView1.ID || len(cm2.Endpoints()) != 2 {
-		t.Fatalf("deliberate identical create after clean ack = (%+v, %v), endpoints=%d, want 2 distinct endpoints", cViewNext, err, len(cm2.Endpoints()))
+	cViewNext, err := cm3.SaveEndpoint(in)
+	if err != nil || cViewNext.ID == cView1.ID || len(cm3.Endpoints()) != 2 {
+		t.Fatalf("deliberate identical create after reopen = (%+v, %v), endpoints=%d, want 2 distinct endpoints", cViewNext, err, len(cm3.Endpoints()))
 	}
 }

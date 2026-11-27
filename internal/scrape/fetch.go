@@ -645,12 +645,15 @@ func atomEntries(items []*xmlNode) ([]FeedEntry, []time.Time, []string) {
 
 func deriveUndatedTextKey(kind, link, title, description string) string {
 	link = strings.TrimSpace(link)
+	if link != "" {
+		return fmt.Sprintf("urn:beamfall:feed-text:%x", sha256.Sum256([]byte(kind+"\x00link\x00"+link)))
+	}
 	title = strings.ToLower(strings.Join(strings.Fields(title), " "))
 	description = strings.TrimSpace(description)
-	if link == "" && title == "" && description == "" {
+	if title == "" && description == "" {
 		return ""
 	}
-	return fmt.Sprintf("urn:beamfall:feed-text:%x", sha256.Sum256([]byte(kind+"\x00"+link+"\x00"+title+"\x00"+description)))
+	return fmt.Sprintf("urn:beamfall:feed-text:%x", sha256.Sum256([]byte(kind+"\x00"+title+"\x00"+description)))
 }
 
 func atomEntryLink(item *xmlNode) string {

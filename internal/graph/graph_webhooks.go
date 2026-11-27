@@ -178,8 +178,7 @@ func (h *Handler) saveWebhook(ctx context.Context, scope auth.Scope, req request
 		return WebhookEndpointInfo{}, err
 	}
 	view, err := admin.SaveEndpoint(in)
-	var postSync *jsonstate.PostRenameSyncError
-	if err != nil && (!errors.As(err, &postSync) || view.ID == "") {
+	if err != nil && view.ID == "" {
 		return WebhookEndpointInfo{}, webhookError(err)
 	}
 	if logErr := h.logActivity(ctx, scope, store.ActivityConfigUpdate, "webhook", view.ID, ""); logErr != nil {

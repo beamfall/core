@@ -173,6 +173,12 @@ func (s *Service) Block(scope Scope, req BlockRequest) error {
 	for _, b := range s.state.Blocks {
 		if b.ProfileID == string(scope.ProfileID) && b.TargetType == req.TargetType && b.TargetID == req.TargetID {
 			if s.unsyncedPersist {
+				// First prove directory durability while keeping PendingSync=true on
+				// disk so a still-failing sync never clears the marker across reopens.
+				s.state.PendingSync = true
+				if err := s.persistLocked(); err != nil {
+					return err
+				}
 				return s.clearPendingSyncLocked()
 			}
 			return nil // idempotent

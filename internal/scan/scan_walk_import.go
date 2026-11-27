@@ -171,6 +171,11 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	if err := s.refreshParserFields(media.ID, refresh); err != nil {
 		return err
 	}
+	if task.probe.succeeded && len(task.probe.value.Chapters) > 0 {
+		if err := s.st.ReplaceDetectedMarkers(s.ctx, media.ID, "chapter-import", markersFromProbeChapters(task.probe.value.Chapters), store.LibraryFilter{AllLibraries: true}, now()); err != nil {
+			return err
+		}
+	}
 	if err := s.applyLocalExtraction(media.ID, stored.ContentFingerprint, task); err != nil {
 		return err
 	}

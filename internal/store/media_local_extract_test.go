@@ -714,4 +714,20 @@ func TestReconcileStandaloneLibraryMediaSplitEventsMarkersEncryptedAndSlotNormal
 	if reEnc1.ID != e1ID || reEnc2.ID != e2ID || reEncF1.PartOrdinal != 0 || reEncF2.PartOrdinal != 0 {
 		t.Fatalf("reconnected encrypted split parts = (%s/%d, %s/%d), want (%s/0, %s/0)", reEnc1.ID, reEncF1.PartOrdinal, reEnc2.ID, reEncF2.PartOrdinal, e1ID, e2ID)
 	}
+
+	// Marking the reconnected encrypted file missing a second time and reimporting
+	// identical sample1: bytes at the same path must still preserve e1ID.
+	if err := st.MarkMediaFileMissing(ctx, encLib.ID, ep1); err != nil {
+		t.Fatal(err)
+	}
+	reEnc1Again, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: encLib.ID, Path: ep1, ContentFingerprint: "sample1:ep1",
+		Title: "enc-pt1", Class: MediaClassVideo, DurationSecondsHint: 8, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reEnc1Again.ID != e1ID {
+		t.Fatalf("second encrypted sample1: reconnect changed Media ID = %s, want %s", reEnc1Again.ID, e1ID)
+	}
 }

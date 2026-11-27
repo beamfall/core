@@ -452,20 +452,18 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 		cleaned.Endpoints[savedIdx].PendingCreateKey = ""
 		cleaned.StaleSecretRefs = m.sortedStaleRefs(cleaned, "", "")
 		if cleanErr := jsonstate.Save(m.opts.ConfigPath, cleaned); cleanErr != nil {
-			if wasPendingCreate {
-				if errors.As(cleanErr, &postSync) {
-					m.file = cleaned
-					fe = cleaned.Endpoints[savedIdx]
-				}
+			if errors.As(cleanErr, &postSync) {
+				// Save 1 already durably committed the endpoint, and cleaned has
+				// already replaced the file without PendingCreateKey. Acknowledge
+				// the durable create so callers do not retry and duplicate after reopen.
+				m.file = cleaned
+				fe = cleaned.Endpoints[savedIdx]
+			} else if wasPendingCreate {
 				if createSig != "" {
 					m.unsyncedCreates[createSig] = fe.ID
 				}
 				m.logger.Error("webhook configuration cleanup save failed", "error", cleanErr)
 				return m.view(fe), errors.Join(ErrConfigDiagnostic, cleanErr)
-			}
-			if errors.As(cleanErr, &postSync) {
-				m.file = cleaned
-				fe = cleaned.Endpoints[savedIdx]
 			}
 		} else {
 			m.file = cleaned
@@ -658,13 +656,16 @@ func (m *Manager) trackOrphanSecretRefLocked(ref string) {
 	if ref == "" || refInUse(m.file, ref) {
 		return
 	}
-	if _, err := m.opts.Secrets.Secret(ref); err != nil {
-		return
-	}
 	if err := m.opts.Secrets.SetSecret(ref, ""); err == nil {
 		return
 	}
 	m.staleSecretRefs[ref] = struct{}{}
+	// Persist StaleSecretRefs only if the secret is readable or a config file
+	// already exists, so an initial pre-create secret write failure never
+	// materializes a brand-new endpoint file.
+	if _, readErr := m.opts.Secrets.Secret(ref); readErr != nil && len(m.file.Endpoints) == 0 && m.file.PublicBaseURL == "" {
+		return
+	}
 	next := m.file
 	next.StaleSecretRefs = m.sortedStaleRefs(next, ref, "")
 	var postSync *jsonstate.PostRenameSyncError

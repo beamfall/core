@@ -730,3 +730,36 @@ func TestScanUnstableLegacyBackfillClipSkipsLocalExtraction(t *testing.T) {
 		t.Fatalf("unverified clip %q dropped from backfill set: %v", clip, missingAfter)
 	}
 }
+
+func TestScanFastPathProbedClipImportsEmbeddedChapters(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	clip := writeScanFile(t, root, "chapters.mov", []byte("chaptered clip bytes"))
+	st := storetest.Open(t)
+	libraryID, resolver := imageRuleLibrary(t, st, []store.MediaClass{store.MediaClassImage, store.MediaClassVideo})
+	req := Request{LibraryID: libraryID, Root: root}
+
+	if _, err := ScanWithLocalExtractors(ctx, st, nil, nil, nil, nil, resolver, nil, req); err != nil {
+		t.Fatalf("initial scan without probe: %v", err)
+	}
+	prober := &countingProber{probe: ffmpeg.Probe{
+		Container: "mov", VideoCodec: "hevc", DurationSeconds: 30, HasVideo: true,
+		Chapters: []ffmpeg.ProbeChapter{{StartSeconds: 0, EndSeconds: 15, Title: "Intro"}},
+	}}
+	extractor := &toggleLocalExtractor{date: "2025-11-05T12:00:00Z"}
+	extractors := map[string][]LocalExtractor{imageRuleFixturePlugin: {extractor}}
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, extractors, req); err != nil {
+		t.Fatalf("fast-path probe scan: %v", err)
+	}
+	files, err := st.MediaFilesForLibrary(ctx, libraryID)
+	if err != nil || len(files) != 1 || files[0].Path != clip {
+		t.Fatalf("MediaFilesForLibrary = (%+v, %v)", files, err)
+	}
+	markers, err := st.MarkersForMedia(ctx, files[0].MediaID, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(markers) != 1 || markers[0].Method != "chapter-import" || markers[0].Title != "Intro" {
+		t.Fatalf("fast-path probed clip markers = %+v, want 1 chapter-import Intro", markers)
+	}
+}
