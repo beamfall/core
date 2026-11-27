@@ -1,9 +1,11 @@
 package mediahttp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -204,5 +206,108 @@ printf '%s\n' '{"format":{"duration":"120"}}'
 				}
 			}
 		})
+	}
+}
+
+type blockingPlainSegmentWriter struct {
+	header      http.Header
+	status      int
+	buf         bytes.Buffer
+	firstWrite  sync.Once
+	wroteFirst  chan struct{}
+	releaseRead chan struct{}
+}
+
+func (w *blockingPlainSegmentWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *blockingPlainSegmentWriter) WriteHeader(code int) { w.status = code }
+
+func (w *blockingPlainSegmentWriter) Write(p []byte) (int, error) {
+	n, err := w.buf.Write(p)
+	w.firstWrite.Do(func() {
+		close(w.wroteFirst)
+		<-w.releaseRead
+	})
+	return n, err
+}
+
+type largePlainSegmentTranscoder struct {
+	fakeHLSTranscoder
+	payload []byte
+}
+
+func (f largePlainSegmentTranscoder) StartHLSSegments(_ context.Context, _ string, dir string, startSegment, _ int, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	if err := os.WriteFile(filepath.Join(dir, "init.mp4"), []byte("init"), 0o600); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("seg%05d.m4s", startSegment)), f.payload, 0o600); err != nil {
+		return nil, err
+	}
+	return &ffmpeg.HLSProcess{}, nil
+}
+
+func TestHLSLivePlainSegmentReadFailsAfterSessionRevocation(t *testing.T) {
+	// 128 KiB exceeds io.Copy's 32 KiB buffer so ServeContent must perform
+	// multiple Reads on the open segment fd.
+	payload := bytes.Repeat([]byte("plain-segment-byte-"), 7000)
+	h, token := newHLSSealedTestHandlerWith(t, largePlainSegmentTranscoder{payload: payload})
+	scope, err := h.auth.Scope(t.Context(), "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writer := &blockingPlainSegmentWriter{
+		wroteFirst:  make(chan struct{}),
+		releaseRead: make(chan struct{}),
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.HLS(writer, httptest.NewRequest(http.MethodGet, "/api/media/hls/"+token+"/720p/seg00000.m4s", nil))
+	}()
+
+	select {
+	case <-writer.wroteFirst:
+	case <-time.After(5 * time.Second):
+		t.Fatal("HLS never started writing segment")
+	}
+
+	if stopped := h.hls.TerminateSession(scope.SessionID); stopped != 1 {
+		t.Fatalf("TerminateSession stopped %d, want 1", stopped)
+	}
+	close(writer.releaseRead)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("HLS did not stop after TerminateSession")
+	}
+
+	if writer.status != http.StatusOK && writer.status != 0 {
+		t.Fatalf("unexpected status %d", writer.status)
+	}
+	if writer.buf.Len() == 0 || writer.buf.Len() >= len(payload) {
+		t.Fatalf("wrote %d of %d bytes, want partial read stopped by revocation", writer.buf.Len(), len(payload))
+	}
+
+	// Direct check: once cutoff is closed, the next Read on livePlainReadSeeker fails.
+	closedCutoff := make(chan struct{})
+	close(closedCutoff)
+	rs := livePlainReadSeeker{
+		ctx:        context.Background(),
+		cutoff:     closedCutoff,
+		ReadSeeker: bytes.NewReader(payload),
+	}
+	var buf [16]byte
+	if n, err := rs.Read(buf[:]); err == nil || n != 0 {
+		t.Fatalf("Read after cutoff = (%d, %v), want (0, error)", n, err)
+	}
+	if _, err := io.ReadAll(rs); err == nil {
+		t.Fatal("ReadAll after cutoff succeeded, want error")
 	}
 }

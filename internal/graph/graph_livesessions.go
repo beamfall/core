@@ -292,7 +292,7 @@ func (h *Handler) revokeDevice(ctx context.Context, scope auth.Scope, req reques
 	if err != nil {
 		return RevokeDeviceResult{}, err
 	}
-	aborted := h.abortDeviceTranscodes(byDevice[store.DeviceID(id)])
+	aborted := h.abortTranscodesForDevice(store.DeviceID(id), byDevice[store.DeviceID(id)])
 	if err := h.logActivity(ctx, scope, store.ActivityDeviceRevoke, "device", id, ""); err != nil {
 		return RevokeDeviceResult{}, err
 	}
@@ -348,6 +348,20 @@ func activeSessionIDsByDevice(active []store.ActiveSession) map[store.DeviceID][
 		byDevice[session.DeviceID] = append(byDevice[session.DeviceID], session.SessionID)
 	}
 	return byDevice
+}
+
+type deviceTranscodeTerminator interface {
+	TerminateDevice(deviceID store.DeviceID) int
+}
+
+// abortTranscodesForDevice terminates every pre-grouped session as well as any
+// in-flight transcode still bound to deviceID after session renewal.
+func (h *Handler) abortTranscodesForDevice(deviceID store.DeviceID, sessionIDs []store.SessionID) int {
+	aborted := h.abortDeviceTranscodes(sessionIDs)
+	if dt, ok := h.transcodeTerminator.(deviceTranscodeTerminator); ok && deviceID != "" {
+		aborted += dt.TerminateDevice(deviceID)
+	}
+	return aborted
 }
 
 // abortDeviceTranscodes terminates each pre-grouped Session once. Returns the

@@ -125,7 +125,7 @@ func (h *Handler) revokeAllDevices(ctx context.Context, scope auth.Scope) (Revok
 			return RevokeAllDevicesResult{}, err
 		}
 		result.RevokedCount++
-		result.TranscodesAborted += h.abortDeviceTranscodes(activeByDevice[d.ID])
+		result.TranscodesAborted += h.abortTranscodesForDevice(d.ID, activeByDevice[d.ID])
 		if err := h.logActivity(ctx, scope, store.ActivityDeviceRevoke, "device", string(d.ID), ""); err != nil {
 			return RevokeAllDevicesResult{}, err
 		}

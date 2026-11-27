@@ -109,7 +109,7 @@ func (h *Handler) setDevicePlayerBinding(ctx context.Context, scope auth.Scope, 
 	if err != nil {
 		return DeviceInfo{}, err
 	}
-	h.abortDeviceTranscodes(byDevice[store.DeviceID(deviceID)])
+	h.abortTranscodesForDevice(store.DeviceID(deviceID), byDevice[store.DeviceID(deviceID)])
 	if err := h.logActivity(ctx, scope, store.ActivityDevicePlayerBinding, "device", deviceID, ""); err != nil {
 		return DeviceInfo{}, err
 	}
@@ -133,7 +133,7 @@ func (h *Handler) clearDevicePlayerBinding(ctx context.Context, scope auth.Scope
 	if err != nil {
 		return DeviceInfo{}, err
 	}
-	h.abortDeviceTranscodes(byDevice[store.DeviceID(deviceID)])
+	h.abortTranscodesForDevice(store.DeviceID(deviceID), byDevice[store.DeviceID(deviceID)])
 	if err := h.logActivity(ctx, scope, store.ActivityDevicePlayerBinding, "device", deviceID, ""); err != nil {
 		return DeviceInfo{}, err
 	}

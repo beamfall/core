@@ -58,7 +58,12 @@ func (a *LiveArtifact) Release() {
 }
 
 // Cutoff closes when the exact instance loses byte access.
-func (a *LiveArtifact) Cutoff() <-chan struct{} { return a.session.scratch.cutoff }
+func (a *LiveArtifact) Cutoff() <-chan struct{} {
+	if a.session == nil || a.session.scratch == nil {
+		return nil
+	}
+	return a.session.scratch.cutoff
+}
 
 func (a *LiveArtifact) validate(delivered bool) error {
 	return a.validateVersion(a.version, delivered)

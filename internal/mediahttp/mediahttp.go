@@ -1078,6 +1078,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "stream ended", http.StatusGone)
 			return
 		}
+		binding.SetDevice(signed.DeviceID)
 		defer binding.Release()
 		ctx, cancel := binding.Context(r.Context())
 		defer cancel()
@@ -1129,6 +1130,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "stream ended", http.StatusGone)
 		return
 	}
+	binding.SetDevice(scope.DeviceID)
 	file, err := h.grantFile(r.Context(), grant.MediaID, grant.FileFingerprint, scope.PlaybackFilter())
 	if ended() {
 		return
@@ -1242,7 +1244,15 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
-	http.ServeContent(w, r, name, info.ModTime(), f)
+	if ended() {
+		return
+	}
+	defer interruptResponseWritesOnContextDone(r.Context(), w)()
+	http.ServeContent(w, r, name, info.ModTime(), livePlainReadSeeker{
+		ctx:        r.Context(),
+		cutoff:     artifact.Cutoff(),
+		ReadSeeker: f,
+	})
 }
 
 func (h *Handler) servePrecomputedHLS(w http.ResponseWriter, r *http.Request, grant streamtoken.Grant, scope auth.Scope, library store.Library, name string) {
@@ -1953,6 +1963,40 @@ func (r requestContextReadSeeker) Read(p []byte) (int, error) {
 	default:
 		return r.ReadSeeker.Read(p)
 	}
+}
+
+// livePlainReadSeeker binds unencrypted live HLS segment reads to both the
+// request context and the session's scratch cutoff channel, and omits
+// io.WriterTo so http.ServeContent cannot bypass Read via sendfile.
+type livePlainReadSeeker struct {
+	ctx    context.Context
+	cutoff <-chan struct{}
+	io.ReadSeeker
+}
+
+func (r livePlainReadSeeker) checkRevoked() error {
+	select {
+	case <-r.ctx.Done():
+		return context.Cause(r.ctx)
+	case <-r.cutoff:
+		return playback.ErrSessionEvicted
+	default:
+		return nil
+	}
+}
+
+func (r livePlainReadSeeker) Read(p []byte) (int, error) {
+	if err := r.checkRevoked(); err != nil {
+		return 0, err
+	}
+	return r.ReadSeeker.Read(p)
+}
+
+func (r livePlainReadSeeker) Seek(offset int64, whence int) (int64, error) {
+	if err := r.checkRevoked(); err != nil {
+		return 0, err
+	}
+	return r.ReadSeeker.Seek(offset, whence)
 }
 
 func interruptResponseWritesOnContextDone(ctx context.Context, w http.ResponseWriter) func() {
