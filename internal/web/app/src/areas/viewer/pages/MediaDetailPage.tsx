@@ -7,7 +7,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
-import { fetchSubscriptionEntries, fetchSubscriptionFollow } from "@/lib/graphql";
+import { fetchSourceItems, fetchSubscriptionEntries, fetchSubscriptionFollow } from "@/lib/graphql";
 import type {
   EntityFieldInfo,
   GenericMediaInfo,
@@ -15,6 +15,7 @@ import type {
   SubscriptionEntry,
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { useServerRecoveryEpoch } from "@/lib/serverConnection";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import {
   clearViewerCache,
@@ -23,6 +24,7 @@ import {
   writeViewerCache,
 } from "@/lib/viewerCache";
 import { ItemActions } from "../actions";
+import { useEngagementEpoch } from "../actions/engagementSync";
 import { CastRow } from "../components/CastRow";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { MediaChapters } from "../components/MediaChapters";
@@ -49,6 +51,7 @@ import { timeLeftLabel } from "../lib/cardState";
 import {
   audioPeople,
   type ContainerLink,
+  containerCredits,
   sequenceNext,
   useContainerContext,
 } from "../lib/containerContext";
@@ -138,6 +141,14 @@ export function MediaDetailPage() {
   const [detailStatus, setStatus] = useState<Status>(detail ? "ready" : "loading");
   const status = addressID === null ? "loading" : addressID === "" ? "missing" : detailStatus;
   const [attempt, setAttempt] = useState(0);
+  const recoveryEpoch = useServerRecoveryEpoch();
+  const seenRecoveryEpochRef = useRef(recoveryEpoch);
+
+  useEffect(() => {
+    if (seenRecoveryEpochRef.current === recoveryEpoch) return;
+    seenRecoveryEpochRef.current = recoveryEpoch;
+    if (status === "failed") setAttempt((n) => n + 1);
+  }, [recoveryEpoch, status]);
 
   const previewID = pendingID ?? mediaId;
   const preview = readMediaPreview(location.state, identity, previewID);
@@ -283,6 +294,57 @@ export function MediaDetailPage() {
     (value: boolean) => setWatched({ id: mediaId, watched: value }),
     [mediaId],
   );
+  const engagementEpoch = useEngagementEpoch();
+  const [standaloneItem, setStandaloneItem] = useState<SourceItem | null>(null);
+
+  const hasCardProgress = Boolean(resumeProgress(card) || card?.engagement?.completed);
+  const hasContextProgress = Boolean(resumeProgress(context.current));
+  const standaloneAudio =
+    media?.id === mediaId && media.mediaClass === "audio" && containerCredits(media).length === 0;
+  const markedWatched = watched?.id === mediaId && watched.watched === true;
+
+  useEffect(() => {
+    setStandaloneItem(null);
+    if (!mediaId || !standaloneAudio || hasCardProgress || hasContextProgress || markedWatched) {
+      return;
+    }
+    let alive = true;
+    const controller = new AbortController();
+    Promise.resolve(
+      fetchSourceItems(
+        {
+          kind: "resume-progress",
+          value: "in-progress",
+          libraryID: media?.libraryID ?? "",
+          entityKind: "",
+          entityID: "",
+          fieldFilters: null,
+          entityFilter: null,
+          limit: 200,
+          offset: 0,
+        },
+        controller.signal,
+      ),
+    )
+      .then((items) => {
+        if (!alive || !Array.isArray(items)) return;
+        setStandaloneItem(items.find((item) => item.id === mediaId) ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [
+    mediaId,
+    standaloneAudio,
+    media?.libraryID,
+    hasCardProgress,
+    hasContextProgress,
+    markedWatched,
+    attempt,
+    engagementEpoch,
+  ]);
 
   function watch(fromStart: boolean) {
     // Forward the queue the opening card carried (CORE-1143), still bound to
@@ -377,15 +439,17 @@ export function MediaDetailPage() {
     artworkSlotURL(art as SourceItem, "thumb");
   const heading = (ordered && displayString(media?.headline, locale)) || title;
   const backdrop = artworkSlotURL(art as SourceItem, "backdrop");
-  // The opening card's progress, else the container listing's, unless the card
-  // already says the item is finished.
-  const progress =
-    resumeProgress(card) ?? (card?.engagement?.completed ? null : resumeProgress(context.current));
+  // The opening card's progress, else the container listing's, else the
+  // standalone audio resume lookup (CORE-3148), unless finished.
   const isAudio = (media?.mediaClass ?? card?.mediaClass) === "audio";
   const finished =
     watched?.id === mediaId
       ? watched.watched
       : (context.current?.engagement?.completed ?? card?.engagement?.completed) === true;
+  const progress =
+    resumeProgress(card) ??
+    (card?.engagement?.completed ? null : resumeProgress(context.current)) ??
+    (finished ? null : resumeProgress(standaloneItem));
   const summary = media?.summary || card?.summary || "";
   const allFields = current?.fields ?? [];
   // The probed length first (CORE-2314); a card's engagement duration is what
@@ -395,7 +459,8 @@ export function MediaDetailPage() {
     allFields,
     media?.durationSeconds ||
       card?.engagement?.durationSeconds ||
-      context.current?.engagement?.durationSeconds,
+      context.current?.engagement?.durationSeconds ||
+      standaloneItem?.engagement?.durationSeconds,
   );
   const fields = viewerFacingFields(allFields, {
     title: media?.title || card?.title,

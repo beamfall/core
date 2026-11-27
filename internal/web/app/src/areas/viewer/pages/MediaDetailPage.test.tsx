@@ -1872,5 +1872,53 @@ describe("MediaDetailPage", () => {
       );
       expect(await screen.findByText("Not downloaded")).toBeInTheDocument();
     });
+
+    it("shows resume progress and Start over for a standalone audiobook opened by direct link (CORE-3148)", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue({
+        ...media,
+        id: "m1",
+        title: "Solo Book",
+        mediaClass: "audio",
+        playsAlone: true,
+        libraryID: "lib-books",
+        credits: [],
+        durationSeconds: 3600,
+      });
+      vi.mocked(fetchSourceItems).mockResolvedValue([
+        {
+          id: "m1",
+          kind: "media",
+          title: "Solo Book",
+          mediaClass: "audio",
+          engagement: { positionSeconds: 1800, durationSeconds: 3600, completed: false },
+        },
+      ]);
+
+      renderAt(["/media/m1"]);
+
+      await waitFor(() =>
+        expect(fetchSourceItems).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: "resume-progress",
+            value: "in-progress",
+            libraryID: "lib-books",
+          }),
+          expect.any(AbortSignal),
+        ),
+      );
+      expect(await screen.findByRole("button", { name: "Resume Solo Book" })).toHaveTextContent(
+        "Resume · 30 minutes left",
+      );
+      expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
+      expect(
+        screen.getByRole("button", { name: "Start Solo Book from the beginning" }),
+      ).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Mark played" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Play Solo Book" })).toHaveTextContent("Play"),
+      );
+      expect(screen.queryByRole("progressbar")).toBeNull();
+    });
   });
 });
