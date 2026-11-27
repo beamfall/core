@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+unset RACE_SHORT_ORDINARY_TIMEOUT RACE_SHORT_ORDINARY_P
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RACE_TEST="$ROOT/script/race-test.sh"
 RACE_TEST_TEST="$ROOT/script/race-test_test.sh"
