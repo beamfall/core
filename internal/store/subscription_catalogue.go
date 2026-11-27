@@ -204,7 +204,7 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 			queued[guid] = true
 		}
 	}
-	if len(known) == 0 && subscription.LastPolledAt.IsZero() {
+	if len(known) == 0 && (subscription.LastPolledAt.IsZero() || initialSelection) {
 		firstSeen = subscription.AddedAt
 	} else if firstSeen.UnixMilli() <= subscription.AddedAt.UnixMilli() {
 		firstSeen = subscription.AddedAt.Add(time.Millisecond)

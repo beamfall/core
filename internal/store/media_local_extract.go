@@ -310,14 +310,15 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 				liveCount++
 			}
 		}
-		if !primary.missing && (primary.versionLabel != "" || primary.partOrdinal != 0) {
+		primaryNormalized := !primary.missing && (primary.versionLabel != "" || primary.partOrdinal != 0)
+		if primaryNormalized {
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE media_file SET version_label = '', part_ordinal = 0 WHERE id = ?
 			`, primary.fileID); err != nil {
 				return err
 			}
 		}
-		if len(group.files) > 1 || (!primary.missing && (primary.versionLabel != "" || primary.partOrdinal != 0)) {
+		if len(group.files) > 1 || primaryNormalized {
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE media
 				SET duration_seconds = 0, container = '', codec = '', video_width = 0, video_height = 0,
@@ -425,7 +426,7 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 				createdPublicIDs = append(createdPublicIDs, newID)
 			}
 		}
-		if len(group.files) > 1 && (primary.missing || strings.HasPrefix(primary.contentFingerprint, "sha256:")) {
+		if (len(group.files) > 1 && primary.missing) || ((len(group.files) > 1 || primaryNormalized) && strings.HasPrefix(primary.contentFingerprint, "sha256:")) {
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, ?)
 				ON CONFLICT(media_id, field) DO NOTHING
