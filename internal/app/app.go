@@ -4595,7 +4595,7 @@ func devAttestationAllowed(envName, kind, releaseVersion string, logger *slog.Lo
 	if !envEnabled(envName) {
 		return false
 	}
-	if releaseVersion != "development" {
+	if releaseVersion != "development" && !strings.HasPrefix(releaseVersion, "development+") {
 		if logger != nil {
 			logger.Warn("ignoring dev attestation opt-in in a release build", "env", envName, "kind", kind)
 		}

@@ -36,6 +36,14 @@ func TestOfflinePackAttestationVerifierApplePolicy(t *testing.T) {
 		}
 	})
 
+	t.Run("development+src build honors dev opt-in", func(t *testing.T) {
+		capabilities.ReleaseVersion = "development+src.d65e4d9368c1"
+		t.Setenv(devAppleAttestationEnv, "1")
+		if !appleDevAttestationAllowed(capabilities.ReleaseVersion, slog.Default()) {
+			t.Fatal("development+src build rejected explicit Apple dev attestation opt-in")
+		}
+	})
+
 	t.Run("empty app IDs fails closed on Apple attestation", func(t *testing.T) {
 		capabilities.ReleaseVersion = "development"
 		t.Setenv(appleAttestAllowedAppIDsEnv, "")
