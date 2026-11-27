@@ -95,7 +95,7 @@ func testArtifactForPath(s *Sessions, key SessionKey, path string) (*LiveArtifac
 		return nil, ErrSessionEvicted
 	}
 	h.scratch.users++
-	return &LiveArtifact{manager: s, session: h, path: path}, nil
+	return &LiveArtifact{manager: s, session: h, scratch: h.scratch, path: path}, nil
 }
 
 func requireScratchMissing(t *testing.T, path string) {

@@ -157,11 +157,12 @@ func (s *Sessions) handoffEncoder(key SessionKey, start *encoderStart, proc *ffm
 		}
 	}
 	h.scratch.users++
+	reapScratch := h.scratch
 	s.mu.Unlock()
 	if !live {
 		proc.RequestStop()
 	}
-	s.reapProcess(key, h, run, rung, segment)
+	s.reapProcess(key, h, run, rung, segment, reapScratch)
 	if !live {
 		<-run.reaped
 		return

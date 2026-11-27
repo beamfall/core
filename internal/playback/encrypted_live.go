@@ -151,7 +151,7 @@ func (s *Sessions) watchLiveRevocation(session *hlsSession, done <-chan struct{}
 }
 
 // inspectSegment checks a confined segment, decrypting it for an encrypted session.
-func (h *hlsSession) inspectSegment(path string) (empty, readable bool) {
+func (h *hlsSession) inspectSegmentIn(root, path string) (empty, readable bool) {
 	if h.live != nil {
 		f, err := h.openEncryptedArtifact(path)
 		if err != nil {
@@ -160,12 +160,16 @@ func (h *hlsSession) inspectSegment(path string) (empty, readable bool) {
 		defer f.Close()
 		return inspectMediaBoxes(f, f.Size())
 	}
-	f, info, err := h.openArtifact(path)
+	f, info, err := h.openArtifactIn(root, path)
 	if err != nil {
 		return false, false
 	}
 	defer f.Close()
 	return inspectMediaBoxes(f, info.Size())
+}
+
+func (h *hlsSession) inspectSegment(path string) (empty, readable bool) {
+	return h.inspectSegmentIn(h.mediaDir(), path)
 }
 
 // writePlaylist stores one of the playlists the session serves itself, under

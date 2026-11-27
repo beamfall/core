@@ -1229,6 +1229,11 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer artifact.Release()
+	// Re-bind the response context to the resolved session's cutoff now that
+	// ArtifactShaped has selected the final session instance.
+	servedCtx, cancelServed := binding.Context(requestCtx)
+	defer cancelServed()
+	r = r.WithContext(servedCtx)
 	if strings.HasSuffix(name, ".m3u8") {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	} else {

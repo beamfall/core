@@ -20,6 +20,7 @@ import (
 type LiveArtifact struct {
 	manager  *Sessions
 	session  *hlsSession
+	scratch  *scratchPath
 	path     string
 	once     sync.Once
 	trackRun bool
@@ -42,9 +43,10 @@ type artifactObservation struct {
 func (s *Sessions) readyArtifact(h *hlsSession, path string) (artifactObservation, bool) {
 	s.mu.Lock()
 	artifact := artifactObservation{path: path, run: h.run, version: h.artifactVersion}
+	mediaDir := h.mediaDir()
 	live := h.state == sessionRunning
 	s.mu.Unlock()
-	if !live || !h.artifactReady(path) {
+	if !live || !h.artifactReadyIn(mediaDir, path) {
 		return artifactObservation{}, false
 	}
 	s.mu.Lock()
@@ -54,15 +56,24 @@ func (s *Sessions) readyArtifact(h *hlsSession, path string) (artifactObservatio
 }
 
 func (a *LiveArtifact) Release() {
-	a.once.Do(func() { a.manager.releaseScratch(a.session.scratch) })
+	a.once.Do(func() {
+		scratch := a.scratch
+		if scratch == nil && a.session != nil {
+			scratch = a.session.scratch
+		}
+		if scratch != nil {
+			a.manager.releaseScratch(scratch)
+		}
+	})
 }
 
-// Cutoff closes when the exact instance loses byte access.
+// Cutoff closes when the resolved session is revoked or detached, even when
+// shared-encoder ownership transfers scratch storage to a surviving follower.
 func (a *LiveArtifact) Cutoff() <-chan struct{} {
-	if a.session == nil || a.session.scratch == nil {
+	if a == nil || a.session == nil || a.session.cutoffCtx == nil {
 		return nil
 	}
-	return a.session.scratch.cutoff
+	return a.session.cutoffCtx.Done()
 }
 
 func (a *LiveArtifact) validate(delivered bool) error {
@@ -146,7 +157,8 @@ func openLiveClaim[T io.Closer](a *LiveArtifact, open func(string) (T, error)) (
 func (a *LiveArtifact) OpenPlain() (*os.File, fs.FileInfo, error) {
 	var info fs.FileInfo
 	f, err := openLiveClaim(a, func(path string) (*os.File, error) {
-		file, stat, err := a.session.openArtifact(path)
+		mediaDir := a.manager.sessionMediaDir(a.session)
+		file, stat, err := a.session.openArtifactIn(mediaDir, path)
 		info = stat
 		if errors.Is(err, fs.ErrInvalid) || errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
 			err = errors.Join(fs.ErrNotExist, err)
@@ -170,8 +182,8 @@ func (a *LiveArtifact) OpenEncrypted() (*encderiv.LiveFile, error) {
 // Live artifact paths have at most one rung component. The manager owns the
 // tree until all references exit, so inspecting the rung before opening the
 // file suffices to refuse pre-existing directory links.
-func (h *hlsSession) artifactRelativePath(path string) (string, error) {
-	rel, err := filepath.Rel(h.dir, path)
+func (h *hlsSession) artifactRelativePathIn(root, path string) (string, error) {
+	rel, err := filepath.Rel(root, path)
 	if err != nil || !filepath.IsLocal(rel) || rel == "." {
 		return "", fs.ErrInvalid
 	}
@@ -179,7 +191,7 @@ func (h *hlsSession) artifactRelativePath(path string) (string, error) {
 		if filepath.Base(name) != name {
 			return "", fs.ErrInvalid
 		}
-		dir := filepath.Join(h.dir, rung)
+		dir := filepath.Join(root, rung)
 		info, err := os.Lstat(dir)
 		if err != nil {
 			return "", err
@@ -191,6 +203,10 @@ func (h *hlsSession) artifactRelativePath(path string) (string, error) {
 	return rel, nil
 }
 
+func (h *hlsSession) artifactRelativePath(path string) (string, error) {
+	return h.artifactRelativePathIn(h.mediaDir(), path)
+}
+
 func openScratchFile(path string, flags int) (*os.File, error) {
 	fd, err := unix.Open(path, flags|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -199,12 +215,12 @@ func openScratchFile(path string, flags int) (*os.File, error) {
 	return os.NewFile(uintptr(fd), path), nil
 }
 
-func (h *hlsSession) openArtifact(path string) (*os.File, fs.FileInfo, error) {
-	rel, err := h.artifactRelativePath(path)
+func (h *hlsSession) openArtifactIn(root, path string) (*os.File, fs.FileInfo, error) {
+	rel, err := h.artifactRelativePathIn(root, path)
 	if err != nil {
 		return nil, nil, err
 	}
-	f, err := openScratchFile(filepath.Join(h.dir, rel), unix.O_RDONLY)
+	f, err := openScratchFile(filepath.Join(root, rel), unix.O_RDONLY)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -219,8 +235,12 @@ func (h *hlsSession) openArtifact(path string) (*os.File, fs.FileInfo, error) {
 	return f, info, nil
 }
 
-func (h *hlsSession) readRung(rung string) ([]os.DirEntry, error) {
-	dir, err := openScratchFile(filepath.Join(h.dir, rung), unix.O_RDONLY|unix.O_DIRECTORY)
+func (h *hlsSession) openArtifact(path string) (*os.File, fs.FileInfo, error) {
+	return h.openArtifactIn(h.mediaDir(), path)
+}
+
+func (h *hlsSession) readRungIn(root, rung string) ([]os.DirEntry, error) {
+	dir, err := openScratchFile(filepath.Join(root, rung), unix.O_RDONLY|unix.O_DIRECTORY)
 	if err != nil {
 		return nil, err
 	}
@@ -228,13 +248,21 @@ func (h *hlsSession) readRung(rung string) ([]os.DirEntry, error) {
 	return dir.ReadDir(-1)
 }
 
-func (h *hlsSession) artifactReady(path string) bool {
-	f, info, err := h.openArtifact(path)
+func (h *hlsSession) readRung(rung string) ([]os.DirEntry, error) {
+	return h.readRungIn(h.mediaDir(), rung)
+}
+
+func (h *hlsSession) artifactReadyIn(root, path string) bool {
+	f, info, err := h.openArtifactIn(root, path)
 	if err != nil {
 		return false
 	}
 	_ = f.Close()
 	return info.Size() > 0
+}
+
+func (h *hlsSession) artifactReady(path string) bool {
+	return h.artifactReadyIn(h.mediaDir(), path)
 }
 
 func (h *hlsSession) openEncryptedArtifact(path string) (*encderiv.LiveFile, error) {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -239,14 +240,21 @@ func (w *blockingPlainSegmentWriter) Write(p []byte) (int, error) {
 type largePlainSegmentTranscoder struct {
 	fakeHLSTranscoder
 	payload []byte
+	starts  *atomic.Int32
 }
 
-func (f largePlainSegmentTranscoder) StartHLSSegments(_ context.Context, _ string, dir string, startSegment, _ int, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+func (f largePlainSegmentTranscoder) StartHLSSegments(ctx context.Context, _ string, dir string, startSegment, _ int, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	if f.starts != nil {
+		f.starts.Add(1)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "init.mp4"), []byte("init"), 0o600); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("seg%05d.m4s", startSegment)), f.payload, 0o600); err != nil {
 		return nil, err
+	}
+	if f.holdChild {
+		return ffmpeg.StartHLSCommand(exec.CommandContext(ctx, "sleep", "60"))
 	}
 	return &ffmpeg.HLSProcess{}, nil
 }
@@ -309,5 +317,122 @@ func TestHLSLivePlainSegmentReadFailsAfterSessionRevocation(t *testing.T) {
 	}
 	if _, err := io.ReadAll(rs); err == nil {
 		t.Fatal("ReadAll after cutoff succeeded, want error")
+	}
+}
+
+func TestHLSSharedLeaderOpenResponseStopsAfterSessionRevocationWhileFollowerContinues(t *testing.T) {
+	payload := bytes.Repeat([]byte("shared-leader-byte-"), 7000)
+	var starts atomic.Int32
+	h, leaderToken := newHLSSealedTestHandlerWith(t, largePlainSegmentTranscoder{
+		fakeHLSTranscoder: fakeHLSTranscoder{holdChild: true},
+		payload:           payload,
+		starts:            &starts,
+	})
+	leaderScope, err := h.auth.Scope(t.Context(), "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.EnrollDevice(
+		t.Context(),
+		store.Device{
+			ID:         "device-follower",
+			Name:       "Follower",
+			Role:       store.DeviceRoleViewer,
+			SecretHash: store.HashDeviceSecret("follower-secret"),
+		},
+		store.Session{
+			ID:        "session-follower",
+			DeviceID:  "device-follower",
+			ProfileID: leaderScope.ProfileID,
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	followerToken, err := h.tokens.Issue(t.Context(), streamtoken.Grant{
+		Target:    streamtoken.TargetMediaHLS,
+		MediaID:   "media-alpha",
+		DeviceID:  "device-follower",
+		SessionID: "session-follower",
+		ProfileID: leaderScope.ProfileID,
+		ExpiresAt: time.Unix(100, 0).UTC().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	leaderWriter := &blockingPlainSegmentWriter{
+		wroteFirst:  make(chan struct{}),
+		releaseRead: make(chan struct{}),
+	}
+	var releaseLeaderOnce sync.Once
+	releaseLeader := func() { releaseLeaderOnce.Do(func() { close(leaderWriter.releaseRead) }) }
+	defer releaseLeader()
+	leaderDone := make(chan struct{})
+	go func() {
+		defer close(leaderDone)
+		h.HLS(leaderWriter, httptest.NewRequest(http.MethodGet, "/api/media/hls/"+leaderToken+"/720p/seg00000.m4s", nil))
+	}()
+
+	select {
+	case <-leaderWriter.wroteFirst:
+	case <-time.After(15 * time.Second):
+		t.Fatal("shared leader never started writing segment")
+	}
+
+	followerWriter := &blockingPlainSegmentWriter{
+		wroteFirst:  make(chan struct{}),
+		releaseRead: make(chan struct{}),
+	}
+	var releaseFollowerOnce sync.Once
+	releaseFollower := func() { releaseFollowerOnce.Do(func() { close(followerWriter.releaseRead) }) }
+	defer releaseFollower()
+	followerDone := make(chan struct{})
+	go func() {
+		defer close(followerDone)
+		h.HLS(followerWriter, httptest.NewRequest(http.MethodGet, "/api/media/hls/"+followerToken+"/720p/seg00000.m4s", nil))
+	}()
+
+	select {
+	case <-followerWriter.wroteFirst:
+	case <-time.After(15 * time.Second):
+		t.Fatal("shared follower never started writing segment")
+	}
+
+	if starts.Load() != 1 {
+		t.Fatalf("encoder starts = %d, want 1 shared encode", starts.Load())
+	}
+
+	// Revoking the shared leader promotes the follower (keeping scratch open)
+	// while still closing the leader's session cutoff immediately.
+	if stopped := h.hls.TerminateSession(leaderScope.SessionID); stopped != 1 {
+		t.Fatalf("TerminateSession(leader) = %d, want 1", stopped)
+	}
+	releaseLeader()
+
+	select {
+	case <-leaderDone:
+	case <-time.After(15 * time.Second):
+		t.Fatal("revoked shared leader response did not stop after TerminateSession")
+	}
+	if leaderWriter.buf.Len() == 0 || leaderWriter.buf.Len() >= len(payload) {
+		t.Fatalf("leader wrote %d of %d bytes, want partial read stopped by revocation", leaderWriter.buf.Len(), len(payload))
+	}
+
+	releaseFollower()
+	select {
+	case <-followerDone:
+	case <-time.After(15 * time.Second):
+		t.Fatal("surviving follower response did not finish")
+	}
+	if followerWriter.buf.Len() != len(payload) {
+		t.Fatalf("follower wrote %d bytes, want full %d bytes", followerWriter.buf.Len(), len(payload))
+	}
+
+	// Subsequent request from the promoted follower still serves from the shared encode without restarting.
+	rec := httptest.NewRecorder()
+	h.HLS(rec, httptest.NewRequest(http.MethodGet, "/api/media/hls/"+followerToken+"/720p/seg00000.m4s", nil))
+	if rec.Code != http.StatusOK || rec.Body.Len() != len(payload) || starts.Load() != 1 {
+		t.Fatalf("post-promotion follower status=%d len=%d starts=%d, want 200/%d/1", rec.Code, rec.Body.Len(), starts.Load(), len(payload))
 	}
 }
