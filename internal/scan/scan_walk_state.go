@@ -232,7 +232,8 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 	}
 	if class := localMetadataClass(task.path, task.probe); task.err == nil && class != "" {
 		_, localBackfill := s.localBackfillPaths[task.path]
-		if !task.fastPath || imageClassForPath(task.path) || localBackfill {
+		if !task.fastPath || imageClassForPath(task.path) || (localBackfill && verified) {
+			task.localEligible = true
 			task.local, task.localClean = extractLocalMetadataChecked(ctx, class, s.req.Root, task.path, s.localExtractors)
 		}
 	}

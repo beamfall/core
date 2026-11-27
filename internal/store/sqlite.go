@@ -3179,12 +3179,24 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		SELECT f.media_id, f.version_label, f.part_ordinal
 		FROM media_file f JOIN media m ON m.id = f.media_id
 		WHERE f.content_fingerprint = ? AND (f.missing_at_ms IS NULL OR (
-		  f.path = ? AND f.version_label <> '' AND m.library_id = ? AND m.trashed_at_ms IS NULL
+		  f.path = ? AND m.library_id = ? AND m.trashed_at_ms IS NULL
+		  AND (
+		    f.version_label <> ''
+		    OR f.part_ordinal > 0
+		    OR EXISTS (
+		      SELECT 1 FROM media_file peer
+		      WHERE peer.media_id = f.media_id AND peer.id <> f.id
+		    )
+		    OR EXISTS (
+		      SELECT 1 FROM media_field_provenance p
+		      WHERE p.media_id = f.media_id AND p.field = ?
+		    )
+		  )
 		  AND NOT EXISTS (SELECT 1 FROM media_file live
 		    WHERE live.media_id = f.media_id AND live.version_label = f.version_label
 		      AND live.part_ordinal = f.part_ordinal AND live.missing_at_ms IS NULL AND live.path <> f.path)
 		))
-	`, imported.ContentFingerprint, imported.Path, imported.LibraryID).Scan(&mediaID, &versionLabel, &partOrdinal)
+	`, imported.ContentFingerprint, imported.Path, imported.LibraryID, legacyPartReservationField).Scan(&mediaID, &versionLabel, &partOrdinal)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return Media{}, MediaFile{}, false, err
 	}
@@ -3285,6 +3297,11 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		LastSeenAt:         now,
 	}
 	if err := upsertMediaFileTx(ctx, tx, file, now); err != nil {
+		return Media{}, MediaFile{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM media_field_provenance WHERE media_id = ? AND field = ?
+	`, mediaID, legacyPartReservationField); err != nil {
 		return Media{}, MediaFile{}, false, err
 	}
 	if boundEntry {

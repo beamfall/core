@@ -383,6 +383,7 @@ func TestReconcileStandaloneLibraryMediaAllOfflineCuratedAndScanFieldRules(t *te
 	}
 	if err := st.UpsertMediaFieldsWithSource(ctx, extraMedia.ID, []MediaField{
 		{Name: "camera-model", Type: EntityFieldText, Text: "PocketCam 1"},
+		{Name: certificationField, Type: EntityFieldText, Text: "high"},
 	}, MutationSourceScan); err != nil {
 		t.Fatal(err)
 	}
@@ -479,5 +480,95 @@ func TestReconcileStandaloneLibraryMediaAllOfflineCuratedAndScanFieldRules(t *te
 	}
 	if len(reserved[off1]) != 1 || len(reserved[off2]) != 1 {
 		t.Fatalf("offline legacy reservations after split = %+v, want both retained", reserved)
+	}
+
+	// Curated title must survive a subsequent reimport scan (title_identified preserved).
+	if _, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: lib.ID, Path: pt2, ContentFingerprint: "sha256:ext2",
+		Title: "extra-pt2", Class: MediaClassVideo, DurationSecondsHint: 15, Container: "mov", Codec: "hevc",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reimportedTitle := ""
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT title FROM media WHERE id = ?`, splitExtraID).Scan(&reimportedTitle); err != nil {
+		t.Fatal(err)
+	}
+	if reimportedTitle != "Behind the Scenes" {
+		t.Fatalf("split curated title overwritten on reimport: got %q, want 'Behind the Scenes'", reimportedTitle)
+	}
+
+	// Scan-owned certification must remain enforced on split siblings.
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE library SET plugin_id = 'photos' WHERE id = ?`, lib.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Media(ctx, splitExtraID, LibraryFilter{
+		AllLibraries:  true,
+		PlaybackGate:  true,
+		Certification: []CertificationConstraint{{PluginID: "photos", Allowed: []string{"low"}, AllowUnrated: true}},
+	}); err == nil {
+		t.Fatalf("scan-owned certification allowed under unrated/low ceiling for split sibling %s", splitExtraID)
+	}
+	var splitCert string
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT value FROM media_field_text WHERE media_id = ? AND field = ?`, splitExtraID, certificationField).Scan(&splitCert); err != nil || splitCert != "high" {
+		t.Fatalf("scan-owned certification lost on split sibling: %q (%v), want 'high'", splitCert, err)
+	}
+
+	// Returning offline legacy Parts (part_ordinal 0 and 1, version_label '') keep split Media IDs.
+	partOff1 := filepath.Join(root, "offline-pt1.mov")
+	partOff2 := filepath.Join(root, "offline-pt2.mov")
+	offPartMedia, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: lib.ID, Path: partOff1, ContentFingerprint: "sha256:p1",
+		Title: "Offline Parts", Class: MediaClassVideo, DurationSecondsHint: 10, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `
+		UPDATE media_file SET missing_at_ms = ? WHERE media_id = ?
+	`, now.UnixMilli(), offPartMedia.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `
+		INSERT INTO media_file(id, content_fingerprint, media_id, path, version_label, part_ordinal, size_bytes, missing_at_ms, last_seen_at_ms)
+		VALUES ('sha256:p2', 'sha256:p2', ?, ?, '', 1, 200, ?, ?)
+	`, offPartMedia.ID, partOff2, now.UnixMilli(), now.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReconcileStandaloneLibraryMedia(ctx, lib.ID); err != nil {
+		t.Fatalf("ReconcileStandaloneLibraryMedia parts: %v", err)
+	}
+	var p1SplitID, p2SplitID MediaID
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT media_id FROM media_file WHERE path = ?`, partOff1).Scan(&p1SplitID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT media_id FROM media_file WHERE path = ?`, partOff2).Scan(&p2SplitID); err != nil {
+		t.Fatal(err)
+	}
+	if p1SplitID == p2SplitID {
+		t.Fatalf("offline parts did not split: both %s", p1SplitID)
+	}
+	partRes, err := st.MissingLegacyVersionFingerprints(ctx, lib.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(partRes[partOff1]) != 1 || len(partRes[partOff2]) != 1 {
+		t.Fatalf("missing legacy part reservations = %+v, want both %s and %s", partRes, partOff1, partOff2)
+	}
+	re1, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: lib.ID, Path: partOff1, ContentFingerprint: "sha256:p1",
+		Title: "offline-pt1", Class: MediaClassVideo, DurationSecondsHint: 10, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	re2, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: lib.ID, Path: partOff2, ContentFingerprint: "sha256:p2",
+		Title: "offline-pt2", Class: MediaClassVideo, DurationSecondsHint: 10, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if re1.ID != p1SplitID || re2.ID != p2SplitID {
+		t.Fatalf("returning legacy parts changed Media IDs: got (%s, %s), want (%s, %s)", re1.ID, re2.ID, p1SplitID, p2SplitID)
 	}
 }

@@ -667,3 +667,66 @@ func TestScanZeroDurationClipDoesNotRepeatLocalExtraction(t *testing.T) {
 		t.Fatalf("duration-0 clip re-ran extraction on fast path: calls=%d, want 1", len(extractor.calls))
 	}
 }
+
+// TestScanUnstableLegacyBackfillClipSkipsLocalExtraction verifies that a legacy
+// backfill video whose file sample fails verification on rescan does not fall
+// back to running local extractors or marking the unverified fingerprint extracted.
+func TestScanUnstableLegacyBackfillClipSkipsLocalExtraction(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	clip := writeScanFile(t, root, "clip.mov", []byte("unstable legacy video clip bytes"))
+	st := storetest.Open(t)
+	libraryID, resolver := imageRuleLibrary(t, st, []store.MediaClass{store.MediaClassImage, store.MediaClassVideo})
+	req := Request{LibraryID: libraryID, Root: root}
+	prober := &countingProber{probe: ffmpeg.Probe{
+		Container: "mov", VideoCodec: "hevc", DurationSeconds: 3, HasVideo: true,
+	}}
+
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, nil, req); err != nil {
+		t.Fatalf("initial legacy scan: %v", err)
+	}
+	missing, err := st.LibraryFilePathsWithoutLocalExtraction(ctx, libraryID, store.MediaClassVideo)
+	if err != nil {
+		t.Fatalf("LibraryFilePathsWithoutLocalExtraction before: %v", err)
+	}
+	if _, ok := missing[clip]; !ok {
+		t.Fatalf("expected %q in backfill set before extractor scan, got %v", clip, missing)
+	}
+
+	// Shift mtime back (still past the stability window) so rescan misses the
+	// stat fast path and must verify the file sample before extracting.
+	info, err := os.Stat(clip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bumped := info.ModTime().Add(-time.Minute)
+	if err := os.Chtimes(clip, bumped, bumped); err != nil {
+		t.Fatal(err)
+	}
+
+	origSample := sampleScanFile
+	t.Cleanup(func() { sampleScanFile = origSample })
+	sampleScanFile = func(context.Context, string, store.SampleFingerprintCheck) (string, error) {
+		return "", errors.New("unstable sample")
+	}
+
+	probesBefore := prober.calls
+	extractor := &toggleLocalExtractor{date: "2025-11-05T12:00:00Z"}
+	extractors := map[string][]LocalExtractor{imageRuleFixturePlugin: {extractor}}
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, extractors, req); err != nil {
+		t.Fatalf("backfill scan under unstable sample: %v", err)
+	}
+	if prober.calls != probesBefore {
+		t.Fatalf("prober ran for unverified backfill clip: calls=%d, want %d", prober.calls, probesBefore)
+	}
+	if len(extractor.calls) != 0 {
+		t.Fatalf("extractor ran for unverified backfill clip: calls=%v, want 0", extractor.calls)
+	}
+	missingAfter, err := st.LibraryFilePathsWithoutLocalExtraction(ctx, libraryID, store.MediaClassVideo)
+	if err != nil {
+		t.Fatalf("LibraryFilePathsWithoutLocalExtraction after: %v", err)
+	}
+	if _, ok := missingAfter[clip]; !ok {
+		t.Fatalf("unverified clip %q dropped from backfill set: %v", clip, missingAfter)
+	}
+}

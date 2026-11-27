@@ -91,7 +91,8 @@ func (s *feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) (
 			strings.HasPrefix(key, "http:") ||
 			strings.HasPrefix(key, "//") ||
 			strings.Contains(key, "://") ||
-			(err == nil && (link.Host != "" || link.User != nil)) {
+			(err == nil && (link.Host != "" || link.User != nil)) ||
+			s.isSchemelessAddressOrCredentialQuery(text, link, err) {
 			return nil, graph.ErrFeedSearchInvalidURL
 		}
 		return s.searchCached(ctx, key, func(ctx context.Context) ([]graph.FeedSearchResult, error) {
@@ -126,6 +127,43 @@ func (s *feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) (
 		}
 		return s.discoverWebsiteFeed(ctx, link)
 	})
+}
+
+func (s *feedDirectorySearcher) isSchemelessAddressOrCredentialQuery(text string, parsed *url.URL, parseErr error) bool {
+	if text == "" || strings.ContainsAny(text, " \t\r\n") {
+		return false
+	}
+	if parseErr == nil && parsed != nil && parsed.RawQuery != "" {
+		probe := &url.URL{Scheme: "https", Host: "example.invalid", RawQuery: parsed.RawQuery}
+		if s.engine.CheckDocumentURL(probe) != nil {
+			return true
+		}
+	}
+	if strings.Contains(text, "@") {
+		return true
+	}
+	head := text
+	if i := strings.IndexAny(head, "?#"); i >= 0 {
+		head = head[:i]
+	}
+	firstSeg, rest, hasSlash := strings.Cut(head, "/")
+	if strings.Contains(firstSeg, ".") && (hasSlash || strings.ContainsAny(text, "?#") || strings.Contains(firstSeg, ":")) {
+		return true
+	}
+	_ = rest
+	if host, port, hasColon := strings.Cut(firstSeg, ":"); hasColon && host != "" && port != "" {
+		allDigits := true
+		for i := range len(port) {
+			if port[i] < '0' || port[i] > '9' {
+				allDigits = false
+				break
+			}
+		}
+		if allDigits {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *feedDirectorySearcher) searchCached(ctx context.Context, key string, search func(context.Context) ([]graph.FeedSearchResult, error)) ([]graph.FeedSearchResult, error) {

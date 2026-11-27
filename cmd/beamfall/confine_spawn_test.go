@@ -257,16 +257,28 @@ func assertConfined(t *testing.T, f confineFixture, rep confineProbeReport, read
 
 // requireMandatoryConfinement asserts mandatory kernel confinement for encrypted
 // pipe runs: on a host this platform cannot enforce mandatory confinement on, the
-// spawn must be refused before the hostile tool runs.
-func requireMandatoryConfinement(t *testing.T, output string) {
+// spawn must fail with the platform's mandatory confinement refusal before the
+// hostile tool runs.
+func requireMandatoryConfinement(t *testing.T, err error) {
 	t.Helper()
 	if hostCanConfineMedia() {
 		return
 	}
-	if strings.Contains(output, confineReportPrefix) {
-		t.Fatalf("host cannot apply mandatory pipe confinement, yet the hostile tool ran:\n%s", output)
+	msg := err.Error()
+	if strings.Contains(msg, confineReportPrefix) {
+		t.Fatalf("host cannot apply mandatory pipe confinement, yet the hostile tool ran:\n%s", msg)
 	}
-	t.Skipf("host cannot apply mandatory pipe confinement; the spawn was refused as required: %s", output)
+	switch runtime.GOOS {
+	case "darwin":
+		if !errors.Is(err, ffmpeg.ErrPipeConfinementUnavailable) {
+			t.Fatalf("pipe spawn failed for non-confinement reason on darwin: %v", err)
+		}
+	case "linux":
+		if !strings.Contains(msg, "landlock confinement is required") {
+			t.Fatalf("pipe spawn failed for non-confinement reason on linux: %v", err)
+		}
+	}
+	t.Skipf("host cannot apply mandatory pipe confinement; the spawn was refused as required: %s", msg)
 }
 
 func assertPipeConfined(t *testing.T, f confineFixture, rep confineProbeReport) {
@@ -290,7 +302,8 @@ func assertPipeConfined(t *testing.T, f confineFixture, rep confineProbeReport) 
 // TestConfinedProbeCannotEscapeItsReadOnlyGrant: an ffprobe run (read-only
 // confinement to the input's directory) can read its input and nothing else,
 // and can write nowhere on hosts with filesystem confinement; on non-Landlock
-// Linux kernels ordinary probes run best-effort with rlimits only.
+// Linux kernels ordinary probes run best-effort with rlimits only, while Darwin
+// without sandbox-exec refuses launch.
 func TestConfinedProbeCannotEscapeItsReadOnlyGrant(t *testing.T) {
 	f := newConfineFixture(t)
 	setProbeSpec(t, f.spec(false, false))
@@ -298,13 +311,20 @@ func TestConfinedProbeCannotEscapeItsReadOnlyGrant(t *testing.T) {
 	if err == nil {
 		t.Fatal("Probe succeeded; the hostile ffprobe always exits non-zero")
 	}
-	rep := parseConfineReport(t, err.Error())
 	if !hostHasFilesystemConfinement() {
+		if runtime.GOOS != "linux" {
+			if strings.Contains(err.Error(), confineReportPrefix) || !errors.Is(err, ffmpeg.ErrConfinementUnavailable) {
+				t.Fatalf("expected ErrConfinementUnavailable without running child on %s, got: %v", runtime.GOOS, err)
+			}
+			t.Skipf("host lacks mandatory confinement (%s); launch refused cleanly: %v", runtime.GOOS, err)
+		}
+		rep := parseConfineReport(t, err.Error())
 		if rep.InputRead != "ok" {
 			t.Errorf("control: the granted input was not readable (%s)", rep.InputRead)
 		}
 		return
 	}
+	rep := parseConfineReport(t, err.Error())
 	assertConfined(t, f, rep, false)
 }
 
@@ -319,6 +339,9 @@ func TestConfinedHLSCannotEscapeAndLeavesNoDescendants(t *testing.T) {
 	defer cancel()
 	proc, err := confinedRunner(t).StartHLS(ctx, f.input, f.outDir, ffmpeg.Rendition{AudioOnly: true})
 	if err != nil {
+		if !hostHasFilesystemConfinement() && runtime.GOOS != "linux" && errors.Is(err, ffmpeg.ErrConfinementUnavailable) {
+			t.Skipf("host lacks mandatory confinement (%s); launch refused cleanly: %v", runtime.GOOS, err)
+		}
 		t.Fatalf("StartHLS: %v", err)
 	}
 	pidPath := filepath.Join(f.outDir, "grandchild.pid")
@@ -370,7 +393,7 @@ func TestConfinedEncryptedPipeRequiresMandatoryConfinement(t *testing.T) {
 	if err == nil {
 		t.Fatal("ProbePipeDuration succeeded; the hostile ffprobe always exits non-zero")
 	}
-	requireMandatoryConfinement(t, err.Error())
+	requireMandatoryConfinement(t, err)
 	assertPipeConfined(t, f, parseConfineReport(t, err.Error()))
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -327,12 +328,20 @@ func TestManagerHandlesPreAndPostRenameDirectorySyncFailures(t *testing.T) {
 	}
 	restoreSync()
 
-	// Runtime and secret store must both reflect the installed new endpoint and secret.
+	// Runtime and new secret ref must reflect the installed new endpoint and secret,
+	// while the prior secret ref stays intact for the old URL until durable sync.
 	if got := m.emitter.endpoints(); len(got) != 1 || got[0].URL != "https://hooks.slack.example/services/new" {
 		t.Fatalf("runtime emitter after post-rename sync error = %+v", got)
 	}
-	if gotSec, err := secrets.Secret(oldRef); err != nil || gotSec != newVal {
-		t.Fatalf("secret after post-rename sync error = (%q, %v), want %q (not restored to old)", gotSec, err, newVal)
+	rotatedRef := m.file.Endpoints[0].SecretRef
+	if rotatedRef == "" || rotatedRef == oldRef {
+		t.Fatalf("secret ref after rotation = %q, want distinct from %q", rotatedRef, oldRef)
+	}
+	if gotSec, err := secrets.Secret(rotatedRef); err != nil || gotSec != newVal {
+		t.Fatalf("rotated secret after post-rename sync error = (%q, %v), want %q", gotSec, err, newVal)
+	}
+	if gotOld, err := secrets.Secret(oldRef); err != nil || gotOld != oldVal {
+		t.Fatalf("old secret %q after post-rename sync error = (%q, %v), want %q preserved for crash recovery", oldRef, gotOld, err, oldVal)
 	}
 
 	// Retry cleanly once syncDir recovers.
@@ -344,6 +353,9 @@ func TestManagerHandlesPreAndPostRenameDirectorySyncFailures(t *testing.T) {
 	})
 	if err != nil || retried.URL != "https://hooks.slack.example/…" {
 		t.Fatalf("retry SaveEndpoint = (%+v, %v)", retried, err)
+	}
+	if _, err := secrets.Secret(oldRef); err == nil {
+		t.Fatalf("old rotated secret %q still present after durable save", oldRef)
 	}
 
 	// Restart from disk agrees with runtime & secrets.
@@ -382,7 +394,18 @@ func TestManagerHandlesPreAndPostRenameDirectorySyncFailures(t *testing.T) {
 	if gotSec, err := secrets.Secret(delRef); err != nil || gotSec != newVal {
 		t.Fatalf("deleted endpoint secret %q = (%q, %v), want preserved until durable sync", delRef, gotSec, err)
 	}
-	// A subsequent durable SetSettings purges the deferred orphaned secret.
+	// Restart between post-rename DeleteEndpoint failure and cleanup still purges deferred secret.
+	restarted, err = OpenManager(ManagerOptions{
+		ConfigPath: configPath,
+		StatePath:  statePath,
+		Secrets:    secrets,
+		Events:     &fixedEvents{},
+		Client:     &recordingDoer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A subsequent durable SetSettings purges the deferred orphaned secret after restart.
 	if _, err := restarted.SetSettings(Settings{}); err != nil {
 		t.Fatalf("SetSettings cleanup: %v", err)
 	}
@@ -390,8 +413,8 @@ func TestManagerHandlesPreAndPostRenameDirectorySyncFailures(t *testing.T) {
 		t.Fatalf("deleted endpoint secret %q still present after subsequent durable save", delRef)
 	}
 
-	// Post-rename syncDir failure on create returns the new ID and retrying the
-	// create input without an ID reuses that endpoint instead of duplicating.
+	// Post-rename syncDir failure on create survives restart, stays within capacity on
+	// retry, and reuses that endpoint ID instead of duplicating.
 	createVal := "val-c"
 	restoreCreateSync := jsonstate.WithSyncDirForTest(func(string) error { return injected })
 	failedView, createErr := restarted.SaveEndpoint(EndpointInput{
@@ -403,17 +426,28 @@ func TestManagerHandlesPreAndPostRenameDirectorySyncFailures(t *testing.T) {
 	if createErr == nil || failedView.ID == "" {
 		t.Fatalf("post-rename failed create = (%+v, %v), want non-empty ID and error", failedView, createErr)
 	}
-	retriedCreate, err := restarted.SaveEndpoint(EndpointInput{
+	restartedAfterCreate, err := OpenManager(ManagerOptions{
+		ConfigPath: configPath,
+		StatePath:  statePath,
+		Secrets:    secrets,
+		Events:     &fixedEvents{},
+		Client:     &recordingDoer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retriedCreate, err := restartedAfterCreate.SaveEndpoint(EndpointInput{
 		Format: "slack",
 		URL:    "https://hooks.slack.example/services/create",
 		Secret: &createVal,
 	})
 	if err != nil || retriedCreate.ID != failedView.ID {
-		t.Fatalf("create retry = (%+v, %v), want reused ID %q", retriedCreate, err, failedView.ID)
+		t.Fatalf("create retry after restart = (%+v, %v), want reused ID %q", retriedCreate, err, failedView.ID)
 	}
-	if eps := restarted.Endpoints(); len(eps) != 1 || len(restarted.emitter.endpoints()) != 1 {
-		t.Fatalf("duplicate endpoints created on create retry: views=%+v emitter=%+v", eps, restarted.emitter.endpoints())
+	if eps := restartedAfterCreate.Endpoints(); len(eps) != 1 || len(restartedAfterCreate.emitter.endpoints()) != 1 {
+		t.Fatalf("duplicate endpoints created on create retry: views=%+v emitter=%+v", eps, restartedAfterCreate.emitter.endpoints())
 	}
+	restarted = restartedAfterCreate
 	// Secret clear update under post-rename syncDir error defers secret deletion
 	// until a later durable save confirms the updated config on disk.
 	clearRef := restarted.file.Endpoints[0].SecretRef
@@ -489,5 +523,50 @@ func TestManagerHandlesPreAndPostRenameDirectorySyncFailures(t *testing.T) {
 	}
 	if got := preM.emitter.endpoints(); len(got) != 1 || got[0].URL != "https://hooks.slack.example/services/v0" {
 		t.Fatalf("runtime emitter after pre-rename failure = %+v", got)
+	}
+
+	// Create-retry deduplication MUST succeed even at maxEndpoints capacity when
+	// retrying an in-flight create interrupted by a post-rename syncDir error.
+	capDir := t.TempDir()
+	capSecrets := &memSecrets{values: map[string]string{}}
+	capM, err := OpenManager(ManagerOptions{
+		ConfigPath: filepath.Join(capDir, "webhook-endpoints.json"),
+		StatePath:  filepath.Join(capDir, "webhook-dead-letter.json"),
+		Secrets:    capSecrets,
+		Events:     &fixedEvents{},
+		Client:     &recordingDoer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < maxEndpoints-1; i++ {
+		if _, err := capM.SaveEndpoint(EndpointInput{
+			Format: "slack",
+			URL:    "https://hooks.slack.example/services/cap/" + strconv.Itoa(i),
+		}); err != nil {
+			t.Fatalf("seed endpoint %d: %v", i, err)
+		}
+	}
+	capURL := "https://hooks.slack.example/services/cap/final"
+	restoreCapSync := jsonstate.WithSyncDirForTest(func(string) error { return injected })
+	capView, err := capM.SaveEndpoint(EndpointInput{
+		Format: "slack",
+		URL:    capURL,
+		Secret: &createVal,
+	})
+	restoreCapSync()
+	if err == nil || capView.ID == "" {
+		t.Fatalf("50th create under syncDir failure = (%+v, %v), want endpoint ID + error", capView, err)
+	}
+	capRetried, err := capM.SaveEndpoint(EndpointInput{
+		Format: "slack",
+		URL:    capURL,
+		Secret: &createVal,
+	})
+	if err != nil || capRetried.ID != capView.ID {
+		t.Fatalf("50th create retry = (%+v, %v), want reused ID %q", capRetried, err, capView.ID)
+	}
+	if len(capM.Endpoints()) != maxEndpoints {
+		t.Fatalf("endpoints after 50th retry = %d, want %d", len(capM.Endpoints()), maxEndpoints)
 	}
 }

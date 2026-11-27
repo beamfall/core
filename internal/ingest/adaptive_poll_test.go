@@ -1133,3 +1133,95 @@ func TestAdaptivePollActiveUndatedFeedIsNotMarkedDormantAfter180Days(t *testing.
 		t.Fatalf("304 undated active feed interval = %v, want 15m", got)
 	}
 }
+
+func TestAdaptivePollDormancyMixedDatedTextOnlyAndCataloguedRecovery(t *testing.T) {
+	ctx := context.Background()
+	oldAdded := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	day0 := oldAdded
+	day200 := oldAdded.Add(200 * 24 * time.Hour)
+	oldDated := day200.Add(-200 * 24 * time.Hour)
+
+	// 1. Dated entry older than 180d + fresh undated enclosure today stays active (15m TTL).
+	mode := "mixed"
+	var baseURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ep.mp3":
+			_, _ = w.Write([]byte("audio bytes"))
+		case "/mixed.xml":
+			_, _ = w.Write([]byte(`<rss><channel><title>Mixed</title><ttl>15</ttl>` +
+				`<item><guid>old-dated</guid><title>Old</title><pubDate>` + oldDated.Format(time.RFC1123Z) + `</pubDate><enclosure url="` + baseURL + `/ep.mp3" length="11" type="audio/mpeg"/></item>` +
+				`<item><guid>fresh-undated</guid><title>New Undated</title><enclosure url="` + baseURL + `/ep.mp3" length="11" type="audio/mpeg"/></item>` +
+				`</channel></rss>`))
+		case "/text.xml":
+			_, _ = w.Write([]byte(`<rss><channel><title>Text</title><ttl>15</ttl><item><guid>txt-1</guid><title>Text Only ` + mode + `</title></item></channel></rss>`))
+		case "/recover.xml":
+			_, _ = w.Write([]byte(`<rss><channel><title>Recover</title><ttl>15</ttl><item><guid>rec-1</guid><title>Existing</title><enclosure url="` + baseURL + `/ep.mp3" length="11" type="audio/mpeg"/></item></channel></rss>`))
+		}
+	}))
+	baseURL = server.URL
+	t.Cleanup(server.Close)
+
+	st := storetest.Open(t)
+	clock := &testClock{now: day200}
+	poller := healthPoller(st, scrape.New(scrape.WithInsecureLoopback()), clock)
+
+	mixedSub, err := st.AddSubscription(ctx, store.Subscription{LibraryID: "library-local", FeedURL: baseURL + "/mixed.xml", Root: t.TempDir()}, oldAdded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := poller.pollSubscription(ctx, mixedSub); err != nil {
+		t.Fatal(err)
+	}
+	mixedSub = reloadSubscription(t, st, mixedSub.ID)
+	if got := mixedSub.Health.NextPollAt.Sub(day200); got != 15*time.Minute {
+		t.Fatalf("mixed old-dated + new-undated interval = %v, want 15m", got)
+	}
+
+	// 2. Repeated HTTP 200 with unchanged text-only undated item does not refresh LastNewEntryAt.
+	clock.now = day0
+	textSub, err := st.AddSubscription(ctx, store.Subscription{LibraryID: "library-local", FeedURL: baseURL + "/text.xml", Root: t.TempDir()}, oldAdded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := poller.pollSubscription(ctx, textSub); err != nil {
+		t.Fatal(err)
+	}
+	clock.now = day200
+	mode = "unchanged"
+	textSub = reloadSubscription(t, st, textSub.ID)
+	if _, err := poller.pollSubscription(ctx, textSub); err != nil {
+		t.Fatal(err)
+	}
+	textSub = reloadSubscription(t, st, textSub.ID)
+	if got := textSub.Health.NextPollAt.Sub(day200); got != MaxPollInterval {
+		t.Fatalf("repeated unchanged text-only undated interval at day200 = %v, want %v (dormant)", got, MaxPollInterval)
+	}
+
+	// 3. Recovery after catalogue committed rec-1 at day200 while poll_state still held LastNewEntryAt = day0.
+	clock.now = day0
+	recSub, err := st.AddSubscription(ctx, store.Subscription{LibraryID: "library-local", FeedURL: baseURL + "/recover.xml", Root: t.TempDir()}, oldAdded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordSubscriptionPollSuccessWithState(ctx, recSub, "", "", &store.SubscriptionPollState{
+		FeedURLHash:    store.PollFeedURLHash(recSub.FeedURL),
+		LastNewEntryAt: day0,
+	}, day0, day0.Add(15*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertSubscriptionCatalogWithInitialDownloads(ctx, recSub.ID, []store.FeedCatalogEntry{
+		{GUID: "rec-1", Title: "New", EnclosureURL: baseURL + "/ep.mp3", EnclosureLength: 11, Position: 0},
+	}, day200, nil); err != nil {
+		t.Fatal(err)
+	}
+	clock.now = day200
+	recSub = reloadSubscription(t, st, recSub.ID)
+	if _, err := poller.pollSubscription(ctx, recSub); err != nil {
+		t.Fatal(err)
+	}
+	recSub = reloadSubscription(t, st, recSub.ID)
+	if got := recSub.Health.NextPollAt.Sub(day200); got != 15*time.Minute {
+		t.Fatalf("recovery with newer catalogued FirstSeenAt interval = %v, want 15m", got)
+	}
+}

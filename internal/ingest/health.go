@@ -93,24 +93,28 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 	if !result.NotModified {
 		eligibleEntries := filterPollEntriesSince(preEntries, historyResetAt, urlChanged)
 		var priorEntries []store.SubscriptionPollEntryDate
+		var priorUndated []string
 		var lastNewEntryAt time.Time
 		if !urlChanged {
 			priorEntries = prevState.Entries
+			priorUndated = prevState.SeenUndatedGUIDs
 			lastNewEntryAt = prevState.LastNewEntryAt
 		}
-		if documentHasNewEntry(document, eligibleEntries) {
+		if documentHasNewUndatedEntry(document, eligibleEntries, priorUndated) {
 			lastNewEntryAt = now
-		} else if lastNewEntryAt.IsZero() {
-			lastNewEntryAt = latestUndatedFirstSeen(eligibleEntries)
+		}
+		if persistedFirstSeen := latestUndatedFirstSeen(eligibleEntries); persistedFirstSeen.After(lastNewEntryAt) {
+			lastNewEntryAt = persistedFirstSeen
 		}
 		retained, pubDates := mergeFeedEntryDates(document, eligibleEntries, priorEntries)
 		state := &store.SubscriptionPollState{
-			URLChangedAt:   historyResetAt,
-			LastNewEntryAt: lastNewEntryAt,
-			Complete:       document.Complete,
-			UpdateInterval: document.UpdateInterval,
-			MaxAge:         result.MaxAge,
-			Entries:        retained,
+			URLChangedAt:     historyResetAt,
+			LastNewEntryAt:   lastNewEntryAt,
+			SeenUndatedGUIDs: mergeSeenUndatedGUIDs(document, eligibleEntries, priorUndated),
+			Complete:         document.Complete,
+			UpdateInterval:   document.UpdateInterval,
+			MaxAge:           result.MaxAge,
+			Entries:          retained,
 		}
 		return adaptivePollInterval(document, result.MaxAge, pubDates, lastNewEntryAt, effectiveAddedAt, now), state, nil
 	}
@@ -122,17 +126,20 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 	entries := filterPollEntriesSince(allEntries, historyResetAt, urlChanged)
 	pubDates := storedEntryPubDates(entries)
 	var lastNewEntryAt time.Time
+	var priorUndated []string
 	if !urlChanged {
 		lastNewEntryAt = prevState.LastNewEntryAt
+		priorUndated = prevState.SeenUndatedGUIDs
 	}
-	if lastNewEntryAt.IsZero() {
-		lastNewEntryAt = latestUndatedFirstSeen(entries)
+	if persistedFirstSeen := latestUndatedFirstSeen(entries); persistedFirstSeen.After(lastNewEntryAt) {
+		lastNewEntryAt = persistedFirstSeen
 	}
 	if isFeedDormant(pubDates, lastNewEntryAt, effectiveAddedAt, now) {
 		state := &store.SubscriptionPollState{
-			URLChangedAt:   historyResetAt,
-			LastNewEntryAt: lastNewEntryAt,
-			Entries:        retainPollEntryDates(storedPollEntryDates(entries)),
+			URLChangedAt:     historyResetAt,
+			LastNewEntryAt:   lastNewEntryAt,
+			SeenUndatedGUIDs: mergeSeenUndatedGUIDs(scrape.FeedDocument{}, entries, priorUndated),
+			Entries:          retainPollEntryDates(storedPollEntryDates(entries)),
 		}
 		return MaxPollInterval, state, nil
 	}
@@ -147,11 +154,12 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 	var nextState *store.SubscriptionPollState
 	if cachedDoc.UpdateInterval > 0 || result.HasCacheControl || !historyResetAt.IsZero() || !lastNewEntryAt.IsZero() {
 		nextState = &store.SubscriptionPollState{
-			URLChangedAt:   historyResetAt,
-			LastNewEntryAt: lastNewEntryAt,
-			UpdateInterval: cachedDoc.UpdateInterval,
-			MaxAge:         result.MaxAge,
-			Entries:        retainPollEntryDates(storedPollEntryDates(entries)),
+			URLChangedAt:     historyResetAt,
+			LastNewEntryAt:   lastNewEntryAt,
+			SeenUndatedGUIDs: mergeSeenUndatedGUIDs(scrape.FeedDocument{}, entries, priorUndated),
+			UpdateInterval:   cachedDoc.UpdateInterval,
+			MaxAge:           result.MaxAge,
+			Entries:          retainPollEntryDates(storedPollEntryDates(entries)),
 		}
 	}
 	return adaptivePollInterval(cachedDoc, result.MaxAge, pubDates, lastNewEntryAt, effectiveAddedAt, now), nextState, nil
@@ -333,22 +341,73 @@ func filterPollEntriesSince(entries []store.SubscriptionEntry, resetAt time.Time
 	return filtered
 }
 
-func documentHasNewEntry(document scrape.FeedDocument, priorDBEntries []store.SubscriptionEntry) bool {
+const maxSeenUndatedGUIDs = 512
+
+func undatedEntryKey(entry scrape.FeedEntry) string {
+	id := strings.TrimSpace(entry.GUID)
+	if id == "" {
+		id = strings.TrimSpace(entry.EnclosureURL)
+	}
+	if id == "" {
+		id = strings.TrimSpace(entry.Title)
+	}
+	if id == "" {
+		return ""
+	}
+	return pollEntryKey(id)
+}
+
+func documentHasNewUndatedEntry(document scrape.FeedDocument, priorDBEntries []store.SubscriptionEntry, priorUndated []string) bool {
 	if len(document.Entries) == 0 {
 		return false
 	}
-	knownGUIDs := make(map[string]bool, len(priorDBEntries))
+	knownKeys := make(map[string]bool, len(priorDBEntries)+len(priorUndated))
+	for _, k := range priorUndated {
+		if k != "" {
+			knownKeys[k] = true
+		}
+	}
 	for _, entry := range priorDBEntries {
 		if entry.GUID != "" {
-			knownGUIDs[entry.GUID] = true
+			knownKeys[pollEntryKey(entry.GUID)] = true
 		}
 	}
 	for _, entry := range document.Entries {
-		if entry.GUID == "" || !knownGUIDs[entry.GUID] {
+		if !entry.PublishedAt.IsZero() {
+			continue
+		}
+		key := undatedEntryKey(entry)
+		if key == "" || !knownKeys[key] {
 			return true
 		}
 	}
 	return false
+}
+
+func mergeSeenUndatedGUIDs(document scrape.FeedDocument, priorDBEntries []store.SubscriptionEntry, priorUndated []string) []string {
+	seen := make(map[string]bool, len(document.Entries)+len(priorUndated))
+	merged := make([]string, 0, min(maxSeenUndatedGUIDs, len(document.Entries)+len(priorUndated)))
+	add := func(key string) {
+		if key == "" || seen[key] || len(merged) >= maxSeenUndatedGUIDs {
+			return
+		}
+		seen[key] = true
+		merged = append(merged, key)
+	}
+	for _, entry := range document.Entries {
+		if entry.PublishedAt.IsZero() {
+			add(undatedEntryKey(entry))
+		}
+	}
+	for _, k := range priorUndated {
+		add(k)
+	}
+	for _, entry := range priorDBEntries {
+		if entry.PublishedAt.IsZero() && entry.GUID != "" {
+			add(pollEntryKey(entry.GUID))
+		}
+	}
+	return merged
 }
 
 func latestUndatedFirstSeen(entries []store.SubscriptionEntry) time.Time {
@@ -374,11 +433,11 @@ func isFeedDormant(pubDates []time.Time, lastNewEntryAt, addedAt, now time.Time)
 			latest = ts
 		}
 	}
+	if lastNewEntryAt.After(latest) {
+		latest = lastNewEntryAt
+	}
 	if !latest.IsZero() {
 		return now.Sub(latest) >= DormantFeedAfter
-	}
-	if !lastNewEntryAt.IsZero() {
-		return now.Sub(lastNewEntryAt) >= DormantFeedAfter
 	}
 	return !addedAt.IsZero() && now.Sub(addedAt) >= DormantFeedAfter
 }

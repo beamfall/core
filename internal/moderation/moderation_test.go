@@ -202,7 +202,16 @@ func TestReportAndBlockRetainInstalledStateOnPostRenameSyncFailure(t *testing.T)
 		restoreSync()
 		t.Fatal("expected post-rename sync error on Block")
 	}
+	// Retrying the same Block while directory sync is still failing must retry persistence
+	// and keep reporting the sync error instead of treating the undurable state as clean.
+	if err := svc.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err == nil {
+		restoreSync()
+		t.Fatal("expected duplicate Block retry to surface still-failing sync error")
+	}
 	restoreSync()
+	if err := svc.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err != nil {
+		t.Fatalf("duplicate Block retry after recovery = %v, want nil", err)
+	}
 
 	// Both are already committed on disk and must remain in runtime memory so a
 	// subsequent durable save does not erase them.

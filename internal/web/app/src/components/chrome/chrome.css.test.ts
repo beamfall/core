@@ -99,4 +99,16 @@ describe("folder list wrapping for reduced motion and touch pointers", () => {
     expect(block).toMatch(/text-overflow:\s*clip;/);
     expect(block).toMatch(/overflow-wrap:\s*anywhere;/);
   });
+
+  it("clips .bf-folder-name outside the @container self-style query when scroll-driven marquee is supported", () => {
+    const marker = "@supports (animation-timeline: scroll(self inline)) {";
+    const at = css.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    const containerAt = css.indexOf("@container style(--bf-truncated: 1)", at);
+    expect(containerAt).toBeGreaterThan(at);
+    const beforeContainer = css.slice(at, containerAt);
+    expect(beforeContainer).toMatch(
+      /\[data-register="viewer"\]\s+\.bf-folder:is\(:hover,\s*:focus-visible\)\s+\.bf-folder-name\s*\{[^}]*text-overflow:\s*clip;/,
+    );
+  });
 });

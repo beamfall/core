@@ -281,12 +281,16 @@ func (h *Handler) setWebhookSettings(ctx context.Context, scope auth.Scope, req 
 	if err := v.Err(); err != nil {
 		return WebhookSettingsInfo{}, err
 	}
-	saved, err := admin.SetSettings(webhook.Settings{PublicBaseURL: base})
-	if err != nil {
-		return WebhookSettingsInfo{}, webhookError(err)
+	saved, saveErr := admin.SetSettings(webhook.Settings{PublicBaseURL: base})
+	var postSync *jsonstate.PostRenameSyncError
+	if saveErr != nil && !errors.As(saveErr, &postSync) {
+		return WebhookSettingsInfo{}, webhookError(saveErr)
 	}
-	if err := h.logActivity(ctx, scope, store.ActivityConfigUpdate, "webhook", "settings", ""); err != nil {
-		return WebhookSettingsInfo{}, err
+	if logErr := h.logActivity(ctx, scope, store.ActivityConfigUpdate, "webhook", "settings", ""); logErr != nil {
+		return WebhookSettingsInfo{}, logErr
+	}
+	if saveErr != nil {
+		return WebhookSettingsInfo{}, webhookError(saveErr)
 	}
 	return webhookSettingsInfo(saved), nil
 }

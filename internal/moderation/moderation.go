@@ -106,10 +106,11 @@ type state struct {
 
 // Service is a file-backed moderation store plus the published contact info.
 type Service struct {
-	path    string
-	contact ContactInfo
-	mu      sync.Mutex
-	state   state
+	path            string
+	contact         ContactInfo
+	mu              sync.Mutex
+	state           state
+	unsyncedPersist bool
 }
 
 // Open loads (or initializes) the moderation store at path. A missing file is a
@@ -152,11 +153,14 @@ func (s *Service) Report(scope Scope, req ReportRequest) error {
 	}
 	if err := s.persistLocked(); err != nil {
 		var postSync *jsonstate.PostRenameSyncError
-		if !errors.As(err, &postSync) {
+		if errors.As(err, &postSync) {
+			s.unsyncedPersist = true
+		} else {
 			s.state.Reports = previous
 		}
 		return err
 	}
+	s.unsyncedPersist = false
 	return nil
 }
 
@@ -172,6 +176,12 @@ func (s *Service) Block(scope Scope, req BlockRequest) error {
 	defer s.mu.Unlock()
 	for _, b := range s.state.Blocks {
 		if b.ProfileID == string(scope.ProfileID) && b.TargetType == req.TargetType && b.TargetID == req.TargetID {
+			if s.unsyncedPersist {
+				if err := s.persistLocked(); err != nil {
+					return err
+				}
+				s.unsyncedPersist = false
+			}
 			return nil // idempotent
 		}
 	}
@@ -188,11 +198,14 @@ func (s *Service) Block(scope Scope, req BlockRequest) error {
 	})
 	if err := s.persistLocked(); err != nil {
 		var postSync *jsonstate.PostRenameSyncError
-		if !errors.As(err, &postSync) {
+		if errors.As(err, &postSync) {
+			s.unsyncedPersist = true
+		} else {
 			s.state.Blocks = previous
 		}
 		return err
 	}
+	s.unsyncedPersist = false
 	return nil
 }
 

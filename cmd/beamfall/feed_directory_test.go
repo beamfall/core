@@ -789,6 +789,9 @@ func TestFeedDirectoryRejectsURLShapesAndAllowsPlainPunctuatedText(t *testing.T)
 		"https://host:99999/feed.xml",
 		"https://host/feed.xml?private_token=x",
 		"https://host/feed.xml?X-API-Key=x",
+		"feeds.example.org/show?feed_token=abc",
+		"feeds.example.org/feed.xml",
+		"user" + ":pass@feeds.example.org/feed.xml",
 		"http:host/feed?token=x",
 	} {
 		if _, err := searcher.SearchFeeds(t.Context(), rejected); !errors.Is(err, graph.ErrFeedSearchInvalidURL) {

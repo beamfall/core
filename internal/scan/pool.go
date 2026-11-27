@@ -61,16 +61,17 @@ type workerTask struct {
 	info fileStat
 
 	// Filled by the worker; the consumer must not read them before done closes.
-	stored      store.StoredFingerprint
-	fastPath    bool
-	fingerprint string
-	oshash      string
-	probe       probeOutcome
-	phash       string
-	local       []LocalMetadata
-	localClean  bool
-	err         error
-	done        chan struct{}
+	stored        store.StoredFingerprint
+	fastPath      bool
+	fingerprint   string
+	oshash        string
+	probe         probeOutcome
+	phash         string
+	local         []LocalMetadata
+	localClean    bool
+	localEligible bool
+	err           error
+	done          chan struct{}
 }
 
 // fileStat is the slice of fs.FileInfo the pipeline needs (size + mtime),

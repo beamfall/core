@@ -183,6 +183,8 @@ func (s *Store) ApplyLocalExtraction(ctx context.Context, in LocalExtractionInpu
 	return nil
 }
 
+const legacyPartReservationField = "legacy-part-reservation"
+
 type reconcileGroupedFile struct {
 	mediaID            MediaID
 	mediaClass         string
@@ -364,7 +366,7 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 			}
 
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO media(id, library_id, title, summary, year, duration_seconds, container, codec, video_width, video_height, media_class, mutated_by, summary_identified, year_identified, extra)
+				INSERT INTO media(id, library_id, title, summary, year, duration_seconds, container, codec, video_width, video_height, media_class, mutated_by, title_identified, summary_identified, year_identified, extra)
 				SELECT ?, library_id,
 				       CASE
 				         WHEN title_identified = 1 OR EXISTS (
@@ -373,7 +375,15 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 				         ) THEN title
 				         ELSE ?
 				       END,
-				       summary, year, 0, '', '', 0, 0, media_class, 'scan', summary_identified, year_identified, extra
+				       summary, year, 0, '', '', 0, 0, media_class, 'scan',
+				       CASE
+				         WHEN title_identified = 1 OR EXISTS (
+				           SELECT 1 FROM media_field_provenance p
+				           WHERE p.media_id = media.id AND p.field = 'title' AND p.source IN ('manual', 'operator')
+				         ) THEN 1
+				         ELSE 0
+				       END,
+				       summary_identified, year_identified, extra
 				FROM media
 				WHERE id = ?
 			`, newID, standaloneMediaTitle(file.path), group.mediaID); err != nil {
@@ -397,6 +407,22 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 			if err := copySplitMediaMetadataAndLinksTx(ctx, tx, group.mediaID, newID, plane.encrypted); err != nil {
 				return err
 			}
+			if file.missing && file.versionLabel == "" && file.partOrdinal == 0 && strings.HasPrefix(file.contentFingerprint, "sha256:") {
+				if _, err := tx.ExecContext(ctx, `
+					INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, ?)
+					ON CONFLICT(media_id, field) DO NOTHING
+				`, newID, legacyPartReservationField, string(MutationSourceScan)); err != nil {
+					return err
+				}
+			}
+		}
+		if len(group.files) > 1 && primary.missing && primary.versionLabel == "" && primary.partOrdinal == 0 && strings.HasPrefix(primary.contentFingerprint, "sha256:") {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, ?)
+				ON CONFLICT(media_id, field) DO NOTHING
+			`, group.mediaID, legacyPartReservationField, string(MutationSourceScan)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -405,17 +431,22 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 
 func copySplitMediaMetadataAndLinksTx(ctx context.Context, tx *sql.Tx, srcID, dstID MediaID, encrypted bool) error {
 	const splitPreservableFieldPredicate = `
-		   t.field NOT LIKE 'local-extract:%'
-		   AND t.field NOT LIKE 'artwork%'
-		   AND (
-			(t.field NOT IN ('capture-date', 'camera-make', 'camera-model', 'width', 'height', 'orientation', 'place')
-			  AND NOT EXISTS (
-				SELECT 1 FROM media_field_provenance p
-				WHERE p.media_id = t.media_id AND p.field = t.field AND p.source = 'scan'
-			  ))
-			OR EXISTS (
-			  SELECT 1 FROM media_field_provenance p
-			  WHERE p.media_id = t.media_id AND p.field = t.field AND p.source IN ('manual', 'operator')
+		   (
+			t.field = 'certification'
+			OR (
+			  t.field NOT LIKE 'local-extract:%'
+			  AND t.field NOT LIKE 'artwork%'
+			  AND (
+				(t.field NOT IN ('capture-date', 'camera-make', 'camera-model', 'width', 'height', 'orientation', 'place')
+				  AND NOT EXISTS (
+					SELECT 1 FROM media_field_provenance p
+					WHERE p.media_id = t.media_id AND p.field = t.field AND p.source = 'scan'
+				  ))
+				OR EXISTS (
+				  SELECT 1 FROM media_field_provenance p
+				  WHERE p.media_id = t.media_id AND p.field = t.field AND p.source IN ('manual', 'operator')
+				)
+			  )
 			)
 		   )`
 	for _, stmt := range []string{
@@ -435,13 +466,18 @@ func copySplitMediaMetadataAndLinksTx(ctx context.Context, tx *sql.Tx, srcID, ds
 		 SELECT ?, t.field, t.source, t.parser_owned
 		 FROM media_field_provenance t
 		 WHERE t.media_id = ?
-		   AND t.field NOT LIKE 'local-extract:%'
-		   AND t.field NOT LIKE 'artwork%'
-		   AND (t.field <> 'title' OR t.source IN ('manual', 'operator'))
 		   AND (
-			(t.field NOT IN ('capture-date', 'camera-make', 'camera-model', 'width', 'height', 'orientation', 'place')
-			  AND t.source <> 'scan')
-			OR t.source IN ('manual', 'operator')
+			t.field = 'certification'
+			OR (
+			  t.field NOT LIKE 'local-extract:%'
+			  AND t.field NOT LIKE 'artwork%'
+			  AND (t.field <> 'title' OR t.source IN ('manual', 'operator'))
+			  AND (
+				(t.field NOT IN ('capture-date', 'camera-make', 'camera-model', 'width', 'height', 'orientation', 'place')
+				  AND t.source <> 'scan')
+				OR t.source IN ('manual', 'operator')
+			  )
+			)
 		   )`,
 		`INSERT OR IGNORE INTO media_field_rejection(media_id, field, field_type, value, rejected_at_ms)
 		 SELECT ?, field, field_type, value, rejected_at_ms

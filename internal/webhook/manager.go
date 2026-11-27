@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -146,6 +147,16 @@ func OpenManager(opts ManagerOptions) (*Manager, error) {
 		baseURL:         fc.PublicBaseURL,
 		unsyncedCreates: map[string]string{},
 		staleSecretRefs: map[string]struct{}{},
+	}
+	for _, fe := range fc.Endpoints {
+		if fe.PendingCreateKey != "" && fe.ID != "" {
+			m.unsyncedCreates[fe.PendingCreateKey] = fe.ID
+		}
+	}
+	for _, ref := range fc.StaleSecretRefs {
+		if ref != "" && !refInUse(fc, ref) {
+			m.staleSecretRefs[ref] = struct{}{}
+		}
 	}
 	running := m.resolveAll()
 	cfg := Config{
@@ -300,8 +311,6 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 		if index < 0 {
 			return EndpointView{}, ErrUnknownEndpoint
 		}
-	} else if len(m.file.Endpoints) >= maxEndpoints {
-		return EndpointView{}, ErrConfigDiagnostic
 	}
 
 	fe, err := m.buildFileEndpoint(in, prior, index >= 0)
@@ -336,11 +345,29 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 				}
 			}
 		}
+		if index < 0 && len(m.file.Endpoints) >= maxEndpoints {
+			return EndpointView{}, ErrConfigDiagnostic
+		}
 	}
-	if secret == "" {
+	switch {
+	case secret == "":
 		fe.SecretRef = ""
-	} else if fe.SecretRef == "" {
+	case prior.SecretRef == "":
 		fe.SecretRef = "webhook-" + fe.ID
+	case in.Secret != nil:
+		// Rotate to a fresh secret ref instead of overwriting prior.SecretRef in
+		// place so a crash before directory durability never pairs the old URL
+		// with the new token.
+		ref, refErr := newSecretRef(fe.ID)
+		if refErr != nil {
+			return EndpointView{}, ErrSecretDiagnostic
+		}
+		fe.SecretRef = ref
+	}
+	if index < 0 {
+		fe.PendingCreateKey = createSig
+	} else {
+		fe.PendingCreateKey = ""
 	}
 	ep := fe.endpoint([]byte(secret))
 	if _, err := validateEndpoint(ep); err != nil {
@@ -349,11 +376,20 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 
 	next := m.file
 	next.Endpoints = append([]fileEndpoint(nil), m.file.Endpoints...)
+	savedIdx := index
 	if index >= 0 {
 		next.Endpoints[index] = fe
 	} else {
+		savedIdx = len(next.Endpoints)
 		next.Endpoints = append(next.Endpoints, fe)
 	}
+	retiredRef := ""
+	if prior.SecretRef != "" && prior.SecretRef != fe.SecretRef && !refInUse(next, prior.SecretRef) {
+		retiredRef = prior.SecretRef
+	}
+	hadStaleBeforeSave := len(m.staleSecretRefs) > 0 || retiredRef != ""
+	next.StaleSecretRefs = m.sortedStaleRefs(next, retiredRef, fe.SecretRef)
+
 	running, err := m.runningSetWith(next, fe.ID, ep)
 	if err != nil {
 		return EndpointView{}, err
@@ -379,11 +415,11 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 	m.file = next
 	delete(m.problems, fe.ID)
 	delete(m.staleSecretRefs, fe.SecretRef)
-	if prior.SecretRef != "" && prior.SecretRef != fe.SecretRef && !refInUse(next, prior.SecretRef) {
-		m.staleSecretRefs[prior.SecretRef] = struct{}{}
+	if retiredRef != "" {
+		m.staleSecretRefs[retiredRef] = struct{}{}
 	}
 	if saveErr != nil {
-		if createSig != "" {
+		if index < 0 && createSig != "" {
 			m.unsyncedCreates[createSig] = fe.ID
 		}
 		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
@@ -391,7 +427,46 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 	}
 	m.clearUnsyncedCreateID(fe.ID)
 	m.purgeStaleSecretRefs(next)
+	if fe.PendingCreateKey != "" || hadStaleBeforeSave {
+		cleaned := next
+		cleaned.Endpoints = append([]fileEndpoint(nil), next.Endpoints...)
+		cleaned.Endpoints[savedIdx].PendingCreateKey = ""
+		cleaned.StaleSecretRefs = m.sortedStaleRefs(cleaned, "", "")
+		if cleanErr := jsonstate.Save(m.opts.ConfigPath, cleaned); cleanErr == nil || errors.As(cleanErr, &postSync) {
+			m.file = cleaned
+			fe = cleaned.Endpoints[savedIdx]
+		}
+	}
 	return m.view(fe), nil
+}
+
+func newSecretRef(id string) (string, error) {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return "webhook-" + id + "-" + hex.EncodeToString(b[:]), nil
+}
+
+func (m *Manager) sortedStaleRefs(cfg fileConfig, addRef, keepRef string) []string {
+	set := make(map[string]struct{}, len(m.staleSecretRefs)+1)
+	for ref := range m.staleSecretRefs {
+		if ref != "" && ref != keepRef && !refInUse(cfg, ref) {
+			set[ref] = struct{}{}
+		}
+	}
+	if addRef != "" && addRef != keepRef && !refInUse(cfg, addRef) {
+		set[addRef] = struct{}{}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for ref := range set {
+		out = append(out, ref)
+	}
+	slices.Sort(out)
+	return out
 }
 
 func endpointCreateKey(fe fileEndpoint, secret string) string {
@@ -571,6 +646,12 @@ func (m *Manager) DeleteEndpoint(id string) error {
 			running = append(running, ep)
 		}
 	}
+	retiredRef := ""
+	if removed.SecretRef != "" && !refInUse(next, removed.SecretRef) {
+		retiredRef = removed.SecretRef
+	}
+	hadStaleBeforeSave := len(m.staleSecretRefs) > 0 || retiredRef != ""
+	next.StaleSecretRefs = m.sortedStaleRefs(next, retiredRef, "")
 	saveErr := jsonstate.Save(m.opts.ConfigPath, next)
 	var postSync *jsonstate.PostRenameSyncError
 	if saveErr != nil && !errors.As(saveErr, &postSync) {
@@ -583,14 +664,23 @@ func (m *Manager) DeleteEndpoint(id string) error {
 	m.file = next
 	delete(m.problems, id)
 	m.clearUnsyncedCreateID(id)
-	if removed.SecretRef != "" && !refInUse(next, removed.SecretRef) {
-		m.staleSecretRefs[removed.SecretRef] = struct{}{}
+	if retiredRef != "" {
+		m.staleSecretRefs[retiredRef] = struct{}{}
 	}
 	if saveErr != nil {
 		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
 		return errors.Join(ErrConfigDiagnostic, saveErr)
 	}
 	m.purgeStaleSecretRefs(next)
+	if hadStaleBeforeSave {
+		cleaned := next
+		cleaned.StaleSecretRefs = m.sortedStaleRefs(cleaned, "", "")
+		if len(cleaned.StaleSecretRefs) < len(next.StaleSecretRefs) {
+			if cleanErr := jsonstate.Save(m.opts.ConfigPath, cleaned); cleanErr == nil || errors.As(cleanErr, &postSync) {
+				m.file = cleaned
+			}
+		}
+	}
 	return nil
 }
 
@@ -632,6 +722,8 @@ func (m *Manager) SetSettings(s Settings) (Settings, error) {
 	defer m.mu.Unlock()
 	next := m.file
 	next.PublicBaseURL = base
+	hadStale := len(m.staleSecretRefs) > 0
+	next.StaleSecretRefs = m.sortedStaleRefs(next, "", "")
 	saveErr := jsonstate.Save(m.opts.ConfigPath, next)
 	var postSync *jsonstate.PostRenameSyncError
 	if saveErr != nil && !errors.As(saveErr, &postSync) {
@@ -645,6 +737,15 @@ func (m *Manager) SetSettings(s Settings) (Settings, error) {
 		return Settings{PublicBaseURL: base}, errors.Join(ErrConfigDiagnostic, saveErr)
 	}
 	m.purgeStaleSecretRefs(next)
+	if hadStale {
+		cleaned := next
+		cleaned.StaleSecretRefs = m.sortedStaleRefs(cleaned, "", "")
+		if len(cleaned.StaleSecretRefs) < len(next.StaleSecretRefs) {
+			if cleanErr := jsonstate.Save(m.opts.ConfigPath, cleaned); cleanErr == nil || errors.As(cleanErr, &postSync) {
+				m.file = cleaned
+			}
+		}
+	}
 	return Settings{PublicBaseURL: base}, nil
 }
 

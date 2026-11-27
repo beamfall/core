@@ -2679,11 +2679,11 @@
       animation-timeline: scroll(self inline);
     }
 
-    @container style(--bf-truncated: 1) {
-      [data-register="viewer"] .bf-folder:is(:hover, :focus-visible) .bf-folder-name {
-        text-overflow: clip;
-      }
+    [data-register="viewer"] .bf-folder:is(:hover, :focus-visible) .bf-folder-name {
+      text-overflow: clip;
+    }
 
+    @container style(--bf-truncated: 1) {
       [data-register="viewer"] .bf-folder:is(:hover, :focus-visible) .bf-folder-name > span {
         display: inline-block;
         margin-inline-start: 100%;

@@ -167,6 +167,14 @@ func (f *postRenameSyncFailWebhooks) DeleteEndpoint(id string) error {
 	return nil
 }
 
+func (f *postRenameSyncFailWebhooks) SetSettings(s webhook.Settings) (webhook.Settings, error) {
+	f.settings = s
+	if f.fail {
+		return s, errors.Join(webhook.ErrConfigDiagnostic, &jsonstate.PostRenameSyncError{Err: errors.New("dir sync EIO")})
+	}
+	return s, nil
+}
+
 func TestWebhookMutationsRecordActivityOnPostRenameSyncFailure(t *testing.T) {
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)
@@ -178,6 +186,10 @@ func TestWebhookMutationsRecordActivityOnPostRenameSyncFailure(t *testing.T) {
 	if _, errs := postLibraryTrash(t, handler, saveQuery); len(errs) == 0 {
 		t.Fatal("expected error from saveWebhook on post-rename sync failure")
 	}
+	settingsQuery := `{"query":"mutation SetWebhookSettings($publicBaseURL: String) { setWebhookSettings(publicBaseURL: $publicBaseURL) { publicBaseURL } }","variables":{"publicBaseURL":"https://media.example"}}`
+	if _, errs := postLibraryTrash(t, handler, settingsQuery); len(errs) == 0 {
+		t.Fatal("expected error from setWebhookSettings on post-rename sync failure")
+	}
 	if _, errs := postLibraryTrash(t, handler, `{"query":"mutation Del($id: String!) { deleteWebhook(id: $id) }","variables":{"id":"hook-installed"}}`); len(errs) == 0 {
 		t.Fatal("expected error from deleteWebhook on post-rename sync failure")
 	}
@@ -186,8 +198,8 @@ func TestWebhookMutationsRecordActivityOnPostRenameSyncFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 2 || entries[0].TargetID != "hook-installed" || entries[1].TargetID != "hook-installed" {
-		t.Fatalf("activity entries = %+v, want both save & delete recorded for hook-installed", entries)
+	if len(entries) != 3 || entries[0].TargetID != "hook-installed" || entries[1].TargetID != "settings" || entries[2].TargetID != "hook-installed" {
+		t.Fatalf("activity entries = %+v, want save, settings, & delete recorded", entries)
 	}
 }
 
