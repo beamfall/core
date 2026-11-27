@@ -172,7 +172,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		return err
 	}
 	if task.probe.succeeded && len(task.probe.value.Chapters) > 0 {
-		if err := s.st.ReplaceDetectedMarkers(s.ctx, media.ID, "chapter-import", markersFromProbeChapters(task.probe.value.Chapters), store.LibraryFilter{AllLibraries: true}, now()); err != nil {
+		if err := s.st.ReplaceDetectedMarkers(s.ctx, media.ID, "chapter-import", markersFromProbeChapters(task.probe.value.Chapters), store.LibraryFilter{AllLibraries: true, Revealed: true}, now()); err != nil {
 			return err
 		}
 	}
@@ -404,7 +404,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		return err
 	}
 	if len(probeChapters) > 0 {
-		if err := s.st.ReplaceDetectedMarkers(s.ctx, media.ID, "chapter-import", markersFromProbeChapters(probeChapters), store.LibraryFilter{AllLibraries: true}, now()); err != nil {
+		if err := s.st.ReplaceDetectedMarkers(s.ctx, media.ID, "chapter-import", markersFromProbeChapters(probeChapters), store.LibraryFilter{AllLibraries: true, Revealed: true}, now()); err != nil {
 			return err
 		}
 	}

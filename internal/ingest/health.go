@@ -442,9 +442,17 @@ func documentHasNewUndatedEntry(document scrape.FeedDocument, priorDBEntries []s
 
 func mergeSeenUndatedGUIDs(document scrape.FeedDocument, priorDBEntries []store.SubscriptionEntry, priorUndated []string) []string {
 	docKeys, _ := documentUndatedKeys(document)
-	limit := max(maxSeenUndatedGUIDs, len(docKeys))
-	seen := make(map[string]bool, len(docKeys)+len(priorUndated))
-	merged := make([]string, 0, min(limit, len(docKeys)+len(priorUndated)))
+	var datedTextKeys []string
+	for _, entry := range document.Entries {
+		if !entry.PublishedAt.IsZero() && strings.TrimSpace(entry.EnclosureURL) == "" {
+			if guid := strings.TrimSpace(entry.GUID); guid != "" {
+				datedTextKeys = append(datedTextKeys, pollEntryKey(guid))
+			}
+		}
+	}
+	limit := max(maxSeenUndatedGUIDs, len(docKeys)+len(datedTextKeys))
+	seen := make(map[string]bool, len(docKeys)+len(datedTextKeys)+len(priorUndated))
+	merged := make([]string, 0, min(limit, len(docKeys)+len(datedTextKeys)+len(priorUndated)))
 	add := func(key string) {
 		if key == "" || seen[key] || len(merged) >= limit {
 			return
@@ -453,6 +461,9 @@ func mergeSeenUndatedGUIDs(document scrape.FeedDocument, priorDBEntries []store.
 		merged = append(merged, key)
 	}
 	for _, key := range docKeys {
+		add(key)
+	}
+	for _, key := range datedTextKeys {
 		add(key)
 	}
 	for _, k := range priorUndated {
