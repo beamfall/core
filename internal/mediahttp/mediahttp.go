@@ -1247,10 +1247,11 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	if ended() {
 		return
 	}
-	defer interruptResponseWritesOnContextDone(r.Context(), w)()
+	cutoff := artifact.Cutoff()
+	defer interruptResponseWritesOnContextOrCutoff(r.Context(), cutoff, w)()
 	http.ServeContent(w, r, name, info.ModTime(), livePlainReadSeeker{
 		ctx:        r.Context(),
-		cutoff:     artifact.Cutoff(),
+		cutoff:     cutoff,
 		ReadSeeker: f,
 	})
 }
@@ -2000,6 +2001,10 @@ func (r livePlainReadSeeker) Seek(offset int64, whence int) (int64, error) {
 }
 
 func interruptResponseWritesOnContextDone(ctx context.Context, w http.ResponseWriter) func() {
+	return interruptResponseWritesOnContextOrCutoff(ctx, nil, w)
+}
+
+func interruptResponseWritesOnContextOrCutoff(ctx context.Context, cutoff <-chan struct{}, w http.ResponseWriter) func() {
 	finished := make(chan struct{})
 	stopped := make(chan struct{})
 	controller := http.NewResponseController(w)
@@ -2007,6 +2012,8 @@ func interruptResponseWritesOnContextDone(ctx context.Context, w http.ResponseWr
 		defer close(stopped)
 		select {
 		case <-ctx.Done():
+			_ = controller.SetWriteDeadline(time.Now())
+		case <-cutoff:
 			_ = controller.SetWriteDeadline(time.Now())
 		case <-finished:
 		}
