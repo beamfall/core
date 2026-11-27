@@ -436,7 +436,7 @@ func (h *Handler) authorizeSessionControl(
 	}
 	var playing []store.MediaID
 	for _, s := range active {
-		if s.SessionID != store.SessionID(targetID) {
+		if s.SessionID != store.SessionID(targetID) || s.ProfileID != target.ProfileID {
 			continue
 		}
 		if s.Title == "" { // reveal-hidden: Media identity is suppressed

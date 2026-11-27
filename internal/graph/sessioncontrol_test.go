@@ -393,6 +393,45 @@ func TestControlSessionAdultToManagedBoundedCommands(t *testing.T) {
 	}
 }
 
+func TestControlSessionAfterProfileSwitchExcludesPriorProfileMedia(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	ctx := t.Context()
+
+	zeta, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID:          "library-local",
+		Path:               "/media/zeta.mp4",
+		Title:              "Zeta Media",
+		Container:          "mp4",
+		Codec:              "h264",
+		Class:              store.MediaClassVideo,
+		ContentFingerprint: "sha256:sc-zeta",
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+
+	recordActive(t, st, "session-default", "profile-default", "device-tv", "media-direct", "media-alpha", false)
+	if err := st.SetSessionProfile(ctx, "session-default", "profile-managed"); err != nil {
+		t.Fatalf("SetSessionProfile: %v", err)
+	}
+	recordActive(t, st, "session-default", "profile-managed", "device-tv", "media-direct", zeta.ID, false)
+
+	if _, errs := controlSessionPost(t, handler, "session-default", "pause", authorizeManaged); len(errs) != 0 {
+		t.Fatalf("controlSession errors = %#v", errs)
+	}
+	payloads := sessionControlPayloads(t, st)
+	if len(payloads) != 1 {
+		t.Fatalf("payloads = %d, want 1", len(payloads))
+	}
+	if payloads[0].ProfileID != "profile-managed" {
+		t.Fatalf("payload.ProfileID = %q, want profile-managed", payloads[0].ProfileID)
+	}
+	if len(payloads[0].PlayingMediaIDs) != 1 || payloads[0].PlayingMediaIDs[0] != zeta.ID {
+		t.Fatalf("payload.PlayingMediaIDs = %v, want [%s]", payloads[0].PlayingMediaIDs, zeta.ID)
+	}
+}
+
 func errsJoin(errs []graphError) string {
 	parts := make([]string, len(errs))
 	for i, e := range errs {
