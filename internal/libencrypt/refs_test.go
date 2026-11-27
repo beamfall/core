@@ -224,3 +224,33 @@ func TestProvisionRefusesUnreadableProvisionJournal(t *testing.T) {
 		t.Fatalf("refused provision still wrote a bundle: %v", err)
 	}
 }
+
+func TestLegacyRefMigrationSkipsUnreadableV2RefAndFailsStoreError(t *testing.T) {
+	secrets := newMemStore()
+	badOwner := "library-bad"
+	goodOwner := "library-good"
+	badRef := bundleRef(badOwner)
+	secrets.values[badRef] = "unreadable-placeholder"
+	secrets.failGetRef = badRef
+	secrets.failGetErr = errors.New("permission denied")
+
+	secrets.values[legacyBundleRef(goodOwner)] = `{"version":1}`
+	m := NewManagerWithParams(secrets, TestArgon2Params)
+
+	report, err := m.MigrateLegacyRefs([]string{badOwner, goodOwner})
+	if err != nil {
+		t.Fatalf("MigrateLegacyRefs failed on single unreadable v2 ref: %v", err)
+	}
+	if !slices.Contains(report.Unreadable, badRef) {
+		t.Fatalf("Unreadable = %v, want %s", report.Unreadable, badRef)
+	}
+	if !slices.Contains(report.Moved, legacyBundleRef(goodOwner)) {
+		t.Fatalf("Moved = %v, want %s", report.Moved, legacyBundleRef(goodOwner))
+	}
+
+	// Store-level inventory failure still aborts migration.
+	secrets.failRefsErr = errors.New("secrets dir unreadable")
+	if _, err := m.MigrateLegacyRefs([]string{badOwner, goodOwner}); err == nil {
+		t.Fatal("MigrateLegacyRefs succeeded when SecretRefs failed")
+	}
+}

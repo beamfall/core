@@ -109,6 +109,10 @@ type relayLoopHarness struct {
 }
 
 func startRelayLoop(t *testing.T, carrier *fakeRelayCarrier) *relayLoopHarness {
+	return startRelayLoopWithClock(t, carrier, time.Now)
+}
+
+func startRelayLoopWithClock(t *testing.T, carrier *fakeRelayCarrier, now func() time.Time) *relayLoopHarness {
 	t.Helper()
 	h := &relayLoopHarness{t: t, carrier: carrier, timers: make(chan fakeRelayTimer, 16), done: make(chan struct{})}
 	after := func(d time.Duration) <-chan time.Time {
@@ -121,7 +125,7 @@ func startRelayLoop(t *testing.T, carrier *fakeRelayCarrier) *relayLoopHarness {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	go func() {
 		defer close(h.done)
-		runRelayCarrierLoop(ctx, carrier, logger, after)
+		runRelayCarrierLoopWithClock(ctx, carrier, logger, now, after)
 	}()
 	t.Cleanup(h.stop)
 	return h
@@ -159,8 +163,8 @@ func expectRelayQuiet[T any](t *testing.T, ch <-chan T, what string) {
 
 func assertBackoffDelay(t *testing.T, d, base time.Duration) {
 	t.Helper()
-	if d < base-base/5 || d > base+base/5 {
-		t.Fatalf("backoff delay = %v, want %v +/-20%%", d, base)
+	if d < 0 || d > base {
+		t.Fatalf("backoff delay = %v, want [0, %v] full jitter", d, base)
 	}
 }
 
@@ -258,14 +262,57 @@ func TestRelayCarrierRetriesUnauthorizedWithBackoff(t *testing.T) {
 	}
 }
 
-func TestRelayCarrierStopsOnInvalidHello(t *testing.T) {
+func TestRelayCarrierRetriesInvalidHelloOnSlowSchedule(t *testing.T) {
 	carrier := newFakeRelayCarrier()
 	carrier.connectErrs = []error{remoteaccess.ErrRelayInvalidHello}
 	h := startRelayLoop(t, carrier)
-	recvRelay(t, carrier.connects, "dial")
+	if n := recvRelay(t, carrier.connects, "first dial"); n != 1 {
+		t.Fatalf("dial = %d, want 1", n)
+	}
+	slow := recvRelay(t, h.timers, "invalid hello slow retry")
+	if slow.d < relayCarrierInvalidHelloMin || slow.d > relayCarrierInvalidHelloMax {
+		t.Fatalf("invalid hello retry delay = %v, want [%v, %v]", slow.d, relayCarrierInvalidHelloMin, relayCarrierInvalidHelloMax)
+	}
 	select {
 	case <-h.done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("loop kept running after invalid hello")
+		t.Fatal("loop stopped after invalid hello")
+	default:
+	}
+	slow.fire()
+	if n := recvRelay(t, carrier.connects, "retry dial"); n != 2 {
+		t.Fatalf("dial = %d, want 2", n)
+	}
+	recvRelay(t, carrier.carryStarts, "carry after retry")
+}
+
+func TestRelayCarrierHealthySessionRedialsWithin250ms(t *testing.T) {
+	var mu sync.Mutex
+	clock := time.Unix(1_700_000_000, 0)
+	now := func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return clock
+	}
+	carrier := newFakeRelayCarrier()
+	h := startRelayLoopWithClock(t, carrier, now)
+
+	recvRelay(t, carrier.connects, "first dial")
+	recvRelay(t, carrier.carryStarts, "first carry")
+	recvRelay(t, h.timers, "rotation timer")
+
+	mu.Lock()
+	clock = clock.Add(relayCarrierHealthyDuration + time.Second)
+	mu.Unlock()
+
+	_ = carrier.session(1).Close()
+	recvRelay(t, carrier.carryEnds, "first carry end")
+
+	redial := recvRelay(t, h.timers, "healthy redial timer")
+	if redial.d < 0 || redial.d > relayCarrierHealthyRedialMax {
+		t.Fatalf("healthy redial delay = %v, want [0, %v]", redial.d, relayCarrierHealthyRedialMax)
+	}
+	redial.fire()
+	if n := recvRelay(t, carrier.connects, "redial"); n != 2 {
+		t.Fatalf("dial = %d, want 2", n)
 	}
 }

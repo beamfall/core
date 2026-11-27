@@ -88,7 +88,15 @@ type RelayClient struct {
 	// generation counts successful registrations. Only the newest
 	// generation's Carry exit may change the relay state; a superseded
 	// (rotated-out) session draining away is not a carrier loss.
-	generation uint64
+	generation          uint64
+	backendDialFailures uint64
+	streamCapRefusals   uint64
+}
+
+// RelayMetrics reports non-secret relay carrier counters for Console/metrics.
+type RelayMetrics struct {
+	BackendDialFailures uint64
+	StreamCapRefusals   uint64
 }
 
 // RelaySession is a live carrier session returned by Connect and consumed by
@@ -186,6 +194,23 @@ func (c *RelayClient) Status() (RelayState, string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.state, c.lastError
+}
+
+// Metrics returns the relay client's non-secret carrier error counters.
+func (c *RelayClient) Metrics() RelayMetrics {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return RelayMetrics{
+		BackendDialFailures: c.backendDialFailures,
+		StreamCapRefusals:   c.streamCapRefusals,
+	}
+}
+
+// RelayMetrics returns the backend dial failure and stream-cap refusal counts
+// for /metrics exposition.
+func (c *RelayClient) RelayMetrics() (backendDialFailures, streamCapRefusals uint64) {
+	m := c.Metrics()
+	return m.BackendDialFailures, m.StreamCapRefusals
 }
 
 func (c *RelayClient) setState(s RelayState, errMsg string) {
@@ -489,6 +514,7 @@ func (c *RelayClient) Carry(ctx context.Context, session relaySession) error {
 		select {
 		case streamSlots <- struct{}{}:
 		default:
+			c.recordStreamCapRefusal(generation, maxStreams)
 			_ = stream.Close()
 			continue
 		}
@@ -498,7 +524,7 @@ func (c *RelayClient) Carry(ctx context.Context, session relaySession) error {
 				<-streamSlots
 				wg.Done()
 			}()
-			c.handleStream(ctx, stream, backend)
+			c.handleStream(ctx, stream, backend, generation)
 		}()
 	}
 	wg.Wait()
@@ -531,14 +557,15 @@ func (c *RelayClient) Carry(ctx context.Context, session relaySession) error {
 // It deliberately carries no idle/inactivity deadline: a byte-blind timeout would
 // also cut genuinely idle long-lived connections (websockets, SSE, long-poll);
 // total exposure is bounded by maxStreams instead.
-func (c *RelayClient) handleStream(ctx context.Context, stream net.Conn, backend string) {
+func (c *RelayClient) handleStream(ctx context.Context, stream net.Conn, backend string, generation uint64) {
 	defer stream.Close()
 	local, err := new(net.Dialer).DialContext(ctx, "tcp", backend)
 	if err != nil {
 		// No token, no payload, no relayed-connection detail in the state.
-		c.setState(c.currentState(), "")
+		c.recordBackendDialFailure(generation, err)
 		return
 	}
+	c.clearBackendDialError(generation)
 	defer local.Close()
 
 	// Close both halves on ctx cancel (carrier teardown / shutdown) so a copy
@@ -592,35 +619,54 @@ func halfCloseWrite(dst net.Conn) {
 	}
 }
 
-// currentState reads the state under the lock (used by handleStream to avoid
-// clobbering RelayConnected on a transient backend dial miss).
-func (c *RelayClient) currentState() RelayState {
+func (c *RelayClient) recordStreamCapRefusal(generation uint64, maxStreams int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.state
+	c.streamCapRefusals++
+	if generation == 0 || generation == c.generation {
+		c.lastError = fmt.Sprintf("relay stream limit reached (%d concurrent streams)", maxStreams)
+	}
+}
+
+func (c *RelayClient) recordBackendDialFailure(generation uint64, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.backendDialFailures++
+	if generation == 0 || generation == c.generation {
+		c.lastError = "relay backend dial failed: " + err.Error()
+	}
+}
+
+func (c *RelayClient) clearBackendDialError(generation uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if (generation == 0 || generation == c.generation) && c.state == RelayConnected && strings.HasPrefix(c.lastError, "relay backend dial failed:") {
+		c.lastError = ""
+	}
 }
 
 // resolveToken reads the shared HMAC secret from <secretDir>/relay-token (the
 // same value as relayd --token-file). It refuses a group/other-readable file
-// (invariant 5) and an empty file. The returned error never contains the
-// secret's contents or path. Leading and trailing white space is trimmed, as
-// relayd does; the bytes are used raw, never base64-decoded, and never sent.
+// (invariant 5) and an empty file. Errors name the expected path and mode
+// 0600, and never contain the secret's contents. Leading and trailing white
+// space is trimmed, as relayd does; the bytes are used raw, never
+// base64-decoded, and never sent.
 func (c *RelayClient) resolveToken() ([]byte, error) {
 	path := filepath.Join(c.secretDir, relayTokenFile)
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, errors.New("relay token unavailable")
+		return nil, fmt.Errorf("relay token unavailable at %s (expected mode 0600)", path)
 	}
 	if info.Mode().Perm()&0o077 != 0 {
-		return nil, errors.New("relay token file must be mode 0600 — refusing group/other-accessible secret")
+		return nil, fmt.Errorf("relay token file %s must be mode 0600 — refusing group/other-accessible secret", path)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, errors.New("relay token file unreadable")
+		return nil, fmt.Errorf("relay token file %s unreadable (expected mode 0600)", path)
 	}
 	token := []byte(strings.TrimSpace(string(data)))
 	if len(token) == 0 {
-		return nil, errors.New("relay token file is empty")
+		return nil, fmt.Errorf("relay token file %s is empty (expected mode 0600)", path)
 	}
 	return token, nil
 }

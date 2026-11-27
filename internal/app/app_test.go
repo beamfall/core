@@ -12,6 +12,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -57,6 +58,7 @@ import (
 	"github.com/beamfall/core/internal/pairing"
 	"github.com/beamfall/core/internal/playback/subtitleingest"
 	"github.com/beamfall/core/internal/plugin"
+	"github.com/beamfall/core/internal/remoteaccess"
 	"github.com/beamfall/core/internal/reveal"
 	scanpkg "github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/store"
@@ -3189,13 +3191,14 @@ func TestAdvertisedEndpointsAreConnectableWithAdvertisedScheme(t *testing.T) {
 	cfg.RemoteAccess.DirectHTTPS.ACMETermsAccepted = true
 	cfg.RemoteAccess.DirectHTTPS.ACMECacheDir = filepath.Join(cfg.DataDir, "acme")
 	acmeCertPEM := writeDirectHTTPSCache(t, cfg.RemoteAccess.DirectHTTPS.ACMECacheDir, domain)
-	// Self-hosted relay configured so ResolveEndpoints deterministically emits a
-	// self-hosted-relay https endpoint (no dependency on host NICs). The carrier
-	// dials out in the background and never blocks/fails boot, so an unreachable
-	// endpoint here is harmless to Run.
-	cfg.RemoteAccess.Relay.Endpoint = "relay.example.com:7443"
+	// Self-hosted relay connected to a live stub carrier so ResolveEndpoints
+	// deterministically emits a self-hosted-relay https endpoint only when the
+	// carrier is connected.
+	stubRelay := startAppStubRelay(t)
+	cfg.RemoteAccess.Relay.Endpoint = stubRelay.endpoint
 	cfg.RemoteAccess.Relay.PublicHost = relayHost
-	writeRelayToken(t, cfg.DataDir, "relay-carrier-token-abc123")
+	cfg.RemoteAccess.Relay.CAFile = stubRelay.caFile
+	writeRelayToken(t, cfg.DataDir, "carrier-secret")
 
 	beamfall, err := New(context.Background(), cfg, discardLogger(), nil)
 	if err != nil {
@@ -3238,8 +3241,23 @@ func TestAdvertisedEndpointsAreConnectableWithAdvertisedScheme(t *testing.T) {
 		t.Fatal("GAP A: LAN enrollment pinned the ACME identity, but overlay/relay serve self-signed")
 	}
 
+	// Wait for the relay carrier to connect before inspecting Endpoints so
+	// self-hosted-relay is advertised iff the carrier is live.
+	relayDeadline := time.After(5 * time.Second)
+	for {
+		state, _ := beamfall.relay.Status()
+		if state == remoteaccess.RelayConnected {
+			break
+		}
+		select {
+		case <-relayDeadline:
+			t.Fatalf("relay never connected; last state = %q", state)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
 	// The advertised set the app actually publishes: direct (FQDN) active, relay
-	// configured (deterministic), overlay resolved from host NICs. Build the
+	// connected (deterministic), overlay resolved from host NICs. Build the
 	// provider exactly as app.Run wires it.
 	beamfall.directTLSActive.Store(true)
 	provider := remoteAccessProvider{
@@ -3325,6 +3343,85 @@ func writeRelayToken(t *testing.T, dataDir, token string) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "relay-token"), []byte(token), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRemoteAccessEndpointsOmitRelayWhenDisconnected(t *testing.T) {
+	dir := t.TempDir()
+	ra := config.RemoteAccessConfig{Relay: config.RelayConfig{
+		Endpoint:   "relay.example.com:7443",
+		PublicHost: "relay.example.com",
+	}}
+	rc, err := remoteaccess.NewRelayClient(ra, dir)
+	if err != nil {
+		t.Fatalf("NewRelayClient: %v", err)
+	}
+	provider := remoteAccessProvider{relay: rc, lanPort: 0}
+	if eps := provider.Endpoints(context.Background()); len(eps) != 0 {
+		t.Fatalf("disconnected relay advertised endpoints = %+v, want none", eps)
+	}
+	// Missing token moves state to RelayError; still must not advertise.
+	_, _ = rc.Connect(context.Background())
+	if eps := provider.Endpoints(context.Background()); len(eps) != 0 {
+		t.Fatalf("error-state relay advertised endpoints = %+v, want none", eps)
+	}
+}
+
+func TestStartupWithOneBadModeLibraryBundleServesHealthyLibraries(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Discovery.Enabled = false
+	ctx := context.Background()
+
+	st, err := store.Open(ctx, cfg.DataDir, store.Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	badLib, err := st.CreateLibrary(ctx, "Bad Mode Vault", false, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetLibraryBacking(ctx, badLib.ID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	goodLib, err := st.CreateLibrary(ctx, "Healthy Vault", false, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetLibraryBacking(ctx, goodLib.ID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Close()
+
+	secrets := secretFiles{dir: filepath.Join(cfg.DataDir, "secrets"), dataDir: cfg.DataDir}
+	mgr := libencrypt.NewManagerWithParams(secrets, libencrypt.ProdArgon2Params)
+	if _, err := mgr.Provision(string(badLib.ID), libencrypt.UnsealModeAuto, ""); err != nil {
+		t.Fatalf("Provision badLib: %v", err)
+	}
+	if _, err := mgr.Provision(string(goodLib.ID), libencrypt.UnsealModeAuto, ""); err != nil {
+		t.Fatalf("Provision goodLib: %v", err)
+	}
+
+	// Make badLib's v2 bundle mode 0644 so secretFiles rejects it.
+	sum := sha256.Sum256([]byte(badLib.ID))
+	badBundlePath := filepath.Join(cfg.DataDir, "secrets", "libenc-v2-"+hex.EncodeToString(sum[:])+"-bundle")
+	if err := os.Chmod(badBundlePath, 0o644); err != nil { //nolint:gosec // intentionally wide permissions to simulate a bad-mode secret bundle
+		t.Fatalf("Chmod badBundlePath: %v", err)
+	}
+
+	beamfall, err := New(ctx, cfg, discardLogger(), nil)
+	if err != nil {
+		t.Fatalf("New aborted on one bad-mode bundle: %v", err)
+	}
+	defer func() { _ = beamfall.store.Close() }()
+
+	if beamfall.libEncrypt == nil {
+		t.Fatal("libEncrypt manager not wired")
+	}
+	if !beamfall.libEncrypt.Sealed(string(badLib.ID)) || !beamfall.libEncrypt.Provisioned(string(badLib.ID)) {
+		t.Fatalf("bad-mode library must stay sealed and provisioned")
+	}
+	if beamfall.libEncrypt.Sealed(string(goodLib.ID)) {
+		t.Fatalf("healthy auto-mode library stayed sealed")
 	}
 }
 

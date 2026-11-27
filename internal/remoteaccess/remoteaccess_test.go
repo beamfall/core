@@ -372,15 +372,15 @@ func TestRelayRefusesInsecureTokenFile(t *testing.T) {
 	if reason == "" {
 		t.Fatal("error state with empty reason")
 	}
+	if !contains(reason, tokenPath) || !contains(reason, "0600") {
+		t.Fatalf("error reason = %q, want expected path %q and mode 0600", reason, tokenPath)
+	}
 	if contains(reason, "carrier-secret") {
 		t.Fatal("error reason leaked the token contents")
 	}
-	if contains(reason, tokenPath) {
-		t.Fatal("error reason leaked the token path")
-	}
 }
 
-func TestRelayRedactsTokenPathFromResolveErrors(t *testing.T) {
+func TestRelayTokenErrorsNamePathAndModeWithoutLeakingSecret(t *testing.T) {
 	dir := t.TempDir()
 	c := newConfiguredRelay(t, dir)
 	_, err := c.Connect(context.Background())
@@ -388,12 +388,12 @@ func TestRelayRedactsTokenPathFromResolveErrors(t *testing.T) {
 		t.Fatal("Connect accepted missing relay token")
 	}
 	tokenPath := filepath.Join(dir, relayTokenFile)
-	if contains(err.Error(), tokenPath) {
-		t.Fatal("connect error leaked the token path")
+	if !contains(err.Error(), tokenPath) || !contains(err.Error(), "0600") {
+		t.Fatalf("missing-token error = %q, want expected path %q and mode 0600", err.Error(), tokenPath)
 	}
 	_, reason := c.Status()
-	if contains(reason, tokenPath) {
-		t.Fatal("error state leaked the token path")
+	if !contains(reason, tokenPath) || !contains(reason, "0600") {
+		t.Fatalf("missing-token reason = %q, want expected path %q and mode 0600", reason, tokenPath)
 	}
 
 	if err := os.WriteFile(tokenPath, []byte("  \n"), 0o600); err != nil {
@@ -403,12 +403,12 @@ func TestRelayRedactsTokenPathFromResolveErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("Connect accepted empty relay token")
 	}
-	if contains(err.Error(), tokenPath) {
-		t.Fatal("empty-token error leaked the token path")
+	if !contains(err.Error(), tokenPath) || !contains(err.Error(), "0600") {
+		t.Fatalf("empty-token error = %q, want expected path %q and mode 0600", err.Error(), tokenPath)
 	}
 	_, reason = c.Status()
-	if contains(reason, tokenPath) {
-		t.Fatal("empty-token state leaked the token path")
+	if !contains(reason, tokenPath) || !contains(reason, "0600") {
+		t.Fatalf("empty-token reason = %q, want expected path %q and mode 0600", reason, tokenPath)
 	}
 }
 
@@ -924,9 +924,86 @@ func TestRelayCarryLimitsConcurrentStreams(t *testing.T) {
 	if _, err := second.Read(b[:]); err == nil {
 		t.Fatal("second stream stayed open despite stream limit")
 	}
+	if m := c.Metrics(); m.StreamCapRefusals == 0 {
+		t.Fatalf("StreamCapRefusals = %d, want > 0", m.StreamCapRefusals)
+	}
+	if _, reason := c.Status(); !contains(reason, "stream limit") {
+		t.Fatalf("status reason = %q, want stream limit message", reason)
+	}
 
 	cancel()
 	_ = carrierSession.Close()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Carry did not stop")
+	}
+}
+
+func TestRelayBackendDialFailureSurfacesInStatusAndMetrics(t *testing.T) {
+	dir := t.TempDir()
+	writeSecret(t, dir, "carrier-secret")
+
+	// Bind and immediately close a listener so dialing it fails deterministically.
+	dead, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadAddr := dead.Addr().String()
+	_ = dead.Close()
+
+	serverSession := make(chan *yamux.Session, 1)
+	relay := startStubRelay(t, func(conn net.Conn) (*yamux.Session, bool) {
+		frame, err := readRelayFrame(conn)
+		if err != nil || frame.Type != relayFrameHello {
+			return nil, false
+		}
+		_ = writeRelayFrame(conn, relayFrame{Type: relayFrameAck, Ack: &relayAck{Version: relayProtoVersion, CarrierID: "carrier-1"}})
+		s, serr := yamux.Server(conn, relayYamuxConfig(0))
+		if serr != nil {
+			return nil, false
+		}
+		serverSession <- s
+		return s, true
+	})
+
+	c := newDialableRelay(t, relay.addr, dir)
+	c.SetBackendAddr(deadAddr)
+	session, err := c.Connect(context.Background())
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { _ = c.Carry(ctx, session); close(done) }()
+
+	var srv *yamux.Session
+	select {
+	case srv = <-serverSession:
+	case <-time.After(2 * time.Second):
+		t.Fatal("relay never got a yamux server session")
+	}
+	stream, err := srv.Open()
+	if err != nil {
+		t.Fatalf("open stream: %v", err)
+	}
+	defer stream.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		m := c.Metrics()
+		state, reason := c.Status()
+		if m.BackendDialFailures > 0 && state == RelayConnected && contains(reason, "backend dial failed") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("backend dial failure not surfaced: state=%q reason=%q metrics=%+v", state, reason, m)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cancel()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):

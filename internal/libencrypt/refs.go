@@ -152,8 +152,9 @@ func (m *Manager) ownerSecretExists(owner string, kind secretKind) (bool, error)
 // secure store so an operator can restore the missing Library row or recover
 // them manually; no owner is guessed.
 type RefMigrationReport struct {
-	Moved   []string
-	Orphans []string
+	Moved      []string
+	Orphans    []string
+	Unreadable []string
 }
 
 var ErrLegacyRefCollision = errors.New("libencrypt: ambiguous legacy secret ref collision")
@@ -220,7 +221,11 @@ func (m *Manager) MigrateLegacyRefs(owners []string) (RefMigrationReport, error)
 		}
 		raw, err := m.secrets.Secret(ref)
 		if err != nil {
-			return report, fmt.Errorf("libencrypt: read v2 ref %s: %w", ref, err)
+			// A per-Library read failure (e.g. bad mode 0644 or EACCES) keeps
+			// that Library sealed during BootUnsealPrepared instead of aborting
+			// startup for every other Library.
+			report.Unreadable = append(report.Unreadable, ref)
+			continue
 		}
 		record, err := inspectOwnerSecretRef(ref, raw)
 		if err != nil {
