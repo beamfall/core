@@ -248,6 +248,35 @@ func TestMetricsPanicBeforeResponseCommitReturnsJSONError(t *testing.T) {
 	}
 }
 
+type stubRelayMetrics struct {
+	dialFailures uint64
+	capRefusals  uint64
+}
+
+func (s stubRelayMetrics) RelayMetrics() (uint64, uint64) {
+	return s.dialFailures, s.capRefusals
+}
+
+func TestMetricsExposesRelayCounters(t *testing.T) {
+	srv, _, _ := newTestServerWithMetrics(t)
+	srv.SetRelayMetricsSource(stubRelayMetrics{dialFailures: 3, capRefusals: 7})
+
+	req := authorizedScrape(t, srv)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	scrape := scrapeMetrics(t, rec.Body.String())
+	if scrape["beamfall_relay_backend_dial_failures_total"] != 3 {
+		t.Fatalf("beamfall_relay_backend_dial_failures_total = %v, want 3", scrape["beamfall_relay_backend_dial_failures_total"])
+	}
+	if scrape["beamfall_relay_stream_cap_refusals_total"] != 7 {
+		t.Fatalf("beamfall_relay_stream_cap_refusals_total = %v, want 7", scrape["beamfall_relay_stream_cap_refusals_total"])
+	}
+}
+
 // TestHealthDistinguishesReadyFromLive asserts /health splits liveness from
 // readiness: a reachable store is live and ready (200); a store
 // reporting not-ready is still live but not ready (503).

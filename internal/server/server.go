@@ -87,6 +87,7 @@ type Server struct {
 	sessions          SessionCountProvider
 	transcode         TranscodeCountProvider
 	library           LibrarySizeProvider
+	relayMetrics      RelayMetricsProvider
 	publicMetrics     bool
 	// metricsScrapeDigest is the SHA-256 of this run's /metrics scrape
 	// credential; nil means none was established, which refuses every bearer.
@@ -228,6 +229,11 @@ type TranscodeCountProvider interface {
 // LibrarySizeProvider supplies the total-Media gauge for /metrics.
 type LibrarySizeProvider interface {
 	LibraryMediaTotal(context.Context) (int, error)
+}
+
+// RelayMetricsProvider supplies relay carrier failure/cap counters for /metrics.
+type RelayMetricsProvider interface {
+	RelayMetrics() (backendDialFailures, streamCapRefusals uint64)
 }
 
 type ObservabilityController interface {
@@ -1090,6 +1096,11 @@ func (s *Server) SetJobQueueSource(jobQueue JobQueueAgeProvider) {
 	s.jobQueue = jobQueue
 }
 
+// SetRelayMetricsSource wires relay carrier failure/cap counters for /metrics.
+func (s *Server) SetRelayMetricsSource(relay RelayMetricsProvider) {
+	s.relayMetrics = relay
+}
+
 func (s *Server) SetBuildMetadata(buildSHA, seedProfile, seedVersion string) {
 	if buildSHA = strings.TrimSpace(buildSHA); buildSHA != "" {
 		s.buildSHA = buildSHA
@@ -1248,6 +1259,13 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	openStreams := s.eventStreams.openStreams()
 	_, _ = fmt.Fprintf(&body, "beamfall_events_streams_open %d\n", openStreams)
 	s.recordGauge(r.Context(), "beamfall_observability_events_streams_open", int64(openStreams), nil)
+	if s.relayMetrics != nil {
+		dialFailures, capRefusals := s.relayMetrics.RelayMetrics()
+		_, _ = fmt.Fprintf(&body, "beamfall_relay_backend_dial_failures_total %d\n", dialFailures)
+		s.recordGauge(r.Context(), "beamfall_observability_relay_backend_dial_failures", int64(dialFailures), nil) //nolint:gosec // G115: counter fits int64.
+		_, _ = fmt.Fprintf(&body, "beamfall_relay_stream_cap_refusals_total %d\n", capRefusals)
+		s.recordGauge(r.Context(), "beamfall_observability_relay_stream_cap_refusals", int64(capRefusals), nil) //nolint:gosec // G115: counter fits int64.
+	}
 	// Request counters: in-process, so always reported. They make the 5xx
 	// ratio alert computable from the server's own scrape.
 	s.requestMetrics.writePrometheus(&body)

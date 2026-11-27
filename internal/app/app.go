@@ -78,9 +78,10 @@ var scanHandlerWithWorkerGovernor = scanpkg.HandlerWithWorkerGovernor
 
 // App contains the wired Beamfall process.
 type App struct {
-	cfg     config.Config
-	store   *store.Store
-	plugins *plugin.Registry
+	cfg        config.Config
+	store      *store.Store
+	libEncrypt *libencrypt.Manager
+	plugins    *plugin.Registry
 	// shippedPlugins is every plugin this server ships, including bundles a
 	// Console override keeps out of plugins.
 	shippedPlugins  *plugin.Registry
@@ -1067,6 +1068,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	if len(refMigration.Orphans) != 0 {
 		logger.Warn("libencrypt secure-store refs have no Library owner; retained for recovery", "orphan_refs", refMigration.Orphans)
 	}
+	if len(refMigration.Unreadable) != 0 {
+		logger.Warn("libencrypt secure-store refs unreadable; affected libraries stay sealed", "unreadable_refs", refMigration.Unreadable)
+	}
 	if err := libEncryptManager.RecoverProvisionJournals(ownerIDs, func(owner string) error {
 		return st.AbortEncryptedLibraryDBProvision(ctx, store.LibraryID(owner))
 	}); err != nil {
@@ -1561,6 +1565,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// ADR-0146 §8 job-queue-age SLI: the store answers "how long has the oldest
 	// waiting job sat", derived from its durable server-clock timestamps.
 	srv.SetJobQueueSource(st)
+	if relayClient != nil {
+		srv.SetRelayMetricsSource(relayClient)
+	}
 	for _, surface := range srv.Surfaces() {
 		surfaces.Register(surface)
 	}
@@ -1654,6 +1661,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	app := &App{
 		cfg:                    cfg,
 		store:                  st,
+		libEncrypt:             libEncryptManager,
 		plugins:                plugins,
 		shippedPlugins:         shippedPlugins,
 		server:                 srv,
@@ -1914,7 +1922,9 @@ func (p remoteAccessProvider) Endpoints(ctx context.Context) []graph.RemoteEndpo
 		in.DirectDomain = p.direct.Domain()
 	}
 	if p.relay != nil {
-		in.SelfHostedRelayPublicHost = p.relay.PublicHost()
+		if state, _ := p.relay.Status(); state == remoteaccess.RelayConnected {
+			in.SelfHostedRelayPublicHost = p.relay.PublicHost()
+		}
 	}
 	resolved := remoteaccess.ResolveEndpoints(in)
 	out := make([]graph.RemoteEndpoint, 0, len(resolved))
@@ -2482,7 +2492,10 @@ const (
 	relayCarrierBackoffMin = time.Second
 	relayCarrierBackoffMax = 60 * time.Second
 	// A carrier session must survive this long before the backoff resets.
-	relayCarrierHealthyDuration = 30 * time.Second
+	relayCarrierHealthyDuration  = 30 * time.Second
+	relayCarrierHealthyRedialMax = 250 * time.Millisecond
+	relayCarrierInvalidHelloMin  = 5 * time.Minute
+	relayCarrierInvalidHelloMax  = 10 * time.Minute
 	// relayCarrierRotateEvery is how long after each registration a
 	// same-identity replacement carrier is registered with a fresh token. A
 	// minted token's signed lifetime is 5m, backdated 30s, so the relay closes
@@ -2503,6 +2516,10 @@ type relayCarrier interface {
 // runRelayCarrierLoop is runRelayCarrier with an injectable carrier and timer
 // source (after) so rotation and redial timing can be tested without waiting.
 func runRelayCarrierLoop(ctx context.Context, carrier relayCarrier, logger *slog.Logger, after func(time.Duration) <-chan time.Time) {
+	runRelayCarrierLoopWithClock(ctx, carrier, logger, time.Now, after)
+}
+
+func runRelayCarrierLoopWithClock(ctx context.Context, carrier relayCarrier, logger *slog.Logger, now func() time.Time, after func(time.Duration) <-chan time.Time) {
 	var carries sync.WaitGroup
 	defer carries.Wait()
 	backoff := relayCarrierBackoffMin
@@ -2510,21 +2527,30 @@ func runRelayCarrierLoop(ctx context.Context, carrier relayCarrier, logger *slog
 		if ctx.Err() != nil {
 			return
 		}
+		var delay time.Duration
+		advanceBackoff := true
 		session, err := carrier.Connect(ctx)
 		if err != nil {
 			logger.Warn("relay carrier connect failed", "endpoint", carrier.Endpoint(), "error", err)
-			if !relayCarrierShouldRetry(err) {
-				return
+			if errors.Is(err, remoteaccess.ErrRelayInvalidHello) {
+				delay = relayCarrierInvalidHelloDelay(rand.Int63n)
+				advanceBackoff = false
+			} else {
+				delay = relayCarrierBackoffDelay(backoff, rand.Int63n)
 			}
 		} else {
 			logger.Info("relay carrier connected", "endpoint", carrier.Endpoint(), "publicHost", carrier.PublicHost(), "transport", carrier.Transport())
-			carryStart := time.Now()
+			carryStart := now()
 			carryRelayGenerations(ctx, carrier, logger, after, session, &carries)
 			// Reset the backoff only after a session that actually stayed up:
 			// resetting on dial success alone lets a flapping relay (accepts,
 			// then drops immediately) pin the loop at backoffMin forever.
-			if time.Since(carryStart) >= relayCarrierHealthyDuration {
+			if now().Sub(carryStart) >= relayCarrierHealthyDuration {
 				backoff = relayCarrierBackoffMin
+				delay = relayCarrierHealthyRedialDelay(rand.Int63n)
+				advanceBackoff = false
+			} else {
+				delay = relayCarrierBackoffDelay(backoff, rand.Int63n)
 			}
 		}
 		if ctx.Err() != nil {
@@ -2533,10 +2559,12 @@ func runRelayCarrierLoop(ctx context.Context, carrier relayCarrier, logger *slog
 		select {
 		case <-ctx.Done():
 			return
-		case <-after(relayCarrierBackoffDelay(backoff, rand.Int63n)):
+		case <-after(delay):
 		}
-		if backoff *= 2; backoff > relayCarrierBackoffMax {
-			backoff = relayCarrierBackoffMax
+		if advanceBackoff {
+			if backoff *= 2; backoff > relayCarrierBackoffMax {
+				backoff = relayCarrierBackoffMax
+			}
 		}
 	}
 }
@@ -2587,10 +2615,10 @@ func carryRelayGenerations(ctx context.Context, carrier relayCarrier, logger *sl
 			next, err := carrier.Connect(ctx)
 			if err != nil {
 				logger.Warn("relay carrier rotation failed", "endpoint", carrier.Endpoint(), "error", err)
-				if !relayCarrierShouldRetry(err) {
-					// Keep carrying until the current session ends; the
-					// redial then reports the terminal error.
-					rotate = nil
+				if errors.Is(err, remoteaccess.ErrRelayInvalidHello) {
+					// Keep carrying until the current session drains; retry
+					// rotation on the slow invalid-hello schedule.
+					rotate = after(relayCarrierInvalidHelloDelay(rand.Int63n))
 					continue
 				}
 				rotate = after(relayCarrierBackoffDelay(retry, rand.Int63n))
@@ -2607,25 +2635,22 @@ func carryRelayGenerations(ctx context.Context, carrier relayCarrier, logger *sl
 	}
 }
 
-func relayCarrierShouldRetry(err error) bool {
-	return !errors.Is(err, remoteaccess.ErrRelayInvalidHello)
-}
-
-// relayCarrierBackoffDelay returns d with up to +/-20% full jitter applied.
+// relayCarrierBackoffDelay returns a uniformly distributed delay in [0, d]
+// (full jitter) so reconnects spread across the window after a relay restart.
 func relayCarrierBackoffDelay(d time.Duration, randInt63n func(int64) int64) time.Duration {
 	if d <= 0 {
 		return 0
 	}
-	span := d / 5
-	if span <= 0 {
-		return d
-	}
-	delta := time.Duration(randInt63n(int64(2*span))) - span
-	out := d + delta
-	if out < 0 {
-		return 0
-	}
-	return out
+	return time.Duration(randInt63n(int64(d) + 1))
+}
+
+func relayCarrierHealthyRedialDelay(randInt63n func(int64) int64) time.Duration {
+	return time.Duration(randInt63n(int64(relayCarrierHealthyRedialMax) + 1))
+}
+
+func relayCarrierInvalidHelloDelay(randInt63n func(int64) int64) time.Duration {
+	span := relayCarrierInvalidHelloMax - relayCarrierInvalidHelloMin
+	return relayCarrierInvalidHelloMin + time.Duration(randInt63n(int64(span)+1))
 }
 
 // loopbackOnly reports whether addr accepts connections from this host alone.

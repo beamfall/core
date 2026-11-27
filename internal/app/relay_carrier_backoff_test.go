@@ -1,47 +1,45 @@
 package app
 
 import (
-	"errors"
 	"testing"
 	"time"
-
-	"github.com/beamfall/core/internal/remoteaccess"
 )
 
-func TestRelayCarrierBackoffDelayJittersWithinEnvelope(t *testing.T) {
+func TestRelayCarrierBackoffDelayUsesFullJitter(t *testing.T) {
 	base := 10 * time.Second
-	span := base / 5
 	samples := []int64{
 		0,
-		int64(span),
-		int64(2*span) - 1,
+		int64(base / 2),
+		int64(base),
 	}
 	seen := map[time.Duration]bool{}
 	for _, sample := range samples {
 		delay := relayCarrierBackoffDelay(base, func(int64) int64 { return sample })
-		if delay < base-span || delay > base+span {
-			t.Fatalf("delay %v out of +/-20%% envelope for %v", delay, base)
+		if delay < 0 || delay > base {
+			t.Fatalf("delay %v out of [0, %v] full-jitter envelope", delay, base)
 		}
 		seen[delay] = true
 	}
-	if len(seen) == 1 {
-		t.Fatalf("simulated carriers produced identical delays: %v", seen)
+	if len(seen) != len(samples) {
+		t.Fatalf("simulated carriers did not span full jitter envelope: %v", seen)
 	}
 	if got := relayCarrierBackoffDelay(0, func(int64) int64 { return 0 }); got != 0 {
 		t.Fatalf("zero backoff delay = %v, want 0", got)
 	}
 }
 
-func TestRelayCarrierRetryPolicy(t *testing.T) {
-	if relayCarrierShouldRetry(remoteaccess.ErrRelayInvalidHello) {
-		t.Fatal("invalid hello must stop relay reconnects")
+func TestRelayCarrierHealthyRedialAndInvalidHelloDelays(t *testing.T) {
+	for _, sample := range []int64{0, int64(relayCarrierHealthyRedialMax / 2), int64(relayCarrierHealthyRedialMax)} {
+		d := relayCarrierHealthyRedialDelay(func(int64) int64 { return sample })
+		if d < 0 || d > relayCarrierHealthyRedialMax {
+			t.Fatalf("healthy redial delay = %v, want [0, %v]", d, relayCarrierHealthyRedialMax)
+		}
 	}
-	for _, err := range []error{
-		errors.New("relay registration: relay rejected carrier: unauthorized"),
-		errors.New("dialing relay: connection refused"),
-	} {
-		if !relayCarrierShouldRetry(err) {
-			t.Fatalf("%q must retain normal reconnect backoff", err)
+	span := relayCarrierInvalidHelloMax - relayCarrierInvalidHelloMin
+	for _, sample := range []int64{0, int64(span / 2), int64(span)} {
+		d := relayCarrierInvalidHelloDelay(func(int64) int64 { return sample })
+		if d < relayCarrierInvalidHelloMin || d > relayCarrierInvalidHelloMax {
+			t.Fatalf("invalid hello delay = %v, want [%v, %v]", d, relayCarrierInvalidHelloMin, relayCarrierInvalidHelloMax)
 		}
 	}
 }
