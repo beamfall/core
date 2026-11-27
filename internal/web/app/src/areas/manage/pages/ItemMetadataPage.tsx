@@ -50,7 +50,11 @@ export function ItemMetadataPage() {
   };
 
   const onInfoLoaded = useCallback((next: MediaMetadataInfo | null) => {
-    setInfo(next);
+    setInfo((current) => {
+      if (!activeMediaID.current) return null;
+      if (next && next.mediaID !== activeMediaID.current) return current;
+      return next;
+    });
   }, []);
 
   const onClearOrdinal = async () => {
