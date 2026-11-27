@@ -305,6 +305,7 @@ type hlsSession struct {
 	cutoffCtx             context.Context
 	cancelCutoff          context.CancelFunc
 	admitted              bool
+	device                store.DeviceID
 	library               store.LibraryID
 	profile               store.ProfileID
 	loadProfile           func(context.Context, store.ProfileID) (store.Profile, error)
@@ -972,18 +973,23 @@ func (s *Sessions) preemptableLocked(key SessionKey, priority Priority, now time
 
 // TerminateSession aborts every in-flight transcode owned by one auth Session
 // and returns how many it stopped (ADR-0012 §7: a revoked device's in-flight
-// transcodes die, not just its future requests). Sessions are keyed by
-// (SessionID, MediaID) — one Session may hold several live transcodes — so this
-// stops all of them at once. It shares the detachment and teardown path with
-// idle reaping and preemption. After releasing the lock, it stops the FFmpeg
-// processes, deletes their artifacts, and releases their transcode slots.
-// Calling it for a Session with no live transcode is a zero-stop no-op — a
-// direct-play session has nothing to abort. The caller (the audited
-// device-revocation mutation) invokes this after RevokeDevice has already
-// blocked future auth; this closes the live transport that revocation alone
-// leaves running until idle reap.
+// transcodes die, not just its future requests).
 func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
 	return s.terminate(func(key SessionKey) bool { return key.SessionID == sessionID })
+}
+
+// TerminateDevice aborts every in-flight transcode owned by deviceID,
+// including encoders started under sessions that were later replaced by renewal.
+func (s *Sessions) TerminateDevice(deviceID store.DeviceID) int {
+	if deviceID == "" {
+		return 0
+	}
+	stopped, wait := s.detachBy(
+		func(a *scratchAllocation) bool { return a.device == deviceID },
+		func(h *hlsSession) bool { return h.device == deviceID },
+	)
+	wait()
+	return stopped
 }
 
 // TerminatePlayback aborts the in-flight transcodes one auth Session holds for
@@ -1015,16 +1021,23 @@ func (s *Sessions) terminate(matches func(SessionKey) bool) int {
 }
 
 func (s *Sessions) detach(matches func(SessionKey) bool) (int, func()) {
+	return s.detachBy(
+		func(a *scratchAllocation) bool { return matches(a.key) },
+		func(h *hlsSession) bool { return matches(h.key) },
+	)
+}
+
+func (s *Sessions) detachBy(matchAlloc func(*scratchAllocation) bool, matchSession func(*hlsSession) bool) (int, func()) {
 	s.mu.Lock()
 	revoked := 0
 	for allocation := range s.allocations {
-		if matches(allocation.key) {
+		if matchAlloc(allocation) {
 			allocation.revoked = true
 		}
 	}
 	var joins []<-chan struct{}
 	for h, t := range s.revocations {
-		if matches(h.key) {
+		if matchSession(h) {
 			joins = append(joins, t.cutoffDone)
 			joins = append(joins, t.probeReaps...)
 			if t.run != nil {
@@ -1037,16 +1050,17 @@ func (s *Sessions) detach(matches func(SessionKey) bool) (int, func()) {
 	}
 	var teardowns []*sessionTeardown
 	for key, session := range s.sessions {
-		if matches(key) && session.state < sessionRevoking {
+		if matchSession(session) && session.state < sessionRevoking {
 			if session.admitted || session.state == sessionRunning {
 				revoked++
 			}
 			s.detachFromSharedGroupLocked(session)
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{cleanupOnRelease: true}).teardown)
+			_ = key
 		}
 	}
 	for session := range s.continuations {
-		if matches(session.key) {
+		if matchSession(session) {
 			if session.admitted {
 				revoked++
 			}
@@ -1696,7 +1710,7 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 		existing.scratch.users++
 		return existing, nil
 	}
-	allocation := &scratchAllocation{key: key, library: library}
+	allocation := &scratchAllocation{key: key, device: binding.device, library: library}
 	if s.allocations == nil {
 		s.allocations = make(map[*scratchAllocation]struct{})
 	}
@@ -1710,6 +1724,7 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 	dir := filepath.Join(s.dir, scratch.name)
 	session := &hlsSession{
 		key:                   key,
+		device:                binding.device,
 		dir:                   dir,
 		scratch:               scratch,
 		src:                   src,

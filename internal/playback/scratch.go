@@ -49,6 +49,7 @@ type scratchPath struct {
 // Sessions.mu protects its revocation.
 type scratchAllocation struct {
 	key     SessionKey
+	device  store.DeviceID
 	library store.LibraryID
 	revoked bool
 }

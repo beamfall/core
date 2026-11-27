@@ -15,6 +15,7 @@ var errSetupUnavailable = errors.New("live playback setup unavailable")
 type LiveBinding struct {
 	manager     *Sessions
 	session     *hlsSession
+	device      store.DeviceID
 	profile     store.ProfileID
 	library     store.LibraryID
 	stamp       DrainFence
@@ -72,6 +73,21 @@ func (s *Sessions) BindLive(key SessionKey) (*LiveBinding, error) {
 	}
 	session.binders++
 	return &LiveBinding{manager: s, session: session, stamp: s.admissionClock}, nil
+}
+
+// SetDevice binds the owning device identity to the reservation/session so
+// device revocation can still terminate its transcode after session renewal.
+func (b *LiveBinding) SetDevice(device store.DeviceID) {
+	if device == "" {
+		return
+	}
+	s := b.manager
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b.device = device
+	if b.session != nil && b.session.device == "" {
+		b.session.device = device
+	}
 }
 
 // Attach records the verified scope. The lookup runs only for an encoder start acquiring capacity.
