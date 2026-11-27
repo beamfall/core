@@ -463,3 +463,88 @@ func TestLibraryEntitiesSortsAndFiltersAKind(t *testing.T) {
 		t.Fatal("an unknown sort was accepted, want a client error")
 	}
 }
+
+func TestMusicBundleGenreAndHomeShelfRollUpAlbumsVsSingles(t *testing.T) {
+	st := storetest.Open(t)
+	registry, err := newTestPluginRegistry([]plugin.Bundle{music.Bundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(manifest.NewService(st, time.Now, registry), auth.NewService(st), st, registry)
+	ctx := context.Background()
+	library, err := st.CreateLibrary(ctx, "Music", false, music.PluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importTrack := func(path, title string) store.MediaID {
+		m, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: library.ID, Path: path, Title: title,
+			Container: "flac", Codec: "flac", Class: store.MediaClassAudio,
+			ContentFingerprint: store.HashMediaFilePath(path),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m.ID
+	}
+	tr1 := importTrack("/music/Artist/Revolver/01.flac", "Taxman")
+	tr2 := importTrack("/music/Artist/Revolver/02.flac", "Eleanor Rigby")
+	single := importTrack("/music/Artist/vampire/01.flac", "vampire")
+
+	for _, e := range []store.Entity{
+		{ID: "album-revolver", LibraryID: library.ID, Kind: "album", Title: "Revolver"},
+		{ID: "album-vampire", LibraryID: library.ID, Kind: "album", Title: "vampire"},
+		{ID: "genre-rock", LibraryID: library.ID, Kind: "genre", Title: "Rock"},
+	} {
+		if err := st.UpsertEntity(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, rel := range []store.EntityRelation{
+		{FromEntityID: "album-revolver", Name: "album-track", ToMediaID: tr1},
+		{FromEntityID: "album-revolver", Name: "album-track", ToMediaID: tr2},
+		{FromEntityID: "album-vampire", Name: "album-track", ToMediaID: single},
+		{FromEntityID: "genre-rock", Name: "classifies", ToMediaID: tr1},
+		{FromEntityID: "genre-rock", Name: "classifies", ToMediaID: single},
+	} {
+		if err := st.UpsertEntityRelation(ctx, rel); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var genreItems []SourceItem
+	execGraph(t, handler, authorizeViewer, `query($libraryID: String!, $ef: EntityFilter) {
+		sourceItems(kind: "all-items", libraryID: $libraryID, entityFilter: $ef) { id kind title mediaClass }
+	}`, map[string]any{"libraryID": string(library.ID), "ef": map[string]any{"kind": "genre", "name": "Rock"}}, "sourceItems", &genreItems)
+	byID := map[string]string{}
+	for _, item := range genreItems {
+		byID[item.ID] = item.Kind
+	}
+	if len(byID) != 2 || byID["album-revolver"] != "entity" || byID[string(single)] != "media" {
+		t.Fatalf("music genre shelf = %+v, want album-revolver(entity) + single(media)", genreItems)
+	}
+
+	var rockAlbums LibraryEntitiesResponse
+	execGraph(t, handler, authorizeViewer, libraryEntitiesBrowseTestQuery,
+		map[string]any{"libraryID": string(library.ID), "kind": "album", "groupFilters": map[string]any{"genre": "Rock"}},
+		"libraryEntities", &rockAlbums)
+	if len(rockAlbums.Items) != 2 || rockAlbums.Total != 2 {
+		t.Fatalf("libraryEntities(kind: album, genre: Rock) = %+v, want 2 items", rockAlbums)
+	}
+
+	homeReply := postHomeStudioJSON(t, handler, `query Prev($shelf: HomeShelfInput!) { previewHomeShelf(shelf: $shelf, limit: 10) { totalCount items { id kind title mediaClass } } }`, map[string]any{
+		"shelf": map[string]any{
+			"id":      "hs-music-recent",
+			"title":   "Music Recent",
+			"display": map[string]any{"style": "shelf", "artworkSlot": "poster", "limit": 10},
+			"source":  map[string]any{"type": "library", "libraryIDs": []string{string(library.ID)}},
+		},
+	})
+	if errs, _ := homeReply["errors"].([]any); len(errs) != 0 {
+		t.Fatalf("previewHomeShelf errors: %#v", errs)
+	}
+	homeItems := homeReply["data"].(map[string]any)["previewHomeShelf"].(map[string]any)["items"].([]any)
+	if len(homeItems) != 2 {
+		t.Fatalf("music home-shelf len = %d (%#v), want 2 (Revolver entity + vampire media)", len(homeItems), homeItems)
+	}
+}

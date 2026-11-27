@@ -254,8 +254,8 @@ func TestOfflinePackRetryRefusesToJoinAnotherPacksJob(t *testing.T) {
 }
 
 // TestOfflinePackRetryAndRevokeOfUnknownOrBuildingIDs pins the edges: an ID
-// with no build is not found, a building build cannot be revoked, and revoking
-// a failed build dismisses it from the list.
+// with no build cannot be retried, revoking a building build cancels its job
+// and removes it from the list, and revoking a failed build dismisses it.
 func TestOfflinePackRetryAndRevokeOfUnknownOrBuildingIDs(t *testing.T) {
 	handler, st := newOfflinePackHandler(t)
 	unknown, err := offlinepack.NewPackID()
@@ -265,11 +265,27 @@ func TestOfflinePackRetryAndRevokeOfUnknownOrBuildingIDs(t *testing.T) {
 	if _, errs := retryOfflinePackForTest(t, handler, string(unknown)); len(errs) == 0 {
 		t.Fatal("retry of an unknown pack ID succeeded")
 	}
+	// Subcase 1: revoking a building pack cancels its queued build job and removes it.
 	created := queueOfflinePackBuildForTest(t, handler)
 	revokeBody := `{"query":"mutation R($id:String!){ revokeOfflinePack(id:$id){ id state } }","variables":{"id":"` + created.ID + `"}}`
-	if _, errs := offlinePackMutation(t, handler, "revokeOfflinePack", revokeBody); len(errs) == 0 {
-		t.Fatal("revoke of a building pack succeeded")
+	revokedBuilding, errs := offlinePackMutation(t, handler, "revokeOfflinePack", revokeBody)
+	if len(errs) != 0 || revokedBuilding.ID != created.ID || revokedBuilding.State != "revoked" {
+		t.Fatalf("revoke of a building pack = %+v / %#v, want it revoked", revokedBuilding, errs)
 	}
+	if packs := listOfflinePackBuilds(t, handler); len(packs) != 0 {
+		t.Fatalf("offlinePacks after cancelling the building pack = %+v, want none", packs)
+	}
+	liveJobs, err := st.ListJobs(t.Context(), store.JobStatusQueued, store.JobStatusRunning, store.JobStatusYielded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(liveJobs) != 0 {
+		t.Fatalf("live build jobs after cancelling building pack = %d, want 0", len(liveJobs))
+	}
+
+	// Subcase 2: revoking a failed build dismisses it from the list.
+	created2 := queueOfflinePackBuildForTest(t, handler)
+	revokeBody2 := `{"query":"mutation R($id:String!){ revokeOfflinePack(id:$id){ id state } }","variables":{"id":"` + created2.ID + `"}}`
 	file, err := st.PrimaryMediaFile(t.Context(), "media-alpha", store.LibraryFilter{AllLibraries: true, Revealed: true})
 	if err != nil {
 		t.Fatal(err)
@@ -278,8 +294,8 @@ func TestOfflinePackRetryAndRevokeOfUnknownOrBuildingIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	runOfflinePackBuildJob(t, handler)
-	revoked, errs := offlinePackMutation(t, handler, "revokeOfflinePack", revokeBody)
-	if len(errs) != 0 || revoked.ID != created.ID || revoked.State != "revoked" {
+	revoked, errs := offlinePackMutation(t, handler, "revokeOfflinePack", revokeBody2)
+	if len(errs) != 0 || revoked.ID != created2.ID || revoked.State != "revoked" {
 		t.Fatalf("revoke of a failed build = %+v / %#v, want it revoked", revoked, errs)
 	}
 	if packs := listOfflinePackBuilds(t, handler); len(packs) != 0 {

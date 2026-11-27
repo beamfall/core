@@ -1,0 +1,3 @@
+- [x] Serve the original for buckets at or above the source width
+- [x] Remove existing redundant derivative files on resolve
+- [x] Tests for alias, narrower bucket and cleanup

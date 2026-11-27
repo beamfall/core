@@ -110,7 +110,7 @@ func cmpStr(a, b string) int {
 
 func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 	si := topLevel(t, "sourceitems")
-	wantNames := []string{"entityFilter", "entityID", "entityKind", "excludeEditionGroupOf", "fieldFilters", "filters", "kind", "libraryID", "limit", "mode", "offset", "playedAfter", "playedBefore", "query", "seed", "value"}
+	wantNames := []string{"entityFilter", "entityID", "entityKind", "excludeEditionGroupOf", "fieldFilters", "filters", "kind", "libraryID", "libraryIDs", "limit", "mode", "offset", "playedAfter", "playedBefore", "query", "seed", "value"}
 	if got := argumentNames(si.Arguments); !slices.Equal(got, wantNames) {
 		t.Fatalf("sourceItems arguments = %v, want %v", got, wantNames)
 	}
@@ -123,7 +123,13 @@ func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 		t.Fatalf("media arguments = %#v, want %#v", media.Arguments, want)
 	}
 	searchResult := topLevel(t, "searchresult")
-	want := []NestedArgument{{Name: "limit", Kind: "int", Optional: true}, {Name: "mode", Kind: "string", Optional: true, Enum: []string{"auto", "keyword", "recommend", "semantic"}}, {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}}
+	want := []NestedArgument{
+		{Name: "libraryIDs", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string"}},
+		{Name: "limit", Kind: "int", Optional: true},
+		{Name: "mode", Kind: "string", Optional: true, Enum: []string{"auto", "keyword", "recommend", "semantic"}},
+		{Name: "offset", Kind: "int", Optional: true},
+		{Name: "query", Kind: "string", Optional: true},
+	}
 	if !reflect.DeepEqual(searchResult.Arguments, want) {
 		t.Fatalf("searchResult arguments = %#v, want %#v", searchResult.Arguments, want)
 	}

@@ -273,7 +273,7 @@ export function HomeEditor({ onSaved, onClose }: HomeEditorProps) {
               {config.hero.enabled && (
                 <>
                   <select
-                    aria-label="Hero mode"
+                    aria-label={t("homeHeroModeLabel")}
                     value={config.hero.mode}
                     disabled={saving}
                     onChange={(e) => {
@@ -384,14 +384,16 @@ export function HomeEditor({ onSaved, onClose }: HomeEditorProps) {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">{name}</span>
+                        <span className="truncate text-sm font-medium" title={name}>
+                          {name}
+                        </span>
                         {badge && (
-                          <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                          <span className="shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                             {badge}
                           </span>
                         )}
                       </div>
-                      <p className="truncate text-xs text-[var(--text-muted)]">
+                      <p className="break-words text-xs text-[var(--text-muted)]">
                         {summarizeShelf(shelf, schema)}
                       </p>
                     </div>

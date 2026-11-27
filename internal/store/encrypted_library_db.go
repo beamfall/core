@@ -176,9 +176,15 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 	}
 	// Last, and in two phases so no failure can unwind rows already removed
 	// from catalog.db: every evacuation (CORE-0768 plaintext rows, CORE-0706
-	// identification state) copies onto this plane first, then one shared
+	// identification state and Unmatched Records) copies onto this plane first, then one shared
 	// transaction deletes them all. A failure in either phase unwinds with
-	// catalog.db still holding every row, and the next unseal retries.
+	// catalog.db still holding every row, and the next unseal retries. Profile
+	// footprint erasures owed since the last seal apply first; their markers
+	// clear in that same shared transaction.
+	erasure, err := s.planeErasureEvacuationLocked(ctx, plane)
+	if err != nil {
+		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
+	}
 	plaintext, err := s.copyPlaintextEncryptedLibraryRowsLocked(ctx, plane)
 	if err != nil {
 		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
@@ -187,7 +193,11 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 	if err != nil {
 		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
 	}
-	if err := s.commitEvacuationPlansLocked(ctx, libraryID, plaintext, identification); err != nil {
+	unmatched, err := s.copyUnmatchedReviewStateLocked(ctx, plane)
+	if err != nil {
+		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
+	}
+	if err := s.commitEvacuationPlansLocked(ctx, libraryID, erasure, plaintext, identification, unmatched); err != nil {
 		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
 	}
 	return nil
@@ -424,6 +434,22 @@ func (s *Store) reconcileEncryptedLibraryDBs(ctx context.Context) error {
 
 func (s *Store) repairEncryptedLibraryPlaintextQuarantineLocked(ctx context.Context, libraryID LibraryID, cipher EncryptedLibraryDBCipher) error {
 	paths := s.encryptedLibraryDBPaths(libraryID)
+	switch _, err := os.Stat(paths.working); {
+	case err == nil:
+		// Recover and checkpoint any committed WAL frames before sealing so a
+		// crash between a protected-plane commit and cleanup cannot lose data.
+		writer, err := openEncryptedLibrarySQLiteWriter(paths.working)
+		if err != nil {
+			return fmt.Errorf("%w: %s: %v", ErrEncryptedLibraryDBQuarantined, encryptedLibraryLeftoverQuarantine, err)
+		}
+		_, checkpointErr := writer.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
+		closeErr := writer.Close()
+		if err := errors.Join(checkpointErr, closeErr); err != nil {
+			return fmt.Errorf("%w: %s: %v", ErrEncryptedLibraryDBQuarantined, encryptedLibraryLeftoverQuarantine, err)
+		}
+	case !os.IsNotExist(err):
+		return fmt.Errorf("%w: %s: %v", ErrEncryptedLibraryDBQuarantined, encryptedLibraryLeftoverQuarantine, err)
+	}
 	if err := cipher.SealDBFile(ctx, libraryID, paths.working, paths.ciphertext); err != nil {
 		return fmt.Errorf("%w: %s: %v", ErrEncryptedLibraryDBQuarantined, encryptedLibraryLeftoverQuarantine, err)
 	}

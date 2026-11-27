@@ -2418,32 +2418,86 @@ func entityRelationFilterSQL(filter *EntityFilter, visible []LibraryID, liveOnly
 // visible are the visible-Library binds matched already uses; the returned
 // args follow matched's, before LIMIT and OFFSET.
 func containerRollUpSQL(matched string, rollUp *ContainerRollUp, placeholders []string, visible []LibraryID) (string, []any) {
-	members := make([]string, len(rollUp.MemberRelations))
-	parents := make([]string, len(rollUp.ParentRelations))
-	args := make([]any, 0, len(members)+len(parents)+len(visible))
-	for i, relation := range rollUp.MemberRelations {
-		members[i] = "?"
-		args = append(args, relation)
-	}
-	for i, relation := range rollUp.ParentRelations {
-		parents[i] = "?"
-		args = append(args, relation)
-	}
-	for _, id := range visible {
-		args = append(args, id)
-	}
-	return `
-		WITH matched AS (` + matched + `),
-		tops AS (
+	hasClimbed := len(rollUp.MemberRelations) > 0 && len(rollUp.ParentRelations) > 0
+	hasDirect := len(rollUp.DirectRelations) > 0
+
+	args := make([]any, 0, len(rollUp.MemberRelations)+len(rollUp.ParentRelations)+len(rollUp.DirectRelations)*2+len(visible)*3)
+	var ctes []string
+	var topParts []string
+
+	if hasClimbed {
+		members := sqlPlaceholders(len(rollUp.MemberRelations))
+		parents := sqlPlaceholders(len(rollUp.ParentRelations))
+		for _, relation := range rollUp.MemberRelations {
+			args = append(args, relation)
+		}
+		for _, relation := range rollUp.ParentRelations {
+			args = append(args, relation)
+		}
+		for _, id := range visible {
+			args = append(args, id)
+		}
+		ctes = append(ctes, `climbed AS (
 			SELECT mt.id AS media_id, t.id AS top_id, t.title AS top_title, t.library_id AS top_library_id
 			FROM matched mt
 			JOIN entity_relation c ON c.to_media_id = mt.id
-			  AND c.relation IN (` + strings.Join(members, ", ") + `)
+			  AND c.relation IN (`+members+`)
 			JOIN entity sn ON sn.id = c.from_entity_id AND sn.trashed_at_ms IS NULL
 			JOIN entity_relation p ON p.from_entity_id = c.from_entity_id
-			  AND p.relation IN (` + strings.Join(parents, ", ") + `)
+			  AND p.relation IN (`+parents+`)
 			JOIN entity t ON t.id = p.to_entity_id AND t.trashed_at_ms IS NULL
-			  AND t.library_id IN (` + strings.Join(placeholders, ", ") + `)
+			  AND t.library_id IN (`+strings.Join(placeholders, ", ")+`)
+		)`)
+		topParts = append(topParts, `SELECT media_id, top_id, top_title, top_library_id FROM climbed`)
+	}
+
+	if hasDirect {
+		direct := sqlPlaceholders(len(rollUp.DirectRelations))
+		libs := strings.Join(placeholders, ", ")
+		for _, relation := range rollUp.DirectRelations {
+			args = append(args, relation)
+		}
+		for _, id := range visible {
+			args = append(args, id)
+		}
+		for _, relation := range rollUp.DirectRelations {
+			args = append(args, relation)
+		}
+		for _, id := range visible {
+			args = append(args, id)
+		}
+		notClimbed := ""
+		if hasClimbed {
+			notClimbed = " AND mt.id NOT IN (SELECT media_id FROM climbed)"
+		}
+		// Keep single-track audio items (e.g. standalone singles) unrolled;
+		// multi-track audio containers (>= 2 visible tracks) and non-audio containers roll up.
+		ctes = append(ctes, `direct AS (
+			SELECT mt.id AS media_id, t.id AS top_id, t.title AS top_title, t.library_id AS top_library_id
+			FROM matched mt
+			JOIN media mt_m ON mt_m.id = mt.id
+			JOIN entity_relation c ON c.to_media_id = mt.id
+			  AND c.relation IN (`+direct+`)
+			JOIN entity t ON t.id = c.from_entity_id AND t.trashed_at_ms IS NULL
+			  AND t.library_id IN (`+libs+`)
+			WHERE (mt_m.media_class != 'audio' OR (
+				SELECT COUNT(DISTINCT mc.to_media_id)
+				FROM entity_relation mc
+				JOIN media mm ON mm.id = mc.to_media_id
+				WHERE mc.from_entity_id = t.id
+				  AND mc.relation IN (`+direct+`)
+				  AND mm.trashed_at_ms IS NULL
+				  AND mm.library_id IN (`+libs+`)
+			) >= 2)`+notClimbed+`
+		)`)
+		topParts = append(topParts, `SELECT media_id, top_id, top_title, top_library_id FROM direct`)
+	}
+
+	return `
+		WITH matched AS (` + matched + `),
+		` + strings.Join(ctes, ",\n\t\t") + `,
+		tops AS (
+			` + strings.Join(topParts, "\n\t\t\tUNION ALL\n\t\t\t") + `
 		)
 		SELECT id, kind, title, library_id, duration_seconds, '' AS members FROM matched
 		WHERE id NOT IN (SELECT media_id FROM tops)
@@ -2491,14 +2545,30 @@ func (s *Store) sourceItemsSQL(ctx context.Context, filter LibraryFilter, fieldF
 	// turning a 50-row page into an 80k-row sort (~36ms on the bench fixture vs
 	// ~0.1ms here). rowid cannot be indexed by a secondary index, so the scan is
 	// the only plan that streams the ORDER BY and short-circuits at LIMIT.
+	// Libraries holding feed-catalogue Media order by publication time instead
+	// (CORE-3537): ingest order is not publication order after a backfill or
+	// when feeds are followed in a different order. Subscription Media sort
+	// first by entry time, the rest follow in rowid order.
+	// CROSS JOIN pins the probe to scan subscription_entry (empty or small), never media.
+	var hasEntries bool
+	if err := s.catalogR.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM subscription_entry e CROSS JOIN media m ON m.id = e.media_id
+		               WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`))`, args[:len(visible)]...).Scan(&hasEntries); err != nil {
+		return nil, err
+	}
+	fromClause, orderClause := "media m NOT INDEXED", "m.rowid DESC"
+	if hasEntries {
+		fromClause = "media m"
+		orderClause = "(SELECT MAX(" + subscriptionEntryTimeSQL + ") FROM subscription_entry e WHERE e.media_id = m.id) DESC NULLS LAST, m.rowid DESC"
+	}
 	rows, err := s.catalogR.QueryContext(ctx, `
 		SELECT m.id, m.title, m.library_id, m.duration_seconds
-		FROM media m NOT INDEXED
+		FROM `+fromClause+`
 		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
 		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+`
 		  AND (NOT EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id)
 		       OR EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id AND f.missing_at_ms IS NULL))`+filterClause+entityClause+certClause+`
-		ORDER BY m.rowid DESC
+		ORDER BY `+orderClause+`
 		LIMIT ? OFFSET ?
 	`, args...)
 	if err != nil {
@@ -3464,6 +3534,11 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 	}
 
 	primary := ordered[0].File
+	mediaPrimary := primary
+	totalDuration, allDurationKnown := sumPartDurationHints(ordered)
+	if allDurationKnown {
+		mediaPrimary.DurationSecondsHint = totalDuration
+	}
 	keepProbeFacts := false
 	if primary.KeepProbeFacts {
 		first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
@@ -3472,9 +3547,15 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 		}
 		keepProbeFacts = first == primary.ContentFingerprint
 	}
-	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, primary, plane.encrypted, false, keepProbeFacts)
+	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, mediaPrimary, plane.encrypted, false, keepProbeFacts)
 	if err != nil {
 		return Media{}, nil, false, err
+	}
+	if allDurationKnown && totalDuration > 0 && media.DurationSeconds != totalDuration {
+		if _, err := tx.ExecContext(ctx, `UPDATE media SET duration_seconds = ? WHERE id = ?`, totalDuration, media.ID); err != nil {
+			return Media{}, nil, false, err
+		}
+		media.DurationSeconds = totalDuration
 	}
 	if !created && len(resetMethods) > 0 {
 		changed, err := mediaPartsDifferTx(ctx, tx, mediaID, ordered)
@@ -3937,7 +4018,7 @@ func (s *Store) allItemsSQL(ctx context.Context, filter LibraryFilter, fieldFilt
 	query := matched + `
 		ORDER BY m.title COLLATE NOCASE, m.id
 		LIMIT ? OFFSET ?`
-	rolling := rollUp != nil && len(rollUp.MemberRelations) > 0 && len(rollUp.ParentRelations) > 0
+	rolling := rollUp != nil && ((len(rollUp.MemberRelations) > 0 && len(rollUp.ParentRelations) > 0) || len(rollUp.DirectRelations) > 0)
 	if rolling {
 		var rollUpArgs []any
 		query, rollUpArgs = containerRollUpSQL(matched, rollUp, placeholders, visible)
@@ -4069,4 +4150,18 @@ func (s *Store) randomItemsSQL(ctx context.Context, filter LibraryFilter, seed s
 		items = append(items, c.item)
 	}
 	return items, nil
+}
+
+func sumPartDurationHints(parts []ImportMediaFilePart) (int, bool) {
+	if len(parts) == 0 {
+		return 0, false
+	}
+	total := 0
+	for _, part := range parts {
+		if part.File.DurationSecondsHint <= 0 {
+			return 0, false
+		}
+		total += part.File.DurationSecondsHint
+	}
+	return total, true
 }

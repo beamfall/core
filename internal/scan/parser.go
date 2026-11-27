@@ -47,3 +47,16 @@ type IdentifiedMediaTitler interface {
 type PartMarkerTitler interface {
 	PartMarkerTitle(path string, probe ParseProbe) string
 }
+
+// ContextRefusalReasoner is an optional extension of ContextFilenameParser
+// returning the human-readable reason one file in a multi-file folder was refused.
+type ContextRefusalReasoner interface {
+	ContextRefusalReason(path string, probe ParseProbe, context ParseContext) string
+}
+
+// DirectoryFilenameParser is an optional extension of FilenameParser that
+// resolves all non-image media files in a flat directory together. Returning
+// handled=false delegates back to per-file parsing.
+type DirectoryFilenameParser interface {
+	ParseDirectory(dir string, probes map[string]ParseProbe, hasMediaSubdirs bool) (parsed map[string]ParsedMedia, refusalReason string, handled bool)
+}

@@ -144,4 +144,12 @@ package store
 // and display last-seen tracking, off the entity-query hot path.
 // CORE-3313 adds 0138_reveal_generation on auth_session for restricted streams.
 // Home customization adds 0139_home_config for per-Profile and template Home layouts.
-const schemaFreezeCatalogMigrations = 135
+// CORE-0706 adds 0140_subscription_entry_collision, the durable review queue
+// for a feed GUID offered for a second file, off the entity-query hot path.
+// CORE-0706 adds 0141_identification_revision, the immutable per-Media
+// identification revisions and idempotency receipts, written by identification
+// commits and read by their replay check, off the entity-query hot path.
+// CORE-0706 adds 0142_artwork_action, the pending post-commit artwork actions
+// written by identification commits and drained by the artwork worker and its
+// restart replay, off the entity-query hot path.
+const schemaFreezeCatalogMigrations = 138

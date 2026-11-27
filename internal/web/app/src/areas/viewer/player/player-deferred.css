@@ -516,6 +516,190 @@
   font-weight: 600;
 }
 
+/* Server Play Queue popover (CORE-2767 / CORE-2846 / CORE-2847). */
+.bf-music-queue-dialog {
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(72vh, 520px);
+}
+
+.bf-music-queue-head {
+  justify-content: space-between;
+  margin: -4px -4px 0 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in oklab, var(--on-scrim) 10%, transparent);
+}
+
+.bf-music-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(42vh, 18rem);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  list-style: none;
+  counter-reset: bf-queue-index;
+}
+
+.bf-music-queue-row {
+  counter-increment: bf-queue-index;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 6px 4px 8px;
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  line-height: 18px;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-music-queue-row::before {
+  content: counter(bf-queue-index) ".";
+  flex: none;
+  min-width: 1.75em;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: color-mix(in oklab, var(--on-scrim) 42%, var(--on-scrim-muted));
+}
+
+.bf-music-queue-row:hover {
+  background: color-mix(in oklab, var(--on-scrim) 6%, transparent);
+}
+
+.bf-music-queue-row[data-current="true"] {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  font-weight: 600;
+  color: var(--on-scrim);
+}
+
+.bf-music-queue-row[data-current="true"]::before {
+  color: var(--accent);
+}
+
+.bf-music-queue-row-title {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bf-music-queue-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.bf-music-queue-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: color-mix(in oklab, var(--on-scrim) 68%, var(--on-scrim-muted));
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-music-queue-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.bf-music-queue-action:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--on-scrim) 12%, transparent);
+  color: var(--on-scrim);
+}
+
+.bf-music-queue-action.is-danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--state-danger) 16%, transparent);
+  color: var(--state-danger);
+}
+
+.bf-music-queue-action:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.bf-music-queue-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.bf-music-queue-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bf-music-queue-save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in oklab, var(--on-scrim) 10%, transparent);
+}
+
+.bf-music-queue-input {
+  flex: 1 1 0%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 16%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklab, var(--on-scrim) 6%, var(--scrim));
+  color: var(--on-scrim);
+  font: inherit;
+  font-size: 13px;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-music-queue-input::placeholder {
+  color: color-mix(in oklab, var(--on-scrim) 44%, var(--on-scrim-muted));
+}
+
+.bf-music-queue-input:hover {
+  border-color: color-mix(in oklab, var(--on-scrim) 30%, transparent);
+}
+
+.bf-music-queue-input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.bf-music-queue-status {
+  margin: 0;
+  font-size: 13px;
+  color: color-mix(in oklab, var(--on-scrim) 68%, var(--on-scrim-muted));
+}
+
+.bf-music-queue-notice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.bf-music-queue-notice[role="alert"] {
+  color: var(--state-danger);
+}
+
+.bf-music-queue-notice[role="status"] {
+  color: var(--on-scrim-muted);
+}
+
 /* Info overlay: a definition list of honest route detail. */
 .bf-info-rows {
   display: grid;
@@ -2146,6 +2330,8 @@ main:has(> .bf-player-stage.is-chrome-dim) > .bf-player-bar,
   width: min(320px, calc(100% - 24px));
   padding: 14px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
   border: 1px solid color-mix(in oklab, var(--on-scrim-muted) 24%, transparent);
   border-radius: var(--radius-card);
   background: color-mix(in oklab, var(--scrim) 92%, transparent);
@@ -2221,6 +2407,61 @@ main:has(> .bf-player-stage.is-chrome-dim) > .bf-player-bar,
   background: color-mix(in oklab, var(--accent) 22%, transparent);
   font-weight: 600;
   cursor: default;
+}
+
+.bf-chapters-drawer-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 24px;
+  white-space: normal;
+}
+
+.bf-chapters-drawer-row[data-current] {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  font-weight: 600;
+}
+
+.bf-chapters-drawer-row[data-current]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  transform: translateY(-50%);
+}
+
+.bf-chapters-drawer-text {
+  display: flex;
+  flex: 1 1 0%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bf-chapters-drawer-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.3;
+}
+
+.bf-chapters-drawer-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--on-scrim) 48%, var(--on-scrim-muted));
 }
 
 /* Ambient mode: an OLED-safe stage. Black behind everything (pure black is a

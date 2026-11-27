@@ -58,6 +58,9 @@ export const PREF_KEYS = {
   // Theme preset and reserved accent (CORE-1179, ADR-0231 D10); the scheme stays on the device.
   themePreset: THEME_PREF_KEYS.preset,
   themeAccent: THEME_PREF_KEYS.accent,
+  // Experience Lens startup behavior and last active mode per Profile.
+  experienceLaunch: "web.experience-launch",
+  experienceLastMode: "web.experience-last-mode",
 } as const;
 
 export type PrefKey = (typeof PREF_KEYS)[keyof typeof PREF_KEYS];

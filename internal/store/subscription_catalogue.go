@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -212,7 +213,16 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 	created := []SubscriptionEntry{}
 	minted := []MediaID{}
 	feedTitle := ""
-	for _, entry := range entries {
+	// Insert oldest first so rowid DESC (the recently-added order) lists the
+	// newest entry first; feeds publish newest-first, so ties keep feed order.
+	ordered := slices.Clone(entries)
+	slices.SortStableFunc(ordered, func(a, b FeedCatalogEntry) int {
+		if c := a.PublishedAt.Compare(b.PublishedAt); c != 0 {
+			return c
+		}
+		return b.Position - a.Position
+	})
+	for _, entry := range ordered {
 		guid := strings.TrimSpace(entry.GUID)
 		if guid == "" {
 			continue
@@ -279,6 +289,8 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 		}
 		created = append(created, row)
 	}
+	// Callers see the feed's own order regardless of insertion order.
+	slices.SortStableFunc(created, func(a, b SubscriptionEntry) int { return a.FeedPosition - b.FeedPosition })
 	if subscription.Title == "" && feedTitle != "" {
 		if _, err := tx.ExecContext(ctx, `UPDATE subscription SET title = ? WHERE id = ? AND title = ''`, feedTitle, subscription.ID); err != nil {
 			return nil, nil, err

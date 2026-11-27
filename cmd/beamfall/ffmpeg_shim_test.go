@@ -50,6 +50,8 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0) // unreachable on success (exec replaces the image)
 	}
+	// Confinement-probe roles (confine_spawn_test.go): exits when one applies.
+	runConfineProbeRoles()
 	if os.Getenv(shimReportEnv) != "" {
 		rep := rlimitReport{}
 		var l unix.Rlimit

@@ -350,11 +350,16 @@ func (r *Runner) loopbackCommand(ctx context.Context, goos string, port int, bin
 	if err := pipeConfinementRefusal(goos, r.shimPath); err != nil {
 		return nil, err
 	}
-	if goos == "linux" {
-		shimArgs := append([]string{shimSubcommand, "--require-landlock", "--", binPath}, binArgs...)
-		// #nosec G204 -- the shim path is the server's own executable and the
-		// arguments are a fixed subcommand, the resolved tool path and its argv.
-		return exec.CommandContext(ctx, r.shimPath, shimArgs...), nil
+	if r.shimPath != "" {
+		// The common spawn seam's confinement, granting no path and only the
+		// loopback port.
+		argv, err := confinedArgv(goos, r.shimPath, binPath, confinement{LoopbackPort: port}, binArgs)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrPipeConfinementUnavailable, err)
+		}
+		// #nosec G204 -- argv[0] is the server's own executable or
+		// /usr/bin/sandbox-exec, wrapping the resolved tool path and its argv.
+		return exec.CommandContext(ctx, argv[0], argv[1:]...), nil
 	}
 	inner := r.hardenedCommand(ctx, binPath, nil, nil, binArgs)
 	sandboxPath, sandboxArgs, wrapped := sandboxWrapNet(port, inner.Path, inner.Args[1:])

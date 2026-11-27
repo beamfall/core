@@ -1476,7 +1476,7 @@ func TestDatabaseBackupHandlerPrunesToKeepN(t *testing.T) {
 	defer st.Close()
 	st.SetSnapshotSealer(backupcore.NewDirectorySealer(dataDir))
 
-	handler := databaseBackupHandler(st, dest, nil)
+	handler := databaseBackupHandler(st, dataDir, dest, nil)
 	// Run the scheduled handler more times than the retention floor; each run
 	// writes a distinct set and then prunes so only store.BackupDailyKeep remain.
 	for i := range store.BackupDailyKeep + 3 {
@@ -1508,7 +1508,7 @@ func TestDatabaseBackupHandlerReturnsBackupError(t *testing.T) {
 	// A dest outside the sanctioned allowlist makes the backup itself fail; the
 	// handler must surface that error (unlike a prune failure, which is
 	// non-fatal after a successful backup).
-	handler := databaseBackupHandler(st, t.TempDir(), nil)
+	handler := databaseBackupHandler(st, "", t.TempDir(), nil)
 	if _, err := handler(ctx, store.Job{ID: "backup-job", Kind: databaseBackupJobKind}); err == nil {
 		t.Fatal("handler swallowed a backup failure")
 	}
@@ -1533,7 +1533,7 @@ func TestScheduledDatabaseBackupEnqueuesAndWritesThroughWorker(t *testing.T) {
 	defer beamfall.Close()
 
 	// New's Reconcile seeded the backup Schedule with LastCompletedEnqueue=now
-	// (Daily(3,0)). Tick well past the next daily fire so the Schedule is DUE and
+	// (a jittered daily trigger, 02:00-03:29). Tick well past the next daily fire so the Schedule is DUE and
 	// the real scheduler enqueues the database-backup job.
 	due := time.Now().UTC().Add(48 * time.Hour)
 	if err := beamfall.schedule.Tick(ctx, due); err != nil {

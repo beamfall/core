@@ -600,8 +600,22 @@ func TestListeningStatsProfileVisibilityAndEntityRollups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(artists) != 1 || artists[0].ID != "stats-artist" || artists[0].Summary != "3 plays" {
-		t.Fatalf("top-artists source = %#v, want visible artist rollup", artists)
+	if len(artists) != 1 || artists[0].ID != "stats-artist" || artists[0].Kind != "entity" || artists[0].Summary != "3 plays" {
+		t.Fatalf("top-artists source = %#v, want visible entity artist rollup", artists)
+	}
+	albums, err := st.SourceItems(ctx, LibraryFilter{AllLibraries: true, SealedIDs: []LibraryID{sealedLib.ID}}, SourceQuery{Kind: "top-albums", ProfileID: "profile-default", Value: "2026"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(albums) != 1 || albums[0].ID != "stats-album" || albums[0].Kind != "entity" {
+		t.Fatalf("top-albums source = %#v, want visible entity album rollup", albums)
+	}
+	tracks, err := st.SourceItems(ctx, LibraryFilter{AllLibraries: true, SealedIDs: []LibraryID{sealedLib.ID}}, SourceQuery{Kind: "top-tracks", ProfileID: "profile-default", Value: "2026"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tracks) == 0 || tracks[0].Kind != "media" {
+		t.Fatalf("top-tracks source = %#v, want media kind items", tracks)
 	}
 	summary, err := st.SourceItems(ctx, LibraryFilter{AllLibraries: true, SealedIDs: []LibraryID{sealedLib.ID}}, SourceQuery{Kind: "listening-summary", ProfileID: "profile-default", Value: "2026"})
 	if err != nil {

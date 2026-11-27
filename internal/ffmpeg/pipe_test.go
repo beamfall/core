@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -303,6 +305,168 @@ func TestPipeCommandDarwinWrapsLoopbackOnlySandbox(t *testing.T) {
 	}
 	if strings.Contains(profile, "file-write") {
 		t.Fatalf("pipe sandbox profile grants a writable path:\n%s", profile)
+	}
+}
+
+const sandboxReadHelperEnv = "BEAMFALL_TEST_SANDBOX_READ_FILE"
+
+func TestHelperSandboxReadFile(t *testing.T) {
+	path := os.Getenv(sandboxReadHelperEnv)
+	if path == "" {
+		return
+	}
+	data, err := os.ReadFile(path) // #nosec G304 G703 -- test helper reads caller-specified fixture path
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	_, _ = os.Stdout.Write(data)
+	os.Exit(0)
+}
+
+// CORE-3516 #14: custom executable location only grants literal read access to
+// the binary (and its non-system libraries), never its sibling files.
+func TestSandboxProfileForDeniesExecutableSiblingSentinelOnDarwin(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is darwin-only")
+	}
+	if _, err := exec.LookPath("sandbox-exec"); err != nil {
+		t.Skip("sandbox-exec not on PATH")
+	}
+	selfPath, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	rawSelf, err := os.ReadFile(selfPath) // #nosec G304 -- current test binary path
+	if err != nil {
+		t.Fatalf("read test executable: %v", err)
+	}
+	toolDir := t.TempDir()
+	allowedDir := t.TempDir()
+	toolBin := filepath.Join(toolDir, "custom-tool")
+	if err := os.WriteFile(toolBin, rawSelf, 0o700); err != nil { // #nosec G306 G703 -- test executable copy
+		t.Fatal(err)
+	}
+	siblingSentinel := filepath.Join(toolDir, "secret-sibling.txt")
+	if err := os.WriteFile(siblingSentinel, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	allowedInput := filepath.Join(allowedDir, "allowed.txt")
+	if err := os.WriteFile(allowedInput, []byte("ok\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := sandboxProfileFor(confinement{ReadOnly: []string{allowedDir}}, toolBin, toolBin)
+	if strings.Contains(profile, fmt.Sprintf("(subpath %s)", sandboxQuote(toolDir))) {
+		t.Fatalf("sandbox profile still grants subpath on tool dir:\n%s", profile)
+	}
+	// Reading allowedDir input succeeds under the Seatbelt profile.
+	okCmd := exec.Command("/usr/bin/sandbox-exec", "-p", profile, toolBin, "-test.run=^TestHelperSandboxReadFile$") // #nosec G204
+	okCmd.Env = append(os.Environ(), sandboxReadHelperEnv+"="+allowedInput)
+	okOut, err := okCmd.CombinedOutput()
+	if err != nil || !strings.HasPrefix(string(okOut), "ok\n") {
+		t.Fatalf("allowed read failed: err=%v out=%q", err, okOut)
+	}
+	// Reading sibling file beside toolBin is denied by Seatbelt.
+	denyCmd := exec.Command("/usr/bin/sandbox-exec", "-p", profile, toolBin, "-test.run=^TestHelperSandboxReadFile$") // #nosec G204
+	denyCmd.Env = append(os.Environ(), sandboxReadHelperEnv+"="+siblingSentinel)
+	if denyOut, err := denyCmd.CombinedOutput(); err == nil {
+		t.Fatalf("sibling sentinel beside binary was readable inside sandbox! out=%q", denyOut)
+	}
+}
+
+// CORE-3516 #14 follow-up: custom Mach-O binaries linking dylibs via inherited
+// @rpath chains or LC_REEXPORT_DYLIB execute cleanly under the literal Seatbelt
+// profile while sibling files remain denied.
+func TestSandboxBinaryRuntimeLibsInheritedRpathAndReexportOnDarwin(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec and Mach-O dylibs are darwin-only")
+	}
+	if _, err := exec.LookPath("sandbox-exec"); err != nil {
+		t.Skip("sandbox-exec not on PATH")
+	}
+	clang, err := exec.LookPath("clang")
+	if err != nil {
+		t.Skip("clang not on PATH")
+	}
+	compile := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(clang, args...) // #nosec G204 -- test builds local C fixtures with clang
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("clang %v: %v\n%s", args, err, out)
+		}
+	}
+
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	rpathDir := filepath.Join(root, "rpaths")
+	reexportDir := filepath.Join(root, "reexport")
+	for _, d := range []string{binDir, rpathDir, reexportDir} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	siblingSecret := filepath.Join(rpathDir, "sibling-secret.txt")
+	if err := os.WriteFile(siblingSecret, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build leaf <- mid (@rpath/libleaf.dylib, NO LC_RPATH on libmid!) <- app (-Wl,-rpath,@executable_path/../rpaths)
+	// plus reexported <- wrap (-Wl,-reexport_library,.../libreexport.dylib) <- app calling reexported_val().
+	leafSrc := filepath.Join(root, "leaf.c")
+	midSrc := filepath.Join(root, "mid.c")
+	reexpSrc := filepath.Join(root, "reexp.c")
+	wrapSrc := filepath.Join(root, "wrap.c")
+	appSrc := filepath.Join(root, "app.c")
+	if err := os.WriteFile(leafSrc, []byte(`int leaf_val(void) { return 21; }`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(midSrc, []byte(`int leaf_val(void); int mid_val(void) { return leaf_val() * 2; }`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reexpSrc, []byte(`int reexp_val(void) { return 7; }`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wrapSrc, []byte(`int wrap_marker(void) { return 1; }`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(appSrc, []byte(`
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+int mid_val(void);
+int reexp_val(void);
+int main(int argc, char **argv) {
+	if (argc > 1 && open(argv[1], O_RDONLY) >= 0) return 99;
+	printf("%d\n", mid_val() + reexp_val());
+	return 0;
+}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	leafLib := filepath.Join(rpathDir, "libleaf.dylib")
+	midLib := filepath.Join(rpathDir, "libmid.dylib")
+	reexpLib := filepath.Join(reexportDir, "libreexp.dylib")
+	wrapLib := filepath.Join(reexportDir, "libwrap.dylib")
+	appBin := filepath.Join(binDir, "rpath-app")
+
+	compile("-dynamiclib", leafSrc, "-install_name", "@rpath/libleaf.dylib", "-o", leafLib)
+	compile("-dynamiclib", midSrc, leafLib, "-install_name", "@rpath/libmid.dylib", "-o", midLib)
+	compile("-dynamiclib", reexpSrc, "-install_name", reexpLib, "-o", reexpLib)
+	compile("-dynamiclib", wrapSrc, "-Wl,-reexport_library,"+reexpLib, "-install_name", wrapLib, "-o", wrapLib)
+	compile(appSrc, midLib, wrapLib, "-Wl,-rpath,@executable_path/../rpaths", "-o", appBin)
+
+	profile := sandboxProfileFor(confinement{}, appBin, appBin)
+	// Running appBin under sandbox-exec loads @rpath/libmid -> inherited @rpath/libleaf
+	// and libwrap -> LC_REEXPORT_DYLIB libreexp, while open(siblingSecret) fails EPERM.
+	cmd := exec.Command("/usr/bin/sandbox-exec", "-p", profile, appBin, siblingSecret) // #nosec G204
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rpath/reexport app failed under sandbox: %v\nout=%s\nprofile:\n%s", err, out, profile)
+	}
+	if strings.TrimSpace(string(out)) != "49" {
+		t.Fatalf("unexpected app stdout %q, want 49", out)
 	}
 }
 

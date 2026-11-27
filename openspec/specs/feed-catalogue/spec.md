@@ -57,3 +57,52 @@ the Subscription. A 410 response SHALL retire it. `refreshSubscription` SHALL po
 - **WHEN** a feed's host does not resolve
 - **THEN** the Subscription reports `lastErrorClass = dns`, a `failingSince` time and a later
   `nextPollAt`, and the web shows the cause
+
+### Requirement: A feed Subscription publishes a show container with artwork
+
+Polling a feed SHALL create or update one container Entity for the Subscription when the Library's
+plugin declares an outermost container kind that holds Media through a single-holder relation, and
+SHALL hold the feed's catalogue episodes through that relation.
+
+#### Scenario: Show with channel art
+
+- **WHEN** a feed with a title and an `itunes:image` is polled into such a Library
+- **THEN** a container Entity titled by the feed exists with the image as its poster and each
+  episode is held by it
+
+#### Scenario: Episode artwork
+
+- **WHEN** an episode has its own `itunes:image`
+- **THEN** it is the episode's poster and thumb; an episode without one takes the show's poster
+
+#### Scenario: Plugin without a container kind
+
+- **WHEN** the Library's plugin declares no such kind
+- **THEN** no Entity or artwork is written
+
+### Requirement: Catalogue insertion order is newest-last
+
+Catalogue entries SHALL be inserted in ascending publish-date order (ties keep feed order) so
+the `recently-added` source, which reads newest row first, lists the newest episode first. The
+entries a call returns SHALL stay in feed order.
+
+#### Scenario: newest episode lists first
+- **WHEN** a feed with five dated entries is catalogued
+- **THEN** the newest entry's media row sorts ahead of the oldest in `recently-added`
+
+### Requirement: Recently-added orders feed Media by publication time
+
+The `recently-added` source SHALL list Media that have a subscription entry newest-published first,
+using the entry's feed publish time (first-seen time when the feed gave none), regardless of the
+order they were ingested. Media without a subscription entry SHALL follow them in ingest order,
+newest first. Libraries holding no subscription entries SHALL keep ingest order alone.
+
+#### Scenario: Out-of-order ingest
+
+- **WHEN** a feed holding an older newest-episode is catalogued after a feed holding a newer one
+- **THEN** `recently-added` lists the newer-published episode first
+
+#### Scenario: Library without feeds
+
+- **WHEN** no visible Library holds subscription entries
+- **THEN** `recently-added` lists by ingest order as before

@@ -540,3 +540,327 @@ describe("LibrarySidebar Your stuff group (CORE-2827)", () => {
     );
   });
 });
+
+describe("LibrarySidebar groups and dividers", () => {
+  const titles: Record<string, string> = {
+    a: "Films",
+    b: "Music",
+    c: "Podcasts",
+    d: "Photos",
+  };
+  const navigation: NavigationNode[] = [
+    { id: "home", title: "Home", view: "layout", layoutID: "layout-home" },
+    ...Object.entries(titles).map(([id, title]) => ({
+      id: `library-${id}`,
+      title,
+      view: "layout",
+      layoutID: "layout-home",
+      libraryID: id,
+    })),
+  ];
+  const libraries: LibrarySummary[] = Object.entries(titles).map(([id, title]) => ({
+    id,
+    title,
+    pluginID: null,
+    previewClips: false,
+  }));
+
+  function renderSidebar({
+    prefs,
+    onSavePrefs,
+    activeNodeId = "home",
+    collapsed = false,
+  }: {
+    prefs?: SidebarLibraryPrefs;
+    onSavePrefs?: (prefs: SidebarLibraryPrefs) => Promise<void>;
+    activeNodeId?: string;
+    collapsed?: boolean;
+  }) {
+    return render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrarySidebar
+            id="side"
+            navigation={navigation}
+            libraries={libraries}
+            activeNodeId={activeNodeId}
+            collapsed={collapsed}
+            drawer={false}
+            onNavigate={() => {}}
+            prefs={prefs}
+            prefsReady
+            onSavePrefs={onSavePrefs}
+            showPersonal
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+  }
+
+  it("renders collapsible groups and dividers in normal view and persists collapse state", async () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    const prefs: SidebarLibraryPrefs = {
+      order: ["a", "b", "c", "d"],
+      hidden: [],
+      groups: [{ id: "grp-1", name: "Audio", libraries: ["b", "c"], collapsed: true }],
+      layout: [
+        { type: "library", id: "a" },
+        { type: "divider", id: "div-1" },
+        { type: "group", id: "grp-1" },
+        { type: "library", id: "d" },
+      ],
+    };
+    const { container } = renderSidebar({ prefs, onSavePrefs: save });
+
+    expect(screen.getByRole("separator")).toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "Audio" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: "Music" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Films" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Photos" })).toBeInTheDocument();
+    await expectNoAxeViolations(container);
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: "Music" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Podcasts" })).toBeInTheDocument();
+    await expectNoAxeViolations(container);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0].groups).toEqual([
+      { id: "grp-1", name: "Audio", libraries: ["b", "c"] },
+    ]);
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: "Music" })).toBeNull();
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save.mock.calls[1][0].groups).toEqual([
+      { id: "grp-1", name: "Audio", libraries: ["b", "c"], collapsed: true },
+    ]);
+  });
+
+  it("auto-expands a collapsed group when its Library is active, while allowing manual toggle", () => {
+    const prefs: SidebarLibraryPrefs = {
+      order: ["a", "b", "c", "d"],
+      hidden: [],
+      groups: [{ id: "grp-1", name: "Audio", libraries: ["b", "c"], collapsed: true }],
+      layout: [
+        { type: "library", id: "a" },
+        { type: "group", id: "grp-1" },
+        { type: "library", id: "d" },
+      ],
+    };
+    const view = renderSidebar({ prefs, activeNodeId: "library-b" });
+    const toggle = screen.getByRole("button", { name: "Audio" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: "Music" })).toHaveAttribute("aria-current", "page");
+
+    // User can still manually collapse the group while viewing its active Library.
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: "Music" })).toBeNull();
+
+    // Navigating to another Library inside the collapsed group auto-expands it again.
+    view.rerender(
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrarySidebar
+            id="side"
+            navigation={navigation}
+            libraries={libraries}
+            activeNodeId="library-c"
+            collapsed={false}
+            drawer={false}
+            onNavigate={() => {}}
+            prefs={prefs}
+            prefsReady
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Audio" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: "Podcasts" })).toHaveAttribute("aria-current", "page");
+
+    // Leaving back to Home restores the saved collapsed state.
+    view.rerender(
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrarySidebar
+            id="side"
+            navigation={navigation}
+            libraries={libraries}
+            activeNodeId="home"
+            collapsed={false}
+            drawer={false}
+            onNavigate={() => {}}
+            prefs={prefs}
+            prefsReady
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Audio" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("flattens grouped libraries onto the desktop icon rail while keeping dividers", () => {
+    const prefs: SidebarLibraryPrefs = {
+      order: ["a", "b", "c", "d"],
+      hidden: [],
+      groups: [{ id: "grp-1", name: "Audio", libraries: ["b", "c"], collapsed: true }],
+      layout: [
+        { type: "library", id: "a" },
+        { type: "divider", id: "div-1" },
+        { type: "group", id: "grp-1" },
+        { type: "library", id: "d" },
+      ],
+    };
+    renderSidebar({ prefs, collapsed: true });
+    expect(screen.getByRole("separator")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Audio" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Music" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Podcasts" })).toBeInTheDocument();
+  });
+
+  it("creates, renames, populates, reorders, and deletes groups and dividers in Edit mode", async () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    const { container } = renderSidebar({ onSavePrefs: save });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+
+    // Add a group and rename it directly via the auto-focused input.
+    fireEvent.click(screen.getByRole("button", { name: "New group" }));
+    const nameInput = screen.getByRole("textbox", { name: "Group name" });
+    expect(nameInput).toHaveFocus();
+    fireEvent.change(nameInput, { target: { value: "Audio" } });
+    fireEvent.keyDown(nameInput, { key: "Enter" });
+    expect(screen.getByRole("button", { name: "Rename Audio" })).toBeInTheDocument();
+
+    // Add a divider.
+    fireEvent.click(screen.getByRole("button", { name: "Divider" }));
+    expect(screen.getByRole("button", { name: "Remove Divider" })).toBeInTheDocument();
+
+    // Assign Music and Podcasts into Audio using the group selector.
+    fireEvent.change(screen.getByRole("combobox", { name: "Group for Music" }), {
+      target: { value: "grp-1" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Group for Podcasts" }), {
+      target: { value: "grp-1" },
+    });
+
+    // Reorder inside the group (move Podcasts above Music).
+    fireEvent.click(screen.getByRole("button", { name: "Move Podcasts up" }));
+    expect(screen.getByText("Podcasts moved to position 1 of 2")).toBeInTheDocument();
+
+    // Reorder the divider above Audio at top level.
+    fireEvent.click(screen.getByRole("button", { name: "Move Divider up" }));
+
+    await expectNoAxeViolations(container);
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0]).toEqual({
+      order: ["a", "d", "c", "b"],
+      hidden: [],
+      groups: [{ id: "grp-1", name: "Audio", libraries: ["c", "b"] }],
+      layout: [
+        { type: "library", id: "a" },
+        { type: "library", id: "d" },
+        { type: "divider", id: "div-1" },
+        { type: "group", id: "grp-1" },
+      ],
+    });
+  });
+
+  it("supports drag-and-drop into, within, and out of groups, plus group deletion and divider removal", async () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    const prefs: SidebarLibraryPrefs = {
+      order: ["a", "b", "c", "d"],
+      hidden: [],
+      groups: [{ id: "grp-1", name: "Audio", libraries: ["b", "c"], collapsed: true }],
+      layout: [
+        { type: "library", id: "a" },
+        { type: "divider", id: "div-1" },
+        { type: "group", id: "grp-1" },
+        { type: "library", id: "d" },
+      ],
+    };
+    renderSidebar({ prefs, onSavePrefs: save });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+
+    // Drag Photos into the Audio group (dropping on Music places it at index 0 inside Audio).
+    const row = (name: string) => screen.getByText(name).closest("li") as HTMLElement;
+    fireEvent.dragStart(row("Photos"));
+    fireEvent.dragOver(row("Music"));
+    fireEvent.drop(row("Music"));
+
+    // Rename Audio, verify Escape cancels, then commit via Done directly.
+    fireEvent.click(screen.getByRole("button", { name: "Rename Audio" }));
+    let input = screen.getByRole("textbox", { name: "Group name" });
+    fireEvent.change(input, { target: { value: "Temp" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.getByRole("button", { name: "Rename Audio" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename Audio" }));
+    input = screen.getByRole("textbox", { name: "Group name" });
+    fireEvent.change(input, { target: { value: "Sound" } });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0]).toEqual({
+      order: ["a", "d", "b", "c"],
+      hidden: [],
+      groups: [{ id: "grp-1", name: "Sound", libraries: ["d", "b", "c"], collapsed: true }],
+      layout: [
+        { type: "library", id: "a" },
+        { type: "divider", id: "div-1" },
+        { type: "group", id: "grp-1" },
+      ],
+    });
+
+    // Re-enter edit mode, drag Music out to top level (onto Films), move Podcasts via select,
+    // test Alt+ArrowUp on a grouped row, and test numbered dividers + deletion.
+    const savedPrefs = save.mock.calls[0][0];
+    cleanup();
+    const save2 = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    renderSidebar({ prefs: savedPrefs, onSavePrefs: save2 });
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+
+    // Drag Music out of Sound onto Films (top-level index 0).
+    const row2 = (name: string) => screen.getByText(name).closest("li") as HTMLElement;
+    fireEvent.dragStart(row2("Music"));
+    fireEvent.dragOver(row2("Films"));
+    fireEvent.drop(row2("Films"));
+
+    // Alt+ArrowUp inside Sound moves Podcasts above Photos.
+    fireEvent.keyDown(screen.getByRole("button", { name: "Pin Podcasts" }), {
+      key: "ArrowUp",
+      altKey: true,
+    });
+    expect(screen.getByText("Podcasts moved to position 1 of 2")).toBeInTheDocument();
+
+    // Add a second divider -> labels disambiguate Divider 1 / Divider 2.
+    fireEvent.click(screen.getByRole("button", { name: "Divider" }));
+    expect(screen.getByRole("button", { name: "Remove Divider 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove Divider 2" })).toBeInTheDocument();
+
+    // Delete Sound (returns Podcasts, Photos to top level in place), remove both dividers.
+    fireEvent.click(screen.getByRole("button", { name: "Delete group Sound" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Divider 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Divider" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    await waitFor(() => expect(save2).toHaveBeenCalledTimes(1));
+    expect(save2.mock.calls[0][0]).toEqual({
+      order: ["b", "a", "c", "d"],
+      hidden: [],
+    });
+  });
+
+  it("hides group and divider creation controls when editing Your stuff", () => {
+    renderSidebar({ onSavePrefs: async () => {} });
+    fireEvent.click(screen.getByRole("button", { name: "Edit your stuff" }));
+    expect(screen.queryByRole("button", { name: "New group" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Divider" })).toBeNull();
+  });
+});

@@ -89,6 +89,7 @@ type App struct {
 	jobs            *jobs.Registry
 	hls             *playback.Sessions
 	hostMetrics     *hostmetrics.Sampler
+	identify        *identify.Service
 	governor        *governor.Governor
 	surfaces        *reveal.Registry
 	watcher         *watcher.Service
@@ -736,7 +737,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// old rows whose fingerprint is no longer reachable.
 	jobRegistry.Register(jobs.SubtitleOffsetPruneJobKind, jobs.SubtitleOffsetPruneHandler(st, subtitleSidecarGuard{}, time.Now))
 	jobRegistry.Register(eventsCompactionJobKind, eventsCompactionHandler(st, logger))
-	jobRegistry.Register(databaseBackupJobKind, databaseBackupHandler(st, filepath.Join(cfg.DataDir, "backups"), func() store.EncryptedLibraryDBCipher {
+	jobRegistry.Register(databaseBackupJobKind, databaseBackupHandler(st, cfg.DataDir, filepath.Join(cfg.DataDir, "backups"), func() store.EncryptedLibraryDBCipher {
 		if encryptedBackupCipher == nil {
 			return nil
 		}
@@ -925,6 +926,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	subscriptionPoller := ingest.NewPoller(st, scrapeEngine)
 	subscriptionPoller.SetCertificationResolver(authService.CertificationConstraints)
 	subscriptionPoller.SetLogger(logger)
+	subscriptionPoller.SetContainerPublisher(newSubscriptionContainers(st, executablePlugins, artworkService, scrapeEngine, logger))
 	pollHandler := ingest.Handler(subscriptionPoller)
 	jobRegistry.Register(ingest.PollJobKind, pollHandler)
 	// qBittorrent ingest: a poll job pulls completed downloads,
@@ -1578,8 +1580,16 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	// Console staged restore (CORE-1720): the next start applies it before
 	// the store opens (cmd/beamfall applyStagedRestore).
-	graphHandler.SetRestoreStager(restorestage.New(cfg.DataDir, st))
+	restoreStager := restorestage.New(cfg.DataDir, st)
+	graphHandler.SetRestoreStager(restoreStager)
 	graphHandler.SetBackupKeyEscrow(backupKeyEscrow{dataDir: cfg.DataDir})
+	// Console backup operations (CORE-0778): banners, update gate and the
+	// restore drill, which waits for realtime transcodes to finish.
+	graphHandler.SetBackupOps(backupOps{
+		dataDir: cfg.DataDir,
+		stager:  restoreStager,
+		idle:    func() bool { return resourceGovernor.ActiveTranscodes() == 0 },
+	})
 	// Scrobble Integration Plugin: an opt-in consumer of the
 	// unwatched→watched transition (the graph playback path, NOT a new SSE event
 	// kind). Dormant unless the operator has activated an adapter in
@@ -1651,6 +1661,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		jobs:                   jobRegistry,
 		hls:                    hlsSessions,
 		hostMetrics:            hostSampler,
+		identify:               identifyService,
 		governor:               resourceGovernor,
 		surfaces:               surfaces,
 		watcher:                watcherService,
@@ -2099,6 +2110,17 @@ func (a *App) Run(ctx context.Context) (resultErr error) {
 		defer jobsDone.Done()
 		a.hostMetrics.Run(jobsCtx)
 	}()
+	// Artwork actions an identification committed before the last stop but
+	// never fetched complete now, each exactly once (CORE-0706).
+	if a.identify != nil {
+		jobsDone.Add(1)
+		go func() {
+			defer jobsDone.Done()
+			if _, err := a.identify.ReplayArtworkActions(jobsCtx); err != nil && jobsCtx.Err() == nil {
+				slog.Warn("identify: artwork action replay failed", "error", err.Error())
+			}
+		}()
+	}
 	// Webhook Emitter: a long-lived consumer of the event outbox. It idles
 	// while no endpoint is enabled, so endpoints added in the console start
 	// without a restart. It shares the jobsCtx lifecycle so it stops and is
@@ -3790,7 +3812,7 @@ type qbittorrentIngestAdapter struct {
 
 func (a qbittorrentIngestAdapter) Config(ctx context.Context) (graph.QBittorrentConfig, bool) {
 	// An inert ingestor (no endpoint configured) reports unconfigured even
-	// though it exists, so the Console read shows "ingest disabled" honestly
+	// though it exists, so the Console read containers "ingest disabled" honestly
 	// until setQBittorrentIngest sets an endpoint.
 	if a.ingestor == nil || !a.ingestor.Configured() {
 		return graph.QBittorrentConfig{}, false
@@ -4278,7 +4300,7 @@ func enqueueAssetCatchUp(ctx context.Context, st *store.Store, logger *slog.Logg
 
 func registerBuiltInSchedules(ctx context.Context, st *store.Store, service *schedulepkg.Service, precomputeCacheRoot string, precomputeBudgetBytes int64, composesPictures bool) {
 	service.Register(singleJobSchedule(retentionSweepJobKind, schedulepkg.Daily(4, 0)))
-	service.Register(singleJobSchedule(databaseBackupJobKind, schedulepkg.Daily(3, 0)))
+	service.Register(singleJobSchedule(databaseBackupJobKind, backupScheduleTrigger(rand.Intn)))
 	// CORE-2570: trickplay runs off-peak, one item at a time, never on the scan path.
 	service.Register(singleJobSchedule(genassets.SweepJobKind, schedulepkg.Daily(3, 0)))
 	// Events.db retention compaction: 03:30 daily, just after
@@ -4534,10 +4556,20 @@ func offlinePackAttestationVerifier(hook offlinepack.DeviceKeyAttestationVerifie
 		return hook, nil
 	}
 	status := &offlinepack.AttestationStatusSource{}
-	return offlinepack.NewAndroidKeyAttestationVerifier(offlinepack.AndroidKeyAttestationOptions{
+	android, err := offlinepack.NewAndroidKeyAttestationVerifier(offlinepack.AndroidKeyAttestationOptions{
 		AllowSoftware: emulatorAttestationAllowed(capabilities.ReleaseVersion, logger),
 		Status:        status.Current,
 	})
+	if err != nil {
+		return nil, err
+	}
+	apple, err := offlinepack.NewAppleAppAttestVerifier(offlinepack.AppleAppAttestOptions{
+		AllowDevelopment: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return offlinepack.NewMultiPlatformAttestationVerifier(android, apple), nil
 }
 
 func emulatorAttestationAllowed(releaseVersion string, logger *slog.Logger) bool {

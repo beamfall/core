@@ -74,7 +74,21 @@ type Poller struct {
 	// certification resolves a follower's ceilings when new entries are
 	// routed to its Play Queue; nil disables routing.
 	certification func([]store.ProfileCertificationCeiling) []store.CertificationConstraint
+	// containers publishes the feed's container container and artwork after each
+	// catalogue upsert; nil disables it.
+	containers ContainerPublisher
 }
+
+// ContainerPublisher turns a polled feed into its container container Entity and
+// artwork (CORE-3524). It is best-effort: an error (including an incomplete
+// artwork pass) is logged and the poller drops the feed validators so the next
+// poll refetches the full feed and retries.
+type ContainerPublisher interface {
+	PublishContainer(ctx context.Context, subscription store.Subscription, document scrape.FeedDocument, entries []scrape.FeedEntry) error
+}
+
+// SetContainerPublisher wires the container publisher. Call before polling starts.
+func (p *Poller) SetContainerPublisher(containers ContainerPublisher) { p.containers = containers }
 
 // SetCertificationResolver wires the resolver used when new entries are
 // routed to followers' Play Queues (CORE-2958). Call before polling starts.
@@ -191,6 +205,11 @@ func Handler(p *Poller) jobs.Handler {
 // backoff) and feed-move observations. Returns how many enclosures were
 // published, resumed crash residue included.
 func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscription) (int, error) {
+	// An Encrypted Library's feed entries cannot be recorded without reaching
+	// the shared catalog (CORE-0706): refuse before any fetch or download.
+	if err := p.store.SubscriptionPrivacyCheck(ctx, subscription.ID); err != nil {
+		return 0, err
+	}
 	now := p.now()
 	root, err := filepath.Abs(subscription.Root)
 	if err != nil {
@@ -249,6 +268,14 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	selected, catalogued, err := p.catalogue(ctx, subscription, document, now)
 	if err != nil {
 		return published, err
+	}
+	if catalogued && p.containers != nil {
+		if err := p.containers.PublishContainer(ctx, subscription, document, catalogueEntries(document)); err != nil {
+			p.logger.Warn("container publication incomplete", "subscription", subscription.ID, "error", err)
+			// An unconditional refetch next poll: a 304 would skip the
+			// retry and leave the container or its artwork missing.
+			etag, lastModified = "", ""
+		}
 	}
 	// A Subscription imported without a title takes the feed's own title;
 	// a stored title is never overwritten.

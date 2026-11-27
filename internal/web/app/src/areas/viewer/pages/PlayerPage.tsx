@@ -463,6 +463,13 @@ function FeaturePlayer({
   // The media(id) read is authoritative: an entry a page sent without the flag
   // still plays alone once the read says so.
   const playsAloneRead = media?.id === mediaId && media?.playsAlone === true;
+  const playsAloneEntry = activeRawQueue?.find((item) => item.id === mediaId)?.playsAlone === true;
+  const playsAlone = playsAloneRead || playsAloneEntry;
+  useEffect(() => {
+    if (!serverQueueRun && playsAlone && musicQueueOpen) {
+      setMusicQueueOpen(false);
+    }
+  }, [serverQueueRun, playsAlone, musicQueueOpen]);
   const navQueue = useMemo(() => {
     if (!activeRawQueue) return undefined;
     const queue = playsAloneRead
@@ -1821,7 +1828,7 @@ function FeaturePlayer({
                 ambient={ambient}
                 onAmbientChange={showAudioStage ? setAmbientChoice : undefined}
                 onPlayMusicQueue={
-                  isAudio && profileID && !partyLeads
+                  isAudio && profileID && !partyLeads && (serverQueueRun || !playsAlone)
                     ? () => void runQueueAction("start")
                     : undefined
                 }

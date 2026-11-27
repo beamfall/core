@@ -285,3 +285,7 @@ export function useT(): I18nValue["t"] {
 export function useDisplayLocale(): string {
   return useI18n().displayLocale;
 }
+
+export function useOptionalDisplayLocale(): string {
+  return useContext(I18nContext)?.displayLocale ?? FALLBACK_LOCALE;
+}

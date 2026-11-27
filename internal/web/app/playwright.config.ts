@@ -20,6 +20,7 @@ const globalTimeout = suite === "smoke" ? 20 * 60_000 : 30 * 60_000;
 // storageStates or harness manifest. global-setup derives the same path.
 const authDir = join(import.meta.dirname, "e2e", ".auth", String(E2E_PORT));
 const renderPhase = process.env.BEAMFALL_WEB_E2E_RENDER_PHASE === "1";
+const updateWebGoldens = process.env.BEAMFALL_UPDATE_WEB_GOLDENS === "1";
 const visualBaselineDir = join(import.meta.dirname, "e2e", "goldens");
 const archivedVisualBaselineDir = join(
   import.meta.dirname,
@@ -39,13 +40,16 @@ const config = defineConfig({
     "{testFilePath}",
     "{arg}{ext}",
   ),
-  updateSnapshots: "none",
+  // Live goldens (e2e/goldens/) are only updated through the supported
+  // BEAMFALL_UPDATE_WEB_GOLDENS=1 workflow (e.g. `make web-e2e-rerecord-goldens`),
+  // never via ad-hoc --update-snapshots against the archived parity snapshots.
+  updateSnapshots: updateWebGoldens ? "all" : "none",
   // Includes fresh web/server builds plus serial browser projects. Ten minutes
   // bounds each smoke-workflow invocation; the complete suite gets thirty. This is
   // deliberately separate from (and does not raise) per-test timeouts.
   globalTimeout,
   fullyParallel: false,
-  workers: renderPhase ? 1 : undefined,
+  workers: renderPhase || updateWebGoldens ? 1 : undefined,
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: [["list"], ["./e2e/lib/progress-heartbeat-reporter.mjs"]],

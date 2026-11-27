@@ -358,12 +358,15 @@ func (r *Registry) EntityParentRelations() []string {
 // for a nested container hierarchy a catalog feed lists by its top container:
 // members are the relations a container Kind holds one Media by
 // (Cardinality "one"), parents the relations that container climbs to a
-// container Kind the bundle's browse Layout lists whole. A container whose
-// parent is not browsed, or which holds Media many-to-many, contributes
-// nothing, so its Media stay listed as themselves. Both are sorted and without repeats; core names no
-// Kind or relation (invariant #1).
+// container Kind the bundle's browse Layout lists whole. Direct browsed
+// container relations (no parent climb) are returned separately by
+// ContainerRollUpDirectRelations. Both are sorted and without repeats; core
+// names no Kind or relation (invariant #1).
 func (r *Registry) ContainerRollUpRelations() (members, parents []string) {
 	r.eachContainerRollUp(func(held []string, climbs []ContainerEdge) {
+		if len(climbs) == 0 {
+			return
+		}
 		for _, name := range held {
 			if !contains(members, name) {
 				members = append(members, name)
@@ -378,6 +381,25 @@ func (r *Registry) ContainerRollUpRelations() (members, parents []string) {
 	slices.Sort(members)
 	slices.Sort(parents)
 	return members, parents
+}
+
+// ContainerRollUpDirectRelations returns the sorted, deduplicated relations
+// activated bundles declare for directly-browsed container Kinds holding Media
+// (Cardinality "one") with no parent container climb (for example albums holding tracks).
+func (r *Registry) ContainerRollUpDirectRelations() []string {
+	var direct []string
+	r.eachContainerRollUp(func(held []string, climbs []ContainerEdge) {
+		if len(climbs) > 0 {
+			return
+		}
+		for _, name := range held {
+			if !contains(direct, name) {
+				direct = append(direct, name)
+			}
+		}
+	})
+	slices.Sort(direct)
+	return direct
 }
 
 // ContainerEdge is one container roll-up step a bundle declares: an Entity of
@@ -402,7 +424,8 @@ func (r *Registry) ContainerRollUpEdges() []ContainerEdge {
 }
 
 // eachContainerRollUp calls visit for every container Kind that holds one
-// Media by a relation and climbs to a browsed container Kind of its bundle.
+// Media by a relation and either climbs to a browsed parent container Kind or
+// is itself browsed without a parent climb.
 func (r *Registry) eachContainerRollUp(visit func(held []string, climbs []ContainerEdge)) {
 	if r == nil {
 		return
@@ -439,7 +462,7 @@ func (r *Registry) eachContainerRollUp(visit func(held []string, climbs []Contai
 					climbs = append(climbs, ContainerEdge{Relation: relation.Name, ChildKind: kind.Name, ParentKind: relation.ToKind})
 				}
 			}
-			if len(held) > 0 && len(climbs) > 0 {
+			if len(held) > 0 && (len(climbs) > 0 || browsed[kind.Name]) {
 				visit(held, climbs)
 			}
 		}

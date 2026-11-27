@@ -1,0 +1,2 @@
+- [x] Order `recently-added` by entry publish time when visible Libraries hold subscription entries
+- [x] Store test: out-of-publication-order ingest lists newest-published first

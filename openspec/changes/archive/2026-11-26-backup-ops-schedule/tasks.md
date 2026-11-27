@@ -1,0 +1,3 @@
+- [x] Retention policy and prune (store.PruneBackupsByPolicy)
+- [x] Free-space precheck, post-backup verification, failure classes (internal/app/backup_job.go)
+- [x] Jitter in the 02:00-05:00 window, webhook events, console surface (BKUP-14), verify drill (BKUP-15)

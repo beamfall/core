@@ -297,6 +297,7 @@ var agentTokenDenied = map[string]bool{
 	"transferprofileowner":        true,
 	"revealbackupkey":             true,
 	"acknowledgebackupkey":        true,
+	"verifybackupnow":             true,
 	"setjellyfincompat":           true,
 	"setprofileintegrationsignin": true,
 	"createjellyfincompatkey":     true,
@@ -928,6 +929,10 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"backupkeystatus":                    newFieldHandler("backupKeyStatus", "backupKeyStatus", fieldRead, roleSession|roleAdmin, 154),
 	"revealbackupkey":                    newFieldHandler("revealBackupKey", "revealBackupKey", fieldMutation, roleSession|roleAdmin, 154),
 	"acknowledgebackupkey":               newFieldHandler("acknowledgeBackupKey", "acknowledgeBackupKey", fieldMutation, roleSession|roleAdmin, 154),
+	"backupstatus":                       newFieldHandler("backupStatus", "backupStatus", fieldRead, roleSession|roleAdmin, 154),
+	"acknowledgebackupbanner":            newFieldHandler("acknowledgeBackupBanner", "acknowledgeBackupBanner", fieldMutation, roleSession|roleAdmin, 154),
+	"setbackupupgradegate":               newFieldHandler("setBackupUpgradeGate", "setBackupUpgradeGate", fieldMutation, roleSession|roleAdmin, 154),
+	"verifybackupnow":                    newFieldHandler("verifyBackupNow", "verifyBackupNow", fieldMutation, roleSession|roleAdmin, 154),
 }
 
 func dispatchFieldBlock000(dispatch *fieldDispatchContext) response {
@@ -4772,6 +4777,30 @@ func dispatchFieldBlock154(dispatch *fieldDispatchContext) response {
 	if fields["acknowledgebackupkey"] {
 		status, err := h.acknowledgeBackupKey(ctx, scope, req)
 		if resp := resolveField(dispatch, "acknowledgebackupkey", status, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["backupstatus"] {
+		status, err := h.backupStatus()
+		if resp := resolveField(dispatch, "backupstatus", status, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["acknowledgebackupbanner"] {
+		status, err := h.acknowledgeBackupBanner(ctx, scope, req)
+		if resp := resolveField(dispatch, "acknowledgebackupbanner", status, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setbackupupgradegate"] {
+		status, err := h.setBackupUpgradeGate(ctx, scope, req)
+		if resp := resolveField(dispatch, "setbackupupgradegate", status, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["verifybackupnow"] {
+		drill, err := h.verifyBackupNow(ctx, scope, req)
+		if resp := resolveField(dispatch, "verifybackupnow", drill, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

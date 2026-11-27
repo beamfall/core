@@ -55,7 +55,22 @@ import type {
   SessionInfo,
   SourceItem,
   SwitchProfileResult,
+  ViewerPluginInfo,
 } from "./types";
+
+const VIEWER_PLUGINS_QUERY =
+  "query ViewerPlugins { plugins { id displayName mediaClasses presentation { resumeMedia playsAlone selectPlays interactiveSidecars defaultIcon } capabilities } }";
+
+/** Fetch activated plugin declarations available to any Viewer session. */
+export async function fetchViewerPlugins(signal?: AbortSignal): Promise<ViewerPluginInfo[]> {
+  const data = await graphql<{ plugins: ViewerPluginInfo[] | null }>(
+    VIEWER_PLUGINS_QUERY,
+    {},
+    signal,
+    { adminUnlock: false },
+  );
+  return data.plugins ?? [];
+}
 
 // --- Navigation Manifest (GET /api/manifest) ------------------------------
 
@@ -185,13 +200,15 @@ export async function relock(signalOrCommitted?: AbortSignal | (() => void)): Pr
 // --- Catalog: Section feeds (sourceItems) ---------------------------------
 
 const SOURCE_ITEMS_QUERY =
-  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $entityID: String, $excludeEditionGroupOf: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int, $home: Boolean, $seed: String, $value: String, $query: String, $playedAfter: String, $playedBefore: String) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, entityID: $entityID, excludeEditionGroupOf: $excludeEditionGroupOf, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset, home: $home, seed: $seed, value: $value, query: $query, playedAfter: $playedAfter, playedBefore: $playedBefore) { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $libraryIDs: [String!], $entityID: String, $excludeEditionGroupOf: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int, $home: Boolean, $seed: String, $value: String, $query: String, $playedAfter: String, $playedBefore: String) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, libraryIDs: $libraryIDs, entityID: $entityID, excludeEditionGroupOf: $excludeEditionGroupOf, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset, home: $home, seed: $seed, value: $value, query: $query, playedAfter: $playedAfter, playedBefore: $playedBefore) { id kind title summary artwork { poster } artworkSlots locked mediaClass libraryID year certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** Variables for one Section feed query (the Source context + paging cursor). */
 export interface SourceItemsVars {
   kind: string;
   entityKind: string;
   libraryID: string;
+  /** Optional multi-library scope filter (used by Experience Lens views). */
+  libraryIDs?: string[];
   entityID: string;
   /** Omit the detail Media and its edition group before paging. */
   excludeEditionGroupOf?: string;
@@ -229,6 +246,41 @@ export async function fetchSourceItems(
     signal,
   );
   return data.sourceItems ?? [];
+}
+
+const CONTAINER_PROBE_BATCH = 40;
+
+/**
+ * Probes container Entities whose catalog child count could not be inferred
+ * from the shelf window alone, returning the subset holding at least two
+ * visible children. Executes batched aliased `mediaForEntity` operations so
+ * 1-track audio singles remain standalone items while multi-track albums fold
+ * even when only one track fell in the shelf window.
+ */
+export async function fetchMultiItemContainers(
+  containerIDs: readonly string[],
+  signal?: AbortSignal,
+): Promise<Set<string>> {
+  const unique = [...new Set(containerIDs.filter(Boolean))];
+  const multi = new Set<string>();
+  for (let start = 0; start < unique.length; start += CONTAINER_PROBE_BATCH) {
+    const chunk = unique.slice(start, start + CONTAINER_PROBE_BATCH);
+    const decls = chunk.map((_, i) => `$id${i}: String!`).join(", ");
+    const fields = chunk.map((_, i) => `c${i}: mediaForEntity(entityID: $id${i}) { id }`).join(" ");
+    const vars = Object.fromEntries(chunk.map((id, i) => [`id${i}`, id]));
+    const data = await graphql<Record<string, { id: string }[] | null | undefined>>(
+      `query ContainerChildProbe(${decls}) { ${fields} }`,
+      vars,
+      signal,
+    );
+    if (!data) continue;
+    for (let i = 0; i < chunk.length; i++) {
+      if ((data[`c${i}`]?.length ?? 0) >= 2) {
+        multi.add(chunk[i]);
+      }
+    }
+  }
+  return multi;
 }
 
 const SMART_COLLECTION_ITEMS_QUERY =
@@ -367,7 +419,7 @@ export async function search(term: string): Promise<SourceItem[]> {
 }
 
 const SEARCH_RESULT_QUERY =
-  "query SearchResult($query: String!, $mode: SearchMode, $offset: Int, $limit: Int) { searchResult(query: $query, mode: $mode, offset: $offset, limit: $limit) { mode hasMore restrictedResultsPresent items { id kind title summary score artwork { poster } artworkSlots libraryID libraryTitle year mediaClass certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline subtitle sequence index container { id title artwork { poster } } entityKind entityKindDisplayName engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
+  "query SearchResult($query: String!, $mode: SearchMode, $offset: Int, $limit: Int, $libraryIDs: [String!]) { searchResult(query: $query, mode: $mode, offset: $offset, limit: $limit, libraryIDs: $libraryIDs) { mode hasMore restrictedResultsPresent items { id kind title summary score artwork { poster } artworkSlots libraryID libraryTitle year mediaClass certification audienceScore audienceScoreVotes playsAlone placeholderIcon byline subtitle sequence index container { id title artwork { poster } } entityKind entityKindDisplayName engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
 
 /**
  * searchResult — the explainable, mode-aware search (ADR-0041 #106). `mode`
@@ -381,10 +433,16 @@ export async function searchResult(
   mode: SearchMode,
   signal?: AbortSignal,
   page?: { offset: number; limit?: number },
+  libraryIDs?: string[],
 ): Promise<SearchResultResponse> {
   const data = await graphql<{ searchResult: SearchResultResponse | null }>(
     SEARCH_RESULT_QUERY,
-    { query: term, mode, ...page },
+    {
+      query: term,
+      mode,
+      ...page,
+      ...(libraryIDs !== undefined ? { libraryIDs } : {}),
+    },
     signal,
   );
   return (

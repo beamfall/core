@@ -48,6 +48,7 @@ func TestSpriteSheetsDecodeKeyframesOnHardwareWithSoftwareFallback(t *testing.T)
 	for _, tc := range cases {
 		shim, invocations := fakeSpriteShim(t, tc.failOn)
 		runner := New()
+		pinSpawnPlatform(t, "linux")
 		runner.SetHardeningShim(shim)
 		runner.SetHardwareEncode(tc.encode)
 		runner.SetEncodePolicy(EncodePolicy{SoftwareOnly: tc.softwareOnly})

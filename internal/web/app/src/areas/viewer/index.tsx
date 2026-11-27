@@ -3,6 +3,8 @@ import { Navigate, Route, Routes, useLocation } from "react-router";
 import { profilePickedThisTab } from "@/components/beamfall/profile";
 import { ErrorState } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
+import { ExperienceLensProvider } from "@/components/chrome/experienceLens";
+import { LaunchLensOverlay } from "@/components/chrome/LaunchLensOverlay";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchSetupRequired } from "@/lib/api";
@@ -167,48 +169,51 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
   // a Profile switch ends playback.
   return (
     <PlayerHost key={profileID}>
-      <Routes key={profileID}>
-        <Route path="/" element={<BrowsePage />} />
-        <Route path="/n/:nodeId" element={<BrowsePage />} />
-        <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
-        <Route path="/n/:nodeId/collections" element={<LibraryPivotPage pivot="collections" />} />
-        <Route path="/n/:nodeId/categories" element={<LibraryPivotPage pivot="categories" />} />
-        <Route path="/n/:nodeId/feeds" element={<LibraryFeedsPage />} />
-        <Route path="/n/:nodeId/feeds/:subscriptionId" element={<FeedCataloguePage />} />
-        <Route path="/entity/:entityId" element={<EntityPage />} />
-        <Route path="/media/*" element={<MediaDetailPage />} />
-        <Route path="/credits/*" element={<CastCrewPage />} />
-        <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
-        <Route path="/collections" element={<CollectionListPage />} />
-        <Route path="/collections/:libraryId/:collectionId" element={<CollectionPage />} />
-        <Route path="/search" element={<SearchPage />} />
-        <Route path="/mydata" element={<MyDataPage />} />
-        <Route path="/favorites" element={<FavoritesPage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/playlists" element={<PlaylistsPage />} />
-        <Route path="/playlists/smart/:smartId" element={<SmartPlaylistPage />} />
-        <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
-        <Route path="/notifications" element={<NotificationsPage />} />
-        <Route path="/remote" element={<RemotePage />} />
-        <Route path="/play-on" element={<PlayOnDisplayPage />} />
-        <Route path="/profiles" element={<ProfilePickerPage />} />
-        <Route path="/settings" element={<ProfileSettingsPage />} />
-        <Route path="/view/*" element={<ImageViewerPage />} />
-        <Route path="/slideshow" element={<SlideshowPage />} />
-        <Route path="/party" element={<PartyHostPage />} />
-        <Route path="/party/stage/:sessionID" element={<PartyStagePage />} />
-        <Route
-          path="/watch/*"
-          element={
-            <Suspense fallback={<div className="min-h-screen bg-scrim" />}>
-              <LazyPlayerPage />
-            </Suspense>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-      <RemoteMessage message={remote.message} onDismiss={remote.dismissMessage} />
-      <HiddenUndoNotice profileID={profileID} />
+      <ExperienceLensProvider>
+        <Routes key={profileID}>
+          <Route path="/" element={<BrowsePage />} />
+          <Route path="/n/:nodeId" element={<BrowsePage />} />
+          <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          <Route path="/n/:nodeId/collections" element={<LibraryPivotPage pivot="collections" />} />
+          <Route path="/n/:nodeId/categories" element={<LibraryPivotPage pivot="categories" />} />
+          <Route path="/n/:nodeId/feeds" element={<LibraryFeedsPage />} />
+          <Route path="/n/:nodeId/feeds/:subscriptionId" element={<FeedCataloguePage />} />
+          <Route path="/entity/:entityId" element={<EntityPage />} />
+          <Route path="/media/*" element={<MediaDetailPage />} />
+          <Route path="/credits/*" element={<CastCrewPage />} />
+          <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
+          <Route path="/collections" element={<CollectionListPage />} />
+          <Route path="/collections/:libraryId/:collectionId" element={<CollectionPage />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/mydata" element={<MyDataPage />} />
+          <Route path="/favorites" element={<FavoritesPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/playlists" element={<PlaylistsPage />} />
+          <Route path="/playlists/smart/:smartId" element={<SmartPlaylistPage />} />
+          <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/remote" element={<RemotePage />} />
+          <Route path="/play-on" element={<PlayOnDisplayPage />} />
+          <Route path="/profiles" element={<ProfilePickerPage />} />
+          <Route path="/settings" element={<ProfileSettingsPage />} />
+          <Route path="/view/*" element={<ImageViewerPage />} />
+          <Route path="/slideshow" element={<SlideshowPage />} />
+          <Route path="/party" element={<PartyHostPage />} />
+          <Route path="/party/stage/:sessionID" element={<PartyStagePage />} />
+          <Route
+            path="/watch/*"
+            element={
+              <Suspense fallback={<div className="min-h-screen bg-scrim" />}>
+                <LazyPlayerPage />
+              </Suspense>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+        <LaunchLensOverlay />
+        <RemoteMessage message={remote.message} onDismiss={remote.dismissMessage} />
+        <HiddenUndoNotice profileID={profileID} />
+      </ExperienceLensProvider>
     </PlayerHost>
   );
 }

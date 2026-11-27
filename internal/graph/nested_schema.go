@@ -130,6 +130,7 @@ var resultTypes = map[string]any{
 	"diagnosticsbundle":             DiagnosticsBundleInfo{},
 	"stagedrestore":                 StagedRestoreInfo{},
 	"backupkeystatus":               BackupKeyStatusInfo{},
+	"backupstatus":                  BackupStatusInfo{},
 	"libraryhealthitems":            HealthItemInfo{},
 	"libraryduplicategroups":        DuplicateGroupInfo{},
 	"metadataexport":                MetadataExportInfo{},
@@ -357,6 +358,9 @@ var resultTypes = map[string]any{
 	"cancelstagedrestore":                cancelStagedRestoreResult{},
 	"revealbackupkey":                    RevealedBackupKeyInfo{},
 	"acknowledgebackupkey":               BackupKeyStatusInfo{},
+	"acknowledgebackupbanner":            BackupStatusInfo{},
+	"setbackupupgradegate":               BackupStatusInfo{},
+	"verifybackupnow":                    BackupDrillInfo{},
 	"testwebhook":                        WebhookTestResultInfo{},
 	"setwebhooksettings":                 WebhookSettingsInfo{},
 	"scanlibrary":                        JobInfo{},
@@ -531,7 +535,7 @@ var fieldArguments = map[string][]NestedArgument{
 	"searchfeeds":       {{Name: "query", Kind: "string"}},
 	"trendingfeeds":     {{Name: "language", Kind: "string", Optional: true}, {Name: "region", Kind: "string", Optional: true}},
 	"preplayqueue":      {{Name: "mediaID", Kind: "string"}},
-	"searchresult":      {{Name: "limit", Kind: "int", Optional: true}, searchModeArgument(), {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}},
+	"searchresult":      {{Name: "libraryIDs", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string"}}, {Name: "limit", Kind: "int", Optional: true}, searchModeArgument(), {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}},
 	"partystage": {
 		// Required since wire 3.0.0: a stage read names the caller's screen
 		// registration (ADR-0240 D10, CORE-3399).
@@ -781,6 +785,7 @@ func sourceArguments() []NestedArgument {
 		entityFiltersArgument(),
 		{Name: "kind", Kind: "string", Optional: true},
 		{Name: "libraryID", Kind: "string", Optional: true},
+		{Name: "libraryIDs", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string"}},
 		{Name: "limit", Kind: "int", Optional: true},
 		searchModeArgument(),
 		{Name: "offset", Kind: "int", Optional: true},

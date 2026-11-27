@@ -432,6 +432,9 @@ func verifyMigratedFixture(ctx context.Context, databases map[string]*sql.DB, ex
 		if err := relocateEvacuatedFixtureRows(ctx, databases, expected.columns, actual.Tables, unchanged); err != nil {
 			return err
 		}
+		if err := reconcilePendingEvacuationMarkers(ctx, databases, expected.columns, actual.Tables, unchanged); err != nil {
+			return err
+		}
 		if err := narrowAdditiveFixtureMigration(ctx, databases, expected.columns, actual.Tables, unchanged); err != nil {
 			return err
 		}
@@ -652,12 +655,49 @@ func seedEveryDurableFixtureTable(ctx context.Context, db *sql.DB) error {
 		if count > 0 {
 			continue
 		}
+		if err := seedCompositeFixtureParents(ctx, db, table); err != nil {
+			return fmt.Errorf("%s parents: %w", table, err)
+		}
 		if err := insertFixtureRow(ctx, db, table); err != nil {
 			return fmt.Errorf("%s: %w", table, err)
 		}
 		if table == "media" {
 			if err := duplicateFixtureMediaRow(ctx, db); err != nil {
 				return fmt.Errorf("media secondary row: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+// seedCompositeFixtureParents seeds the empty parent of a multi-column foreign
+// key before its child: per-column synthetic values cannot name one parent
+// row, so the child copies the parent's real columns instead.
+func seedCompositeFixtureParents(ctx context.Context, db *sql.DB, table string) error {
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT "table" FROM pragma_foreign_key_list(?) WHERE seq > 0`, table)
+	if err != nil {
+		return err
+	}
+	var parents []string
+	for rows.Next() {
+		var parent string
+		if err := rows.Scan(&parent); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		parents = append(parents, parent)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, parent := range parents {
+		var count int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+quoteFixtureIdentifier(parent)).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 && parent != table {
+			if err := insertFixtureRow(ctx, db, parent); err != nil {
+				return fmt.Errorf("%s: %w", parent, err)
 			}
 		}
 	}
@@ -957,16 +997,18 @@ func fixtureValueAtOffset(ctx context.Context, db *sql.DB, table, column string,
 
 func syntheticFixtureValue(table, column, typ string) any {
 	if value, ok := map[string]any{
-		"playback_rendition.kind":         "hls",
-		"playback_rendition.status":       "ready",
-		"schedules.trigger_kind":          "daily",
-		"marker_suppression.segment_kind": "intro",
-		"segment_detection.segment_kind":  "intro",
-		"segment_detection.start_seconds": float64(0),
-		"segment_detection.end_seconds":   float64(1),
-		"segment_detection.confidence":    float64(0.5),
-		"subscription.retention_kind":     "keep-all",
-		"offline_pack_build.state":        "building",
+		"playback_rendition.kind":            "hls",
+		"playback_rendition.status":          "ready",
+		"schedules.trigger_kind":             "daily",
+		"marker_suppression.segment_kind":    "intro",
+		"segment_detection.segment_kind":     "intro",
+		"segment_detection.start_seconds":    float64(0),
+		"segment_detection.end_seconds":      float64(1),
+		"segment_detection.confidence":       float64(0.5),
+		"subscription.retention_kind":        "keep-all",
+		"offline_pack_build.state":           "building",
+		"media_identification_revision.kind": "identify",
+		"media_artwork_action.state":         "pending",
 	}[table+"."+column]; ok {
 		return value
 	}
@@ -1079,11 +1121,78 @@ func quoteFixtureIdentifiers(names []string) string {
 
 // fixtureTableChecksum hashes the selected values of a table's rows, ordered by
 // the order columns. selected is "*" or an identifier-quoted column list.
+// reconcilePendingEvacuationMarkers accounts for a retained
+// legacy_subscription_evacuation='pending' row on an encrypted Library plane
+// when legacy subscription evacuation remains blocked on unmigrated media
+// (CORE-3516). It verifies the catalog still holds subscription rows for the
+// library and that the remaining encrypted_library_metadata rows match the
+// historical checksum exactly.
+func reconcilePendingEvacuationMarkers(ctx context.Context, databases map[string]*sql.DB, before map[string][]fixtureSelectedColumn, actual, unchanged map[string]fixtureTableExpectation) error {
+	for key, got := range actual {
+		if !strings.HasPrefix(key, "encrypted:") || !strings.HasSuffix(key, ".encrypted_library_metadata") {
+			continue
+		}
+		want, tracked := unchanged[key]
+		old, hadColumns := before[key]
+		if !tracked || !hadColumns || got.Rows != want.Rows+1 {
+			continue
+		}
+		dbLabel := strings.TrimSuffix(key, ".encrypted_library_metadata")
+		libraryID := strings.TrimPrefix(dbLabel, "encrypted:")
+		planeDB := databases[dbLabel]
+		catalogDB := databases["catalog"]
+		if planeDB == nil || catalogDB == nil {
+			continue
+		}
+		var markerCount int
+		if err := planeDB.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM encrypted_library_metadata WHERE key = 'legacy_subscription_evacuation' AND value = 'pending'`,
+		).Scan(&markerCount); err != nil {
+			return err
+		}
+		if markerCount != 1 {
+			continue
+		}
+		var subCount int
+		if err := catalogDB.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM subscription WHERE library_id = ?`, libraryID,
+		).Scan(&subCount); err != nil {
+			return err
+		}
+		if subCount == 0 {
+			return fmt.Errorf("%s kept pending evacuation marker without catalog subscriptions", key)
+		}
+		names := make([]string, len(old))
+		for index, column := range old {
+			names[index] = column.name
+		}
+		cols := quoteFixtureIdentifiers(names)
+		query := "SELECT " + cols + ` FROM "encrypted_library_metadata" WHERE "key" <> 'legacy_subscription_evacuation' ORDER BY ` + cols //nolint:gosec // G202: columns are quoted schema names from the test fixture.
+		rows, err := planeDB.QueryContext(ctx, query)
+		if err != nil {
+			return err
+		}
+		filtered, err := fixtureRowsChecksum(rows)
+		if err != nil {
+			return err
+		}
+		if filtered != want {
+			return fmt.Errorf("%s after excluding pending evacuation marker: got %+v, want %+v", key, filtered, want)
+		}
+		actual[key] = want
+	}
+	return nil
+}
+
 func fixtureTableChecksum(ctx context.Context, db *sql.DB, table, selected string, order []string) (fixtureTableExpectation, error) {
 	rows, err := db.QueryContext(ctx, "SELECT "+selected+" FROM "+quoteFixtureIdentifier(table)+" ORDER BY "+quoteFixtureIdentifiers(order)) //nolint:gosec // G202: table and columns are identifier-quoted names from the test fixture's local SQLite schema.
 	if err != nil {
 		return fixtureTableExpectation{}, err
 	}
+	return fixtureRowsChecksum(rows)
+}
+
+func fixtureRowsChecksum(rows *sql.Rows) (fixtureTableExpectation, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return fixtureTableExpectation{}, errors.Join(err, rows.Close())

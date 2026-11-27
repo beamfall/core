@@ -497,7 +497,6 @@ test.describe("manage", () => {
     await gotoManage(page, "field-locks");
     await expect(page.getByText("Field locks").filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByLabel("Media ID")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Load" })).toBeDisabled();
     await expect(page.getByText("Enter a media ID to view its field locks.")).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });

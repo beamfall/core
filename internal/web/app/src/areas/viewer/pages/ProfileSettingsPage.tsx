@@ -8,6 +8,16 @@ import {
 } from "@/components/beamfall/profile";
 import { CollapsibleCard, IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
+import {
+  type ExperienceMode,
+  encodeLaunchExperiencePref,
+  experienceModeLabel,
+  type LaunchExperiencePref,
+  type LaunchPolicy,
+  parseLaunchExperiencePref,
+  syncLocalLaunchExperience,
+  useExperienceLens,
+} from "@/components/chrome/experienceLens";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -74,6 +84,8 @@ export function ProfileSettingsPage() {
   const { schemePreference, setSchemePreference, preset, setPreset } = useRegister();
 
   const [prefs, setPrefs] = useState<ViewerPreferences | null>(null);
+  const [launchState, setLaunchState] = useState<LaunchExperiencePref | null>(null);
+  const { modes: lensModes, launchPref: liveLaunchPref } = useExperienceLens();
   const [failed, setFailed] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
@@ -101,8 +113,17 @@ export function ProfileSettingsPage() {
     setFailed(false);
     setPrefs(null);
     try {
-      const next = resolvePreferences(await fetchClientPrefs());
-      if (current()) setPrefs(next);
+      const list = await fetchClientPrefs();
+      const next = resolvePreferences(list);
+      if (current()) {
+        setPrefs(next);
+        const launchRow = list.find((p) => p.key === PREF_KEYS.experienceLaunch);
+        if (launchRow?.value) {
+          setLaunchState(parseLaunchExperiencePref(launchRow.value));
+        } else {
+          setLaunchState(liveLaunchPref);
+        }
+      }
     } catch {
       if (current()) setFailed(true);
     }
@@ -275,6 +296,20 @@ export function ProfileSettingsPage() {
             </CollapsibleCard>
           </section>
         )}
+
+        <section aria-label={t("lensLaunchHeading")}>
+          <CollapsibleCard title={t("lensLaunchHeading")} lead={t("lensLaunchLead")} defaultOpen>
+            <LaunchExperienceSettings
+              value={launchState ?? liveLaunchPref}
+              modes={lensModes}
+              onChange={(next) => {
+                setLaunchState(next);
+                syncLocalLaunchExperience(next, profileID);
+                void persist(PREF_KEYS.experienceLaunch, encodeLaunchExperiencePref(next), {});
+              }}
+            />
+          </CollapsibleCard>
+        </section>
 
         <section aria-label={t("settingsPlaybackHeading")}>
           <CollapsibleCard title={t("settingsPlaybackHeading")} defaultOpen>
@@ -608,6 +643,103 @@ export function ProfileSettingsPage() {
         {managed && <p className="text-sm text-[var(--text-muted)]">{t("settingsManagedNote")}</p>}
       </div>
     </AppShell>
+  );
+}
+
+const FALLBACK_LAUNCH_MODES: readonly Pick<ExperienceMode, "id" | "labelKey" | "fallbackLabel">[] =
+  [
+    { id: "all", labelKey: "lensModeAll", fallbackLabel: "All" },
+    { id: "watch", labelKey: "lensModeWatch", fallbackLabel: "Watch" },
+    { id: "listen", labelKey: "lensModeListen", fallbackLabel: "Listen" },
+  ];
+
+function LaunchExperienceSettings({
+  value,
+  modes,
+  onChange,
+}: {
+  value: LaunchExperiencePref;
+  modes: readonly ExperienceMode[];
+  onChange: (next: LaunchExperiencePref) => void;
+}) {
+  const t = useT();
+  const modeOptions = modes.length > 1 ? modes : FALLBACK_LAUNCH_MODES;
+  const fixedMode = modeOptions.some((m) => m.id === value.fixedMode) ? value.fixedMode : "all";
+  const policies: { id: LaunchPolicy; title: StringKey; desc: StringKey }[] = [
+    { id: "remember", title: "lensLaunchRemember", desc: "lensLaunchRememberDesc" },
+    { id: "fixed", title: "lensLaunchFixed", desc: "lensLaunchFixedDesc" },
+    { id: "ask", title: "lensLaunchAsk", desc: "lensLaunchAskDesc" },
+  ];
+
+  return (
+    <div className="settings-row flex flex-col gap-3">
+      <div
+        role="radiogroup"
+        aria-label={t("lensLaunchPolicyLabel")}
+        className="flex flex-col gap-2"
+      >
+        {policies.map((option) => {
+          const selected = value.policy === option.id;
+          return (
+            <label
+              key={option.id}
+              className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-field)] border border-[var(--border-subtle)] px-3 py-2.5 transition-colors hover:border-[var(--border-strong)]"
+            >
+              <input
+                type="radio"
+                name="experience-launch-policy"
+                value={option.id}
+                checked={selected}
+                onChange={() =>
+                  onChange({
+                    policy: option.id,
+                    fixedMode,
+                  })
+                }
+                className="mt-1 accent-[var(--accent)]"
+              />
+              <span className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium text-[var(--text-primary)]">
+                  {t(option.title)}
+                </span>
+                <span className="text-xs text-[var(--text-muted)]">{t(option.desc)}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
+      {value.policy === "fixed" && (
+        <div className="flex items-center justify-between gap-4 pt-1">
+          <Label htmlFor="settings-launch-mode">{t("lensLaunchFixedModeLabel")}</Label>
+          <Select
+            value={fixedMode}
+            onValueChange={(nextMode) =>
+              onChange({
+                policy: "fixed",
+                fixedMode: nextMode as string,
+              })
+            }
+          >
+            <SelectTrigger id="settings-launch-mode" className="w-44">
+              <SelectValue>
+                {(v: string) => {
+                  const found = modeOptions.find((m) => m.id === v);
+                  return found ? experienceModeLabel(found, t) : v;
+                }}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {modeOptions.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {experienceModeLabel(m, t)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
   );
 }
 

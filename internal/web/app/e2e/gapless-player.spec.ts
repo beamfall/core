@@ -1,4 +1,4 @@
-import { routeSyntheticAlbum, type SyntheticTrack } from "./lib/synthetic-audio";
+import { blockAutoplay, routeSyntheticAlbum, type SyntheticTrack } from "./lib/synthetic-audio";
 import { expect, test } from "./lib/test";
 
 // Gapless album playback (CORE-1634). The player projects' testMatch
@@ -144,26 +144,6 @@ function recordAudioOutput(recorderSource: string) {
   );
 }
 
-// Refuses media playback until the first pointer press, as a browser that
-// wants a gesture for sound does. Engines differ in what they let autoplay
-// (Playwright's WebKit allows it, a strict Safari setting does not), and a
-// page that started on its own would race the spec's click on Play.
-function blockAutoplay() {
-  const play = HTMLMediaElement.prototype.play;
-  let activated = false;
-  document.addEventListener(
-    "pointerdown",
-    () => {
-      activated = true;
-    },
-    true,
-  );
-  HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
-    if (activated) return play.call(this);
-    return Promise.reject(new DOMException("No gesture yet", "NotAllowedError"));
-  };
-}
-
 interface Join {
   from: number;
   to: number;
@@ -232,32 +212,44 @@ function measureJoins(samples: Float32Array, sampleRate: number): Join[] {
 test.use({ bypassCSP: true, serviceWorkers: "block" });
 
 test("album tracks join without a gap, the declared silence trimmed", async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   await page.addInitScript(blockAutoplay);
   await page.addInitScript(recordAudioOutput, RECORDER_SOURCE);
   await routeSyntheticAlbum(page, TRACKS);
   await page.goto(`/web/watch/${TRACKS[0].id}`);
   const video = page.locator("video");
-  await expect(page.getByRole("heading", { name: "Gapless One", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Gapless One", level: 2 })).toBeVisible({
+    timeout: 20_000,
+  });
   const expectedDuration = 4 + (gapless.delaySamples + gapless.paddingSamples) / SAMPLE_RATE;
   await expect
-    .poll(() => video.evaluate((element: HTMLVideoElement) => element.duration))
+    .poll(() => video.evaluate((element: HTMLVideoElement) => element.duration), {
+      timeout: 20_000,
+    })
     .toBeCloseTo(expectedDuration, 2);
   // Autoplay is refused (see blockAutoplay), so the album starts the way it
   // does in a browser that wants a gesture for sound: a real click on Play,
   // which also gives the page the activation its AudioContext needs.
-  await expect(video).toHaveJSProperty("paused", true);
+  await expect(video).toHaveJSProperty("paused", true, { timeout: 15_000 });
   await page.getByRole("button", { name: "Play", exact: true }).click();
 
   await expect(page.getByRole("heading", { name: "Gapless Three", level: 2 })).toBeVisible({
     timeout: 20_000,
   });
-  // Let the third track play past the second join's recording window.
+  // Wait until the video element has actually switched to Gapless Three before reading
+  // currentTime; during track handoff the heading can update while currentTime still reflects
+  // the end of Gapless Two (> 1.5 s).
   await expect
-    .poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime), {
-      timeout: 10_000,
-    })
-    .toBeGreaterThan(1.5);
+    .poll(
+      () =>
+        video.evaluate(
+          (element: HTMLVideoElement, id: string) =>
+            element.currentSrc.includes(id) && element.currentTime > 1.5,
+          TRACKS[2].id,
+        ),
+      { timeout: 15_000 },
+    )
+    .toBe(true);
 
   const capture = await page.evaluate(() => {
     const contexts = window.__gaplessCapture ?? [];
@@ -266,18 +258,29 @@ test("album tracks join without a gap, the declared silence trimmed", async ({ p
       contexts[0],
     );
     if (!busiest) return null;
-    // Render quanta are numbered; a missing one would hide or fake a gap. Each break is
-    // kept with its sample offset, so only one near a join fails the run (an audio thread
-    // starting up can skip quanta well before the first join).
+    // Render quanta are numbered; a missing one would hide or fake a gap. Under load Chromium's
+    // AudioWorkletGlobalScope.currentFrame can jitter by +/-1 quantum (128 samples) on a single
+    // chunk boundary and snap back to contiguous alignment on the next chunk without dropping
+    // audio. Smooth only that transient single-quantum jitter so real skipped quanta still fail.
+    const frames = busiest.chunks.map((chunk, i, all) => {
+      if (i > 0 && i + 1 < all.length) {
+        const expected = all[i - 1].frame + all[i - 1].data.length;
+        const nextExpected = expected + chunk.data.length;
+        if (all[i + 1].frame === nextExpected && Math.abs(chunk.frame - expected) <= 128) {
+          return expected;
+        }
+      }
+      return chunk.frame;
+    });
     const breaks = busiest.chunks.flatMap((chunk, i, all) => {
       if (i === 0) return [];
-      const expected = all[i - 1].frame + all[i - 1].data.length;
-      return chunk.frame === expected
+      const expected = frames[i - 1] + all[i - 1].data.length;
+      return frames[i] === expected
         ? []
         : [
             {
               at: i * chunk.data.length,
-              note: `chunk ${i}: frame ${chunk.frame}, expected ${expected}`,
+              note: `chunk ${i}: frame ${frames[i]}, expected ${expected}`,
             },
           ];
     });

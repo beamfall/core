@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdminEpochSignal, withAdminEpoch } from "@/areas/console/adminEpoch";
 import {
+  acknowledgeBackupBanner,
   acknowledgeBackupKey,
   addCollectionMedia,
   assignTag,
@@ -17,6 +18,7 @@ import {
   dismissUnmatched,
   fetchBackupHistory,
   fetchBackupKeyStatus,
+  fetchBackupStatus,
   fetchLibraries,
   fetchMetadataExport,
   fetchStagedRestore,
@@ -36,6 +38,7 @@ import {
   restoreTag,
   revealBackupKey,
   runBackup,
+  setBackupUpgradeGate,
   setLibraryIcon,
   setLibraryShowOnHome,
   stageRestore,
@@ -45,6 +48,7 @@ import {
   updateSmartCollection,
   updateTag,
   upsertEntityRelation,
+  verifyBackupNow,
 } from "./manage";
 
 interface Recorded {
@@ -61,6 +65,7 @@ const recordedSignals: (AbortSignal | null | undefined)[] = [];
 const MANAGE_READS: [string, (signal: AbortSignal) => Promise<unknown>][] = [
   ["fetchBackupHistory", (s) => fetchBackupHistory("/backups", s)],
   ["fetchBackupKeyStatus", (s) => fetchBackupKeyStatus(s)],
+  ["fetchBackupStatus", (s) => fetchBackupStatus(s)],
   ["fetchMetadataExport", (s) => fetchMetadataExport(s)],
   ["fetchStagedRestore", (s) => fetchStagedRestore(s)],
 ];
@@ -683,5 +688,26 @@ describe("manage mutation request recording", () => {
       "acknowledgeBackupKey(escrowID: $escrowID) { pending expiresAt daysLeft }",
     );
     expect(recorded[2].variables).toEqual({ escrowID: "escrow-1" });
+  });
+
+  it("backup health requests carry only the banner, gate or drill inputs (CORE-0778)", async () => {
+    await fetchBackupStatus();
+    await acknowledgeBackupBanner("integrity-failed");
+    await setBackupUpgradeGate("hard");
+    await verifyBackupNow("/backups/a/set.bbk", "drill-words");
+    expect(recorded[0].query).toContain("backupStatus { backupFailedBanner integrityFailedBanner");
+    expect(recorded[0].variables).toEqual({});
+    expect(recorded[1].query).toContain("acknowledgeBackupBanner(banner: $banner)");
+    expect(recorded[1].variables).toEqual({ banner: "integrity-failed" });
+    expect(recorded[2].query).toContain("setBackupUpgradeGate(gate: $gate)");
+    expect(recorded[2].variables).toEqual({ gate: "hard" });
+    expect(recorded[3].query).toContain(
+      "verifyBackupNow(envelope: $envelope, backupKey: $backupKey)",
+    );
+    expect(recorded[3].query).not.toContain("backupKey }");
+    expect(recorded[3].variables).toEqual({
+      envelope: "/backups/a/set.bbk",
+      backupKey: "drill-words",
+    });
   });
 });

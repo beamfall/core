@@ -1,6 +1,6 @@
 import { fetchSourceItems } from "@/lib/graphql";
 import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
-import { groupsNewByContainer, NEW_SHELF_FETCH } from "./containerGroups";
+import { groupsShelfByContainer, NEW_SHELF_FETCH } from "./containerGroups";
 
 // The six renderable Section kinds (manifest.Section.kind), copied exactly from
 // the vanilla app.js SECTION_KINDS set. Unknown kinds are skipped, with one
@@ -36,6 +36,8 @@ export const SECTION_GRID_CAP = 100;
 
 export interface SectionFetchContext {
   libraryID: string;
+  /** Optional multi-library scope filter (used by Experience Lens views). */
+  libraryIDs?: string[];
   /** The context entity for entity-media Sources; "" elsewhere (server ignores it). */
   entityID: string;
   /** A filter-bar selection merged over the Source's declared fieldFilters; null when none. */
@@ -67,7 +69,7 @@ export async function fetchSectionItems(
     ? ctx.paging.limit
     : section.kind === "hero"
       ? 1
-      : groupsNewByContainer(section)
+      : groupsShelfByContainer(section)
         ? NEW_SHELF_FETCH
         : section.kind === "shelf"
           ? source.kind === "home-shelf"
@@ -79,6 +81,7 @@ export async function fetchSectionItems(
       kind: source.kind || "",
       entityKind: source.entityKind || "",
       libraryID: ctx.libraryID || "",
+      ...(ctx.libraryIDs !== undefined ? { libraryIDs: ctx.libraryIDs } : {}),
       entityID: ctx.entityID || "",
       fieldFilters: Object.keys(merged).length ? merged : null,
       entityFilter: source.entityFilter || null,

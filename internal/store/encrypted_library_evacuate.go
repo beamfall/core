@@ -21,6 +21,8 @@ type encryptedLibraryEvacuation struct {
 	// mediaColumn names a column holding a Media ID that must already live in
 	// the protected plane for the group's rows to move.
 	mediaColumn string
+	// orderBy replaces the default rowid read order, for WITHOUT ROWID tables.
+	orderBy string
 }
 
 // encryptedLibraryEvacuationGroup is a set of tables whose rows move together
@@ -83,7 +85,53 @@ var encryptedLibraryEvacuations = []encryptedLibraryEvacuationGroup{
 			},
 		},
 	},
+	{
+		// CORE-0706: feed URLs, auth headers, GUIDs, enclosure URLs and paths
+		// written before Encrypted Libraries refused Subscriptions, and the
+		// item-state imports that name those Subscriptions.
+		name:       "subscriptions",
+		pendingKey: "legacy_subscription_evacuation",
+		tables: []encryptedLibraryEvacuation{
+			{
+				table: "subscription",
+				columns: []string{"id", "library_id", "feed_url", "root", "title", "added_at_ms", "last_polled_at_ms", "etag",
+					"last_modified", "retention_kind", "retention_n", "auth_header", "auth_ref", "last_error_class",
+					"failing_since_ms", "consecutive_failures", "next_poll_at_ms", "retired_at_ms", "moved_candidate_url",
+					"moved_observations", "moved_at_ms", "refresh_requested_at_ms", "download_policy", "download_latest_n"},
+				where: "library_id = ?",
+			},
+			{
+				table:   "subscription_seen_entry",
+				columns: []string{"subscription_id", "guid", "seen_at_ms", "path", "feed_position"},
+				where:   legacySubscriptionChildren,
+			},
+			{
+				table: "subscription_entry",
+				columns: []string{"subscription_id", "guid", "media_id", "feed_position", "published_at_ms", "first_seen_at_ms",
+					"enclosure_url", "enclosure_type", "enclosure_length", "download_state", "download_path"},
+				where:       legacySubscriptionChildren,
+				mediaColumn: "media_id",
+			},
+			{
+				table: "subscription_entry_collision",
+				columns: []string{"subscription_id", "guid", "bound_path", "incoming_path", "incoming_media_id",
+					"first_seen_at_ms", "last_seen_at_ms", "observations"},
+				where:       legacySubscriptionChildren,
+				mediaColumn: "incoming_media_id",
+				orderBy:     "subscription_id, guid, incoming_path",
+			},
+			{
+				table: "item_state_import",
+				columns: []string{"profile_id", "subscription_id", "source", "item_guid", "played", "has_progress", "progress",
+					"starred", "imported_at_ms", "applied_at_ms", "applied_media_id", "import_run_id", "import_importer_id",
+					"import_match_method"},
+				where: legacySubscriptionChildren,
+			},
+		},
+	},
 }
+
+const legacySubscriptionChildren = "subscription_id IN (SELECT id FROM subscription WHERE library_id = ?)"
 
 type evacuationTableRows struct {
 	spec encryptedLibraryEvacuation
@@ -118,10 +166,12 @@ func (s *Store) copyPlaintextEncryptedLibraryRowsLocked(ctx context.Context, pla
 		if rows == nil {
 			continue
 		}
-		pending = append(pending, rows...)
 		if group.pendingKey != "" {
+			// Nothing left to move still ends the pending state; leaving the
+			// key would add a stray metadata row to every migrated plane.
 			clearKeys = append(clearKeys, group.pendingKey)
 		}
+		pending = append(pending, rows...)
 	}
 	var plan evacuationPlan
 	if len(pending) > 0 {
@@ -215,9 +265,14 @@ func copyEvacuationRows(ctx context.Context, writer *sql.DB, pending []evacuatio
 }
 
 func readEvacuationRows(ctx context.Context, reader *sql.DB, spec encryptedLibraryEvacuation, libraryID LibraryID) ([][]any, error) {
-	// rowid order keeps insertion order stable for equal sort keys.
-	rows, err := reader.QueryContext(ctx, fmt.Sprintf(`SELECT %s FROM %s WHERE %s ORDER BY rowid`,
-		strings.Join(spec.columns, ", "), spec.table, spec.where), libraryID)
+	// rowid order keeps insertion order stable for equal sort keys; a WITHOUT
+	// ROWID table orders by its primary key.
+	order := "rowid"
+	if spec.orderBy != "" {
+		order = spec.orderBy
+	}
+	rows, err := reader.QueryContext(ctx, fmt.Sprintf(`SELECT %s FROM %s WHERE %s ORDER BY %s`,
+		strings.Join(spec.columns, ", "), spec.table, spec.where, order), libraryID)
 	if err != nil {
 		return nil, err
 	}

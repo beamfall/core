@@ -6,11 +6,7 @@ The Console job queue SHALL list running, yielded and queued jobs first, then ea
 no later run of the same kind and folder finished cleanly, with its error text, then the remaining
 history folded into one row per job kind (its newest run and a run count). Each row SHALL show when
 the job was queued, started or finished as a relative time and, once started, its elapsed duration.
-Running jobs SHALL label elapsed time as
-"{duration} since first start", including waits and yields. Running and yielded jobs with more
-than one attempt SHALL append "attempt {attempts}". Yielded jobs SHALL keep their paused note
-without a duration. Finished jobs SHALL say "took {duration}" for at most one attempt and
-"took {duration} over {attempts} attempts" for multiple attempts. On a phone the progress text SHALL stay on one line beside a legible bar.
+On a phone the progress text SHALL stay on one line beside a legible bar.
 
 #### Scenario: Recurring polls
 
@@ -21,6 +17,16 @@ without a duration. Finished jobs SHALL say "took {duration}" for at most one at
 
 - **WHEN** a scan of a folder failed and a later scan of the same folder completed
 - **THEN** the failure is history, not an unresolved failure
+
+## ADDED Requirements
+
+### Requirement: Job queue labels elapsed time and attempts
+
+Running jobs SHALL label elapsed time as "{duration} since first start", including waits and
+yields. Running and yielded jobs with more than one attempt SHALL append "attempt {attempts}".
+Yielded jobs SHALL keep their paused note without a duration. Finished jobs SHALL say
+"took {duration}" for at most one attempt and "took {duration} over {attempts} attempts" for
+multiple attempts.
 
 #### Scenario: Running third attempt
 
@@ -41,8 +47,6 @@ without a duration. Finished jobs SHALL say "took {duration}" for at most one at
 
 - **WHEN** a job completes after two attempts
 - **THEN** the row says "took {duration} over 2 attempts"
-
-## ADDED Requirements
 
 ### Requirement: Scans are queued above background sweeps
 

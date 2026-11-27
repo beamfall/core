@@ -36,6 +36,13 @@ export const PREPARE_AHEAD_SECONDS = 30;
  * decode before it plays on its own.
  */
 export const START_WAIT_SECONDS = 2;
+/**
+ * Small render-quantum slack added when scheduling an immediate start from
+ * `context.currentTime`: without it, main-to-audio-thread latency on a busy CPU
+ * can move the audio clock past `at`, clamping track 1 one quantum later while
+ * `segment.start` keeps `at` and making track 2 overlap its tail.
+ */
+export const START_LOOKAHEAD_SECONDS = 0.02;
 /** How long before the element's end a join from the element is scheduled. */
 const JOIN_AHEAD_SECONDS = 1;
 /** A join scheduled closer than this to now is left to the element advance. */
@@ -420,7 +427,7 @@ function startPending(bridge: Bridge, video: HTMLMediaElement) {
     pending.mediaID,
     track.buffer,
     { offset: from, duration: end - from },
-    bridge.context.currentTime,
+    bridge.context.currentTime + START_LOOKAHEAD_SECONDS,
     video,
   );
 }
@@ -776,7 +783,9 @@ export function useGaplessAudio({
       if (!track || audioDelayHolds(video) || segmentFor(bridge, id)) return;
       const current = segmentFor(bridge, mediaID);
       const now = bridge.context.currentTime;
-      const at = current ? Math.max(now, current.start + current.duration) : now;
+      const at = current
+        ? Math.max(now, current.start + current.duration)
+        : now + START_LOOKAHEAD_SECONDS;
       schedule(bridge, id, track.buffer, track.trim, at, video);
       shadow(video);
     };

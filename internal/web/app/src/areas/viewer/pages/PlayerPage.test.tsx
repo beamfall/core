@@ -62,7 +62,12 @@ import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { attachCaptionElements, captionElement, showCaptionElement } from "../player/streamTracks";
-import { rejoinSkip, skipJoin, useGaplessAudio } from "../player/useGaplessAudio";
+import {
+  rejoinSkip,
+  START_LOOKAHEAD_SECONDS,
+  skipJoin,
+  useGaplessAudio,
+} from "../player/useGaplessAudio";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
 import {
@@ -2120,7 +2125,7 @@ describe("PlayerPage server Play Queue", () => {
           }),
         );
         if (keepCurrent) {
-          expect(start).toHaveBeenCalledExactlyOnceWith(6, 0, 2);
+          expect(start).toHaveBeenCalledExactlyOnceWith(6 + START_LOOKAHEAD_SECONDS, 0, 2);
           expect(location.pathname).toBe(`/watch/${c.id}`);
         } else {
           expect(start).not.toHaveBeenCalled();
@@ -4355,5 +4360,66 @@ describe("PlayerPage autoskip.ad and container skip interval", () => {
     await waitFor(() => expect(fetchMedia).toHaveBeenCalled());
     expect(document.body.textContent).not.toContain("Pending Title");
     expect(document.title).not.toContain("Pending Title");
+  });
+});
+
+describe("PlayerPage standalone playsAlone audio vs music Play Queue", () => {
+  beforeEach(() => {
+    viewer.revealed = true;
+    viewer.profileID = "profile-a";
+    viewer.identity = "viewer-1";
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(PlayerTransport).mockClear();
+    vi.mocked(fetchMedia).mockReset().mockResolvedValue(null);
+    vi.mocked(fetchClientPrefs).mockReset().mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    viewer.revealed = true;
+    viewer.profileID = "profile-a";
+    viewer.identity = "viewer-1";
+    vi.restoreAllMocks();
+  });
+
+  it("suppresses onPlayMusicQueue for standalone playsAlone audio items", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      id: "media-alpha",
+      title: "Audiobook One",
+      favorited: false,
+      playsAlone: true,
+    });
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: { mediaClass: "audio", streams: [], assets: {} } as never,
+      }),
+    );
+
+    await waitFor(() => expect(fetchMedia).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onPlayMusicQueue).toBeUndefined(),
+    );
+  });
+
+  it("keeps onPlayMusicQueue enabled for non-playsAlone audio items", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      id: "media-alpha",
+      title: "Track One",
+      favorited: false,
+      playsAlone: false,
+    });
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: { mediaClass: "audio", streams: [], assets: {} } as never,
+      }),
+    );
+
+    await waitFor(() => expect(fetchMedia).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onPlayMusicQueue).toBeTypeOf(
+        "function",
+      ),
+    );
   });
 });

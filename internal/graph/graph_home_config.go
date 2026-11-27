@@ -31,10 +31,14 @@ type HomeFilterSchemaInfo struct {
 }
 
 type HomeSchemaLibrary struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Icon   string `json:"icon,omitempty"`
-	Accent string `json:"accent,omitempty"`
+	ID           string                  `json:"id"`
+	Title        string                  `json:"title"`
+	PluginID     *string                 `json:"pluginID,omitempty"`
+	Icon         string                  `json:"icon,omitempty"`
+	Accent       string                  `json:"accent,omitempty"`
+	MediaClasses []string                `json:"mediaClasses,omitempty"`
+	Presentation *PluginPresentationInfo `json:"presentation,omitempty"`
+	Capabilities []string                `json:"capabilities,omitempty"`
 }
 
 type HomeFilterField struct {
@@ -211,7 +215,7 @@ func (h *Handler) previewHomeShelf(ctx context.Context, scope auth.Scope, req re
 		return HomeShelfPreviewInfo{}, err
 	}
 	limit := boundedIntVar(req, "limit", 12, 24)
-	items, total, err := h.evaluateHomeShelf(ctx, scope, shelf, limit, 0)
+	items, total, err := h.evaluateHomeShelf(ctx, scope, scope.LibraryFilter(), shelf, limit, 0)
 	if err != nil {
 		return HomeShelfPreviewInfo{}, err
 	}
@@ -260,16 +264,20 @@ func (h *Handler) homeFilterSchema(ctx context.Context, scope auth.Scope, req re
 	}
 
 	for _, lib := range libs {
-		accent := ""
+		mediaClasses, presentation, capabilities, accent := h.libraryBundleMetadata(lib.PluginID)
 		icon := lib.Icon
 		if icon == "" {
 			icon, _ = h.libraryIconBasis(lib)
 		}
 		out.Libraries = append(out.Libraries, HomeSchemaLibrary{
-			ID:     string(lib.ID),
-			Title:  lib.Title,
-			Icon:   icon,
-			Accent: accent,
+			ID:           string(lib.ID),
+			Title:        lib.Title,
+			PluginID:     lib.PluginID,
+			Icon:         icon,
+			Accent:       accent,
+			MediaClasses: mediaClasses,
+			Presentation: presentation,
+			Capabilities: capabilities,
 		})
 
 		// Collections, Smart Collections, Saved Filters per accessible Library.
@@ -425,7 +433,7 @@ func mapPluginFieldType(t string) (string, []string) {
 }
 
 // sourceItemsHomeShelf hydrates a manifest Section with source.kind == "home-shelf".
-func (h *Handler) sourceItemsHomeShelf(ctx context.Context, scope auth.Scope, shelfID string, limit, offset int) ([]store.SourceItem, error) {
+func (h *Handler) sourceItemsHomeShelf(ctx context.Context, scope auth.Scope, baseFilter store.LibraryFilter, shelfID string, limit, offset int) ([]store.SourceItem, error) {
 	if h.manifest == nil || h.store == nil {
 		return []store.SourceItem{}, nil
 	}
@@ -442,7 +450,7 @@ func (h *Handler) sourceItemsHomeShelf(ctx context.Context, scope auth.Scope, sh
 			Display: store.HomeShelfDisplay{Style: "shelf", Limit: 1},
 			Source:  *eff.Config.Hero.Source,
 		}
-		items, _, err := h.evaluateHomeShelf(ctx, scope, heroShelf, 1, 0)
+		items, _, err := h.evaluateHomeShelf(ctx, scope, baseFilter, heroShelf, 1, 0)
 		return items, err
 	}
 	for _, sh := range eff.Config.Shelves {
@@ -452,21 +460,70 @@ func (h *Handler) sourceItemsHomeShelf(ctx context.Context, scope auth.Scope, sh
 					limit = min(sh.Display.Limit, store.MaxHomeShelfLimit)
 				}
 			}
-			items, _, err := h.evaluateHomeShelf(ctx, scope, sh, limit, offset)
+			items, _, err := h.evaluateHomeShelf(ctx, scope, baseFilter, sh, limit, offset)
 			return items, err
 		}
 	}
 	return []store.SourceItem{}, nil
 }
 
-func (h *Handler) evaluateHomeShelf(ctx context.Context, scope auth.Scope, shelf store.HomeShelf, limit, offset int) ([]store.SourceItem, int, error) {
+func (h *Handler) evaluateHomeShelf(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, shelf store.HomeShelf, limit, offset int) ([]store.SourceItem, int, error) {
 	if limit <= 0 {
 		limit = shelf.Display.Limit
 		if limit <= 0 {
 			limit = 20
 		}
 	}
-	filter := scope.LibraryFilter()
+	if offset < 0 {
+		offset = 0
+	}
+	if !homeShelfShouldRollUp(shelf) {
+		return h.evaluateHomeShelfRaw(ctx, scope, filter, shelf, limit, offset)
+	}
+	fetchLimit := min(max((offset+limit)*5, 100), 500)
+	raw, rawTotal, err := h.evaluateHomeShelfRaw(ctx, scope, filter, shelf, fetchLimit, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+	var contextID store.EntityID
+	if shelf.Source.Type == "entity" && shelf.Source.EntityID != "" {
+		contextID = store.EntityID(shelf.Source.EntityID)
+	}
+	rolled, err := h.rollUpContainers(ctx, filter, contextID, raw)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := len(rolled)
+	if rawTotal > len(raw) {
+		total = rawTotal
+	}
+	if offset >= len(rolled) {
+		return []store.SourceItem{}, total, nil
+	}
+	end := min(offset+limit, len(rolled))
+	return rolled[offset:end], total, nil
+}
+
+func homeShelfShouldRollUp(shelf store.HomeShelf) bool {
+	if shelf.Source.RollUpContainers != nil {
+		return *shelf.Source.RollUpContainers
+	}
+	switch shelf.Source.Type {
+	case "rules", "library", "saved-filter", "entity":
+		return true
+	case "builtin":
+		switch shelf.Source.BuiltinKind {
+		case "recently-added", "recently-played", "most-played", "top-picks", "random":
+			return true
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+func (h *Handler) evaluateHomeShelfRaw(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, shelf store.HomeShelf, limit, offset int) ([]store.SourceItem, int, error) {
 	scopedFilter, ok := intersectLibraryFilter(filter, shelf.Source.LibraryIDs)
 	if !ok {
 		return []store.SourceItem{}, 0, nil
@@ -629,7 +686,11 @@ func intersectLibraryFilter(base store.LibraryFilter, requested []store.LibraryI
 		return base, true
 	}
 	if len(base.AllowedIDs) == 0 {
+		if !base.AllLibraries {
+			return store.LibraryFilter{}, false
+		}
 		out := base
+		out.AllLibraries = false
 		out.AllowedIDs = slices.Clone(requested)
 		return out, true
 	}

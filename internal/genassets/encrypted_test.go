@@ -253,11 +253,16 @@ func (f *encryptedFixture) assertPublicGeneratorUnused(t *testing.T) {
 // object and returns its decrypted bytes.
 func decryptAsset(t *testing.T, svc *Service, libraryID store.LibraryID, fingerprint, name string) []byte {
 	t.Helper()
-	path, err := svc.AssetPath(fingerprint, name)
-	if err != nil {
-		t.Fatalf("AssetPath(%s): %v", name, err)
+	// The experimental image enrichment is never served (CORE-0700), so read
+	// it from its on-disk path; every other asset goes through AssetPath.
+	path := filepath.Join(svc.assetDir(fingerprint), name)
+	if name != ImageEnrichName {
+		var err error
+		if path, err = svc.AssetPath(fingerprint, name); err != nil {
+			t.Fatalf("AssetPath(%s): %v", name, err)
+		}
 	}
-	file, err := os.Open(path) // #nosec G304 -- path from AssetPath under a test-owned dir.
+	file, err := os.Open(path) // #nosec G304 -- path under a test-owned dir.
 	if err != nil {
 		t.Fatal(err)
 	}

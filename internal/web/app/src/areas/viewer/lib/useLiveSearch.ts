@@ -45,8 +45,9 @@ const NOTHING: Settled = {
 // Search as the user types. Each change waits out a short debounce, and both the
 // timer and any in-flight request are cancelled when the query moves on, so an
 // older, slower response can never replace a newer one.
-export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
+export function useLiveSearch(query: string, mode: SearchMode, libraryIDs?: string[]): LiveSearch {
   const term = query.trim();
+  const libraryKey = libraryIDs === undefined ? "" : libraryIDs.join(",");
   const [settled, setSettled] = useState<Settled>(NOTHING);
   const [pending, setPending] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
@@ -63,7 +64,7 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
       setPending("");
       return;
     }
-    const request = `${mode}\n${term}`;
+    const request = `${mode}\n${libraryKey}\n${term}`;
     setPending(request);
     const controller = new AbortController();
     const settle = (next: Settled) => {
@@ -72,7 +73,11 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
       setPending((current) => (current === request ? "" : current));
     };
     const timer = setTimeout(() => {
-      searchResult(term, mode, controller.signal).then(
+      const req =
+        libraryIDs === undefined
+          ? searchResult(term, mode, controller.signal)
+          : searchResult(term, mode, controller.signal, undefined, libraryIDs);
+      req.then(
         (res) =>
           settle({
             items: res.items,
@@ -90,7 +95,9 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
       controller.abort();
       moreController.current?.abort();
     };
-  }, [term, mode]);
+    // libraryKey serializes libraryIDs deterministically across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [term, mode, libraryKey]);
 
   // A watched, watchlist or rating change leaves the shown rows stale. Ask again
   // and swap each row in place, keeping the order on screen; a failure keeps
@@ -112,7 +119,16 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
       let offset = 0;
       let requestMode = mode;
       do {
-        const res = await searchResult(term, requestMode, controller.signal, { offset, limit: 50 });
+        const res =
+          libraryIDs === undefined
+            ? await searchResult(term, requestMode, controller.signal, { offset, limit: 50 })
+            : await searchResult(
+                term,
+                requestMode,
+                controller.signal,
+                { offset, limit: 50 },
+                libraryIDs,
+              );
         if (controller.signal.aborted) return;
         for (const item of res.items) fresh.set(rowKey(item), item);
         offset += res.items.length;
@@ -127,7 +143,8 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
     }
     void refreshLoadedPages().catch(() => {});
     return () => controller.abort();
-  }, [epoch, term, mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [epoch, term, mode, libraryKey]);
 
   function loadMore() {
     if (
@@ -144,7 +161,11 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
     setLoadingMore(true);
     setMoreFailed(false);
     const offset = settled.nextOffset;
-    searchResult(term, "keyword", controller.signal, { offset })
+    const req =
+      libraryIDs === undefined
+        ? searchResult(term, "keyword", controller.signal, { offset })
+        : searchResult(term, "keyword", controller.signal, { offset }, libraryIDs);
+    req
       .then(
         (res) => {
           if (controller.signal.aborted) return;

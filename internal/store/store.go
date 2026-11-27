@@ -594,6 +594,10 @@ type MediaMetadata struct {
 	OperatorOrdinal *MediaOrdinal
 	OrdinalActor    ProfileID
 	ClearOrdinal    bool
+	// Artwork maps an artwork slot to the source URL an identification will
+	// fetch for it after the commit. Identification commits record each as a
+	// pending artwork action in the same transaction; other writes ignore it.
+	Artwork map[string]string
 }
 
 // ArtworkCandidate is one persisted scraped artwork alternative for a
@@ -892,6 +896,9 @@ type SourceQuery struct {
 type ContainerRollUp struct {
 	MemberRelations []string
 	ParentRelations []string
+	// DirectRelations link a directly-browsed container Entity to a Media it
+	// holds when that container does not climb into a parent container.
+	DirectRelations []string
 }
 
 // EntityFilter names one entity by declared kind plus stored title (the same
@@ -3220,6 +3227,42 @@ func (s *Store) SetPrimaryMediaFile(ctx context.Context, id MediaID, path string
 	}
 	file := MediaFile{MediaID: id, Path: path, ContentFingerprint: fingerprint}
 	return s.upsertMediaFile(ctx, file, time.Now().UTC())
+}
+
+// SetMultiPartMediaDuration updates a grouped multi-Part Media row's runtime
+// to the summed duration across all Parts when that total differs.
+func (s *Store) SetMultiPartMediaDuration(ctx context.Context, id MediaID, seconds int) (bool, error) {
+	if seconds <= 0 || id == "" {
+		return false, nil
+	}
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return false, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	result, err := plane.writer.ExecContext(ctx, `
+		UPDATE media SET duration_seconds = ?
+		WHERE id = ? AND duration_seconds <> ? AND trashed_at_ms IS NULL
+		  AND EXISTS (SELECT 1 FROM media_file mf WHERE mf.media_id = media.id AND mf.missing_at_ms IS NULL AND mf.part_ordinal > 0)
+	`, seconds, id, seconds)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected == 0 {
+		return false, err
+	}
+	if !plane.encrypted {
+		s.emitMediaUpdated(ctx, id)
+	}
+	return true, nil
 }
 
 // StoredFingerprint is the cheap-triple identity a scan reuses when a file is

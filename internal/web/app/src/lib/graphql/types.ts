@@ -153,6 +153,8 @@ export interface SourceItem {
    * entity carries the class its linked Media all share, else none (CORE-2362).
    */
   mediaClass?: string;
+  /** The Library owning this item, when returned by sourceItems/searchResult. */
+  libraryID?: string;
   /** Stored Media year or a Section Source Entity's earliest visible linked Media year. */
   year?: number;
   /** A Media item's display content rating (PG-13, TV-MA); absent when unrated (CORE-2398). */
@@ -698,6 +700,15 @@ export interface SemanticCapabilityInfo {
 
 // --- Manage / Console: libraries, plugins, jobs, schedules ----------------
 
+/** A plugin's declared media-presentation & engagement posture (graph.PluginPresentationInfo). */
+export interface PluginPresentationInfo {
+  resumeMedia?: boolean;
+  playsAlone?: boolean;
+  selectPlays?: boolean;
+  interactiveSidecars?: string[];
+  defaultIcon?: string;
+}
+
 /** A Library as the manage area selects it (graph.LibraryInfo). */
 export interface LibraryInfo {
   id: string;
@@ -714,6 +725,9 @@ export interface LibraryInfo {
   iconChoice?: string;
   /** The icon the Library gets when the owner has not chosen one. */
   defaultIcon?: string;
+  mediaClasses?: string[];
+  presentation?: PluginPresentationInfo;
+  capabilities?: string[];
 }
 
 /**
@@ -790,6 +804,16 @@ export interface CreateLibraryResult {
 export interface PluginSummary {
   id: string;
   displayName: DisplayString;
+}
+
+/** Viewer-readable plugin metadata for deriving experience modes without plugin IDs. */
+export interface ViewerPluginInfo {
+  id: string;
+  displayName: DisplayString;
+  mediaLabel?: DisplayString;
+  mediaClasses?: string[];
+  presentation?: PluginPresentationInfo;
+  capabilities?: string[];
 }
 
 /** Job progress detail (graph.JobProgressInfo). */
@@ -891,7 +915,14 @@ export interface BackupHistoryEntry {
   sizeBytes: number;
   valid: boolean;
   error?: string;
+  /** Wrap-key fingerprint the set was sealed to; empty for a plaintext set. */
+  keyFingerprint?: string;
+  /** "current" for the data directory's wrap key, "archived" for an earlier one, empty when unknown. */
+  keyState?: BackupKeyState;
 }
+
+/** How a set's wrap key relates to the current one (BKUP-14 key-to-archive map). */
+export type BackupKeyState = "current" | "archived" | "";
 
 /**
  * The result of the verifyBackup mutation (graph.VerifyBackupInfo, MIGREV-1):
@@ -970,6 +1001,52 @@ export interface RevealedBackupKeyInfo {
   backupKey: string;
   expiresAt: string;
   daysLeft: number;
+}
+
+/** One scheduled-backup outcome (graph.BackupRunInfo, CORE-0778). */
+export interface BackupRunInfo {
+  at: string;
+  failureClass: string;
+  set: string;
+}
+
+/**
+ * One restore-drill outcome (graph.BackupDrillInfo, CORE-0778 BKUP-15). The
+ * counts are set only on the result of verifyBackupNow.
+ */
+export interface BackupDrillInfo {
+  at: string;
+  verified: boolean;
+  set: string;
+  reason: string;
+  backupCreatedAt?: string;
+  databases?: number;
+  libraries?: number;
+  durationMs?: number;
+}
+
+/** The update-gate policy (ADR-0192 §6): soft by default, hard as an opt-in. */
+export type BackupUpgradeGate = "soft" | "hard";
+
+/** The two distinct backup failure banners (ADR-0192 §6). */
+export type BackupBanner = "backup-failed" | "integrity-failed";
+
+/**
+ * The scheduled-backup state behind the backup banners, recovery evidence and
+ * update gate (graph.BackupStatusInfo, CORE-0778 BKUP-14). No key material.
+ */
+export interface BackupStatusInfo {
+  backupFailedBanner: boolean;
+  integrityFailedBanner: boolean;
+  lastSuccess: BackupRunInfo | null;
+  lastFailure: BackupRunInfo | null;
+  lastIntegrityFailure: BackupRunInfo | null;
+  /** The newest backup whose set passed its integrity check in the same job. */
+  lastIntegrityPass?: BackupRunInfo | null;
+  /** True only when a recorded integrity pass is newer than every failure; acknowledging a banner never sets it. */
+  updateGateClear?: boolean;
+  upgradeGate: BackupUpgradeGate;
+  lastDrill: BackupDrillInfo | null;
 }
 
 /**
@@ -2405,8 +2482,12 @@ export interface HomeConfigInput {
 export interface HomeSchemaLibrary {
   id: string;
   title: string;
+  pluginID?: string | null;
   icon?: string;
   accent?: string;
+  mediaClasses?: string[];
+  presentation?: PluginPresentationInfo;
+  capabilities?: string[];
 }
 
 export interface HomeFilterField {

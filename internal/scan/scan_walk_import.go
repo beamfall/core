@@ -21,7 +21,7 @@ func (s *scanWalkState) consumeTask(task *workerTask) error {
 	if decision, err := s.preflightDirectory(path); err != nil {
 		return err
 	} else if decision != nil && decision.refused {
-		return s.queueContextRefusal(path, decision.refusal)
+		return s.queueContextRefusal(path, decision.refusal, decision.refusalReason)
 	} else if decision.skipsStillImage(path) {
 		// A catalogued image this scan now leaves out goes missing here
 		// rather than in the guarded end-of-scan pass, which it would
@@ -109,6 +109,9 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	if decision := s.directoryPreflights[filepath.Dir(path)]; decision != nil {
 		parseProbe = decision.probes[path]
 		authoritative = authoritative || !parseProbeEmpty(parseProbe)
+		if !task.probe.succeeded && parseProbe.DurationSeconds > 0 {
+			imported.DurationSecondsHint = parseProbe.DurationSeconds
+		}
 	} else if task.probe.succeeded {
 		parseProbe = ParseProbe{
 			HasVideo:        task.probe.hasVideo,
@@ -122,7 +125,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		var refused bool
 		parsed, parsedOK, refused = s.parseFilename(path, parseProbe)
 		if refused {
-			return s.queueContextRefusal(path, parsed)
+			return s.queueContextRefusal(path, parsed, contextRefusalReason(s.parser, path, parseProbe, s.directoryContext(path)))
 		}
 		parsedFields = parserMediaFields(s.parser, path, parseProbe)
 		if parsedOK {
@@ -172,6 +175,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 			return err
 		}
 	}
+	s.applyMediaLocalArtwork(path, media.ID)
 	if err := s.retryAutoIdentify(task, media.ID, stored.ContentFingerprint, parsed); err != nil {
 		return err
 	}
@@ -309,7 +313,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		var refused bool
 		parsed, parsedOK, refused = s.parseFilename(path, parseProbe)
 		if refused {
-			return s.queueContextRefusal(path, parsed)
+			return s.queueContextRefusal(path, parsed, contextRefusalReason(s.parser, path, parseProbe, s.directoryContext(path)))
 		}
 		parsedFields = parserMediaFields(s.parser, path, parseProbe)
 		if parsedOK {
@@ -401,6 +405,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			return err
 		}
 	}
+	s.applyMediaLocalArtwork(path, media.ID)
 	if s.identifier != nil && s.libraryPluginID != "" {
 		s.autoIdentify(path, media.ID, fingerprint, parsed, "scan: auto-identify failed")
 	}

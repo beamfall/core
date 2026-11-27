@@ -1,0 +1,4 @@
+- [x] Parse channel and entry artwork in `scrape.ParseFeed`
+- [x] `ingest.ShowPublisher` hook after catalogue upsert
+- [x] `app.subscriptionShows` publisher and tests
+- [x] Insert catalogue entries oldest-first so recently-added is newest-first

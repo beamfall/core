@@ -61,6 +61,10 @@ type ParserFieldRefresh struct {
 	// LegacyScanShared names fields another scan-tier writer (the Library's
 	// hydrator) may also write: older values of these are never reconciled.
 	LegacyScanShared map[string]bool
+	// ClearParserFields names fields that must always be cleared when no
+	// longer emitted, provided the existing provenance is parser-owned (never
+	// manual/operator), even during a non-authoritative fast-path refresh.
+	ClearParserFields map[string]bool
 }
 
 // RefreshParserMediaFields applies one rescan parse to the fields the parser
@@ -138,6 +142,16 @@ func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refres
 	refreshable := func(marker int) bool {
 		return marker == parserOwnedStable || (refresh.Authoritative && marker != parserOwnedNone)
 	}
+	clearable := func(name string, marker int) bool {
+		if refreshable(marker) {
+			return true
+		}
+		if !refresh.ClearParserFields[name] {
+			return false
+		}
+		return marker == parserOwnedLegacy || marker == parserOwnedProbe || marker == parserOwnedProbeAbsent ||
+			(marker == parserOwnedLegacyScan && refresh.LegacyScanOwned && !refresh.LegacyScanShared[name])
+	}
 	changed := false
 	emitted := make(map[string]bool, len(refresh.Fields))
 	for _, field := range refresh.Fields {
@@ -196,7 +210,7 @@ func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refres
 		changed = true
 	}
 	for name, marker := range owned {
-		if emitted[name] || !refreshable(marker) {
+		if emitted[name] || !clearable(name, marker) {
 			continue
 		}
 		if marker != parserOwnedProbeAbsent {

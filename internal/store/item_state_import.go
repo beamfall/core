@@ -31,7 +31,8 @@ type ItemStateImport struct {
 }
 
 // RecordItemStateImport upserts one desired imported item-state row and clears
-// the applied marker so a changed re-import can replay safely.
+// the applied marker so a changed re-import can replay safely. The item GUID
+// is stored exactly as given (CORE-0706).
 func (s *Store) RecordItemStateImport(ctx context.Context, state ItemStateImport, now time.Time) error {
 	if state.ProfileID == "" || state.SubscriptionID == "" || state.ItemGUID == "" {
 		return ValidationError("profile ID, subscription ID, and item GUID are required")
@@ -42,6 +43,11 @@ func (s *Store) RecordItemStateImport(ctx context.Context, state ItemStateImport
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	// The ledger holds the feed's item GUIDs in the shared catalog, so an
+	// Encrypted Library's Subscription is refused like its other entry writes.
+	if err := s.refuseEncryptedSubscriptionLocked(ctx, state.SubscriptionID); err != nil {
 		return err
 	}
 	_, err := s.catalogW.ExecContext(ctx, `

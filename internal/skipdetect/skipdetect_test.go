@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,10 +18,17 @@ import (
 // fakeDetector satisfies the Detector seam without FFmpeg: it returns canned
 // chapters and per-Media fingerprint signatures keyed by file path, recording
 // call counts so a test can assert the detector did (or did not) run.
+//
+// Spectral sub-fingerprints come from framesByPath when a path has an entry.
+// Otherwise they are derived from the loudness fixtures (fingerprintByPath for
+// the head, tailByPath for the EOF-aligned tail) by soundOf, which models each
+// constant-loudness run as one distinct sound: equal loudness runs are the
+// same sound. Tests about loudness that is NOT shared sound set framesByPath.
 type fakeDetector struct {
 	chaptersByPath    map[string][]ffmpeg.Chapter
 	fingerprintByPath map[string][]float64
 	tailByPath        map[string][]float64
+	framesByPath      map[string][]uint32
 	cuesByPath        map[string][]ffmpeg.TextCue
 	chapterCalls      int
 	fingerprintCalls  int
@@ -30,6 +38,32 @@ type fakeDetector struct {
 	fingerprintErr error
 	// onFingerprint, when set, runs before each fingerprint read and may fail it.
 	onFingerprint func(path string) error
+	// maxSpectralSeconds, when positive, enforces the single-spawn PCM capture
+	// limit on SpectralFingerprint (and SpectralFingerprintRange when used).
+	maxSpectralSeconds int
+}
+
+func (f *fakeDetector) SpectralFingerprintRange(_ context.Context, path string, startSeconds, seconds int) ([]uint32, error) {
+	f.fingerprintCalls++
+	if err := f.fingerprintFault(path); err != nil {
+		return nil, err
+	}
+	if f.maxSpectralSeconds > 0 && seconds > f.maxSpectralSeconds {
+		return nil, fmt.Errorf("ffmpeg spectral fingerprint: %d s exceeds the capture limit", seconds)
+	}
+	frames, ok := f.framesByPath[path]
+	if !ok {
+		frames = soundOf(f.fingerprintByPath[path])
+	}
+	start := startSeconds * spectralFramesPerWindow
+	end := (startSeconds + seconds) * spectralFramesPerWindow
+	if start >= len(frames) {
+		return nil, errors.New("range past end")
+	}
+	if end > len(frames) {
+		end = len(frames)
+	}
+	return append([]uint32(nil), frames[start:end]...), nil
 }
 
 func (f *fakeDetector) fingerprintFault(path string) error {
@@ -42,16 +76,61 @@ func (f *fakeDetector) fingerprintFault(path string) error {
 	return nil
 }
 
-func (f *fakeDetector) AudioFingerprintTail(_ context.Context, path string, windowCount, _ int) ([]float64, error) {
+func (f *fakeDetector) SpectralFingerprint(_ context.Context, path string, seconds int) ([]uint32, error) {
+	f.fingerprintCalls++
+	if err := f.fingerprintFault(path); err != nil {
+		return nil, err
+	}
+	if f.maxSpectralSeconds > 0 && seconds > f.maxSpectralSeconds {
+		return nil, fmt.Errorf("ffmpeg spectral fingerprint: %d s exceeds the capture limit", seconds)
+	}
+	frames, ok := f.framesByPath[path]
+	if !ok {
+		frames = soundOf(f.fingerprintByPath[path])
+	}
+	if n := seconds * spectralFramesPerWindow; len(frames) > n {
+		frames = frames[:n]
+	}
+	return append([]uint32(nil), frames...), nil
+}
+
+func (f *fakeDetector) SpectralFingerprintTail(_ context.Context, path string, seconds, _ int) ([]uint32, error) {
 	f.tailCalls++
 	if err := f.fingerprintFault(path); err != nil {
 		return nil, err
 	}
-	sig := f.tailByPath[path]
-	if len(sig) > windowCount {
-		sig = sig[len(sig)-windowCount:]
+	if f.maxSpectralSeconds > 0 && seconds > f.maxSpectralSeconds {
+		return nil, fmt.Errorf("ffmpeg spectral fingerprint: %d s exceeds the capture limit", seconds)
 	}
-	return append([]float64(nil), sig...), nil
+	frames, ok := f.framesByPath[path]
+	if !ok {
+		frames = soundOf(f.tailByPath[path])
+	}
+	if n := seconds * spectralFramesPerWindow; len(frames) > n {
+		frames = frames[len(frames)-n:]
+	}
+	return append([]uint32(nil), frames...), nil
+}
+
+// soundOf derives spectral frames from a loudness fixture. Each run of equal
+// loudness is one sound, seeded by its level and the offset into the run, so
+// two runs at the same level carry the same frames wherever they sit, and a
+// silent (zero) window is silent frames.
+func soundOf(sig []float64) []uint32 {
+	frames := make([]uint32, 0, len(sig)*spectralFramesPerWindow)
+	runStart := 0
+	for i, level := range sig {
+		if i > 0 && sig[i-1] != level {
+			runStart = i
+		}
+		if level == 0 {
+			frames = append(frames, constFrames(ffmpeg.SpectralSilentFrame, 1)...)
+			continue
+		}
+		seed := math.Float64bits(level)*1_000_003 + uint64(i) - uint64(runStart) // #nosec G115 -- i >= runStart >= 0 in the loop
+		frames = append(frames, noise(seed, 1)...)
+	}
+	return frames
 }
 
 func (f *fakeDetector) Chapters(_ context.Context, path string) ([]ffmpeg.Chapter, error) {

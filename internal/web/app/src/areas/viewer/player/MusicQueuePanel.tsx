@@ -229,40 +229,48 @@ export function MusicQueuePanel({
           <ListMusic aria-hidden />
         </Dialog.Trigger>
         <Dialog.Portal container={anchorRef}>
-          <Dialog.Popup className="bf-player-dialog">
-            <div className="bf-player-dialog-head">
+          <Dialog.Popup className="bf-player-dialog bf-music-queue-dialog">
+            <div className="bf-player-dialog-head bf-music-queue-head">
+              <Dialog.Title render={<h3 />}>{t("musicQueueTitle")}</Dialog.Title>
               <Dialog.Close className="bf-player-dialog-back" aria-label={t("dialogClose")}>
                 <X aria-hidden />
               </Dialog.Close>
-              <Dialog.Title render={<h3 />}>{t("musicQueueTitle")}</Dialog.Title>
             </div>
             {invalid ? (
-              <p role="alert">{t("playerTerminalUnavailable")}</p>
+              <p className="bf-music-queue-notice" role="alert">
+                {t("playerTerminalUnavailable")}
+              </p>
             ) : (
               <>
                 {failed ? (
                   <>
-                    <p role="alert">{t("musicQueueReadFailed")}</p>
+                    <p className="bf-music-queue-notice" role="alert">
+                      {t("musicQueueReadFailed")}
+                    </p>
                     <Button size="sm" onClick={onRetry}>
                       {t("tryAgain")}
                     </Button>
                   </>
                 ) : !rows ? (
-                  <p role="status">{t("loading")}</p>
+                  <p className="bf-music-queue-status" role="status">
+                    {t("loading")}
+                  </p>
                 ) : (
                   <>
                     {rows.length > 0 && (
-                      <ol className="m-0 grid max-h-[min(45vh,20rem)] list-inside list-decimal gap-2 overflow-auto p-0">
+                      <ol className="bf-music-queue-list">
                         {rows.map((row: MusicQueueRow, index: number) => {
                           const editable = isUpcomingPlayableIndex(rows, index, currentID);
                           const { upPosition, downPosition } = editable
                             ? movableNeighbours(rows, index, currentID)
                             : {};
                           const keyCount = rows.filter((entry) => entry.id === row.id).length;
+                          const label = row.locked ? t("musicQueueLockedItem") : row.title;
                           return (
                             <li
                               key={keyCount > 1 ? `${row.id}-${index}` : row.id}
-                              aria-current={row.id === currentID ? "true" : undefined}
+                              className="bf-music-queue-row"
+                              data-current={row.id === currentID ? "true" : undefined}
                               data-queue-id={row.id}
                               data-queue-position={index}
                               draggable={editable && !busy ? true : undefined}
@@ -302,11 +310,18 @@ export function MusicQueuePanel({
                                 }
                               }}
                             >
-                              {row.locked ? t("musicQueueLockedItem") : row.title}
+                              <span
+                                className="bf-music-queue-row-title"
+                                aria-current={row.id === currentID ? "true" : undefined}
+                                title={label}
+                              >
+                                {label}
+                              </span>
                               {editable && (
-                                <span className="inline-flex items-center gap-1">
+                                <span className="bf-music-queue-actions">
                                   <button
                                     type="button"
+                                    className="bf-music-queue-action"
                                     aria-label={t("musicQueueMoveUp", { title: row.title })}
                                     disabled={busy || upPosition === undefined}
                                     onClick={() =>
@@ -318,6 +333,7 @@ export function MusicQueuePanel({
                                   </button>
                                   <button
                                     type="button"
+                                    className="bf-music-queue-action"
                                     aria-label={t("musicQueueMoveDown", { title: row.title })}
                                     disabled={busy || downPosition === undefined}
                                     onClick={() =>
@@ -329,6 +345,7 @@ export function MusicQueuePanel({
                                   </button>
                                   <button
                                     type="button"
+                                    className="bf-music-queue-action is-danger"
                                     aria-label={t("musicQueueRemove", { title: row.title })}
                                     disabled={busy}
                                     onClick={() => void handleRemove(row.id)}
@@ -343,7 +360,7 @@ export function MusicQueuePanel({
                       </ol>
                     )}
                     {first ? (
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="bf-music-queue-controls">
                         <Button size="sm" onClick={onPlay}>
                           {t("musicQueuePlay")}
                         </Button>
@@ -359,16 +376,19 @@ export function MusicQueuePanel({
                         )}
                       </div>
                     ) : (
-                      <p role="status">{t("musicQueueEmpty")}</p>
+                      <p className="bf-music-queue-status" role="status">
+                        {t("musicQueueEmpty")}
+                      </p>
                     )}
                   </>
                 )}
-                <div className="mt-2 flex flex-wrap items-center gap-2">
+                <div className="bf-music-queue-save">
                   <input
                     type="text"
+                    className="bf-music-queue-input"
                     aria-label={t("musicQueuePlaylistName")}
                     value={playlistName}
-                    placeholder={t("musicQueueTitle")}
+                    placeholder={t("musicQueuePlaylistName")}
                     onChange={(event) => {
                       setPlaylistName(event.target.value);
                       frozenSaveRef.current = null;
@@ -384,7 +404,9 @@ export function MusicQueuePanel({
                   </Button>
                 </div>
                 {notice && !(failed && notice.text === t("musicQueueReadFailed")) && (
-                  <p role={notice.kind}>{notice.text}</p>
+                  <p className="bf-music-queue-notice" role={notice.kind}>
+                    {notice.text}
+                  </p>
                 )}
               </>
             )}

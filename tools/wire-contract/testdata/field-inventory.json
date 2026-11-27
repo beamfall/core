@@ -65,6 +65,22 @@
       ]
     },
     {
+      "field": "acknowledgebackupbanner",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backupFailedBanner",
+        "integrityFailedBanner",
+        "lastDrill",
+        "lastFailure",
+        "lastIntegrityFailure",
+        "lastIntegrityPass",
+        "lastSuccess",
+        "updateGateClear",
+        "upgradeGate"
+      ]
+    },
+    {
       "field": "acknowledgebackupkey",
       "effect": "write",
       "tier": "admin",
@@ -350,6 +366,8 @@
         "createdAt",
         "directory",
         "error",
+        "keyFingerprint",
+        "keyState",
         "sizeBytes",
         "valid"
       ]
@@ -362,6 +380,22 @@
         "daysLeft",
         "expiresAt",
         "pending"
+      ]
+    },
+    {
+      "field": "backupstatus",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "backupFailedBanner",
+        "integrityFailedBanner",
+        "lastDrill",
+        "lastFailure",
+        "lastIntegrityFailure",
+        "lastIntegrityPass",
+        "lastSuccess",
+        "updateGateClear",
+        "upgradeGate"
       ]
     },
     {
@@ -741,6 +775,7 @@
       "effect": "write",
       "tier": "admin",
       "children": [
+        "capabilities",
         "custodial",
         "defaultIcon",
         "encrypted",
@@ -748,7 +783,9 @@
         "icon",
         "iconChoice",
         "id",
+        "mediaClasses",
         "pluginID",
+        "presentation",
         "previewClips",
         "restricted",
         "roots",
@@ -1769,6 +1806,7 @@
       "effect": "read",
       "tier": "admin",
       "children": [
+        "capabilities",
         "custodial",
         "defaultIcon",
         "encrypted",
@@ -1776,7 +1814,9 @@
         "icon",
         "iconChoice",
         "id",
+        "mediaClasses",
         "pluginID",
+        "presentation",
         "previewClips",
         "restricted",
         "roots",
@@ -3094,11 +3134,14 @@
       "effect": "read",
       "tier": "session",
       "children": [
+        "capabilities",
         "certificationScale",
         "displayName",
         "id",
         "mediaClassLabels",
-        "mediaLabel"
+        "mediaClasses",
+        "mediaLabel",
+        "presentation"
       ]
     },
     {
@@ -4486,6 +4529,22 @@
       ]
     },
     {
+      "field": "setbackupupgradegate",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backupFailedBanner",
+        "integrityFailedBanner",
+        "lastDrill",
+        "lastFailure",
+        "lastIntegrityFailure",
+        "lastIntegrityPass",
+        "lastSuccess",
+        "updateGateClear",
+        "upgradeGate"
+      ]
+    },
+    {
       "field": "setcapabilityenabled",
       "effect": "write",
       "tier": "admin",
@@ -4693,6 +4752,7 @@
       "effect": "write",
       "tier": "admin",
       "children": [
+        "capabilities",
         "custodial",
         "defaultIcon",
         "encrypted",
@@ -4700,7 +4760,9 @@
         "icon",
         "iconChoice",
         "id",
+        "mediaClasses",
         "pluginID",
+        "presentation",
         "previewClips",
         "restricted",
         "roots",
@@ -4713,6 +4775,7 @@
       "effect": "write",
       "tier": "admin",
       "children": [
+        "capabilities",
         "custodial",
         "defaultIcon",
         "encrypted",
@@ -4720,7 +4783,9 @@
         "icon",
         "iconChoice",
         "id",
+        "mediaClasses",
         "pluginID",
+        "presentation",
         "previewClips",
         "restricted",
         "roots",
@@ -4733,6 +4798,7 @@
       "effect": "write",
       "tier": "admin",
       "children": [
+        "capabilities",
         "custodial",
         "defaultIcon",
         "encrypted",
@@ -4740,7 +4806,9 @@
         "icon",
         "iconChoice",
         "id",
+        "mediaClasses",
         "pluginID",
+        "presentation",
         "previewClips",
         "restricted",
         "roots",
@@ -4753,6 +4821,7 @@
       "effect": "write",
       "tier": "admin",
       "children": [
+        "capabilities",
         "custodial",
         "defaultIcon",
         "encrypted",
@@ -4760,7 +4829,9 @@
         "icon",
         "iconChoice",
         "id",
+        "mediaClasses",
         "pluginID",
+        "presentation",
         "previewClips",
         "restricted",
         "roots",
@@ -4773,6 +4844,7 @@
       "effect": "write",
       "tier": "admin",
       "children": [
+        "capabilities",
         "custodial",
         "defaultIcon",
         "encrypted",
@@ -4780,7 +4852,9 @@
         "icon",
         "iconChoice",
         "id",
+        "mediaClasses",
         "pluginID",
+        "presentation",
         "previewClips",
         "restricted",
         "roots",
@@ -5964,6 +6038,21 @@
       "children": [
         "error",
         "ok"
+      ]
+    },
+    {
+      "field": "verifybackupnow",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "at",
+        "backupCreatedAt",
+        "databases",
+        "durationMs",
+        "libraries",
+        "reason",
+        "set",
+        "verified"
       ]
     },
     {

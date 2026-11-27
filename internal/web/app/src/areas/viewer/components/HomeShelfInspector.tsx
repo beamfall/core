@@ -200,7 +200,10 @@ export function HomeShelfInspector({
       <div className="flex h-full w-full max-w-2xl flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-2xl">
         {/* Sticky Header */}
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-6 py-4">
-          <h3 className="truncate text-lg font-semibold tracking-tight">
+          <h3
+            className="min-w-0 truncate text-lg font-semibold tracking-tight"
+            title={draft.title || "Edit shelf"}
+          >
             {draft.title || "Edit shelf"}
           </h3>
           <div className="flex shrink-0 items-center gap-2">
@@ -231,18 +234,20 @@ export function HomeShelfInspector({
             </label>
 
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-xs font-medium text-[var(--text-secondary)]">Source type</span>
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
+                {t("homeSourceType")}
+              </span>
               <select
-                aria-label="Source type"
+                aria-label={t("homeSourceType")}
                 value={draft.source.type === "playlist" ? "collection" : draft.source.type}
                 onChange={(e) => switchSourceType(e.target.value as HomeShelfSourceType)}
                 className={CONTROL_CLS}
               >
                 <option value="builtin">Built-in feed</option>
-                <option value="rules">Smart rules</option>
+                <option value="rules">{t("homeSourceRules")}</option>
                 <option value="collection">Collection / Playlist</option>
-                <option value="saved-filter">Saved filter</option>
-                <option value="library">Library</option>
+                <option value="saved-filter">{t("homeSourceSavedFilter")}</option>
+                <option value="library">{t("homeSourceLibrary")}</option>
                 <option value="entity">Tag / Category</option>
               </select>
             </label>
@@ -290,7 +295,9 @@ export function HomeShelfInspector({
           {/* Source-specific controls */}
           {draft.source.type === "builtin" && (
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-xs font-medium text-[var(--text-secondary)]">Feed</span>
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
+                {t("homeSourceFeed")}
+              </span>
               <select
                 value={draft.source.builtinKind ?? "recently-added"}
                 onChange={(e) =>
@@ -346,7 +353,9 @@ export function HomeShelfInspector({
 
           {draft.source.type === "saved-filter" && (
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-xs font-medium text-[var(--text-secondary)]">Saved Filter</span>
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
+                {t("homeSavedFilterLabel")}
+              </span>
               <select
                 value={draft.source.savedFilterID ?? ""}
                 onChange={(e) =>
@@ -395,7 +404,9 @@ export function HomeShelfInspector({
                 </select>
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
-                <span className="text-xs font-medium text-[var(--text-secondary)]">Name</span>
+                <span className="text-xs font-medium text-[var(--text-secondary)]">
+                  {t("homeShelfName")}
+                </span>
                 <input
                   type="text"
                   list="home-entity-suggestions"
@@ -466,8 +477,9 @@ export function HomeShelfInspector({
                 </select>
               </label>
 
-              <label className="flex items-center gap-2.5 self-end pb-2 text-xs whitespace-nowrap">
+              <label className="flex items-center gap-2.5 self-end pb-2 text-xs">
                 <Switch
+                  className="shrink-0"
                   checked={draft.source.sort?.desc ?? true}
                   onCheckedChange={(desc) =>
                     setDraft({
@@ -488,7 +500,9 @@ export function HomeShelfInspector({
 
               {draft.source.sort?.by === "random" && (
                 <label className="flex flex-col gap-1.5 text-xs">
-                  <span className="font-medium text-[var(--text-secondary)]">Refresh cadence</span>
+                  <span className="font-medium text-[var(--text-secondary)]">
+                    {t("homeRefreshCadence")}
+                  </span>
                   <select
                     value={draft.source.sort?.randomSeedMode ?? "daily"}
                     onChange={(e) =>
@@ -506,9 +520,9 @@ export function HomeShelfInspector({
                     }
                     className={CONTROL_CLS}
                   >
-                    <option value="session">Every visit</option>
-                    <option value="hourly">Hourly</option>
-                    <option value="daily">Daily</option>
+                    <option value="session">{t("homeRefreshSession")}</option>
+                    <option value="hourly">{t("homeRefreshHourly")}</option>
+                    <option value="daily">{t("homeRefreshDaily")}</option>
                   </select>
                 </label>
               )}
@@ -555,10 +569,10 @@ export function HomeShelfInspector({
                   }
                   className={CONTROL_CLS}
                 >
-                  <option value="auto">Auto</option>
-                  <option value="poster">Poster</option>
-                  <option value="landscape">Landscape</option>
-                  <option value="square">Square</option>
+                  <option value="auto">{t("homeArtAuto")}</option>
+                  <option value="poster">{t("homeArtPoster")}</option>
+                  <option value="landscape">{t("homeArtLandscape")}</option>
+                  <option value="square">{t("homeArtSquare")}</option>
                 </select>
               </label>
             </div>
@@ -588,22 +602,47 @@ export function HomeShelfInspector({
                 />
               </label>
 
-              <label className="flex items-center justify-between gap-3 pt-2 text-xs whitespace-nowrap sm:justify-end">
+              <label className="flex items-center justify-between gap-3 pt-2 text-xs sm:justify-end">
                 <span className="font-medium text-[var(--text-secondary)]">
                   {t("homeShelfHideEmpty")}
                 </span>
                 <Switch
+                  className="shrink-0"
                   checked={draft.hideWhenEmpty}
                   onCheckedChange={(hideWhenEmpty) => setDraft({ ...draft, hideWhenEmpty })}
                 />
               </label>
             </div>
+
+            {(draft.source.type === "library" ||
+              draft.source.type === "rules" ||
+              draft.source.type === "saved-filter" ||
+              (draft.source.type === "builtin" &&
+                draft.source.builtinKind !== "next-up" &&
+                draft.source.builtinKind !== "continue-listening")) && (
+              <label className="flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] pt-3 text-xs">
+                <span className="font-medium text-[var(--text-secondary)]">
+                  {t("homeShelfRollUp")}
+                </span>
+                <Switch
+                  checked={draft.source.rollUpContainers ?? true}
+                  onCheckedChange={(rollUpContainers) =>
+                    setDraft({
+                      ...draft,
+                      source: { ...draft.source, rollUpContainers },
+                    })
+                  }
+                />
+              </label>
+            )}
           </div>
 
           {/* Live Preview Strip */}
           <div className="flex flex-col gap-3 rounded-xl bg-[var(--bg-root)]/45 p-4">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-medium text-[var(--text-secondary)]">Live Preview</span>
+              <span className="font-medium text-[var(--text-secondary)]">
+                {t("homeLivePreview")}
+              </span>
               <span className="text-[var(--text-muted)]">
                 {previewLoading
                   ? t("loading")
@@ -623,6 +662,7 @@ export function HomeShelfInspector({
                         "w-full overflow-hidden rounded-lg bg-[var(--bg-raised)] shadow-sm " +
                         previewAspectClass(draft.display.artworkSlot)
                       }
+                      title={item.artwork?.poster ? undefined : item.title}
                     >
                       {item.artwork?.poster ? (
                         <img
@@ -631,14 +671,19 @@ export function HomeShelfInspector({
                           className="h-full w-full object-cover"
                         />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center px-2 text-center text-[10px] text-[var(--text-muted)]">
+                        <div className="flex h-full w-full items-center justify-center px-2 text-center text-[10px] break-words text-[var(--text-muted)]">
                           {item.title}
                         </div>
                       )}
                     </div>
-                    <span className="truncate text-xs font-medium">{item.title}</span>
+                    <span className="truncate text-xs font-medium" title={item.title}>
+                      {item.title}
+                    </span>
                     {item.summary && (
-                      <span className="truncate text-[11px] text-[var(--text-muted)]">
+                      <span
+                        className="truncate text-[11px] text-[var(--text-muted)]"
+                        title={item.summary}
+                      >
                         {item.summary}
                       </span>
                     )}

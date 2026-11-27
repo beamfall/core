@@ -7,6 +7,7 @@ import { activitySecurityStrings } from "./activity-security";
 import { appShellStrings } from "./app-shell";
 import { appearanceStrings } from "./appearance";
 import { backupKeyStrings } from "./backup-key";
+import { backupOpsStrings } from "./backup-ops";
 import { backupRetentionStrings } from "./backup-retention";
 import { backupRetentionExportStrings } from "./backup-retention-export";
 import { backupRetentionHistoryStrings } from "./backup-retention-history";
@@ -172,6 +173,7 @@ export const en = {
   ...serverLogStrings.en,
   ...stagedRestoreStrings.en,
   ...backupKeyStrings.en,
+  ...backupOpsStrings.en,
   ...miniPlayerStrings.en,
   ...activityPageStrings.en,
   ...activitySecurityStrings.en,
@@ -266,6 +268,7 @@ export const fr = {
   ...serverLogStrings.fr,
   ...stagedRestoreStrings.fr,
   ...backupKeyStrings.fr,
+  ...backupOpsStrings.fr,
   ...miniPlayerStrings.fr,
   ...activityPageStrings.fr,
   ...activitySecurityStrings.fr,
@@ -360,6 +363,7 @@ export const de = {
   ...serverLogStrings.de,
   ...stagedRestoreStrings.de,
   ...backupKeyStrings.de,
+  ...backupOpsStrings.de,
   ...miniPlayerStrings.de,
   ...activityPageStrings.de,
   ...activitySecurityStrings.de,
@@ -454,6 +458,7 @@ export const es = {
   ...serverLogStrings.es,
   ...stagedRestoreStrings.es,
   ...backupKeyStrings.es,
+  ...backupOpsStrings.es,
   ...miniPlayerStrings.es,
   ...activityPageStrings.es,
   ...activitySecurityStrings.es,
@@ -548,6 +553,7 @@ export const pt = {
   ...serverLogStrings.pt,
   ...stagedRestoreStrings.pt,
   ...backupKeyStrings.pt,
+  ...backupOpsStrings.pt,
   ...miniPlayerStrings.pt,
   ...activityPageStrings.pt,
   ...activitySecurityStrings.pt,

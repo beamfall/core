@@ -156,6 +156,16 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"acknowledgebackupkey": {
 		{Name: "escrowID", Kind: "string"},
 	},
+	"acknowledgebackupbanner": {
+		{Name: "banner", Kind: "string"},
+	},
+	"setbackupupgradegate": {
+		{Name: "gate", Kind: "string"},
+	},
+	"verifybackupnow": {
+		{Name: "backupKey", Kind: "string"},
+		{Name: "envelope", Kind: "string"},
+	},
 	"capabilitystates": {},
 	"channels": {
 		{Name: "libraryID", Kind: "string"},
@@ -1216,6 +1226,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"stagedrestore":   {},
 	"revealbackupkey": {},
 	"backupkeystatus": {},
+	"backupstatus":    {},
 	"stagerestore": {
 		{Name: "backupKey", Kind: "string"},
 		{Name: "envelope", Kind: "string"},

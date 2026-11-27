@@ -175,6 +175,143 @@
     ]
   },
   {
+    "field": "acknowledgebackupbanner",
+    "kind": "object",
+    "children": [
+      {
+        "name": "backupFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "integrityFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastDrill",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "backupCreatedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "databases",
+            "kind": "scalar"
+          },
+          {
+            "name": "durationMs",
+            "kind": "scalar"
+          },
+          {
+            "name": "libraries",
+            "kind": "scalar"
+          },
+          {
+            "name": "reason",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          },
+          {
+            "name": "verified",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastIntegrityFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastIntegrityPass",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastSuccess",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "updateGateClear",
+        "kind": "scalar"
+      },
+      {
+        "name": "upgradeGate",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "acknowledgebackupkey",
     "kind": "object",
     "children": [
@@ -1402,6 +1539,14 @@
         "optional": true
       },
       {
+        "name": "libraryIDs",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
         "name": "limit",
         "kind": "int",
         "optional": true
@@ -1911,6 +2056,14 @@
         "optional": true
       },
       {
+        "name": "keyFingerprint",
+        "kind": "scalar"
+      },
+      {
+        "name": "keyState",
+        "kind": "scalar"
+      },
+      {
         "name": "sizeBytes",
         "kind": "scalar"
       },
@@ -1934,6 +2087,143 @@
       },
       {
         "name": "pending",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "backupstatus",
+    "kind": "object",
+    "children": [
+      {
+        "name": "backupFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "integrityFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastDrill",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "backupCreatedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "databases",
+            "kind": "scalar"
+          },
+          {
+            "name": "durationMs",
+            "kind": "scalar"
+          },
+          {
+            "name": "libraries",
+            "kind": "scalar"
+          },
+          {
+            "name": "reason",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          },
+          {
+            "name": "verified",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastIntegrityFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastIntegrityPass",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastSuccess",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "updateGateClear",
+        "kind": "scalar"
+      },
+      {
+        "name": "upgradeGate",
         "kind": "scalar"
       }
     ]
@@ -5149,6 +5439,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -5181,9 +5480,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -10182,6 +10528,15 @@
               "optional": true
             },
             {
+              "name": "capabilities",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
               "name": "icon",
               "kind": "scalar",
               "optional": true
@@ -10189,6 +10544,59 @@
             {
               "name": "id",
               "kind": "scalar"
+            },
+            {
+              "name": "mediaClasses",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "pluginID",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
+              "name": "presentation",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "defaultIcon",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "interactiveSidecars",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "playsAlone",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "resumeMedia",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "selectPlays",
+                  "kind": "scalar",
+                  "optional": true
+                }
+              ]
             },
             {
               "name": "title",
@@ -10203,6 +10611,15 @@
             "optional": true
           },
           {
+            "name": "capabilities",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
             "name": "icon",
             "kind": "scalar",
             "optional": true
@@ -10210,6 +10627,59 @@
           {
             "name": "id",
             "kind": "scalar"
+          },
+          {
+            "name": "mediaClasses",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "pluginID",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "presentation",
+            "kind": "object",
+            "optional": true,
+            "nullable": true,
+            "children": [
+              {
+                "name": "defaultIcon",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "interactiveSidecars",
+                "kind": "list",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "playsAlone",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "resumeMedia",
+                "kind": "scalar",
+                "optional": true,
+                "nullable": true
+              },
+              {
+                "name": "selectPlays",
+                "kind": "scalar",
+                "optional": true
+              }
+            ]
           },
           {
             "name": "title",
@@ -11779,6 +12249,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -11811,9 +12290,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -42564,6 +43090,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "certificationScale",
         "kind": "list",
         "optional": true,
@@ -42597,12 +43132,59 @@
         }
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "mediaLabel",
         "kind": "map",
         "nullable": true,
         "elem": {
           "kind": "scalar"
         }
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       }
     ]
   },
@@ -50831,6 +51413,14 @@
     "kind": "object",
     "arguments": [
       {
+        "name": "libraryIDs",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
         "name": "limit",
         "kind": "int",
         "optional": true
@@ -51541,6 +52131,143 @@
             "kind": "scalar"
           }
         ]
+      }
+    ]
+  },
+  {
+    "field": "setbackupupgradegate",
+    "kind": "object",
+    "children": [
+      {
+        "name": "backupFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "integrityFailedBanner",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastDrill",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "backupCreatedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "databases",
+            "kind": "scalar"
+          },
+          {
+            "name": "durationMs",
+            "kind": "scalar"
+          },
+          {
+            "name": "libraries",
+            "kind": "scalar"
+          },
+          {
+            "name": "reason",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          },
+          {
+            "name": "verified",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastIntegrityFailure",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastIntegrityPass",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "lastSuccess",
+        "kind": "object",
+        "nullable": true,
+        "children": [
+          {
+            "name": "at",
+            "kind": "scalar"
+          },
+          {
+            "name": "failureClass",
+            "kind": "scalar"
+          },
+          {
+            "name": "set",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "updateGateClear",
+        "kind": "scalar"
+      },
+      {
+        "name": "upgradeGate",
+        "kind": "scalar"
       }
     ]
   },
@@ -54160,6 +54887,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -54192,9 +54928,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -54228,6 +55011,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -54260,9 +55052,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -54296,6 +55135,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -54328,9 +55176,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -54364,6 +55259,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -54396,9 +55300,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -54432,6 +55383,15 @@
     "kind": "object",
     "children": [
       {
+        "name": "capabilities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "custodial",
         "kind": "scalar"
       },
@@ -54464,9 +55424,56 @@
         "kind": "scalar"
       },
       {
+        "name": "mediaClasses",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "pluginID",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "presentation",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "defaultIcon",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "interactiveSidecars",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "resumeMedia",
+            "kind": "scalar",
+            "optional": true,
+            "nullable": true
+          },
+          {
+            "name": "selectPlays",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
       },
       {
         "name": "previewClips",
@@ -60149,6 +61156,14 @@
         "optional": true
       },
       {
+        "name": "libraryIDs",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
         "name": "limit",
         "kind": "int",
         "optional": true
@@ -64692,6 +65707,44 @@
       },
       {
         "name": "ok",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "verifybackupnow",
+    "kind": "object",
+    "children": [
+      {
+        "name": "at",
+        "kind": "scalar"
+      },
+      {
+        "name": "backupCreatedAt",
+        "kind": "scalar"
+      },
+      {
+        "name": "databases",
+        "kind": "scalar"
+      },
+      {
+        "name": "durationMs",
+        "kind": "scalar"
+      },
+      {
+        "name": "libraries",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "kind": "scalar"
+      },
+      {
+        "name": "set",
+        "kind": "scalar"
+      },
+      {
+        "name": "verified",
         "kind": "scalar"
       }
     ]

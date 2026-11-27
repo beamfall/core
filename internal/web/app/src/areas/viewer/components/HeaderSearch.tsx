@@ -1,6 +1,11 @@
 import { Play, Search } from "lucide-react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
+import {
+  itemMatchesLens,
+  useExperienceLens,
+  withExperienceModeParam,
+} from "@/components/chrome/experienceLens";
 import { Autocomplete } from "@/components/ui/astryx-primitives";
 import type { SearchResultItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useI18n } from "@/lib/i18n";
@@ -44,34 +49,39 @@ export function HeaderSearch() {
   const navigate = useNavigate();
   const location = useLocation();
   const identity = useViewerIdentity();
+  const { activeLens, libraryIDFilter, mode: lensMode } = useExperienceLens();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const highlighted = useRef<Cell | undefined>(undefined);
   const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const live = useLiveSearch(query, "keyword");
+  const live = useLiveSearch(query, "keyword", libraryIDFilter);
   useSearchShortcut(inputRef);
+
+  const scopedItems = useMemo(
+    () => (live.items ?? []).filter((item) => itemMatchesLens(item, activeLens)),
+    [live.items, activeLens],
+  );
 
   const groups = useMemo<CellGroup[]>(
     () =>
-      groupSearchRows((live.items ?? []).slice(0, HEADER_SEARCH_ROWS), t, [
-        displayLocale,
-        locale,
-      ]).map((group) => ({
-        key: group.key,
-        label: group.label,
-        items: group.rows.flatMap((item) =>
-          searchRowPlayPath(item)
-            ? [
-                { item, play: false },
-                { item, play: true },
-              ]
-            : [{ item, play: false }],
-        ),
-      })),
-    [live.items, t, displayLocale, locale],
+      groupSearchRows(scopedItems.slice(0, HEADER_SEARCH_ROWS), t, [displayLocale, locale]).map(
+        (group) => ({
+          key: group.key,
+          label: group.label,
+          items: group.rows.flatMap((item) =>
+            searchRowPlayPath(item)
+              ? [
+                  { item, play: false },
+                  { item, play: true },
+                ]
+              : [{ item, play: false }],
+          ),
+        }),
+      ),
+    [scopedItems, t, displayLocale, locale],
   );
-  const total = live.items?.length ?? 0;
+  const total = scopedItems.length;
   const settled = live.items !== null && !live.loading;
   // Until a new query settles the rows on show answer the previous one, so they
   // cannot be picked.
@@ -115,7 +125,7 @@ export function HeaderSearch() {
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter" && live.term && (stale || !highlighted.current)) {
       event.preventDefault();
-      navigate(searchPagePath(live.term));
+      navigate(withExperienceModeParam(searchPagePath(live.term), lensMode));
     } else if (event.key === "Escape" && !panelOpen && query) {
       event.preventDefault();
       setQuery("");

@@ -3,6 +3,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
+import {
+  itemMatchesLens,
+  useExperienceLens,
+  useExperienceModeLabel,
+} from "@/components/chrome/experienceLens";
+import { ModeLensPill } from "@/components/chrome/ModeLensPill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -49,13 +55,21 @@ const MODE_LABEL: Record<SearchMode, StringKey> = {
 export function SearchPage() {
   const { t, locale } = useI18n();
   const displayLocale = useDisplayLocale();
+  const {
+    mode: lensMode,
+    activeLens,
+    showModePill,
+    libraryIDFilter,
+    setMode: setLensMode,
+  } = useExperienceLens();
+  const modeLabel = useExperienceModeLabel();
   const [params, setParams] = useSearchParams();
   const query = params.get("q") ?? "";
   const [mode, setMode] = useState<SearchMode>("keyword");
   const [caps, setCaps] = useState<SemanticCapabilityInfo[]>([]);
   const [prefs, setPrefs] = useState<ClientPref[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const live = useLiveSearch(query, mode);
+  const live = useLiveSearch(query, mode, libraryIDFilter);
   useSearchShortcut(inputRef);
 
   // Probe availability once. Either probe failing simply leaves that mode out of
@@ -80,8 +94,12 @@ export function SearchPage() {
   }, [modes, mode]);
 
   function setQuery(next: string) {
-    // Replace, so Back leaves the search instead of undoing it a letter at a time.
-    setParams(next ? { q: next } : {}, { replace: true });
+    // Replace, so Back leaves the search instead of undoing it a letter at a time,
+    // while keeping active `?mode=` lens parameters intact.
+    const nextParams = new URLSearchParams(params);
+    if (next) nextParams.set("q", next);
+    else nextParams.delete("q");
+    setParams(nextParams, { replace: true });
   }
 
   function clear() {
@@ -89,10 +107,15 @@ export function SearchPage() {
     inputRef.current?.focus();
   }
 
+  const scopedItems = useMemo(
+    () => (live.items ? live.items.filter((item) => itemMatchesLens(item, activeLens)) : null),
+    [live.items, activeLens],
+  );
+
   // Rows found only through a container that is itself a result fold under it (CORE-2525).
   const { rows, nested } = useMemo(
-    () => nestUnderContainers(live.items ?? [], live.resultTerm, displayLocale),
-    [live.items, live.resultTerm, displayLocale],
+    () => nestUnderContainers(scopedItems ?? [], live.resultTerm, displayLocale),
+    [scopedItems, live.resultTerm, displayLocale],
   );
   const groups = useMemo(
     () => groupSearchRows(rows, t, [displayLocale, locale]),
@@ -108,8 +131,8 @@ export function SearchPage() {
       ),
     [groups, nested],
   );
-  const total = live.items?.length ?? 0;
-  const answered = live.items !== null && !live.failed;
+  const total = scopedItems?.length ?? 0;
+  const answered = scopedItems !== null && !live.failed;
   // 4-state honesty: requested non-keyword but keyword was served → the plugin
   // is absent or the index is empty; say so without failing.
   // Only once the current query and mode have been answered, not while they load.
@@ -118,7 +141,28 @@ export function SearchPage() {
   return (
     <AppShell actions={<ViewerActions />}>
       <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        <IconHeading icon={Search} title={t("search")} />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <IconHeading icon={Search} title={t("search")} />
+          {showModePill && <ModeLensPill variant="inline" />}
+        </div>
+        {lensMode !== "all" && (
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-secondary)]">
+            <span>
+              {t("lensSearchScopedTo", {
+                mode: modeLabel(activeLens),
+                count: activeLens.libraryIDs.length,
+                libraries: activeLens.libraryIDs.length === 1 ? t("library") : t("libraries"),
+              })}
+            </span>
+            <button
+              type="button"
+              className="underline hover:text-[var(--text-primary)]"
+              onClick={() => setLensMode("all")}
+            >
+              {t("lensSearchAllLibraries")}
+            </button>
+          </div>
+        )}
         <form onSubmit={(e) => e.preventDefault()} className="flex flex-wrap gap-2">
           <Input
             ref={inputRef}

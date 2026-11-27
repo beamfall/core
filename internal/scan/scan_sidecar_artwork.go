@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -443,6 +444,10 @@ func (s *scanWalkState) insideRoot(dir string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
+// discSubdirPattern matches per-disc folder names ("CD 1", "CD01",
+// "Disc 2", "Disk 1") inside multi-disc album folders.
+var discSubdirPattern = regexp.MustCompile(`(?i)^(?:cd|dis[ck])[\s._-]*0*\d{1,2}$`)
+
 // applyLocalArtwork imports or releases the local artwork of one completed
 // non-image Media. It runs on every scan, fast path included, so an edited
 // sidecar next to an unchanged media file still re-imports. A slot with no
@@ -450,10 +455,24 @@ func (s *scanWalkState) insideRoot(dir string) bool {
 // another file of the same Media matched that slot in this walk. Failures are
 // logged and never fail the scan.
 func (s *scanWalkState) applyLocalArtwork(mediaPath string, mediaID store.MediaID) {
+	s.applyMediaLocalArtwork(mediaPath, mediaID)
+	s.noteContainerArtwork(mediaPath, mediaID)
+}
+
+// applyMediaLocalArtwork imports curated sidecar files into Media slots (or
+// queues release when absent). For a Media held directly by a single unordered
+// container Entity (such as an album holding tracks), a folder poster sidecar
+// (poster, folder or cover) fills SlotPoster when no file-level poster matched.
+func (s *scanWalkState) applyMediaLocalArtwork(mediaPath string, mediaID store.MediaID) {
 	if s.localArtwork == nil || imageClassForPath(mediaPath) {
 		return
 	}
 	found := s.sidecars.localArtworkFor(mediaPath)
+	if found["poster"] == "" && s.hasSoleDirectContainer(s.containersFor(mediaID)) {
+		if sidecar := s.directContainerFolderPoster(mediaPath); sidecar != "" {
+			found["poster"] = sidecar
+		}
+	}
 	for _, slot := range localArtworkMediaSlots() {
 		key := localArtSlot{media: mediaID, slot: slot}
 		sidecar := found[slot]
@@ -473,25 +492,57 @@ func (s *scanWalkState) applyLocalArtwork(mediaPath string, mediaID store.MediaI
 			slog.Warn("importing local artwork failed", "media", mediaID, "slot", slot, "error", err.Error())
 		}
 	}
-	s.noteContainerArtwork(mediaPath, mediaID)
 }
 
-// noteContainerArtwork records the container sidecars for the Media's
-// container Entities, when the resolver seam is wired: the innermost ordered
-// container takes the numbered sidecar in the Media's folder or its parent,
-// and the outermost container, when it is another Entity, takes the folder
-// poster of the library root's top-level folder holding the Media. Nothing
-// outside the root is read. Each Entity is written once after the walk so
-// Media of one container cannot flip-flop it.
-func (s *scanWalkState) noteContainerArtwork(mediaPath string, mediaID store.MediaID) {
-	if s.containerResolver == nil || s.containerArtwork == nil {
-		return
+func (s *scanWalkState) containersFor(mediaID store.MediaID) []ContainerEntity {
+	if s.containerResolver == nil {
+		return nil
 	}
 	containers, err := s.containerResolver.ContainerEntitiesForMedia(s.ctx, mediaID)
 	if err != nil {
 		slog.Warn("resolving container entity failed", "media", mediaID, "error", err.Error())
+		return nil
+	}
+	return containers
+}
+
+// hasSoleDirectContainer reports whether the Media is held directly by a single
+// unordered container Entity (rather than nested inside an ordered container
+// hierarchy).
+func (s *scanWalkState) hasSoleDirectContainer(containers []ContainerEntity) bool {
+	return len(containers) == 1 && containers[0].ID != "" && !containers[0].Ordered
+}
+
+// directContainerFolderPoster returns the best folder poster for a Media held
+// directly by a single unordered container, checking the Media's directory and
+// then its parent inside the library root when the directory is a disc folder.
+func (s *scanWalkState) directContainerFolderPoster(mediaPath string) string {
+	dir := filepath.Dir(mediaPath)
+	if s.insideRoot(dir) {
+		if found := s.sidecars.folderPosterIn(dir); found != "" {
+			return found
+		}
+	}
+	parent := filepath.Dir(dir)
+	if discSubdirPattern.MatchString(filepath.Base(dir)) && parent != dir && s.insideRoot(parent) {
+		return s.sidecars.folderPosterIn(parent)
+	}
+	return ""
+}
+
+// noteContainerArtwork records the container sidecars for the Media's
+// container Entities, when the resolver seam is wired: the innermost ordered
+// container takes the numbered sidecar in the Media's folder or its parent, an
+// enclosing outermost container takes the library root's top-level folder
+// poster, and a sole direct container takes directContainerFolderPoster from the
+// Media's directory (or its disc-parent inside the root). Nothing outside the
+// root is read. Each Entity is written once after the walk so Media of one
+// container cannot flip-flop it.
+func (s *scanWalkState) noteContainerArtwork(mediaPath string, mediaID store.MediaID) {
+	if s.containerResolver == nil || s.containerArtwork == nil {
 		return
 	}
+	containers := s.containersFor(mediaID)
 	numbered := store.EntityID("")
 	for _, container := range containers {
 		if container.Ordered && container.ID != "" {
@@ -507,6 +558,12 @@ func (s *scanWalkState) noteContainerArtwork(mediaPath string, mediaID store.Med
 	}
 	outer := containers[len(containers)-1]
 	if outer.ID == "" || outer.ID == numbered {
+		return
+	}
+	if s.hasSoleDirectContainer(containers) {
+		s.noteContainerChoice(outer.ID, func() string {
+			return s.directContainerFolderPoster(mediaPath)
+		})
 		return
 	}
 	s.noteContainerChoice(outer.ID, func() string {

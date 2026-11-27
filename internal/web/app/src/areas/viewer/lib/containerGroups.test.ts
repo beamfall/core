@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import {
+  ambiguousAudioContainers,
   foldNewShelf,
   groupByContainer,
   groupsNewByContainer,
+  groupsShelfByContainer,
   NEW_SHELF_CARDS,
   NEW_SHELF_FETCH,
   withContainerPoster,
@@ -132,5 +134,59 @@ describe("foldNewShelf (CORE-2823)", () => {
     expect(partly).toMatchObject({ id: "show-Alpha", subtitle: "2 new" });
     expect(allDone).toMatchObject({ id: "show-Beta" });
     expect(allDone.subtitle).toBeUndefined();
+  });
+
+  it("folds single-in-window tracks of multi-track audio albums when probed, keeping true singles", () => {
+    const track = (id: string, albumID?: string, albumTitle?: string): SourceItem => ({
+      id,
+      kind: "media",
+      title: id,
+      mediaClass: "audio",
+      container: albumID ? { id: albumID, title: albumTitle ?? albumID } : undefined,
+    });
+    const items = [
+      track("album-track-1", "album-multi", "Revolver"),
+      track("single-track-1", "album-single", "vampire"),
+      track("loose-track", undefined),
+    ];
+    expect(ambiguousAudioContainers(items)).toEqual(["album-multi", "album-single"]);
+
+    const grouped = groupByContainer(items, (count) => `${count} new`, {
+      multiItemContainers: new Set(["album-multi"]),
+    });
+    expect(grouped).toHaveLength(3);
+    expect(grouped[0]).toMatchObject({
+      id: "album-multi",
+      kind: "entity",
+      title: "Revolver",
+      subtitle: "1 new",
+      mediaClass: "audio",
+    });
+    expect(grouped[1]).toMatchObject({ id: "single-track-1", kind: "media" });
+    expect(grouped[2]).toMatchObject({ id: "loose-track", kind: "media" });
+
+    // Empty countLabel (e.g. recently-played / most-played shelves) leaves subtitle undefined.
+    const played = groupByContainer(items, () => "", {
+      multiItemContainers: new Set(["album-multi"]),
+    });
+    expect(played[0].subtitle).toBeUndefined();
+  });
+});
+
+describe("groupsShelfByContainer", () => {
+  it("matches recently-added, recently-played, and most-played shelves only", () => {
+    const mk = (kind: Section["kind"], sourceKind: string): Section => ({
+      id: `${kind}-${sourceKind}`,
+      kind,
+      title: { en: sourceKind },
+      artworkSlot: "poster",
+      source: { kind: sourceKind },
+    });
+    expect(groupsShelfByContainer(mk("shelf", "recently-added"))).toBe(true);
+    expect(groupsShelfByContainer(mk("shelf", "recently-played"))).toBe(true);
+    expect(groupsShelfByContainer(mk("shelf", "most-played"))).toBe(true);
+    expect(groupsShelfByContainer(mk("grid", "recently-played"))).toBe(false);
+    expect(groupsShelfByContainer(mk("shelf", "continue-watching"))).toBe(false);
+    expect(groupsShelfByContainer(mk("shelf", "entity-items"))).toBe(false);
   });
 });

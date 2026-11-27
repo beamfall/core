@@ -238,7 +238,8 @@ func generateMediaAssets(ctx context.Context, service *Service, id store.MediaID
 		service.GenerateWaveform,
 		service.GenerateSilenceMap,
 		service.GenerateLoudness,
-		service.GenerateImageEnrich,
+		// GenerateImageEnrich is deliberately absent: it is an experimental
+		// stand-in, not a production enrichment capability (CORE-0700).
 	} {
 		if ctx.Err() != nil {
 			break

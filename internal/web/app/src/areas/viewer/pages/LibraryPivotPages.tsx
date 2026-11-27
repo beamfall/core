@@ -21,12 +21,18 @@ import {
   categoryCovers,
   categoryTone,
   groupByInitial,
+  matchingBrowseKind,
   mosaicCovers,
   planCategories,
   runBounded,
   takeCategoryArt,
 } from "../lib/libraryCategories";
-import { fetchLibraryEntities, libraryCategorySearch } from "../lib/libraryViews";
+import {
+  fetchLibraryEntities,
+  type LibraryEntityKind,
+  libraryCategorySearch,
+  MEDIA_VIEW,
+} from "../lib/libraryViews";
 import "./library-categories.css";
 
 export type LibraryPivotName = "collections" | "categories";
@@ -180,7 +186,10 @@ function LibraryCollections({ libraryID }: { libraryID: string }) {
 function LibraryCategories({ libraryID, libraryPath }: { libraryID: string; libraryPath: string }) {
   const t = useT();
   const [searchParams] = useSearchParams();
-  const read = useCallback(async (): Promise<CategoryPlan[]> => {
+  const read = useCallback(async (): Promise<{
+    plans: CategoryPlan[];
+    kinds: LibraryEntityKind[];
+  }> => {
     // The kinds only name a container count of one in the singular; without
     // them the page still renders (CORE-2885).
     const [page, kinds] = await Promise.all([
@@ -196,9 +205,11 @@ function LibraryCategories({ libraryID, libraryPath }: { libraryID: string; libr
         () => [],
       ),
     ]);
-    return planCategories(page.facets.groupings, kinds);
+    return { plans: planCategories(page.facets.groupings, kinds), kinds };
   }, [libraryID]);
-  const { value: plans, failed, retry } = useRetryableRead(read);
+  const { value: data, failed, retry } = useRetryableRead(read);
+  const plans = data?.plans ?? null;
+  const kinds = useMemo(() => data?.kinds ?? [], [data]);
   const listed = plans?.find((plan) => plan.kind === searchParams.get("kind"));
 
   return (
@@ -214,9 +225,14 @@ function LibraryCategories({ libraryID, libraryPath }: { libraryID: string; libr
           {t("libraryCategoriesEmpty")}
         </p>
       )}
-      {listed && <CategoryIndex plan={listed} libraryPath={libraryPath} />}
+      {listed && <CategoryIndex plan={listed} kinds={kinds} libraryPath={libraryPath} />}
       {plans && plans.length > 0 && !listed && (
-        <CategoryOverview plans={plans} libraryID={libraryID} libraryPath={libraryPath} />
+        <CategoryOverview
+          plans={plans}
+          kinds={kinds}
+          libraryID={libraryID}
+          libraryPath={libraryPath}
+        />
       )}
     </div>
   );
@@ -226,8 +242,14 @@ function groupingTitle(plan: CategoryPlan, locale: string): string {
   return displayString(plan.grouping.title, locale) || plan.kind;
 }
 
-function categoryLink(libraryPath: string, kind: string, value: string) {
-  return { pathname: `${libraryPath}/all`, search: libraryCategorySearch(kind, value) };
+function categoryLink(
+  libraryPath: string,
+  kind: string,
+  entry: CategoryValue,
+  kinds: readonly LibraryEntityKind[],
+) {
+  const view = matchingBrowseKind(entry.label, kinds)?.kind ?? MEDIA_VIEW;
+  return { pathname: `${libraryPath}/all`, search: libraryCategorySearch(kind, entry.value, view) };
 }
 
 function sectionID(kind: string): string {
@@ -322,10 +344,12 @@ function useCategoryArt(libraryID: string, plans: CategoryPlan[]): Map<string, C
 
 function CategoryOverview({
   plans,
+  kinds,
   libraryID,
   libraryPath,
 }: {
   plans: CategoryPlan[];
+  kinds: readonly LibraryEntityKind[];
   libraryID: string;
   libraryPath: string;
 }) {
@@ -382,7 +406,7 @@ function CategoryOverview({
                 {plan.values.map((entry) => (
                   <li key={entry.value}>
                     <CategoryCard
-                      to={categoryLink(libraryPath, plan.kind, entry.value)}
+                      to={categoryLink(libraryPath, plan.kind, entry, kinds)}
                       entry={entry}
                       art={art.get(artKey(plan.kind, entry.value)) ?? NO_ART}
                     />
@@ -396,7 +420,7 @@ function CategoryOverview({
                     <li key={entry.value}>
                       <Link
                         className="bf-chip"
-                        to={categoryLink(libraryPath, plan.kind, entry.value)}
+                        to={categoryLink(libraryPath, plan.kind, entry, kinds)}
                       >
                         {entry.value}
                         {entry.count !== undefined && (
@@ -486,7 +510,15 @@ function CategoryCard({
 }
 
 /** Every value of one grouping, A-Z under its initials, with a filter. */
-function CategoryIndex({ plan, libraryPath }: { plan: CategoryPlan; libraryPath: string }) {
+function CategoryIndex({
+  plan,
+  kinds,
+  libraryPath,
+}: {
+  plan: CategoryPlan;
+  kinds: readonly LibraryEntityKind[];
+  libraryPath: string;
+}) {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const title = groupingTitle(plan, displayLocale);
@@ -560,7 +592,7 @@ function CategoryIndex({ plan, libraryPath }: { plan: CategoryPlan; libraryPath:
             <ul className="bf-category-az">
               {group.values.map((entry) => (
                 <li key={entry.value}>
-                  <Link to={categoryLink(libraryPath, plan.kind, entry.value)}>
+                  <Link to={categoryLink(libraryPath, plan.kind, entry, kinds)}>
                     <span className="bf-category-name">{entry.value}</span>
                     {entry.count !== undefined && (
                       <span className="bf-category-count">

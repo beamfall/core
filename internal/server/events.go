@@ -721,6 +721,13 @@ func (s *Server) filterEventForSession(ctx context.Context, event store.OutboxEv
 		}
 		return event, profileID != "" && payload.ProfileID == profileID
 	}
+	if event.AggregateType == store.OutboxAggregateBackup {
+		// Scheduled-backup outcomes are operator signals for webhooks
+		// (ADR-0192 §6); the admin console reads backup status through the
+		// graph. Without this branch the catch-all below would hand them to
+		// every session, so they are withheld from SSE, fail-closed.
+		return event, false
+	}
 	if event.AggregateType != store.OutboxAggregateMedia {
 		return event, true
 	}
