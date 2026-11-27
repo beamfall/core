@@ -266,7 +266,7 @@ func (b *LiveBinding) claimSetup(ctx context.Context, source sourceCapture, shap
 				return nil, err
 			}
 			replacement := newSessionReservation(h.key)
-			replacement.admitted, replacement.library, replacement.profile = true, b.library, b.profile
+			replacement.admitted, replacement.library, replacement.profile, replacement.device = true, b.library, b.profile, b.device
 			replacement.binders, h.binders = 1, h.binders-1
 			s.trackContinuationLocked(h)
 			b.session, s.sessions[h.key] = replacement, replacement
@@ -389,6 +389,9 @@ func (h *hlsSession) sourceCapture() sourceCapture {
 // Preparation builds the immutable shape off to the side. Initial promotion
 // preserves the reservation identity held by existing binders.
 func promoteReservation(reservation, prepared *hlsSession) *hlsSession {
+	if reservation.device == "" {
+		reservation.device = prepared.device
+	}
 	reservation.predecessorWait = prepared.predecessorWait
 	reservation.dir = prepared.dir
 	reservation.scratch = prepared.scratch
