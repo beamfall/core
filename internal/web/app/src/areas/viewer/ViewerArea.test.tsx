@@ -205,7 +205,7 @@ describe("ViewerArea Profile scope", () => {
     expect(mocks.sessionState.refresh).toHaveBeenCalledOnce();
   });
 
-  it("shows reconnecting and auto-retries transient session errors without manual reload", async () => {
+  it("shows reconnecting and auto-retries transient session errors with exponential backoff across remounts", async () => {
     vi.useFakeTimers();
     try {
       mocks.sessionState = {
@@ -213,7 +213,7 @@ describe("ViewerArea Profile scope", () => {
         error: "current session failed",
         session: null,
       };
-      render(
+      const view = render(
         <I18nProvider initialLocale="en">
           <MemoryRouter initialEntries={["/"]}>
             <ViewerArea />
@@ -225,7 +225,30 @@ describe("ViewerArea Profile scope", () => {
       expect(mocks.sessionState.refresh).not.toHaveBeenCalled();
 
       await vi.advanceTimersByTimeAsync(2000);
-      expect(mocks.sessionState.refresh).toHaveBeenCalledOnce();
+      expect(mocks.sessionState.refresh).toHaveBeenCalledTimes(1);
+
+      // Simulate real refresh() clearing error -> ViewerSessionPending -> re-failing
+      mocks.sessionState = { ...mocks.sessionState, error: null, session: null };
+      view.rerender(
+        <I18nProvider initialLocale="en">
+          <MemoryRouter initialEntries={["/"]}>
+            <ViewerArea />
+          </MemoryRouter>
+        </I18nProvider>,
+      );
+      mocks.sessionState = { ...mocks.sessionState, error: "still down", session: null };
+      view.rerender(
+        <I18nProvider initialLocale="en">
+          <MemoryRouter initialEntries={["/"]}>
+            <ViewerArea />
+          </MemoryRouter>
+        </I18nProvider>,
+      );
+
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(mocks.sessionState.refresh).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(mocks.sessionState.refresh).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }

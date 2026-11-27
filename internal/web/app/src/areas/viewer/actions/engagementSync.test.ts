@@ -1,7 +1,7 @@
 import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { subscribeEvents } from "@/lib/api";
-import { requestManifestRefresh } from "@/lib/manifestRefresh";
+import { requestManifestRefresh, requestSessionRefresh } from "@/lib/manifestRefresh";
 import {
   resetServerConnectionForTest,
   useServerConnectionState,
@@ -10,7 +10,10 @@ import {
 import { useEngagementEpoch, useEngagementEvents } from "./engagementSync";
 
 vi.mock("@/lib/api", () => ({ subscribeEvents: vi.fn(() => () => {}) }));
-vi.mock("@/lib/manifestRefresh", () => ({ requestManifestRefresh: vi.fn() }));
+vi.mock("@/lib/manifestRefresh", () => ({
+  requestManifestRefresh: vi.fn(),
+  requestSessionRefresh: vi.fn(),
+}));
 
 afterEach(() => {
   cleanup();
@@ -75,5 +78,11 @@ describe("engagement events", () => {
     expect(recoveryEpoch.result.current).toBe(1);
     expect(engagementEpoch.result.current).toBe(startEngagement + 1);
     expect(requestManifestRefresh).toHaveBeenCalledOnce();
+
+    const onAuthError = vi.mocked(subscribeEvents).mock.calls[0][3];
+    onAuthError?.(401, {});
+    connState.rerender();
+    expect(connState.result.current).toBe("reconnecting");
+    expect(requestSessionRefresh).toHaveBeenCalledOnce();
   });
 });

@@ -310,27 +310,33 @@ export function MediaDetailPage() {
     }
     let alive = true;
     const controller = new AbortController();
-    Promise.resolve(
-      fetchSourceItems(
-        {
-          kind: "resume-progress",
-          value: "in-progress",
-          libraryID: media?.libraryID ?? "",
-          entityKind: "",
-          entityID: "",
-          fieldFilters: null,
-          entityFilter: null,
-          limit: 200,
-          offset: 0,
-        },
-        controller.signal,
-      ),
-    )
-      .then((items) => {
+    const PAGE_SIZE = 200;
+    const MAX_RESUME_SCAN = 2000;
+    (async () => {
+      for (let offset = 0; offset < MAX_RESUME_SCAN && alive; offset += PAGE_SIZE) {
+        const items = await fetchSourceItems(
+          {
+            kind: "resume-progress",
+            value: "in-progress",
+            libraryID: media?.libraryID ?? "",
+            entityKind: "",
+            entityID: "",
+            fieldFilters: null,
+            entityFilter: null,
+            limit: PAGE_SIZE,
+            offset,
+          },
+          controller.signal,
+        );
         if (!alive || !Array.isArray(items)) return;
-        setStandaloneItem(items.find((item) => item.id === mediaId) ?? null);
-      })
-      .catch(() => {});
+        const found = items.find((item) => item.id === mediaId);
+        if (found) {
+          setStandaloneItem(found);
+          return;
+        }
+        if (items.length < PAGE_SIZE) return;
+      }
+    })().catch(() => {});
     return () => {
       alive = false;
       controller.abort();

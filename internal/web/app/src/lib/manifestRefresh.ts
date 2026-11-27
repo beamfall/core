@@ -12,3 +12,13 @@ export function setManifestRefresher(refresh?: () => void): void {
 export function requestManifestRefresh(): void {
   refresher?.();
 }
+
+let sessionRefresher: (() => void) | undefined;
+
+export function setSessionRefresher(refresh?: () => void): void {
+  sessionRefresher = refresh;
+}
+
+export function requestSessionRefresh(): void {
+  sessionRefresher?.();
+}

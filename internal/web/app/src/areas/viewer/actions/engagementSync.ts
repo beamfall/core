@@ -1,6 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { subscribeEvents } from "@/lib/api";
-import { requestManifestRefresh } from "@/lib/manifestRefresh";
+import { requestManifestRefresh, requestSessionRefresh } from "@/lib/manifestRefresh";
 import { reportEventStreamState } from "@/lib/serverConnection";
 
 // One counter that moves whenever the bound Profile's watched, watchlist or
@@ -86,7 +86,7 @@ export function useEngagementEvents(onEvent?: (event: MessageEvent) => void): vo
       },
       () => {
         reportEventStreamState("reconnecting");
-        requestManifestRefresh();
+        requestSessionRefresh();
       },
     );
     return () => {
