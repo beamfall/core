@@ -548,6 +548,60 @@ func TestV1PlaybackControlAdminScopedKeyCanControlVisibleActiveSessions(t *testi
 	}
 }
 
+func TestV1PlaybackControlAfterProfileSwitchTargetsCurrentProfileOnly(t *testing.T) {
+	srv, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	zeta, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID:          "library-local",
+		Path:               "/media/v1-zeta.mp4",
+		Title:              "V1 Zeta Media",
+		Container:          "mp4",
+		Codec:              "h264",
+		Class:              store.MediaClassVideo,
+		ContentFingerprint: "sha256:v1-zeta",
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+	future := time.Now().UTC().Add(time.Hour)
+	// Simulate an active session that switched from profile-default (leaving a still-valid
+	// stream token in the ledger) to profile-managed (with a newer stream token).
+	if err := st.RecordStreamToken(ctx, "session-default", "profile-default", "device-tv", "media-direct", "media-alpha", false, future); err != nil {
+		t.Fatalf("RecordStreamToken old profile: %v", err)
+	}
+	if err := st.SetSessionProfile(ctx, "session-default", "profile-managed"); err != nil {
+		t.Fatalf("SetSessionProfile: %v", err)
+	}
+	if err := st.RecordStreamToken(ctx, "session-default", "profile-managed", "device-tv", "media-direct", zeta.ID, false, future); err != nil {
+		t.Fatalf("RecordStreamToken new profile: %v", err)
+	}
+
+	oldProfileKey := mintKey(t, st, "control-old", "profile-default", store.ScopePlaybackControl)
+	if rec := v1Post(t, srv, "/v1/playback-control", oldProfileKey, `{"sessionID":"session-default","command":"pause"}`); rec.Code != http.StatusNotFound {
+		t.Fatalf("old profile key POST /v1/playback-control = %d, want 404: %s", rec.Code, rec.Body.String())
+	}
+
+	newProfileKey := mintKey(t, st, "control-new", "profile-managed", store.ScopePlaybackControl)
+	rec := v1Post(t, srv, "/v1/playback-control", newProfileKey, `{"sessionID":"session-default","command":"pause"}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("new profile key POST /v1/playback-control = %d, want 202: %s", rec.Code, rec.Body.String())
+	}
+	events := sessionControlEvents(t, st)
+	if len(events) != 1 {
+		t.Fatalf("session-control events = %d, want 1", len(events))
+	}
+	var payload store.SessionControlPayload
+	if err := json.Unmarshal(events[0].Payload, &payload); err != nil {
+		t.Fatalf("decode event payload: %v", err)
+	}
+	if payload.ProfileID != "profile-managed" || payload.MediaID != zeta.ID {
+		t.Fatalf("payload = %#v, want profile-managed/%s", payload, zeta.ID)
+	}
+	if len(payload.PlayingMediaIDs) != 1 || payload.PlayingMediaIDs[0] != zeta.ID {
+		t.Fatalf("payload playingMediaIDs = %v, want [%s]", payload.PlayingMediaIDs, zeta.ID)
+	}
+}
+
 func TestV1PlaybackControlRejectsInvalidOrUnavailableTargets(t *testing.T) {
 	tests := []struct {
 		name string

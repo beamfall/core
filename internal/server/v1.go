@@ -35,6 +35,7 @@ type V1Store interface {
 	MediaExternalIDsBatch(ctx context.Context, ids []store.MediaID) (map[store.MediaID][]store.MediaExternalID, error)
 	ActiveSessions(ctx context.Context, now time.Time, filter store.LibraryFilter) ([]store.ActiveSession, error)
 	GrantedSessions(ctx context.Context, now time.Time, filter store.LibraryFilter) ([]store.ActiveSession, error)
+	Session(ctx context.Context, id store.SessionID) (store.Session, error)
 	LibraryRoots(ctx context.Context, libraryID store.LibraryID) ([]string, error)
 	Profile(ctx context.Context, id store.ProfileID) (store.Profile, error)
 	AppendSessionControlEventWithActivity(ctx context.Context, target store.SessionID, payload store.SessionControlPayload, activity store.ActivityEntry, now time.Time) error
@@ -556,22 +557,25 @@ func (s *Server) v1PlaybackControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	session, err := s.v1.Session(r.Context(), sessionID)
+	if err != nil || (scope.ProfileID != "" && session.ProfileID != scope.ProfileID) {
+		writeError(w, r, http.StatusNotFound, "session not found")
+		return
+	}
 	active, err := s.v1.GrantedSessions(r.Context(), time.Now().UTC(), scope.LibraryFilter())
 	if err != nil {
 		writeErrorCause(w, r, http.StatusInternalServerError, "sessions read failed", err)
 		return
 	}
-	// Every visible row's Media goes in the receiver's anchor set (a session
-	// holds tokens for a prefetched next item too); a hidden one is left out, so
-	// a receiver playing it refuses the command.
+	// Every visible row's Media for the session's current Profile goes in the
+	// receiver's anchor set (a session holds tokens for a prefetched next item
+	// too); grants from an earlier Profile on the same device session are
+	// excluded so a Profile switch cannot misroute control or leak MediaIDs.
 	var target store.ActiveSession
 	var playing []store.MediaID
 	foundVisible := false
 	for _, activeSession := range active {
-		if activeSession.SessionID != sessionID {
-			continue
-		}
-		if scope.ProfileID != "" && activeSession.ProfileID != scope.ProfileID {
+		if activeSession.SessionID != sessionID || activeSession.ProfileID != session.ProfileID {
 			continue
 		}
 		if activeSession.Title == "" {
@@ -590,13 +594,13 @@ func (s *Server) v1PlaybackControl(w http.ResponseWriter, r *http.Request) {
 	// A player display is driven only through controlRendererSession by its
 	// controllers (ADR-0240 D3, D4). This route has no controller identity or
 	// revision, so every player target answers exactly like a missing session.
-	targetProfile, err := s.v1.Profile(r.Context(), target.ProfileID)
+	targetProfile, err := s.v1.Profile(r.Context(), session.ProfileID)
 	if err != nil || targetProfile.Kind == store.ProfilePlayer {
 		writeError(w, r, http.StatusNotFound, "session not found")
 		return
 	}
 
-	payload, err := store.NewSessionControlPayload(command, store.SessionControlArgs{}, scope.DeviceID, target.ProfileID, target.MediaID)
+	payload, err := store.NewSessionControlPayload(command, store.SessionControlArgs{}, scope.DeviceID, session.ProfileID, target.MediaID)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -609,7 +613,7 @@ func (s *Server) v1PlaybackControl(w http.ResponseWriter, r *http.Request) {
 		// A scoped API key is the actor (APIKeyID). ProfileID anchors the row to
 		// the target Profile so self-scoped activity reads can see that their
 		// session was controlled without seeing the operator-only key id.
-		ProfileID:  target.ProfileID,
+		ProfileID:  session.ProfileID,
 		TargetType: "session",
 		TargetID:   string(sessionID),
 		APIKeyID:   scope.APIKeyID,
