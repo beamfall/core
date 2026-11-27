@@ -151,7 +151,10 @@ func (s *Service) Report(scope Scope, req ReportRequest) error {
 		s.state.Reports = s.state.Reports[len(s.state.Reports)-maxReports:]
 	}
 	if err := s.persistLocked(); err != nil {
-		s.state.Reports = previous
+		var postSync *jsonstate.PostRenameSyncError
+		if !errors.As(err, &postSync) {
+			s.state.Reports = previous
+		}
 		return err
 	}
 	return nil
@@ -184,7 +187,10 @@ func (s *Service) Block(scope Scope, req BlockRequest) error {
 		DeviceID:   string(scope.DeviceID),
 	})
 	if err := s.persistLocked(); err != nil {
-		s.state.Blocks = previous
+		var postSync *jsonstate.PostRenameSyncError
+		if !errors.As(err, &postSync) {
+			s.state.Blocks = previous
+		}
 		return err
 	}
 	return nil

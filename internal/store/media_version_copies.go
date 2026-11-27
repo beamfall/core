@@ -23,7 +23,11 @@ func (s *Store) MissingLegacyVersionFingerprints(ctx context.Context, libraryID 
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT f.path, f.content_fingerprint, f.size_bytes
 		FROM media m JOIN media_file f ON f.media_id = m.id
 		WHERE m.library_id = ? AND m.trashed_at_ms IS NULL

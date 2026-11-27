@@ -3,7 +3,9 @@ package webhook
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/url"
@@ -106,10 +108,12 @@ type Manager struct {
 	state   *FileDeadLetter
 	emitter *Emitter
 
-	mu       sync.Mutex
-	file     fileConfig
-	problems map[string]string
-	baseURL  string
+	mu              sync.Mutex
+	file            fileConfig
+	problems        map[string]string
+	baseURL         string
+	unsyncedCreates map[string]string
+	staleSecretRefs map[string]struct{}
 }
 
 // OpenManager loads the endpoint file and builds the emitter, which runs from
@@ -134,7 +138,15 @@ func OpenManager(opts ManagerOptions) (*Manager, error) {
 		logger.Error("webhook configuration decode failed", "error", err)
 		return nil, ErrConfigDiagnostic
 	}
-	m := &Manager{opts: opts, logger: logger, state: state, file: fc, baseURL: fc.PublicBaseURL}
+	m := &Manager{
+		opts:            opts,
+		logger:          logger,
+		state:           state,
+		file:            fc,
+		baseURL:         fc.PublicBaseURL,
+		unsyncedCreates: map[string]string{},
+		staleSecretRefs: map[string]struct{}{},
+	}
 	running := m.resolveAll()
 	cfg := Config{
 		MaxAttempts:  fc.MaxAttempts,
@@ -306,6 +318,25 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 			secret = value
 		}
 	}
+	createSig := ""
+	if index < 0 {
+		createSig = endpointCreateKey(fe, secret)
+		if existingID, ok := m.unsyncedCreates[createSig]; ok {
+			for i, candidate := range m.file.Endpoints {
+				if candidate.ID == existingID {
+					index, prior = i, candidate
+					fe.ID = candidate.ID
+					fe.SecretRef = candidate.SecretRef
+					if in.Secret == nil && prior.SecretRef != "" {
+						if value, err := m.opts.Secrets.Secret(prior.SecretRef); err == nil {
+							secret = value
+						}
+					}
+					break
+				}
+			}
+		}
+	}
 	if secret == "" {
 		fe.SecretRef = ""
 	} else if fe.SecretRef == "" {
@@ -342,21 +373,57 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 		restore()
 		return EndpointView{}, ErrConfigDiagnostic
 	}
-	if prior.SecretRef != "" && prior.SecretRef != fe.SecretRef && !refInUse(next, prior.SecretRef) {
-		if err := m.opts.Secrets.SetSecret(prior.SecretRef, ""); err != nil {
-			m.logger.Warn("webhook secret removal failed", "endpoint", fe.ID, "error", ErrSecretDiagnostic)
-		}
-	}
 	if err := m.emitter.SetEndpoints(running); err != nil {
 		return EndpointView{}, ErrConfigDiagnostic
 	}
 	m.file = next
 	delete(m.problems, fe.ID)
-	if saveErr != nil {
-		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
-		return EndpointView{}, ErrConfigDiagnostic
+	delete(m.staleSecretRefs, fe.SecretRef)
+	if prior.SecretRef != "" && prior.SecretRef != fe.SecretRef && !refInUse(next, prior.SecretRef) {
+		m.staleSecretRefs[prior.SecretRef] = struct{}{}
 	}
+	if saveErr != nil {
+		if createSig != "" {
+			m.unsyncedCreates[createSig] = fe.ID
+		}
+		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
+		return m.view(fe), errors.Join(ErrConfigDiagnostic, saveErr)
+	}
+	m.clearUnsyncedCreateID(fe.ID)
+	m.purgeStaleSecretRefs(next)
 	return m.view(fe), nil
+}
+
+func endpointCreateKey(fe fileEndpoint, secret string) string {
+	keyFe := fe
+	keyFe.ID = ""
+	keyFe.SecretRef = ""
+	raw, _ := json.Marshal(keyFe)
+	secHash := sha256.Sum256([]byte(secret))
+	sum := sha256.Sum256(append(raw, secHash[:]...))
+	return hex.EncodeToString(sum[:])
+}
+
+func (m *Manager) clearUnsyncedCreateID(id string) {
+	for sig, candidateID := range m.unsyncedCreates {
+		if candidateID == id {
+			delete(m.unsyncedCreates, sig)
+		}
+	}
+}
+
+func (m *Manager) purgeStaleSecretRefs(cfg fileConfig) {
+	for ref := range m.staleSecretRefs {
+		if ref == "" || refInUse(cfg, ref) {
+			delete(m.staleSecretRefs, ref)
+			continue
+		}
+		if err := m.opts.Secrets.SetSecret(ref, ""); err != nil {
+			m.logger.Warn("webhook secret removal failed", "ref", ref, "error", ErrSecretDiagnostic)
+			continue
+		}
+		delete(m.staleSecretRefs, ref)
+	}
 }
 
 // buildFileEndpoint applies a console input over the saved endpoint.
@@ -515,15 +582,15 @@ func (m *Manager) DeleteEndpoint(id string) error {
 	}
 	m.file = next
 	delete(m.problems, id)
+	m.clearUnsyncedCreateID(id)
 	if removed.SecretRef != "" && !refInUse(next, removed.SecretRef) {
-		if err := m.opts.Secrets.SetSecret(removed.SecretRef, ""); err != nil {
-			m.logger.Warn("webhook secret removal failed", "endpoint", id, "error", ErrSecretDiagnostic)
-		}
+		m.staleSecretRefs[removed.SecretRef] = struct{}{}
 	}
 	if saveErr != nil {
 		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
-		return ErrConfigDiagnostic
+		return errors.Join(ErrConfigDiagnostic, saveErr)
 	}
+	m.purgeStaleSecretRefs(next)
 	return nil
 }
 
@@ -575,8 +642,9 @@ func (m *Manager) SetSettings(s Settings) (Settings, error) {
 	m.baseURL = base
 	if saveErr != nil {
 		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
-		return Settings{}, ErrConfigDiagnostic
+		return Settings{PublicBaseURL: base}, errors.Join(ErrConfigDiagnostic, saveErr)
 	}
+	m.purgeStaleSecretRefs(next)
 	return Settings{PublicBaseURL: base}, nil
 }
 

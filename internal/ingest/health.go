@@ -53,50 +53,90 @@ func pollStateMatchesSubscription(state store.SubscriptionPollState, hasState bo
 		state.LastModified == subscription.LastModified
 }
 
-func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscription, prevState store.SubscriptionPollState, stateBound bool, result scrape.FeedResult, document scrape.FeedDocument, now time.Time) (time.Duration, *store.SubscriptionPollState, error) {
+func (p *Poller) loadEntryPollDates(ctx context.Context, id store.SubscriptionID) ([]store.SubscriptionEntry, error) {
+	if p.testLoadEntryPollDates != nil {
+		return p.testLoadEntryPollDates(ctx, id)
+	}
+	return p.store.SubscriptionEntryPollDates(ctx, id)
+}
+
+func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscription, prevState store.SubscriptionPollState, stateBound bool, preEntries []store.SubscriptionEntry, result scrape.FeedResult, document scrape.FeedDocument, now time.Time) (time.Duration, *store.SubscriptionPollState, error) {
+	urlChanged := prevState.FeedURLHash != "" && prevState.FeedURLHash != store.PollFeedURLHash(subscription.FeedURL)
+	historyResetAt := subscription.Health.MovedAt
+	if urlChanged {
+		if now.After(historyResetAt) {
+			historyResetAt = now
+		}
+	} else if prevState.URLChangedAt.After(historyResetAt) {
+		historyResetAt = prevState.URLChangedAt
+	}
+	effectiveAddedAt := subscription.AddedAt
+	if historyResetAt.After(effectiveAddedAt) {
+		effectiveAddedAt = historyResetAt
+	}
+
 	if result.NotModified && stateBound {
 		nextState := prevState
+		if historyResetAt.After(nextState.URLChangedAt) {
+			nextState.URLChangedAt = historyResetAt
+		}
 		if result.HasCacheControl {
 			nextState.MaxAge = result.MaxAge
 		}
 		pubDates := pollStatePubDates(nextState.Entries)
-		cachedDoc := scrape.FeedDocument{
+		return adaptivePollInterval(scrape.FeedDocument{
 			Complete:       nextState.Complete,
 			UpdateInterval: nextState.UpdateInterval,
-		}
-		return adaptivePollInterval(cachedDoc, nextState.MaxAge, pubDates, subscription.AddedAt, now), &nextState, nil
+		}, nextState.MaxAge, pubDates, nextState.LastNewEntryAt, effectiveAddedAt, now), &nextState, nil
 	}
 
-	loadEntries := p.store.SubscriptionEntryPollDates
-	if p.testLoadEntryPollDates != nil {
-		loadEntries = p.testLoadEntryPollDates
-	}
-	entries, err := loadEntries(ctx, subscription.ID)
-	if err != nil {
-		return 0, nil, err
-	}
 	if !result.NotModified {
+		eligibleEntries := filterPollEntriesSince(preEntries, historyResetAt, urlChanged)
 		var priorEntries []store.SubscriptionPollEntryDate
-		if prevState.FeedURLHash == "" || prevState.FeedURLHash == store.PollFeedURLHash(subscription.FeedURL) {
+		var lastNewEntryAt time.Time
+		if !urlChanged {
 			priorEntries = prevState.Entries
+			lastNewEntryAt = prevState.LastNewEntryAt
 		}
-		retained, pubDates := mergeFeedEntryDates(document, entries, priorEntries)
+		if documentHasNewEntry(document, eligibleEntries) {
+			lastNewEntryAt = now
+		} else if lastNewEntryAt.IsZero() {
+			lastNewEntryAt = latestUndatedFirstSeen(eligibleEntries)
+		}
+		retained, pubDates := mergeFeedEntryDates(document, eligibleEntries, priorEntries)
 		state := &store.SubscriptionPollState{
+			URLChangedAt:   historyResetAt,
+			LastNewEntryAt: lastNewEntryAt,
 			Complete:       document.Complete,
 			UpdateInterval: document.UpdateInterval,
 			MaxAge:         result.MaxAge,
 			Entries:        retained,
 		}
-		return adaptivePollInterval(document, result.MaxAge, pubDates, subscription.AddedAt, now), state, nil
+		return adaptivePollInterval(document, result.MaxAge, pubDates, lastNewEntryAt, effectiveAddedAt, now), state, nil
 	}
+
+	allEntries, err := p.loadEntryPollDates(ctx, subscription.ID)
+	if err != nil {
+		return 0, nil, err
+	}
+	entries := filterPollEntriesSince(allEntries, historyResetAt, urlChanged)
 	pubDates := storedEntryPubDates(entries)
-	if isFeedDormant(pubDates, subscription.AddedAt, now) {
+	var lastNewEntryAt time.Time
+	if !urlChanged {
+		lastNewEntryAt = prevState.LastNewEntryAt
+	}
+	if lastNewEntryAt.IsZero() {
+		lastNewEntryAt = latestUndatedFirstSeen(entries)
+	}
+	if isFeedDormant(pubDates, lastNewEntryAt, effectiveAddedAt, now) {
 		state := &store.SubscriptionPollState{
-			Entries: retainPollEntryDates(storedPollEntryDates(entries)),
+			URLChangedAt:   historyResetAt,
+			LastNewEntryAt: lastNewEntryAt,
+			Entries:        retainPollEntryDates(storedPollEntryDates(entries)),
 		}
 		return MaxPollInterval, state, nil
 	}
-	fallbackNoTTL := adaptivePollInterval(scrape.FeedDocument{}, 0, pubDates, subscription.AddedAt, now)
+	fallbackNoTTL := adaptivePollInterval(scrape.FeedDocument{}, 0, pubDates, lastNewEntryAt, effectiveAddedAt, now)
 	var cachedDoc scrape.FeedDocument
 	if prev, hasPrev := previousHealthyPollInterval(subscription); hasPrev && prev != DefaultPollInterval && prev != fallbackNoTTL {
 		// Pre-CORE-2956 rows lacked poll_state; a healthy interval distinct from
@@ -105,14 +145,16 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 		cachedDoc.UpdateInterval = prev
 	}
 	var nextState *store.SubscriptionPollState
-	if cachedDoc.UpdateInterval > 0 || result.HasCacheControl {
+	if cachedDoc.UpdateInterval > 0 || result.HasCacheControl || !historyResetAt.IsZero() || !lastNewEntryAt.IsZero() {
 		nextState = &store.SubscriptionPollState{
+			URLChangedAt:   historyResetAt,
+			LastNewEntryAt: lastNewEntryAt,
 			UpdateInterval: cachedDoc.UpdateInterval,
 			MaxAge:         result.MaxAge,
 			Entries:        retainPollEntryDates(storedPollEntryDates(entries)),
 		}
 	}
-	return adaptivePollInterval(cachedDoc, result.MaxAge, pubDates, subscription.AddedAt, now), nextState, nil
+	return adaptivePollInterval(cachedDoc, result.MaxAge, pubDates, lastNewEntryAt, effectiveAddedAt, now), nextState, nil
 }
 
 // adaptivePollInterval chooses the healthy poll interval in
@@ -121,8 +163,8 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 //  2. explicit updateFrequency, RSS <ttl>, or sy:updatePeriod/sy:updateFrequency;
 //  3. HTTP Cache-Control: max-age as a lower bound;
 //  4. observed cadence (half the median gap between the last 10 unique publication dates).
-func adaptivePollInterval(document scrape.FeedDocument, maxAge time.Duration, pubDates []time.Time, addedAt, now time.Time) time.Duration {
-	if document.Complete || isFeedDormant(pubDates, addedAt, now) {
+func adaptivePollInterval(document scrape.FeedDocument, maxAge time.Duration, pubDates []time.Time, lastNewEntryAt, addedAt, now time.Time) time.Duration {
+	if document.Complete || isFeedDormant(pubDates, lastNewEntryAt, addedAt, now) {
 		return MaxPollInterval
 	}
 	if document.UpdateInterval > 0 {
@@ -272,7 +314,57 @@ func storedEntryPubDates(entries []store.SubscriptionEntry) []time.Time {
 	return dates
 }
 
-func isFeedDormant(pubDates []time.Time, addedAt, now time.Time) bool {
+func filterPollEntriesSince(entries []store.SubscriptionEntry, resetAt time.Time, urlChanged bool) []store.SubscriptionEntry {
+	if urlChanged {
+		return nil
+	}
+	if resetAt.IsZero() {
+		return entries
+	}
+	filtered := make([]store.SubscriptionEntry, 0, len(entries))
+	for _, entry := range entries {
+		// Strictly after resetAt excludes entries catalogued on an older URL even
+		// when consecutive polls share the same timestamp in tests; current-URL
+		// entries observed at resetAt live in PollState.Entries.
+		if !entry.FirstSeenAt.IsZero() && entry.FirstSeenAt.After(resetAt) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func documentHasNewEntry(document scrape.FeedDocument, priorDBEntries []store.SubscriptionEntry) bool {
+	if len(document.Entries) == 0 {
+		return false
+	}
+	knownGUIDs := make(map[string]bool, len(priorDBEntries))
+	for _, entry := range priorDBEntries {
+		if entry.GUID != "" {
+			knownGUIDs[entry.GUID] = true
+		}
+	}
+	for _, entry := range document.Entries {
+		if entry.GUID == "" || !knownGUIDs[entry.GUID] {
+			return true
+		}
+	}
+	return false
+}
+
+func latestUndatedFirstSeen(entries []store.SubscriptionEntry) time.Time {
+	var latest time.Time
+	for _, entry := range entries {
+		if !entry.PublishedAt.IsZero() || entry.FirstSeenAt.IsZero() {
+			continue
+		}
+		if latest.IsZero() || entry.FirstSeenAt.After(latest) {
+			latest = entry.FirstSeenAt
+		}
+	}
+	return latest
+}
+
+func isFeedDormant(pubDates []time.Time, lastNewEntryAt, addedAt, now time.Time) bool {
 	var latest time.Time
 	for _, ts := range pubDates {
 		if ts.IsZero() {
@@ -282,10 +374,13 @@ func isFeedDormant(pubDates []time.Time, addedAt, now time.Time) bool {
 			latest = ts
 		}
 	}
-	if latest.IsZero() {
-		return !addedAt.IsZero() && now.Sub(addedAt) >= DormantFeedAfter
+	if !latest.IsZero() {
+		return now.Sub(latest) >= DormantFeedAfter
 	}
-	return now.Sub(latest) >= DormantFeedAfter
+	if !lastNewEntryAt.IsZero() {
+		return now.Sub(lastNewEntryAt) >= DormantFeedAfter
+	}
+	return !addedAt.IsZero() && now.Sub(addedAt) >= DormantFeedAfter
 }
 
 func observedCadence(pubDates []time.Time) (time.Duration, bool) {

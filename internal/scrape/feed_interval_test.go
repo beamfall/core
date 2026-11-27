@@ -121,6 +121,21 @@ func TestParseFeedUpdateHints(t *testing.T) {
 			xml:          `<rss xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel><title>F</title><podcast:updateFrequency rrule="FREQ=HOURLY;BYMINUTE=0,30;BYSECOND=15">Custom</podcast:updateFrequency><ttl>20</ttl></channel></rss>`,
 			wantInterval: 20 * time.Minute,
 		},
+		{
+			name:         "original GitHub namespace URI and weekday DAILY BYDAY",
+			xml:          `<rss xmlns:p="https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md"><channel><title>F</title><p:updateFrequency rrule="FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR">Every weekday</p:updateFrequency></channel></rss>`,
+			wantInterval: (7 * 24 * time.Hour) / 5,
+		},
+		{
+			name:         "weekday DAILY BYDAY BYHOUR twice per weekday",
+			xml:          `<rss xmlns:p="https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md"><channel><title>F</title><p:updateFrequency rrule="FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=6,18">Twice each weekday</p:updateFrequency></channel></rss>`,
+			wantInterval: (7 * 24 * time.Hour) / 10,
+		},
+		{
+			name:         "Every weekday text hint without rrule",
+			xml:          `<rss xmlns:p="https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md"><channel><title>F</title><p:updateFrequency>Every weekday</p:updateFrequency></channel></rss>`,
+			wantInterval: 24 * time.Hour,
+		},
 	}
 
 	for _, tc := range cases {
@@ -224,6 +239,7 @@ func TestCheckDocumentURLRejectsInvalidPortsAndExtendedCredentialParams(t *testi
 		"https://example.com:99999/feed.xml",
 		"https://example.com:0/feed.xml",
 		"https://example.com/feed.xml?private_token=x",
+		"https://example.com/feed.xml?feed_token=x",
 		"https://example.com/feed.xml?X-API-Key=x",
 		"https://example.com/feed.xml?my_custom_secret=x",
 	} {

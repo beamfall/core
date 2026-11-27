@@ -59,7 +59,7 @@ func (e *Engine) CheckDocumentURL(u *url.URL) error {
 	for key := range params {
 		norm := documentQueryKeySeparators.Replace(strings.ToLower(key))
 		switch norm {
-		case "token", "privatetoken", "accesstoken", "refreshtoken", "authtoken", "bearertoken",
+		case "token", "privatetoken", "feedtoken", "accesstoken", "refreshtoken", "authtoken", "bearertoken",
 			"idtoken", "apitoken", "oauthtoken", "securitytoken", "sessiontoken", "clienttoken",
 			"usertoken", "xauthtoken", "personaltoken",
 			"jwt", "auth", "authorization", "credential", "credentials",
@@ -653,9 +653,16 @@ func childText(scope *xmlNode, name string) string {
 }
 
 const (
-	syndicationNamespace = "http://purl.org/rss/1.0/modules/syndication/"
-	podcastNamespace     = "https://podcastindex.org/namespace/1.0"
+	syndicationNamespace        = "http://purl.org/rss/1.0/modules/syndication/"
+	syndicationDefaultNamespace = "http://purl.org/rss/1.0/modules/syndication"
 )
+
+var updateFrequencyNamespaces = []string{
+	"https://podcastindex.org/namespace/1.0",
+	"http://podcastindex.org/namespace/1.0",
+	"https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md",
+	"http://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md",
+}
 
 func parseFeedUpdateHints(docRoot, channel *xmlNode) (time.Duration, bool) {
 	var (
@@ -670,7 +677,7 @@ func parseFeedUpdateHints(docRoot, channel *xmlNode) (time.Duration, bool) {
 	)
 	for _, child := range channel.children {
 		_, local, hasPrefix := splitXMLPrefix(child.name)
-		if isElementNamespace(docRoot, channel, child, syndicationNamespace, "sy") {
+		if isElementNamespaces(docRoot, channel, child, []string{syndicationNamespace, syndicationDefaultNamespace}, "sy") {
 			switch local {
 			case "updatePeriod":
 				if hasSyPeriod || syInvalid {
@@ -699,7 +706,7 @@ func parseFeedUpdateHints(docRoot, channel *xmlNode) (time.Duration, bool) {
 		}
 		switch local {
 		case "updateFrequency":
-			if !complete && updateFreqDur == 0 && isElementNamespace(docRoot, channel, child, podcastNamespace, "podcast") {
+			if !complete && updateFreqDur == 0 && isElementNamespaces(docRoot, channel, child, updateFrequencyNamespaces, "") {
 				dur, done, ok := parseUpdateFrequencyNode(child)
 				if ok {
 					updateFreqDur = dur
@@ -736,7 +743,7 @@ func parseFeedUpdateHints(docRoot, channel *xmlNode) (time.Duration, bool) {
 	return 0, false
 }
 
-func isElementNamespace(docRoot, channel, child *xmlNode, wantNamespace, fallbackPrefix string) bool {
+func isElementNamespaces(docRoot, channel, child *xmlNode, wantNamespaces []string, fallbackPrefix string) bool {
 	prefix, _, hasPrefix := splitXMLPrefix(child.name)
 	attr := "xmlns"
 	if hasPrefix {
@@ -747,7 +754,13 @@ func isElementNamespace(docRoot, channel, child *xmlNode, wantNamespace, fallbac
 			continue
 		}
 		if val, ok := node.attrs[attr]; ok {
-			return strings.TrimSpace(val) == wantNamespace
+			normalized := strings.TrimRight(strings.TrimSpace(val), "/")
+			for _, want := range wantNamespaces {
+				if normalized == strings.TrimRight(want, "/") {
+					return true
+				}
+			}
+			return false
 		}
 	}
 	return hasPrefix && fallbackPrefix != "" && prefix == fallbackPrefix
@@ -935,10 +948,11 @@ func parseRRuleInterval(raw string) (time.Duration, bool) {
 			occurrences *= int64(len(seenMinutes))
 		}
 	case "DAILY":
-		if len(seenDays) > 0 {
-			return 0, false
-		}
 		unit = 24 * time.Hour
+		if len(seenDays) > 0 {
+			unit = 7 * 24 * time.Hour
+			occurrences *= int64(len(seenDays))
+		}
 		if len(seenHours) > 0 {
 			occurrences *= int64(len(seenHours))
 		}
@@ -988,7 +1002,7 @@ func parseUpdateFrequencyText(raw string) (time.Duration, bool) {
 		return time.Hour, true
 	case "twice hourly", "twice an hour":
 		return 30 * time.Minute, true
-	case "daily", "every day", "once a day", "once daily":
+	case "daily", "every day", "once a day", "once daily", "every weekday", "weekdays", "weekday":
 		return 24 * time.Hour, true
 	case "twice daily", "twice a day":
 		return 12 * time.Hour, true

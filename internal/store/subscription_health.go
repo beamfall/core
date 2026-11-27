@@ -452,6 +452,8 @@ type SubscriptionPollState struct {
 	FeedURLHash    string                      `json:"feed_url_hash,omitempty"`
 	ETag           string                      `json:"etag,omitempty"`
 	LastModified   string                      `json:"last_modified,omitempty"`
+	URLChangedAt   time.Time                   `json:"url_changed_at,omitempty"`
+	LastNewEntryAt time.Time                   `json:"last_new_entry_at,omitempty"`
 	Complete       bool                        `json:"complete,omitempty"`
 	UpdateInterval time.Duration               `json:"update_interval_ns,omitempty"`
 	MaxAge         time.Duration               `json:"max_age_ns,omitempty"`

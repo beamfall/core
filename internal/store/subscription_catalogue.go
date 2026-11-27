@@ -578,10 +578,10 @@ func (s *Store) SubscriptionEntryPollDates(ctx context.Context, id SubscriptionI
 		return nil, err
 	}
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT guid, published_at_ms
+		SELECT guid, published_at_ms, first_seen_at_ms
 		FROM subscription_entry
-		WHERE subscription_id = ? AND published_at_ms > 0
-		ORDER BY published_at_ms DESC, guid
+		WHERE subscription_id = ?
+		ORDER BY published_at_ms DESC, first_seen_at_ms DESC, guid
 	`, id)
 	if err != nil {
 		return nil, err
@@ -590,13 +590,14 @@ func (s *Store) SubscriptionEntryPollDates(ctx context.Context, id SubscriptionI
 	entries := []SubscriptionEntry{}
 	for rows.Next() {
 		var guid string
-		var publishedMS int64
-		if err := rows.Scan(&guid, &publishedMS); err != nil {
+		var publishedMS, firstSeenMS int64
+		if err := rows.Scan(&guid, &publishedMS, &firstSeenMS); err != nil {
 			return nil, err
 		}
 		entries = append(entries, SubscriptionEntry{
 			GUID:        guid,
 			PublishedAt: optionalUnixMilli(publishedMS),
+			FirstSeenAt: optionalUnixMilli(firstSeenMS),
 		})
 	}
 	return entries, rows.Err()

@@ -38,6 +38,11 @@ func extractLocalMetadataChecked(ctx context.Context, class store.MediaClass, ro
 
 func (s *scanWalkState) applyLocalExtraction(mediaID store.MediaID, fingerprint string, task *workerTask) error {
 	isImage := imageClassForPath(task.path)
+	if task.fastPath && !isImage {
+		if _, ok := s.localBackfillPaths[task.path]; !ok {
+			return nil
+		}
+	}
 	if task.probe.hasVideo && !task.localClean {
 		// Partial or failed video extraction leaves fields/entities/marker
 		// untouched so a later scan retries cleanly from zero partial state.

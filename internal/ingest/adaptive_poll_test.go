@@ -1000,31 +1000,136 @@ func TestAdaptivePollURLChangeDiscardsForeignPollHistory(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 11, 22, 0, 0, 0, 0, time.UTC)
 	dormantPub := now.Add(-200 * 24 * time.Hour)
+	var oldServerURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/old.mp3":
+			_, _ = w.Write([]byte("fake mp3 bytes"))
 		case "/old.xml":
 			w.Header().Set("ETag", `"old"`)
-			_, _ = w.Write([]byte(rssWithDates("", dormantPub)))
+			_, _ = w.Write([]byte(`<rss><channel><title>Old</title><item><guid>ep-old</guid><title>Ep Old</title><pubDate>` +
+				dormantPub.Format(time.RFC1123Z) + `</pubDate><enclosure url="` + oldServerURL + `/old.mp3" length="14" type="audio/mpeg"/></item></channel></rss>`))
 		case "/new-empty.xml":
 			_, _ = w.Write([]byte(`<rss><channel><title>Fresh Empty</title></channel></rss>`))
 		}
 	}))
+	oldServerURL = server.URL
 	t.Cleanup(server.Close)
 
 	st := storetest.Open(t)
-	sub := addHealthSubscription(t, st, server.URL+"/old.xml")
+	sub, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local",
+		FeedURL:   server.URL + "/old.xml",
+		Root:      t.TempDir(),
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
 	poller := healthPoller(st, scrape.New(scrape.WithInsecureLoopback()), &testClock{now: now})
 	if _, err := poller.pollSubscription(ctx, sub); err != nil {
 		t.Fatal(err)
 	}
 	sub = reloadSubscription(t, st, sub.ID)
-	// Point Subscription to a fresh empty feed URL; foreign dormant history must not apply.
-	sub.FeedURL = server.URL + "/new-empty.xml"
+	// Point Subscription to a fresh empty feed URL; foreign dormant history must
+	// not apply on the first or subsequent polls.
+	for _, round := range []string{"poll 1 on new URL", "poll 2 on new URL"} {
+		sub.FeedURL = server.URL + "/new-empty.xml"
+		if _, err := poller.pollSubscription(ctx, sub); err != nil {
+			t.Fatalf("%s: %v", round, err)
+		}
+		sub = reloadSubscription(t, st, sub.ID)
+		if got := sub.Health.NextPollAt.Sub(now); got != DefaultPollInterval {
+			t.Fatalf("%s interval = %v, want %v (no foreign history inherited)", round, got, DefaultPollInterval)
+		}
+	}
+
+	// Simulate a persisted URL move (e.g. via move confirmation) so sub.FeedURL in DB
+	// is now /new-empty.xml; subsequent polls still ignore pre-move ep-old rows in DB.
+	movedAt := now.Add(time.Hour)
+	for range store.MovedFeedObservations {
+		if _, err := st.RecordSubscriptionMoveObservation(ctx, sub.ID, server.URL+"/new-empty.xml", movedAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+	clock := &testClock{now: movedAt}
+	pollerMoved := healthPoller(st, scrape.New(scrape.WithInsecureLoopback()), clock)
+	for _, round := range []string{"post-move poll 1", "post-move poll 2"} {
+		if _, err := pollerMoved.pollSubscription(ctx, sub); err != nil {
+			t.Fatalf("%s: %v", round, err)
+		}
+		sub = reloadSubscription(t, st, sub.ID)
+		if got := sub.Health.NextPollAt.Sub(clock.now); got != DefaultPollInterval {
+			t.Fatalf("%s interval = %v, want %v (pre-move catalogue history must stay ignored)", round, got, DefaultPollInterval)
+		}
+		clock.now = clock.now.Add(time.Hour)
+	}
+}
+
+func TestAdaptivePollActiveUndatedFeedIsNotMarkedDormantAfter180Days(t *testing.T) {
+	ctx := context.Background()
+	oldAdded := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	now := oldAdded.Add(200 * 24 * time.Hour)
+	clock := &testClock{now: oldAdded}
+	useNewEntry := false
+	var baseURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/u1.mp3" {
+			_, _ = w.Write([]byte("fake mp3 bytes"))
+			return
+		}
+		if r.Header.Get("If-None-Match") == `"undated-v1"` {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		if !useNewEntry {
+			_, _ = w.Write([]byte(`<rss><channel><title>Undated Empty</title></channel></rss>`))
+			return
+		}
+		w.Header().Set("ETag", `"undated-v1"`)
+		_, _ = w.Write([]byte(`<rss><channel><title>Undated Active</title><ttl>15</ttl><item><guid>u-1</guid><title>Today</title><enclosure url="` + baseURL + `/u1.mp3" length="14" type="audio/mpeg"/></item></channel></rss>`))
+	}))
+	baseURL = server.URL
+	t.Cleanup(server.Close)
+
+	st := storetest.Open(t)
+	sub, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local",
+		FeedURL:   server.URL + "/feed.xml",
+		Root:      t.TempDir(),
+	}, oldAdded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poller := healthPoller(st, scrape.New(scrape.WithInsecureLoopback()), clock)
+
+	// Genuinely empty feed 200 days after AddedAt is dormant.
+	clock.now = now
 	if _, err := poller.pollSubscription(ctx, sub); err != nil {
 		t.Fatal(err)
 	}
 	sub = reloadSubscription(t, st, sub.ID)
-	if got := sub.Health.NextPollAt.Sub(now); got != DefaultPollInterval {
-		t.Fatalf("fresh URL interval = %v, want %v (no foreign history inherited)", got, DefaultPollInterval)
+	if got := sub.Health.NextPollAt.Sub(now); got != MaxPollInterval {
+		t.Fatalf("empty 200d feed interval = %v, want %v", got, MaxPollInterval)
+	}
+
+	// Publishing a fresh undated entry reactivates its explicit 15m TTL interval.
+	useNewEntry = true
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+	if got := sub.Health.NextPollAt.Sub(now); got != 15*time.Minute {
+		t.Fatalf("active undated feed interval = %v, want 15m", got)
+	}
+
+	// Subsequent 304 retains the non-dormant 15m schedule.
+	clock.now = now.Add(15 * time.Minute)
+	if _, err := poller.pollSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+	if got := sub.Health.NextPollAt.Sub(clock.now); got != 15*time.Minute {
+		t.Fatalf("304 undated active feed interval = %v, want 15m", got)
 	}
 }

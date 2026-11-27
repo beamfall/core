@@ -236,16 +236,16 @@ func (s *scanWalkState) retryAutoIdentify(task *workerTask, mediaID store.MediaI
 
 // A changed timestamp alone cannot replace a legacy identity. Compare the
 // digest whenever the cheap path missed and the bytes could still match.
-func (task *workerTask) legacyComparison(ctx context.Context, reservations []store.StoredFingerprint) store.SampleFingerprintCheck {
+func (task *workerTask) legacyComparison(ctx context.Context, stored store.StoredFingerprint, reservations []store.StoredFingerprint) store.SampleFingerprintCheck {
 	eligible := func(fp store.StoredFingerprint) bool {
 		return (fp.SizeBytes == 0 || fp.SizeBytes == task.info.size) && strings.HasPrefix(fp.ContentFingerprint, "sha256:")
 	}
-	if !eligible(task.stored) && !slices.ContainsFunc(reservations, eligible) {
+	if !eligible(stored) && !slices.ContainsFunc(reservations, eligible) {
 		return nil
 	}
 	return func(file io.Reader, sample string) (string, error) {
 		full, err := store.HashMediaFileContentReader(ctx, file)
-		if err != nil || (eligible(task.stored) && full == task.stored.ContentFingerprint) || slices.ContainsFunc(reservations, func(fp store.StoredFingerprint) bool {
+		if err != nil || (eligible(stored) && full == stored.ContentFingerprint) || slices.ContainsFunc(reservations, func(fp store.StoredFingerprint) bool {
 			return eligible(fp) && full == fp.ContentFingerprint
 		}) {
 			return full, err

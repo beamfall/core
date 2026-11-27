@@ -87,4 +87,16 @@ describe("folder list wrapping for reduced motion and touch pointers", () => {
     expect(block).toMatch(/overflow-wrap:\s*anywhere;/);
     expect(block).toMatch(/animation:\s*none;/);
   });
+
+  it("provides a wrapping desktop fallback when scroll-driven marquee is unsupported", () => {
+    const marker = "@supports not (animation-timeline: scroll(self inline)) {";
+    const at = css.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    const block = css.slice(at, css.indexOf("\n}\n", at));
+    expect(block).toMatch(/\.bf-folder:is\(:hover,\s*:focus-visible\)\s+\.bf-folder-name/);
+    expect(block).toMatch(/white-space:\s*normal;/);
+    expect(block).toMatch(/overflow:\s*visible;/);
+    expect(block).toMatch(/text-overflow:\s*clip;/);
+    expect(block).toMatch(/overflow-wrap:\s*anywhere;/);
+  });
 });

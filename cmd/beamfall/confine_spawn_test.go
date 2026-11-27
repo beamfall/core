@@ -66,6 +66,9 @@ func runConfineProbeRoles() {
 		time.Sleep(2 * time.Minute)
 		os.Exit(0)
 	}
+	if len(os.Args) >= 3 && os.Args[1] == "-hide_banner" && os.Args[2] == "-h" {
+		os.Exit(0)
+	}
 	raw := os.Getenv(confineProbeEnv)
 	if raw == "" {
 		return
@@ -252,23 +255,42 @@ func assertConfined(t *testing.T, f confineFixture, rep confineProbeReport, read
 	}
 }
 
-// requireConfinableHost fails closed in the test too: on a host this platform
-// cannot confine, the spawn must have been refused before the hostile tool
-// ran, and the test ends there.
-func requireConfinableHost(t *testing.T, output string) {
+// requireMandatoryConfinement asserts mandatory kernel confinement for encrypted
+// pipe runs: on a host this platform cannot enforce mandatory confinement on, the
+// spawn must be refused before the hostile tool runs.
+func requireMandatoryConfinement(t *testing.T, output string) {
 	t.Helper()
 	if hostCanConfineMedia() {
 		return
 	}
 	if strings.Contains(output, confineReportPrefix) {
-		t.Fatalf("host cannot confine media, yet the hostile tool ran:\n%s", output)
+		t.Fatalf("host cannot apply mandatory pipe confinement, yet the hostile tool ran:\n%s", output)
 	}
-	t.Skipf("host cannot apply the mandatory confinement; the spawn was refused as required: %s", output)
+	t.Skipf("host cannot apply mandatory pipe confinement; the spawn was refused as required: %s", output)
+}
+
+func assertPipeConfined(t *testing.T, f confineFixture, rep confineProbeReport) {
+	t.Helper()
+	if rep.SecretRead == "ok" {
+		t.Errorf("pipe confinement breach: read %s outside every grant", f.secret)
+	}
+	if rep.ReadOnlyWrite == "ok" {
+		t.Errorf("pipe confinement breach: wrote into read-only path %s", f.inputDir)
+	}
+	if rep.OutsideWrite == "ok" {
+		t.Errorf("pipe confinement breach: wrote into %s outside every grant", f.outsideDir)
+	}
+	for _, dir := range []string{f.inputDir, f.outsideDir} {
+		if _, err := os.Stat(filepath.Join(dir, "escaped.txt")); err == nil {
+			t.Errorf("pipe confinement breach: escaped.txt exists in %s", dir)
+		}
+	}
 }
 
 // TestConfinedProbeCannotEscapeItsReadOnlyGrant: an ffprobe run (read-only
 // confinement to the input's directory) can read its input and nothing else,
-// and can write nowhere.
+// and can write nowhere on hosts with filesystem confinement; on non-Landlock
+// Linux kernels ordinary probes run best-effort with rlimits only.
 func TestConfinedProbeCannotEscapeItsReadOnlyGrant(t *testing.T) {
 	f := newConfineFixture(t)
 	setProbeSpec(t, f.spec(false, false))
@@ -276,14 +298,20 @@ func TestConfinedProbeCannotEscapeItsReadOnlyGrant(t *testing.T) {
 	if err == nil {
 		t.Fatal("Probe succeeded; the hostile ffprobe always exits non-zero")
 	}
-	requireConfinableHost(t, err.Error())
-	assertConfined(t, f, parseConfineReport(t, err.Error()), false)
+	rep := parseConfineReport(t, err.Error())
+	if !hostHasFilesystemConfinement() {
+		if rep.InputRead != "ok" {
+			t.Errorf("control: the granted input was not readable (%s)", rep.InputRead)
+		}
+		return
+	}
+	assertConfined(t, f, rep, false)
 }
 
 // TestConfinedHLSCannotEscapeAndLeavesNoDescendants: a live HLS encode
-// (input read-only, session directory read-write) is confined to exactly those
-// grants, and cancelling it kills the whole process tree, including a
-// grandchild the hijacked FFmpeg forked inside the confinement.
+// (input read-only, session directory read-write) is confined to those grants
+// where supported, falls back to rlimits on kernels without Landlock, and
+// cancelling it always kills the whole process tree including forked grandchildren.
 func TestConfinedHLSCannotEscapeAndLeavesNoDescendants(t *testing.T) {
 	f := newConfineFixture(t)
 	setProbeSpec(t, f.spec(true, true))
@@ -302,7 +330,6 @@ func TestConfinedHLSCannotEscapeAndLeavesNoDescendants(t *testing.T) {
 		}
 		if !proc.Running() {
 			_ = proc.Wait()
-			requireConfinableHost(t, proc.StderrTail())
 			t.Fatalf("HLS process exited before forking its grandchild; stderr:\n%s", proc.StderrTail())
 		}
 		if time.Now().After(deadline) {
@@ -310,7 +337,6 @@ func TestConfinedHLSCannotEscapeAndLeavesNoDescendants(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	requireConfinableHost(t, proc.StderrTail())
 	cancel()
 	done := make(chan struct{})
 	go func() { _ = proc.Wait(); close(done) }()
@@ -326,7 +352,26 @@ func TestConfinedHLSCannotEscapeAndLeavesNoDescendants(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	assertConfined(t, f, parseConfineReport(t, proc.StderrTail()), true)
+	rep := parseConfineReport(t, proc.StderrTail())
+	if hostHasFilesystemConfinement() {
+		assertConfined(t, f, rep, true)
+	}
+}
+
+// TestConfinedEncryptedPipeRequiresMandatoryConfinement checks that
+// encrypted-library pipe runs enforce mandatory confinement (including Landlock
+// ABI >= 3 on Linux) and refuse before launching ffprobe when unsupported.
+func TestConfinedEncryptedPipeRequiresMandatoryConfinement(t *testing.T) {
+	f := newConfineFixture(t)
+	setProbeSpec(t, f.spec(false, false))
+	_, err := confinedRunner(t).ProbePipeDuration(context.Background(), ffmpeg.PipeInput{
+		URL: "http://127.0.0.1:4321/stream",
+	})
+	if err == nil {
+		t.Fatal("ProbePipeDuration succeeded; the hostile ffprobe always exits non-zero")
+	}
+	requireMandatoryConfinement(t, err.Error())
+	assertPipeConfined(t, f, parseConfineReport(t, err.Error()))
 }
 
 // processGone reports whether pid has exited (a zombie counts: it was killed

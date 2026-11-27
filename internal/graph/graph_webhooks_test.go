@@ -3,10 +3,12 @@ package graph
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/jsonstate"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/webhook"
@@ -140,6 +142,52 @@ func TestWebhookFieldsAreDispatchedAndAdminGated(t *testing.T) {
 		if entry.TargetType != "webhook" {
 			t.Fatalf("activity target = %q, want webhook", entry.TargetType)
 		}
+	}
+}
+
+type postRenameSyncFailWebhooks struct {
+	fakeWebhooks
+	fail bool
+}
+
+func (f *postRenameSyncFailWebhooks) SaveEndpoint(in webhook.EndpointInput) (webhook.EndpointView, error) {
+	f.saved = append(f.saved, in)
+	view := webhook.EndpointView{ID: "hook-installed", Name: in.Name, Format: webhook.Format(in.Format), URL: "https://chat.example"}
+	if f.fail {
+		return view, errors.Join(webhook.ErrConfigDiagnostic, &jsonstate.PostRenameSyncError{Err: errors.New("dir sync EIO")})
+	}
+	return view, nil
+}
+
+func (f *postRenameSyncFailWebhooks) DeleteEndpoint(id string) error {
+	f.deleted = append(f.deleted, id)
+	if f.fail {
+		return errors.Join(webhook.ErrConfigDiagnostic, &jsonstate.PostRenameSyncError{Err: errors.New("dir sync EIO")})
+	}
+	return nil
+}
+
+func TestWebhookMutationsRecordActivityOnPostRenameSyncFailure(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	stub := &postRenameSyncFailWebhooks{fail: true}
+	handler.SetWebhooks(stub)
+	openManagerAdminSession(t, st)
+
+	saveQuery := `{"query":"mutation SaveWebhook($format: String, $url: String) { saveWebhook(format: $format, url: $url) { id } }","variables":{"format":"discord","url":"https://chat.example/hook/token"}}`
+	if _, errs := postLibraryTrash(t, handler, saveQuery); len(errs) == 0 {
+		t.Fatal("expected error from saveWebhook on post-rename sync failure")
+	}
+	if _, errs := postLibraryTrash(t, handler, `{"query":"mutation Del($id: String!) { deleteWebhook(id: $id) }","variables":{"id":"hook-installed"}}`); len(errs) == 0 {
+		t.Fatal("expected error from deleteWebhook on post-rename sync failure")
+	}
+
+	entries, err := st.ActivityEntriesAfter(context.Background(), 0, []string{store.ActivityConfigUpdate}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].TargetID != "hook-installed" || entries[1].TargetID != "hook-installed" {
+		t.Fatalf("activity entries = %+v, want both save & delete recorded for hook-installed", entries)
 	}
 }
 

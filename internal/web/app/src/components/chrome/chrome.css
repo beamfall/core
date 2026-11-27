@@ -2670,27 +2670,44 @@
   font-size: 14px;
   font-weight: 500;
   line-height: 20px;
-  animation: bf-truncated linear both;
-  animation-timeline: scroll(self inline);
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  [data-register="viewer"] .bf-folder:is(:hover, :focus-visible) .bf-folder-name {
-    text-overflow: clip;
-  }
-
-  @container style(--bf-truncated: 1) {
-    [data-register="viewer"] .bf-folder:is(:hover, :focus-visible) .bf-folder-name > span {
-      display: inline-block;
-      margin-inline-start: 100%;
-      translate: calc(1px - 100%);
-      transition:
-        margin-inline-start 2.2s ease-in,
-        translate 2.2s ease-in;
+  @supports (animation-timeline: scroll(self inline)) {
+    [data-register="viewer"] .bf-folder-name {
+      animation: bf-truncated linear both;
+      animation-timeline: scroll(self inline);
     }
 
-    [data-register="viewer"] .bf-folder:is(:hover, :focus-visible):dir(rtl) .bf-folder-name > span {
-      translate: calc(100% - 1px);
+    @container style(--bf-truncated: 1) {
+      [data-register="viewer"] .bf-folder:is(:hover, :focus-visible) .bf-folder-name {
+        text-overflow: clip;
+      }
+
+      [data-register="viewer"] .bf-folder:is(:hover, :focus-visible) .bf-folder-name > span {
+        display: inline-block;
+        margin-inline-start: 100%;
+        translate: calc(1px - 100%);
+        transition:
+          margin-inline-start 2.2s ease-in,
+          translate 2.2s ease-in;
+      }
+
+      [data-register="viewer"]
+        .bf-folder:is(:hover, :focus-visible):dir(rtl)
+        .bf-folder-name
+        > span {
+        translate: calc(100% - 1px);
+      }
+    }
+  }
+
+  @supports not (animation-timeline: scroll(self inline)) {
+    [data-register="viewer"] .bf-folder:is(:hover, :focus-visible) .bf-folder-name {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      overflow-wrap: anywhere;
     }
   }
 }

@@ -163,6 +163,7 @@ export function isForbidden(err: unknown): boolean {
 const CREDENTIAL_QUERY_KEYS = new Set([
   "token",
   "privatetoken",
+  "feedtoken",
   "accesstoken",
   "refreshtoken",
   "authtoken",

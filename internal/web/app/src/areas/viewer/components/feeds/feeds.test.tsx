@@ -197,6 +197,11 @@ describe("FeedFollowPanel", () => {
     await user.clear(screen.getByRole("searchbox"));
     await user.type(
       screen.getByRole("searchbox"),
+      "https://example.org/private.xml?feed_token=abc{Enter}",
+    );
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(
+      screen.getByRole("searchbox"),
       "https://example.org/private.xml?X-API-Key=abc{Enter}",
     );
     expect(searchFeeds).not.toHaveBeenCalled();

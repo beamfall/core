@@ -16,3 +16,8 @@ func hostCanConfineMedia() bool {
 	_, err := os.Stat("/usr/bin/sandbox-exec")
 	return err == nil
 }
+
+// hostHasFilesystemConfinement mirrors hostCanConfineMedia on non-Linux hosts.
+func hostHasFilesystemConfinement() bool {
+	return hostCanConfineMedia()
+}

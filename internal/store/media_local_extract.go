@@ -233,7 +233,6 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 		JOIN media_file f ON f.media_id = m.id
 		WHERE m.library_id = ?
 		  AND m.trashed_at_ms IS NULL
-		  AND EXISTS (SELECT 1 FROM media_file lf WHERE lf.media_id = m.id AND lf.missing_at_ms IS NULL)
 		  AND (
 			(SELECT COUNT(*) FROM media_file allf WHERE allf.media_id = m.id) > 1
 			OR EXISTS (
@@ -254,7 +253,6 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 		JOIN media_file f ON f.media_id = m.id
 		WHERE m.library_id = ?
 		  AND m.trashed_at_ms IS NULL
-		  AND EXISTS (SELECT 1 FROM media_file lf WHERE lf.media_id = m.id AND lf.missing_at_ms IS NULL)
 		  AND (
 			(SELECT COUNT(*) FROM media_file allf WHERE allf.media_id = m.id) > 1
 			OR EXISTS (
@@ -314,11 +312,17 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 				return err
 			}
 		}
-		if liveCount > 1 || (!primary.missing && (primary.versionLabel != "" || primary.partOrdinal != 0)) {
+		if len(group.files) > 1 || (!primary.missing && (primary.versionLabel != "" || primary.partOrdinal != 0)) {
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE media
 				SET duration_seconds = 0, container = '', codec = '', video_width = 0, video_height = 0,
-				    title = CASE WHEN title_identified = 1 THEN title ELSE ? END
+				    title = CASE
+				      WHEN title_identified = 1 OR EXISTS (
+				        SELECT 1 FROM media_field_provenance p
+				        WHERE p.media_id = media.id AND p.field = 'title' AND p.source IN ('manual', 'operator')
+				      ) THEN title
+				      ELSE ?
+				    END
 				WHERE id = ?
 			`, standaloneMediaTitle(primary.path), group.mediaID); err != nil {
 				return err
@@ -361,7 +365,15 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO media(id, library_id, title, summary, year, duration_seconds, container, codec, video_width, video_height, media_class, mutated_by, summary_identified, year_identified, extra)
-				SELECT ?, library_id, ?, summary, year, 0, '', '', 0, 0, media_class, 'scan', summary_identified, year_identified, extra
+				SELECT ?, library_id,
+				       CASE
+				         WHEN title_identified = 1 OR EXISTS (
+				           SELECT 1 FROM media_field_provenance p
+				           WHERE p.media_id = media.id AND p.field = 'title' AND p.source IN ('manual', 'operator')
+				         ) THEN title
+				         ELSE ?
+				       END,
+				       summary, year, 0, '', '', 0, 0, media_class, 'scan', summary_identified, year_identified, extra
 				FROM media
 				WHERE id = ?
 			`, newID, standaloneMediaTitle(file.path), group.mediaID); err != nil {
@@ -392,38 +404,52 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 }
 
 func copySplitMediaMetadataAndLinksTx(ctx context.Context, tx *sql.Tx, srcID, dstID MediaID, encrypted bool) error {
-	for _, stmt := range []string{
-		`INSERT OR IGNORE INTO media_field_text(media_id, field, field_type, value)
-		 SELECT ?, field, field_type, value FROM media_field_text
-		 WHERE media_id = ? AND field <> 'capture-date' AND field NOT LIKE 'local-extract:%'`,
-		`INSERT OR IGNORE INTO media_field_int(media_id, field, field_type, value)
-		 SELECT ?, field, field_type, value FROM media_field_int
-		 WHERE media_id = ? AND field <> 'capture-date' AND field NOT LIKE 'local-extract:%'`,
-		`INSERT OR IGNORE INTO media_field_real(media_id, field, field_type, value)
-		 SELECT ?, field, field_type, value FROM media_field_real
-		 WHERE media_id = ? AND field <> 'capture-date' AND field NOT LIKE 'local-extract:%'`,
-		`INSERT OR IGNORE INTO media_field_date(media_id, field, field_type, value_ms)
-		 SELECT ?, d.field, d.field_type, d.value_ms
-		 FROM media_field_date d
-		 WHERE d.media_id = ?
+	const splitPreservableFieldPredicate = `
+		   t.field NOT LIKE 'local-extract:%'
+		   AND t.field NOT LIKE 'artwork%'
 		   AND (
-			d.field <> 'capture-date'
+			(t.field NOT IN ('capture-date', 'camera-make', 'camera-model', 'width', 'height', 'orientation', 'place')
+			  AND NOT EXISTS (
+				SELECT 1 FROM media_field_provenance p
+				WHERE p.media_id = t.media_id AND p.field = t.field AND p.source = 'scan'
+			  ))
 			OR EXISTS (
 			  SELECT 1 FROM media_field_provenance p
-			  WHERE p.media_id = d.media_id AND p.field = 'capture-date' AND p.source IN ('manual', 'operator')
+			  WHERE p.media_id = t.media_id AND p.field = t.field AND p.source IN ('manual', 'operator')
 			)
-		   )`,
+		   )`
+	for _, stmt := range []string{
+		`INSERT OR IGNORE INTO media_field_text(media_id, field, field_type, value)
+		 SELECT ?, t.field, t.field_type, t.value FROM media_field_text t
+		 WHERE t.media_id = ? AND` + splitPreservableFieldPredicate,
+		`INSERT OR IGNORE INTO media_field_int(media_id, field, field_type, value)
+		 SELECT ?, t.field, t.field_type, t.value FROM media_field_int t
+		 WHERE t.media_id = ? AND` + splitPreservableFieldPredicate,
+		`INSERT OR IGNORE INTO media_field_real(media_id, field, field_type, value)
+		 SELECT ?, t.field, t.field_type, t.value FROM media_field_real t
+		 WHERE t.media_id = ? AND` + splitPreservableFieldPredicate,
+		`INSERT OR IGNORE INTO media_field_date(media_id, field, field_type, value_ms)
+		 SELECT ?, t.field, t.field_type, t.value_ms FROM media_field_date t
+		 WHERE t.media_id = ? AND` + splitPreservableFieldPredicate,
 		`INSERT OR IGNORE INTO media_field_provenance(media_id, field, source, parser_owned)
-		 SELECT ?, field, source, parser_owned
-		 FROM media_field_provenance
-		 WHERE media_id = ?
-		   AND field NOT LIKE 'local-extract:%'
-		   AND field <> 'title'
-		   AND (field <> 'capture-date' OR source IN ('manual', 'operator'))`,
+		 SELECT ?, t.field, t.source, t.parser_owned
+		 FROM media_field_provenance t
+		 WHERE t.media_id = ?
+		   AND t.field NOT LIKE 'local-extract:%'
+		   AND t.field NOT LIKE 'artwork%'
+		   AND (t.field <> 'title' OR t.source IN ('manual', 'operator'))
+		   AND (
+			(t.field NOT IN ('capture-date', 'camera-make', 'camera-model', 'width', 'height', 'orientation', 'place')
+			  AND t.source <> 'scan')
+			OR t.source IN ('manual', 'operator')
+		   )`,
 		`INSERT OR IGNORE INTO media_field_rejection(media_id, field, field_type, value, rejected_at_ms)
 		 SELECT ?, field, field_type, value, rejected_at_ms
 		 FROM media_field_rejection
-		 WHERE media_id = ? AND field <> 'capture-date' AND field NOT LIKE 'local-extract:%'`,
+		 WHERE media_id = ?
+		   AND field NOT LIKE 'local-extract:%'
+		   AND field NOT LIKE 'artwork%'
+		   AND field NOT IN ('capture-date', 'camera-make', 'camera-model', 'width', 'height', 'orientation', 'place')`,
 		`INSERT OR IGNORE INTO collection_media(collection_id, media_id, sort_order, added_at_ms)
 		 SELECT collection_id, ?, sort_order, added_at_ms
 		 FROM collection_media
@@ -440,6 +466,22 @@ func copySplitMediaMetadataAndLinksTx(ctx context.Context, tx *sql.Tx, srcID, ds
 		if _, err := tx.ExecContext(ctx, stmt, dstID, srcID); err != nil {
 			return err
 		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO media_relation(from_media_id, relation, to_media_id, attributes)
+		SELECT ?, relation, to_media_id, attributes
+		FROM media_relation
+		WHERE from_media_id = ? AND to_media_id <> ?
+	`, dstID, srcID, dstID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO media_relation(from_media_id, relation, to_media_id, attributes)
+		SELECT from_media_id, relation, ?, attributes
+		FROM media_relation
+		WHERE to_media_id = ? AND from_media_id <> ?
+	`, dstID, srcID, dstID); err != nil {
+		return err
 	}
 	if !encrypted {
 		if _, err := tx.ExecContext(ctx, `

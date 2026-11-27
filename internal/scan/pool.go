@@ -117,7 +117,16 @@ func (t *workerTask) fill(ctx context.Context, libraryID store.LibraryID, st *st
 	if t.fastPath {
 		return
 	}
-	fingerprint, err := hashScanFile(ctx, t.path, t.legacyComparison(ctx, reservations))
+	libStored := stored
+	if !stored.OK {
+		var err error
+		libStored, err = st.MediaFileFingerprintInLibrary(ctx, libraryID, t.path)
+		if err != nil {
+			t.err = err
+			return
+		}
+	}
+	fingerprint, err := hashScanFile(ctx, t.path, t.legacyComparison(ctx, libStored, reservations))
 	if err != nil {
 		t.err = err
 		return
@@ -127,21 +136,15 @@ func (t *workerTask) fill(ctx context.Context, libraryID store.LibraryID, st *st
 	// plain path lookup so rename-over detection still re-verifies bytes; once
 	// the file's fingerprint is confirmed unchanged, promote it to the fast
 	// path before probing or frame grabbing so we don't re-extract metadata.
-	if !t.stored.OK {
-		libStored, err := st.MediaFileFingerprintInLibrary(ctx, libraryID, t.path)
-		if err != nil {
-			t.err = err
-			return
-		}
-		if libStored.OK &&
-			libStored.ContentFingerprint == fingerprint &&
-			libStored.SizeBytes == t.info.size &&
-			!libStored.ModTime.IsZero() &&
-			libStored.ModTime.Equal(modTimeMS) {
-			t.stored = libStored
-			t.fastPath = true
-			return
-		}
+	if !t.stored.OK &&
+		libStored.OK &&
+		t.fingerprint == libStored.ContentFingerprint &&
+		libStored.SizeBytes == t.info.size &&
+		!libStored.ModTime.IsZero() &&
+		libStored.ModTime.Equal(modTimeMS) {
+		t.stored = libStored
+		t.fastPath = true
+		return
 	}
 	oshash, err := OSHash(t.path)
 	if err != nil {

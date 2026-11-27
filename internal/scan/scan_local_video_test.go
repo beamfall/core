@@ -547,3 +547,123 @@ func TestScanUnlockedEncryptedLibraryExtractsClipOnce(t *testing.T) {
 		t.Fatalf("encrypted rescan repeated work: probes=%d calls=%d, want 1/1", prober.calls, len(extractor.calls))
 	}
 }
+
+// TestScanEncryptedLegacySHA256FilePreservesMediaID checks CORE-3029/CORE-3028:
+// an unchanged legacy sha256: file in an encrypted library retains its legacy
+// fingerprint and MediaID across scans while promoting to the fast path after verification.
+func TestScanEncryptedLegacySHA256FilePreservesMediaID(t *testing.T) {
+	ctx := t.Context()
+	dataDir := storetest.MigratedDataDir(t)
+	st, err := store.Open(ctx, dataDir, store.Options{
+		SeedDevelopmentData:               true,
+		EnableEncryptedLibraryDBLifecycle: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	libraryID, resolver := imageRuleLibrary(t, st, []store.MediaClass{store.MediaClassImage, store.MediaClassVideo})
+	if err := st.SetLibraryBacking(ctx, libraryID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	cipher := scanCatalogCipher{libencrypt.NewManagerWithParams(scanSecrets{}, libencrypt.TestArgon2Params)}
+	if _, err := cipher.Provision(string(libraryID), libencrypt.UnsealModeAuto, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
+		t.Fatal(err)
+	}
+
+	root := t.TempDir()
+	clipPath := writeScanFile(t, root, "legacy-secret.mov", []byte("encrypted legacy sha256 clip bytes"))
+	legacyDigest, err := store.HashMediaFileContentContext(ctx, clipPath)
+	if err != nil {
+		t.Fatalf("hash legacy clip: %v", err)
+	}
+	osHash, err := OSHash(clipPath)
+	if err != nil {
+		t.Fatalf("oshash legacy clip: %v", err)
+	}
+	info, err := os.Stat(clipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seededMedia, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID:           libraryID,
+		Path:                clipPath,
+		Title:               "legacy-secret",
+		Container:           "mov",
+		Codec:               "hevc",
+		Class:               store.MediaClassVideo,
+		ContentFingerprint:  legacyDigest,
+		DurationSecondsHint: 8,
+		OSHash:              osHash,
+		SizeBytes:           info.Size(),
+		ModTime:             info.ModTime().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("seed encrypted legacy clip: %v", err)
+	}
+
+	req := Request{LibraryID: libraryID, Root: root}
+	prober := &countingProber{probe: ffmpeg.Probe{
+		Container: "mov", VideoCodec: "hevc", DurationSeconds: 8, HasVideo: true,
+	}}
+	extractor := &toggleLocalExtractor{date: "2025-11-01T12:00:00Z"}
+	extractors := map[string][]LocalExtractor{imageRuleFixturePlugin: {extractor}}
+
+	// Scan 1 verifies bytes, keeps sha256: identity and MediaID, and backfills extraction once.
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, extractors, req); err != nil {
+		t.Fatalf("encrypted legacy scan 1: %v", err)
+	}
+	files1, err := st.MediaFilesForLibrary(ctx, libraryID)
+	if err != nil || len(files1) != 1 {
+		t.Fatalf("scan 1 files = %+v, %v", files1, err)
+	}
+	if files1[0].MediaID != seededMedia.ID || files1[0].ContentFingerprint != legacyDigest {
+		t.Fatalf("encrypted legacy scan 1 replaced identity: got (%s, %s), want (%s, %s)",
+			files1[0].MediaID, files1[0].ContentFingerprint, seededMedia.ID, legacyDigest)
+	}
+	if prober.calls != 1 || len(extractor.calls) != 1 {
+		t.Fatalf("encrypted legacy scan 1 probes=%d calls=%d, want 1/1", prober.calls, len(extractor.calls))
+	}
+
+	// Scan 2 verifies bytes, retains sha256: + MediaID, and skips re-probing/extraction.
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, extractors, req); err != nil {
+		t.Fatalf("encrypted legacy scan 2: %v", err)
+	}
+	if prober.calls != 1 || len(extractor.calls) != 1 {
+		t.Fatalf("encrypted legacy scan 2 repeated work: probes=%d calls=%d, want 1/1", prober.calls, len(extractor.calls))
+	}
+}
+
+// TestScanZeroDurationClipDoesNotRepeatLocalExtraction checks that sub-half-second
+// clips (probed duration 0) still probe for duration recovery without re-running
+// local extractors once completed.
+func TestScanZeroDurationClipDoesNotRepeatLocalExtraction(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	writeScanFile(t, root, "tiny.mov", []byte("micro video clip bytes"))
+	st := storetest.Open(t)
+	libraryID, resolver := imageRuleLibrary(t, st, []store.MediaClass{store.MediaClassImage, store.MediaClassVideo})
+	req := Request{LibraryID: libraryID, Root: root}
+	prober := &countingProber{probe: ffmpeg.Probe{
+		Container: "mov", VideoCodec: "hevc", DurationSeconds: 0, HasVideo: true,
+	}}
+	extractor := &toggleLocalExtractor{date: "2025-11-05T12:00:00Z"}
+	extractors := map[string][]LocalExtractor{imageRuleFixturePlugin: {extractor}}
+
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, extractors, req); err != nil {
+		t.Fatalf("scan 1: %v", err)
+	}
+	if len(extractor.calls) != 1 {
+		t.Fatalf("scan 1 extractor calls = %d, want 1", len(extractor.calls))
+	}
+	if _, err := ScanWithLocalExtractors(ctx, st, prober, nil, nil, nil, resolver, extractors, req); err != nil {
+		t.Fatalf("scan 2: %v", err)
+	}
+	if len(extractor.calls) != 1 {
+		t.Fatalf("duration-0 clip re-ran extraction on fast path: calls=%d, want 1", len(extractor.calls))
+	}
+}

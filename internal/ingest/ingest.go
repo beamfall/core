@@ -268,28 +268,35 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if candidate || result.RedirectedTemporarily {
 		etag, lastModified = "", ""
 	}
-	nextFor := func() (time.Time, *store.SubscriptionPollState, error) {
+	nextFor := func(preEntries []store.SubscriptionEntry) (time.Time, *store.SubscriptionPollState, error) {
 		if moved {
 			return now, nil, nil
 		}
-		interval, nextState, err := p.planPollSchedule(ctx, subscription, prevState, stateBound, result, document, now)
+		interval, nextState, err := p.planPollSchedule(ctx, subscription, prevState, stateBound, preEntries, result, document, now)
 		if err != nil {
 			return time.Time{}, nil, err
 		}
 		return now.Add(interval), nextState, nil
 	}
 	if result.NotModified {
-		next, nextState, err := nextFor()
+		next, nextState, err := nextFor(nil)
 		if err != nil {
 			return published, err
 		}
 		return published, p.store.RecordSubscriptionPollSuccessWithState(ctx, subscription, etag, lastModified, nextState, now, next)
 	}
+	var preEntries []store.SubscriptionEntry
+	if !moved {
+		preEntries, err = p.loadEntryPollDates(ctx, subscription.ID)
+		if err != nil {
+			return published, err
+		}
+	}
 	selected, catalogued, err := p.catalogue(ctx, subscription, document, now)
 	if err != nil {
 		return published, err
 	}
-	next, nextState, err := nextFor()
+	next, nextState, err := nextFor(preEntries)
 	if err != nil {
 		return published, err
 	}

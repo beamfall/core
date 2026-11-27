@@ -327,3 +327,157 @@ func TestReconcileStandaloneLibraryMediaSplitsPartsAndVersionsPreservingLinks(t 
 		t.Fatalf("backfill count = %d (%v), want all 5 live standalone clips", len(backfill), backfill)
 	}
 }
+
+func TestReconcileStandaloneLibraryMediaAllOfflineCuratedAndScanFieldRules(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	root := t.TempDir()
+	lib, err := st.CreateLibraryWithRoots(ctx, "Camera", false, "", "profile-default", []string{root}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+
+	// Parent Media for checking Extra media_relation preservation across split.
+	parentMedia, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: lib.ID, Path: filepath.Join(root, "parent.mov"), ContentFingerprint: "sha256:parent",
+		Title: "Parent Feature", Class: MediaClassVideo, DurationSecondsHint: 120, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Two-part Extra with curated manual title, operator-owned place, scan-derived
+	// camera-model, and an artwork lock without artwork.
+	pt1 := filepath.Join(root, "extra-pt1.mov")
+	pt2 := filepath.Join(root, "extra-pt2.mov")
+	extraMedia, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: lib.ID, Path: pt1, ContentFingerprint: "sha256:ext1",
+		Title: "Extra One", Class: MediaClassVideo, DurationSecondsHint: 15, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `
+		UPDATE media SET extra = 1, title = 'Behind the Scenes', title_identified = 1 WHERE id = ?
+	`, extraMedia.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `
+		INSERT INTO media_file(id, content_fingerprint, media_id, path, version_label, part_ordinal, last_seen_at_ms)
+		VALUES ('sha256:ext2', 'sha256:ext2', ?, ?, '', 1, ?)
+	`, extraMedia.ID, pt2, now.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `
+		INSERT INTO media_relation(from_media_id, relation, to_media_id)
+		VALUES (?, 'extra-of', ?)
+	`, extraMedia.ID, parentMedia.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertMediaFieldsWithSource(ctx, extraMedia.ID, []MediaField{
+		{Name: "title", Type: EntityFieldText, Text: "Behind the Scenes"},
+		{Name: "place", Type: EntityFieldText, Text: "Reykjavik"},
+	}, MutationSourceOperator); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertMediaFieldsWithSource(ctx, extraMedia.ID, []MediaField{
+		{Name: "camera-model", Type: EntityFieldText, Text: "PocketCam 1"},
+	}, MutationSourceScan); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `
+		INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, 'manual')
+	`, extraMedia.ID, ArtworkLockField("poster")); err != nil {
+		t.Fatal(err)
+	}
+
+	// All-offline legacy grouped Versions (both files missing) must still split so
+	// simultaneous reconnect does not re-attach them under one Media ID.
+	off1 := filepath.Join(root, "offline-1080.mov")
+	off2 := filepath.Join(root, "offline-720.mov")
+	offMedia, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: lib.ID, Path: off1, ContentFingerprint: "sha256:off1",
+		Title: "Offline Pair", Class: MediaClassVideo, DurationSecondsHint: 12, Container: "mov", Codec: "hevc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `
+		UPDATE media_file SET version_label = '1080p', size_bytes = 100, missing_at_ms = ? WHERE media_id = ?
+	`, now.UnixMilli(), offMedia.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `
+		INSERT INTO media_file(id, content_fingerprint, media_id, path, version_label, part_ordinal, size_bytes, missing_at_ms, last_seen_at_ms)
+		VALUES ('sha256:off2', 'sha256:off2', ?, ?, '720p', 0, 100, ?, ?)
+	`, offMedia.ID, off2, now.UnixMilli(), now.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.ReconcileStandaloneLibraryMedia(ctx, lib.ID); err != nil {
+		t.Fatalf("ReconcileStandaloneLibraryMedia: %v", err)
+	}
+
+	var splitExtraID MediaID
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT media_id FROM media_file WHERE path = ?`, pt2).Scan(&splitExtraID); err != nil {
+		t.Fatal(err)
+	}
+	if splitExtraID == extraMedia.ID {
+		t.Fatalf("pt2 stayed on extraMedia %s", extraMedia.ID)
+	}
+	var splitTitle string
+	var splitExtraFlag int
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT title, extra FROM media WHERE id = ?`, splitExtraID).Scan(&splitTitle, &splitExtraFlag); err != nil {
+		t.Fatal(err)
+	}
+	if splitTitle != "Behind the Scenes" || splitExtraFlag != 1 {
+		t.Fatalf("split extra title/flag = (%q, %d), want ('Behind the Scenes', 1)", splitTitle, splitExtraFlag)
+	}
+	var relCount int
+	if err := st.catalogR.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM media_relation WHERE from_media_id = ? AND relation = 'extra-of' AND to_media_id = ?
+	`, splitExtraID, parentMedia.ID).Scan(&relCount); err != nil || relCount != 1 {
+		t.Fatalf("split extra-of relation count = %d (%v), want 1", relCount, err)
+	}
+	fields, err := st.MediaFields(ctx, splitExtraID, LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hasPlace, hasCamera := false, false
+	for _, f := range fields {
+		switch f.Name {
+		case "place":
+			hasPlace = f.Text == "Reykjavik"
+		case "camera-model":
+			hasCamera = true
+		}
+	}
+	if !hasPlace || hasCamera {
+		t.Fatalf("split fields = %+v, want operator place kept and scan camera-model dropped", fields)
+	}
+	var artLockCount int
+	if err := st.catalogR.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM media_field_provenance WHERE media_id = ? AND field LIKE 'artwork%'
+	`, splitExtraID).Scan(&artLockCount); err != nil || artLockCount != 0 {
+		t.Fatalf("artwork lock count on split sibling = %d (%v), want 0", artLockCount, err)
+	}
+
+	var offMedia1, offMedia2 MediaID
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT media_id FROM media_file WHERE path = ?`, off1).Scan(&offMedia1); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT media_id FROM media_file WHERE path = ?`, off2).Scan(&offMedia2); err != nil {
+		t.Fatal(err)
+	}
+	if offMedia1 == offMedia2 {
+		t.Fatalf("all-offline legacy Versions still share MediaID %s after reconcile", offMedia1)
+	}
+	reserved, err := st.MissingLegacyVersionFingerprints(ctx, lib.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reserved[off1]) != 1 || len(reserved[off2]) != 1 {
+		t.Fatalf("offline legacy reservations after split = %+v, want both retained", reserved)
+	}
+}
