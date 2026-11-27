@@ -104,7 +104,12 @@ func (p *Poller) planPollSchedule(ctx context.Context, subscription store.Subscr
 		}
 		priorDBEntries := eligibleEntries
 		if prevState.FeedURLHash != "" && !urlChanged {
-			priorDBEntries = nil
+			priorDBEntries = make([]store.SubscriptionEntry, 0, len(eligibleEntries))
+			for _, entry := range eligibleEntries {
+				if !entry.PublishedAt.IsZero() {
+					priorDBEntries = append(priorDBEntries, entry)
+				}
+			}
 		}
 		if documentHasNewUndatedEntry(document, priorDBEntries, priorEntries, priorUndated, prevUndatedDigest) {
 			lastNewEntryAt = now

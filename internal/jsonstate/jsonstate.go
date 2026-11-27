@@ -23,8 +23,9 @@ func (e *PostRenameSyncError) Error() string {
 func (e *PostRenameSyncError) Unwrap() error { return e.Err }
 
 var (
-	syncDirMu   sync.Mutex
-	syncDirFunc = syncDir
+	syncDirMu             sync.Mutex
+	syncDirFunc           = syncDir
+	pendingParentSyncDirs = map[string]struct{}{}
 )
 
 // WithSyncDirForTest replaces parent-directory fsyncing in tests and returns a
@@ -64,6 +65,8 @@ func Save(path string, state any) error {
 		return err
 	}
 	dir := filepath.Dir(path)
+	_, statErr := os.Stat(dir)
+	createdDir := errors.Is(statErr, os.ErrNotExist)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -104,9 +107,22 @@ func Save(path string, state any) error {
 	if err := syncFn(dir); err != nil {
 		return &PostRenameSyncError{Err: err}
 	}
-	if parent := filepath.Dir(dir); parent != dir {
-		if err := syncFn(parent); err != nil {
-			return &PostRenameSyncError{Err: err}
+	syncDirMu.Lock()
+	_, retryParent := pendingParentSyncDirs[dir]
+	syncDirMu.Unlock()
+	if createdDir || retryParent {
+		if parent := filepath.Dir(dir); parent != dir {
+			if err := syncFn(parent); err != nil {
+				syncDirMu.Lock()
+				pendingParentSyncDirs[dir] = struct{}{}
+				syncDirMu.Unlock()
+				return &PostRenameSyncError{Err: err}
+			}
+		}
+		if retryParent {
+			syncDirMu.Lock()
+			delete(pendingParentSyncDirs, dir)
+			syncDirMu.Unlock()
 		}
 	}
 	return nil

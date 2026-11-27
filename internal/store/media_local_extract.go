@@ -562,6 +562,12 @@ func copySplitMediaMetadataAndLinksTx(ctx context.Context, tx *sql.Tx, srcID, ds
 	}
 	if !encrypted {
 		if _, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO media_sort_title(media_id, sort_title)
+			SELECT ?, sort_title FROM media_sort_title WHERE media_id = ?
+		`, dstID, srcID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
 			INSERT OR IGNORE INTO media_tag(media_id, tag_id)
 			SELECT ?, tag_id FROM media_tag WHERE media_id = ?
 		`, dstID, srcID); err != nil {
