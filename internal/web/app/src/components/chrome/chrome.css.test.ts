@@ -72,3 +72,43 @@ describe("account menu viewport scroll", () => {
     expect(phoneRule).toMatch(/max-height:\s*calc\(100dvh - 68px/);
   });
 });
+
+describe("folder list wrapping for reduced motion and touch pointers", () => {
+  it("wraps .bf-folder-name instead of animating marquee truncation", () => {
+    const marker = "@media (prefers-reduced-motion: reduce), (pointer: coarse) {";
+    const at = css.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    const blockEnd = css.indexOf("\n}\n", at);
+    const block = css.slice(at, blockEnd > at ? blockEnd : undefined);
+    expect(block).toMatch(/\[data-register="viewer"\]\s+\.bf-folder-name/);
+    expect(block).toMatch(/white-space:\s*normal;/);
+    expect(block).toMatch(/overflow:\s*visible;/);
+    expect(block).toMatch(/text-overflow:\s*clip;/);
+    expect(block).toMatch(/overflow-wrap:\s*anywhere;/);
+    expect(block).toMatch(/animation:\s*none;/);
+  });
+
+  it("provides a wrapping desktop fallback when scroll-driven marquee is unsupported", () => {
+    const marker = "@supports not (animation-timeline: scroll(self inline)) {";
+    const at = css.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    const block = css.slice(at, css.indexOf("\n}\n", at));
+    expect(block).toMatch(/\.bf-folder:is\(:hover,\s*:focus-visible\)\s+\.bf-folder-name/);
+    expect(block).toMatch(/white-space:\s*normal;/);
+    expect(block).toMatch(/overflow:\s*visible;/);
+    expect(block).toMatch(/text-overflow:\s*clip;/);
+    expect(block).toMatch(/overflow-wrap:\s*anywhere;/);
+  });
+
+  it("clips .bf-folder-name outside the @container self-style query when scroll-driven marquee is supported", () => {
+    const marker = "@supports (animation-timeline: scroll(self inline)) {";
+    const at = css.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    const containerAt = css.indexOf("@container style(--bf-truncated: 1)", at);
+    expect(containerAt).toBeGreaterThan(at);
+    const beforeContainer = css.slice(at, containerAt);
+    expect(beforeContainer).toMatch(
+      /\[data-register="viewer"\]\s+\.bf-folder:is\(:hover,\s*:focus-visible\)\s+\.bf-folder-name\s*\{[^}]*text-overflow:\s*clip;/,
+    );
+  });
+});

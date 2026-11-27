@@ -55,9 +55,10 @@ const DefaultPollInterval = time.Hour
 
 // Poller fetches Subscription feeds and downloads new enclosures.
 type Poller struct {
-	store  *store.Store
-	engine *scrape.Engine
-	logger *slog.Logger
+	store                  *store.Store
+	engine                 *scrape.Engine
+	logger                 *slog.Logger
+	testLoadEntryPollDates func(context.Context, store.SubscriptionID) ([]store.SubscriptionEntry, error)
 	// fault, when non-nil, is a test-only crash seam: returning an error
 	// from a named protocol boundary abandons the entry mid-protocol with no
 	// cleanup — the same on-disk and receipt state a process kill at that
@@ -234,7 +235,16 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if err != nil {
 		return 0, err
 	}
-	result, err := p.engine.FetchFeed(ctx, subscription.FeedURL, subscription.ETag, subscription.LastModified, authHeader)
+	prevState, hasPrevState, err := p.store.SubscriptionPollState(ctx, subscription.ID)
+	if err != nil {
+		return published, err
+	}
+	stateBound := pollStateMatchesSubscription(prevState, hasPrevState, subscription)
+	requestETag, requestLastModified := subscription.ETag, subscription.LastModified
+	if (requestETag != "" || requestLastModified != "") && !stateBound {
+		requestETag, requestLastModified = "", ""
+	}
+	result, err := p.engine.FetchFeed(ctx, subscription.FeedURL, requestETag, requestLastModified, authHeader)
 	if err != nil {
 		if ctx.Err() != nil {
 			return published, err
@@ -252,20 +262,41 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if err != nil {
 		return published, err
 	}
-	next := now.Add(clampPollInterval(DefaultPollInterval))
-	if moved {
-		next = now
-	}
 	etag, lastModified := result.ETag, result.LastModified
 	// Another observation needs the full feed. A validator from a temporary
 	// destination also cannot validate the canonical URL on the next poll.
 	if candidate || result.RedirectedTemporarily {
 		etag, lastModified = "", ""
 	}
+	nextFor := func(preEntries []store.SubscriptionEntry) (time.Time, *store.SubscriptionPollState, error) {
+		if moved {
+			return now, nil, nil
+		}
+		interval, nextState, err := p.planPollSchedule(ctx, subscription, prevState, stateBound, preEntries, result, document, now)
+		if err != nil {
+			return time.Time{}, nil, err
+		}
+		return now.Add(interval), nextState, nil
+	}
 	if result.NotModified {
-		return published, p.store.RecordSubscriptionPollSuccess(ctx, subscription, etag, lastModified, now, next)
+		next, nextState, err := nextFor(nil)
+		if err != nil {
+			return published, err
+		}
+		return published, p.store.RecordSubscriptionPollSuccessWithState(ctx, subscription, etag, lastModified, nextState, now, next)
+	}
+	var preEntries []store.SubscriptionEntry
+	if !moved {
+		preEntries, err = p.loadEntryPollDates(ctx, subscription.ID)
+		if err != nil {
+			return published, err
+		}
 	}
 	selected, catalogued, err := p.catalogue(ctx, subscription, document, now)
+	if err != nil {
+		return published, err
+	}
+	next, nextState, err := nextFor(preEntries)
 	if err != nil {
 		return published, err
 	}
@@ -321,14 +352,14 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	// A partial poll keeps the healthy feed due and clears the validators,
 	// so a 304 cannot suppress retrying the entries that failed this time.
 	if firstErr != nil {
-		return published + downloaded, errors.Join(firstErr, p.store.RecordSubscriptionPollSuccess(ctx, subscription, "", "", now, now))
+		return published + downloaded, errors.Join(firstErr, p.store.RecordSubscriptionPollSuccessWithState(ctx, subscription, "", "", nextState, now, now))
 	}
 	// Only a fully clean poll sweeps: any owned staging artifact still
 	// present after recovery and this poll is no longer needed.
 	if err := sweepStaleArtifacts(subscription.Root, subscription.ID); err != nil {
 		return published + downloaded, err
 	}
-	return published + downloaded, p.store.RecordSubscriptionPollSuccess(ctx, subscription, etag, lastModified, now, next)
+	return published + downloaded, p.store.RecordSubscriptionPollSuccessWithState(ctx, subscription, etag, lastModified, nextState, now, next)
 }
 
 // ingestEntry lands one feed entry crash-durably. The payload stages first

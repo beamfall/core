@@ -1,4 +1,6 @@
 {
+  "feed_search.invalid_url": "Gib eine gültige Website-URL ein.",
+  "feed_search.throttled": "Zu viele Feed-Suchen. Versuche es in Kürze erneut.",
   "fix_match.ambiguous_parent": "Dieser übergeordnete Schlüssel bezeichnet mehrere Elemente mit unterschiedlichen Listen.",
   "fix_match.encrypted_library": "Die Zuordnung kann in verschlüsselten Bibliotheken nicht korrigiert werden.",
   "fix_match.extra_parent": "Auf Ebene 1 darf kein übergeordneter Schlüssel angegeben werden.",

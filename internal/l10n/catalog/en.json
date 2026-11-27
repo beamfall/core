@@ -1,4 +1,6 @@
 {
+  "feed_search.invalid_url": "Enter a valid website URL.",
+  "feed_search.throttled": "Too many feed searches. Try again shortly.",
   "fix_match.ambiguous_parent": "parentKey names rows that open different listings",
   "fix_match.encrypted_library": "fix match is unavailable in encrypted libraries",
   "fix_match.extra_parent": "parentKey is forbidden at level 1",

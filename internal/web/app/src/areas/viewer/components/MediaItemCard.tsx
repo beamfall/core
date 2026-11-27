@@ -3,6 +3,7 @@ import type { MouseEvent, PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useCardImageSizes } from "@/components/chrome/posterSize";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
@@ -465,37 +466,48 @@ export function MediaItemCard({
       {hasPlayButton ? (
         <div className="bf-child-actions">
           {reveal}
-          <button
-            type="button"
-            className="bf-row-play"
-            aria-label={t("mediaDetailPlayLabel", { title: item.title })}
-            onClick={play}
-            onPointerEnter={preloadPlayer}
-            onFocus={preloadPlayer}
-          >
-            <Play aria-hidden />
-          </button>
+          <ActionTooltip label={t("mediaDetailPlayLabel", { title: item.title })}>
+            <button
+              type="button"
+              className="bf-row-play"
+              aria-label={t("mediaDetailPlayLabel", { title: item.title })}
+              onClick={play}
+              onPointerEnter={preloadPlayer}
+              onFocus={preloadPlayer}
+            >
+              <Play aria-hidden />
+            </button>
+          </ActionTooltip>
           {menu}
         </div>
       ) : (
         <>
           {!menu && reveal && <div className="bf-child-actions">{reveal}</div>}
           {hasQuickPlay && (
-            <button
-              type="button"
-              className="bf-card-quickplay"
-              aria-label={t(
+            <ActionTooltip
+              label={t(
                 state.progressPercent === undefined
                   ? "mediaDetailPlayLabel"
                   : "mediaDetailResumeLabel",
                 { title: quickPlayTitle(labelTitle, heading, lead, item.title) },
               )}
-              onClick={play}
-              onPointerEnter={preloadPlayer}
-              onFocus={preloadPlayer}
             >
-              <Play aria-hidden size={14} fill="currentColor" />
-            </button>
+              <button
+                type="button"
+                className="bf-card-quickplay"
+                aria-label={t(
+                  state.progressPercent === undefined
+                    ? "mediaDetailPlayLabel"
+                    : "mediaDetailResumeLabel",
+                  { title: quickPlayTitle(labelTitle, heading, lead, item.title) },
+                )}
+                onClick={play}
+                onPointerEnter={preloadPlayer}
+                onFocus={preloadPlayer}
+              >
+                <Play aria-hidden size={14} fill="currentColor" />
+              </button>
+            </ActionTooltip>
           )}
           {menu}
         </>

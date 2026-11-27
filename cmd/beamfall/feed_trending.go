@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/graph"
-	"github.com/beamfall/core/internal/scrape"
 )
 
 // Trending shows (CORE-3554). Two public directories, each off until the
@@ -63,7 +62,7 @@ func newTrendingState(appleChart bool) *trendingState {
 // TrendingFeeds returns the keyed index trending list (when keyed) followed by the
 // Apple chart (when opted in). One failing source never hides the other, and
 // with neither enabled no request is made.
-func (s feedDirectorySearcher) TrendingFeeds(ctx context.Context, region, language string) ([]graph.FeedTrendingResult, error) {
+func (s *feedDirectorySearcher) TrendingFeeds(ctx context.Context, region, language string) ([]graph.FeedTrendingResult, error) {
 	state := s.trending
 	if state == nil {
 		return []graph.FeedTrendingResult{}, nil
@@ -82,7 +81,7 @@ func (s feedDirectorySearcher) TrendingFeeds(ctx context.Context, region, langua
 	return out, nil
 }
 
-func (s feedDirectorySearcher) indexCredentials() (key, secret string, ok bool) {
+func (s *feedDirectorySearcher) indexCredentials() (key, secret string, ok bool) {
 	key, keyErr := s.secrets.Secret("podcast-index-key")
 	secret, secretErr := s.secrets.Secret("podcast-index-secret")
 	if keyErr != nil || secretErr != nil || strings.TrimSpace(key) == "" || strings.TrimSpace(secret) == "" {
@@ -110,7 +109,7 @@ func (st *trendingState) cached(key string, fetch func() ([]graph.FeedTrendingRe
 	return results
 }
 
-func (st *trendingState) fetchIndex(ctx context.Context, engine *scrape.Engine, key, secret, language string) ([]graph.FeedTrendingResult, error) {
+func (st *trendingState) fetchIndex(ctx context.Context, engine feedDirectoryFetcher, key, secret, language string) ([]graph.FeedTrendingResult, error) {
 	unix := strconv.FormatInt(st.now().UTC().Unix(), 10)
 	sum := sha1.Sum([]byte(key + secret + unix)) //nolint:gosec // signature scheme mandated by the directory API
 	headers := map[string]string{
@@ -118,7 +117,7 @@ func (st *trendingState) fetchIndex(ctx context.Context, engine *scrape.Engine, 
 		"X-Auth-Date":   unix,
 		"Authorization": hex.EncodeToString(sum[:]),
 	}
-	data, err := engine.FetchDocument(ctx, fmt.Sprintf("%s?max=%d&lang=%s", st.indexURL, trendingLimit, url.QueryEscape(language)), headers)
+	data, err := fetchTrendingDoc(ctx, engine, fmt.Sprintf("%s?max=%d&lang=%s", st.indexURL, trendingLimit, url.QueryEscape(language)), headers)
 	if err != nil {
 		return nil, err
 	}
@@ -147,9 +146,9 @@ func (st *trendingState) fetchIndex(ctx context.Context, engine *scrape.Engine, 
 
 // fetchAppleChart reads the regional top-shows chart, then resolves the chart's
 // ids to feed addresses with one iTunes lookup, keeping the chart's order.
-func (st *trendingState) fetchAppleChart(ctx context.Context, engine *scrape.Engine, region string) ([]graph.FeedTrendingResult, error) {
+func (st *trendingState) fetchAppleChart(ctx context.Context, engine feedDirectoryFetcher, region string) ([]graph.FeedTrendingResult, error) {
 	chartURL := fmt.Sprintf("%s/api/v2/%s/podcasts/top/%d/podcasts.json", st.appleChartBase, url.PathEscape(region), trendingLimit)
-	data, err := engine.FetchDocument(ctx, chartURL, nil)
+	data, err := fetchTrendingDoc(ctx, engine, chartURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +173,7 @@ func (st *trendingState) fetchAppleChart(ctx context.Context, engine *scrape.Eng
 		return []graph.FeedTrendingResult{}, nil
 	}
 	lookupURL := fmt.Sprintf("%s/lookup?id=%s&entity=podcast&country=%s", st.appleLookupBase, strings.Join(ids, ","), url.QueryEscape(region))
-	data, err = engine.FetchDocument(ctx, lookupURL, nil)
+	data, err = fetchTrendingDoc(ctx, engine, lookupURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -203,4 +202,11 @@ func (st *trendingState) fetchAppleChart(ctx context.Context, engine *scrape.Eng
 		out = append(out, graph.FeedTrendingResult{Title: item.Name, FeedURL: item.FeedURL, ArtworkURL: item.ArtworkURL, Source: graph.TrendingSourceChart})
 	}
 	return out, nil
+}
+
+// fetchTrendingDoc fetches one directory document through the same SSRF-gated
+// fetcher the search path uses, with the shared body cap and no request budget.
+func fetchTrendingDoc(ctx context.Context, engine feedDirectoryFetcher, rawURL string, headers map[string]string) ([]byte, error) {
+	data, _, err := engine.FetchDocumentLimited(ctx, rawURL, headers, feedDocumentMaxBytes, func() error { return nil })
+	return data, err
 }

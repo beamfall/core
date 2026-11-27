@@ -422,11 +422,15 @@
   display: grid;
   gap: 2px;
   margin-block: 2px;
-  margin-inline: 18px 0;
+  margin-inline: 14px 0;
   padding-block: 0;
-  padding-inline: 8px 0;
+  padding-inline: 6px 0;
   border-inline-start: 1px solid var(--border-subtle);
   list-style: none;
+}
+
+.bf-side-sublist .bf-side-link {
+  padding-inline: 8px 10px;
 }
 
 .bf-side-divider-item {
@@ -667,6 +671,39 @@
 .bf-sidebar.is-collapsed .bf-side-link {
   justify-content: center;
   padding: 6px 0;
+}
+
+/* Hover / focus tooltip for icon-only action buttons (WCAG 1.4.13 hoverable). */
+.bf-tooltip-layer {
+  z-index: 90;
+  pointer-events: auto;
+}
+
+.bf-tooltip {
+  max-inline-size: 260px;
+  padding: 5px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-field);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  box-shadow: 0 8px 20px color-mix(in oklab, var(--bg-root) 65%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bf-tooltip {
+    transition:
+      opacity var(--duration-fast) var(--ease-standard),
+      transform var(--duration-fast) var(--ease-standard);
+  }
+
+  .bf-tooltip[data-starting-style],
+  .bf-tooltip[data-ending-style] {
+    opacity: 0;
+    transform: translateY(2px);
+  }
 }
 
 .bf-sidebar.is-collapsed .bf-side-label,
@@ -2135,6 +2172,47 @@
   color: var(--text-primary);
 }
 
+/* Segmented view switcher (All items / Folders / Entity kinds). */
+[data-register="viewer"] .bf-view-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-field);
+  background: var(--bg-surface);
+}
+
+[data-register="viewer"] .bf-view-switch .bf-chip {
+  height: auto;
+  min-block-size: 28px;
+  padding: 4px 11px;
+  border-color: transparent;
+  border-radius: calc(var(--radius-field) - 2px);
+  background: transparent;
+  font-weight: 500;
+}
+
+@media (hover: hover) {
+  [data-register="viewer"] .bf-view-switch .bf-chip:hover {
+    background: var(--control-bg-hover);
+    color: var(--text-primary);
+  }
+}
+
+[data-register="viewer"] .bf-view-switch .bf-chip[aria-pressed="true"] {
+  border-color: color-mix(in oklab, var(--library-accent, var(--accent)) 55%, transparent);
+  background: color-mix(in oklab, var(--library-accent, var(--accent)) 18%, var(--bg-raised));
+  color: var(--text-primary);
+}
+
+@media (pointer: coarse) {
+  [data-register="viewer"] .bf-view-switch .bf-chip {
+    min-block-size: 36px;
+  }
+}
+
 /* A one-letter chip (the poster size steps) is as wide as it is tall. */
 [data-register="viewer"] .bf-chip.bf-chip-square {
   justify-content: center;
@@ -2434,16 +2512,43 @@
 }
 
 /* ============================================================ *
- *  Library folder view (Viewer, CORE-2359) — breadcrumbs from the
- *  Library root to the open folder, then one row per subfolder.
- *  Rows stack in one column so a long folder name wraps at 375px.
+ *  Library folder view (Viewer, CORE-2359) — unified toolbar
+ *  with switcher + breadcrumbs, then a crisp hairline-divided
+ *  single-column folder list with tabular item counts.
  * ============================================================ */
+
+@property --bf-truncated {
+  syntax: "<integer>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@keyframes bf-truncated {
+  from,
+  to {
+    --bf-truncated: 1;
+  }
+}
+
+[data-register="viewer"] .bf-folder-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+[data-register="viewer"] .bf-folder-toolbar-sep {
+  flex: none;
+  inline-size: 1px;
+  block-size: 18px;
+  background: var(--border-subtle);
+}
 
 [data-register="viewer"] .bf-crumbs {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: 4px 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2454,7 +2559,7 @@
 [data-register="viewer"] .bf-crumbs li {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -2464,14 +2569,21 @@
 }
 
 [data-register="viewer"] .bf-crumb {
+  padding: 3px 7px;
+  border-radius: var(--radius-field);
   overflow-wrap: anywhere;
   color: var(--text-secondary);
-  border-radius: var(--radius-field);
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
 }
 
-[data-register="viewer"] a.bf-crumb:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
+@media (hover: hover) {
+  [data-register="viewer"] a.bf-crumb:hover {
+    background: var(--control-bg-hover);
+    color: var(--text-primary);
+    text-decoration: none;
+  }
 }
 
 [data-register="viewer"] .bf-crumb[aria-current="page"] {
@@ -2480,32 +2592,70 @@
 }
 
 [data-register="viewer"] .bf-folder-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
   margin: 0;
   padding: 0;
   list-style: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+[data-register="viewer"] .bf-folder-list > li + li {
+  border-top: 1px solid var(--border-subtle);
 }
 
 [data-register="viewer"] .bf-folder {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 48px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-field);
-  background: var(--control-bg);
+  min-block-size: 46px;
+  padding: 10px 16px;
   color: var(--text-primary);
-  transition: background var(--duration-fast) var(--ease-standard);
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
-[data-register="viewer"] .bf-folder:hover {
-  background: var(--control-bg-hover);
+[data-register="viewer"] .bf-folder-icon {
+  color: color-mix(in oklab, var(--library-accent, var(--accent)) 72%, var(--text-secondary));
+  transition: color var(--duration-fast) var(--ease-standard);
 }
 
-[data-register="viewer"] .bf-folder:focus-visible,
+[data-register="viewer"] .bf-folder-chevron {
+  color: var(--text-muted);
+  opacity: 0.65;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+
+@media (hover: hover) {
+  [data-register="viewer"] .bf-folder:hover {
+    background: var(--control-bg-hover);
+  }
+
+  [data-register="viewer"] .bf-folder:hover .bf-folder-icon {
+    color: var(--library-accent, var(--accent));
+  }
+
+  [data-register="viewer"] .bf-folder:hover .bf-folder-chevron {
+    color: var(--text-primary);
+    opacity: 1;
+  }
+}
+
+[data-register="viewer"] .bf-folder:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+[data-register="viewer"] .bf-folder:focus-visible .bf-folder-chevron {
+  color: var(--text-primary);
+  opacity: 1;
+}
+
 [data-register="viewer"] a.bf-crumb:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -2513,10 +2663,53 @@
 
 [data-register="viewer"] .bf-folder-name {
   flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
+  min-inline-size: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 14px;
+  font-weight: 500;
   line-height: 20px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: scroll(self inline)) {
+    [data-register="viewer"] .bf-folder-name {
+      animation: bf-truncated linear both;
+      animation-timeline: scroll(self inline);
+    }
+
+    [data-register="viewer"] .bf-folder:is(:hover, :focus-visible) .bf-folder-name {
+      text-overflow: clip;
+    }
+
+    @container style(--bf-truncated: 1) {
+      [data-register="viewer"] .bf-folder:is(:hover, :focus-visible) .bf-folder-name > span {
+        display: inline-block;
+        margin-inline-start: 100%;
+        translate: calc(1px - 100%);
+        transition:
+          margin-inline-start 2.2s ease-in,
+          translate 2.2s ease-in;
+      }
+
+      [data-register="viewer"]
+        .bf-folder:is(:hover, :focus-visible):dir(rtl)
+        .bf-folder-name
+        > span {
+        translate: calc(100% - 1px);
+      }
+    }
+  }
+
+  @supports not (animation-timeline: scroll(self inline)) {
+    [data-register="viewer"] .bf-folder:is(:hover, :focus-visible) .bf-folder-name {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      overflow-wrap: anywhere;
+    }
+  }
 }
 
 [data-register="viewer"] .bf-folder-count {
@@ -2524,6 +2717,23 @@
   color: var(--text-muted);
   font-size: 13px;
   line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse) {
+  [data-register="viewer"] .bf-folder {
+    min-block-size: 50px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce), (pointer: coarse) {
+  [data-register="viewer"] .bf-folder-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    animation: none;
+  }
 }
 
 /* ============================================================ *
@@ -4359,6 +4569,12 @@ main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar {
   width: 100%;
   margin-bottom: 12px;
   border-radius: var(--radius-card);
+}
+
+.bf-lens-pill.is-sidebar .bf-lens-segment {
+  gap: 4px;
+  padding: 4px 6px;
+  font-size: 11.5px;
 }
 
 .bf-lens-pill.is-rail {

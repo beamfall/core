@@ -1195,10 +1195,11 @@ type Store struct {
 	// snapshotSealer is the app-injected Backup Set encryption/verification
 	// seam. The store owns snapshot consistency and publication, while the
 	// backup package owns envelope cryptography. Set once at composition.
-	snapshotSealer       SnapshotSealer
-	testEncryptedMediaID MediaID
-	allowedRoots         []string
-	mountCapabilityProbe *mountCapabilityProbe
+	snapshotSealer                  SnapshotSealer
+	testEncryptedMediaID            MediaID
+	testLocalExtractAfterFieldsHook func() error
+	allowedRoots                    []string
+	mountCapabilityProbe            *mountCapabilityProbe
 	// role is the process authority posture, set once at Open.
 	// Main (the zero value) authors freely; Attached refuses catalog-identity
 	// authoring and engagement-projection writes via guardAuthority.
@@ -3371,6 +3372,114 @@ func (s *Store) LibraryFilePathsWithoutDuration(ctx context.Context, libraryID L
 		out[path] = struct{}{}
 	}
 	return out, rows.Err()
+}
+
+// LibraryFilePathsWithoutFieldOrAttempt returns the available first-part file
+// paths of the Library's Media of class (or any class when empty) that hold no
+// field value or provenance/attempt marker for field.
+func (s *Store) LibraryFilePathsWithoutFieldOrAttempt(ctx context.Context, libraryID LibraryID, class MediaClass, field string) (map[string]struct{}, error) {
+	if libraryID == "" || field == "" {
+		return nil, errors.New("library ID and field are required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT f.path
+		FROM media m
+		JOIN media_file f ON f.media_id = m.id AND f.missing_at_ms IS NULL AND f.part_ordinal = 0
+		WHERE m.library_id = ? AND m.trashed_at_ms IS NULL
+		  AND (? = '' OR m.media_class = ?)
+		  AND NOT EXISTS (SELECT 1 FROM media_field_date d WHERE d.media_id = m.id AND d.field = ?)
+		  AND NOT EXISTS (SELECT 1 FROM media_field_text t WHERE t.media_id = m.id AND t.field = ?)
+		  AND NOT EXISTS (SELECT 1 FROM media_field_int i WHERE i.media_id = m.id AND i.field = ?)
+		  AND NOT EXISTS (SELECT 1 FROM media_field_real r WHERE r.media_id = m.id AND r.field = ?)
+		  AND NOT EXISTS (SELECT 1 FROM media_field_provenance p WHERE p.media_id = m.id AND p.field = ?)
+	`, libraryID, string(class), string(class), field, field, field, field, field)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]struct{}{}
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		out[path] = struct{}{}
+	}
+	return out, rows.Err()
+}
+
+// LibraryFilePathsWithoutLocalExtraction returns available file paths of the
+// Library's Media of class (or any class when empty) whose active content
+// fingerprint has not yet completed local extraction on its Media row.
+func (s *Store) LibraryFilePathsWithoutLocalExtraction(ctx context.Context, libraryID LibraryID, class MediaClass) (map[string]struct{}, error) {
+	if libraryID == "" {
+		return nil, errors.New("library ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT f.path
+		FROM media m
+		JOIN media_file f ON f.media_id = m.id AND f.missing_at_ms IS NULL
+		WHERE m.library_id = ? AND m.trashed_at_ms IS NULL
+		  AND (? = '' OR m.media_class = ?)
+		  AND NOT EXISTS (
+			SELECT 1 FROM media_field_provenance p
+			WHERE p.media_id = m.id AND p.field = 'local-extract:' || f.content_fingerprint
+		  )
+	`, libraryID, string(class), string(class))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]struct{}{}
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		out[path] = struct{}{}
+	}
+	return out, rows.Err()
+}
+
+// MarkMediaFieldAttempted records a scan-tier attempt marker for field on id
+// when no provenance record already exists, so unchanged files without that
+// field are not re-probed on every rescan while preserving any stronger source.
+func (s *Store) MarkMediaFieldAttempted(ctx context.Context, id MediaID, field string) error {
+	if id == "" || field == "" {
+		return errors.New("media ID and field are required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx, `
+		INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, ?)
+		ON CONFLICT(media_id, field) DO NOTHING
+	`, id, field, string(MutationSourceScan))
+	return err
 }
 
 // MediaFileFingerprintInLibrary reads the available path from the library's

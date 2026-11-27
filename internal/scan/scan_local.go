@@ -11,20 +11,71 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
+const localAttemptMarkerField = "capture-date"
+
 func extractLocalMetadata(ctx context.Context, class store.MediaClass, root, path string, extractors []LocalExtractor) []LocalMetadata {
+	metadata, _ := extractLocalMetadataChecked(ctx, class, root, path, extractors)
+	return metadata
+}
+
+func extractLocalMetadataChecked(ctx context.Context, class store.MediaClass, root, path string, extractors []LocalExtractor) ([]LocalMetadata, bool) {
 	metadata := make([]LocalMetadata, 0, len(extractors))
+	clean := true
 	for _, extractor := range extractors {
 		if extractor == nil {
 			continue
 		}
 		value, err := extractor.ExtractLocal(ctx, string(class), root, path)
 		if err != nil {
+			clean = false
 			slog.Debug("scan: local metadata extraction failed", "path", path, "error", err.Error())
 			continue
 		}
 		metadata = append(metadata, value)
 	}
-	return metadata
+	return metadata, clean
+}
+
+func (s *scanWalkState) applyLocalExtraction(mediaID store.MediaID, fingerprint string, task *workerTask) error {
+	if !task.localEligible {
+		return nil
+	}
+	isImage := imageClassForPath(task.path)
+	if task.probe.hasVideo && !task.localClean {
+		// Partial or failed video extraction leaves fields/entities/marker
+		// untouched so a later scan retries cleanly from zero partial state.
+		return nil
+	}
+	markComplete := len(s.localExtractors) > 0 && !isImage && task.probe.succeeded && task.localClean
+	var fieldBatches [][]store.MediaField
+	var entities []store.LocalExtractionEntity
+	for _, entry := range task.local {
+		if fields := mediaFieldsFromLocalMetadata(entry); len(fields) > 0 {
+			fieldBatches = append(fieldBatches, fields)
+		}
+		for _, entity := range entry.Entities {
+			ent, rel, ok := buildLocalEntityPair(s.req.LibraryID, entity, mediaID)
+			if ok {
+				entities = append(entities, store.LocalExtractionEntity{Entity: ent, Relation: rel})
+			}
+		}
+	}
+	if len(fieldBatches) == 0 && len(entities) == 0 && !markComplete {
+		return nil
+	}
+	attemptField := ""
+	if markComplete {
+		attemptField = localAttemptMarkerField
+	}
+	return s.st.ApplyLocalExtraction(s.ctx, store.LocalExtractionInput{
+		LibraryID:          s.req.LibraryID,
+		MediaID:            mediaID,
+		ContentFingerprint: fingerprint,
+		FieldBatches:       fieldBatches,
+		Entities:           entities,
+		MarkComplete:       markComplete,
+		AttemptField:       attemptField,
+	})
 }
 
 // localMetadataClass is the class a file's local extractors see: still images
@@ -42,21 +93,26 @@ func localMetadataClass(path string, probe probeOutcome) store.MediaClass {
 	}
 }
 
-func applyLocalMetadata(ctx context.Context, st *store.Store, libraryID store.LibraryID, mediaID store.MediaID, metadata []LocalMetadata) error {
-	for _, metadata := range metadata {
-		fields := mediaFieldsFromLocalMetadata(metadata)
-		if len(fields) > 0 {
-			if err := st.UpsertMediaFields(ctx, mediaID, fields); err != nil {
-				return err
-			}
-		}
-		for _, entity := range metadata.Entities {
-			if err := upsertLocalEntity(ctx, st, libraryID, entity, mediaID); err != nil {
-				return err
-			}
-		}
+func buildLocalEntityPair(libraryID store.LibraryID, entity LocalEntity, mediaID store.MediaID) (store.Entity, store.EntityRelation, bool) {
+	kind := strings.TrimSpace(entity.Kind)
+	title := strings.TrimSpace(entity.Title)
+	relation := strings.TrimSpace(entity.Relation)
+	if kind == "" || title == "" || relation == "" {
+		return store.Entity{}, store.EntityRelation{}, false
 	}
-	return nil
+	id := entityIDForName(libraryID, kind, title)
+	return store.Entity{
+		ID:        id,
+		LibraryID: libraryID,
+		Kind:      kind,
+		Title:     title,
+	}, store.EntityRelation{
+		FromEntityID: id,
+		Name:         relation,
+		ToMediaID:    mediaID,
+		Cardinality:  entity.Cardinality,
+		SortOrder:    entity.SortOrder,
+	}, true
 }
 
 func mediaFieldsFromLocalMetadata(metadata LocalMetadata) []store.MediaField {
@@ -189,31 +245,6 @@ func numberLocalField(fields map[string]any, key string) (float64, bool) {
 	default:
 		return 0, false
 	}
-}
-
-func upsertLocalEntity(ctx context.Context, st *store.Store, libraryID store.LibraryID, entity LocalEntity, mediaID store.MediaID) error {
-	kind := strings.TrimSpace(entity.Kind)
-	title := strings.TrimSpace(entity.Title)
-	relation := strings.TrimSpace(entity.Relation)
-	if kind == "" || title == "" || relation == "" {
-		return nil
-	}
-	id := entityIDForName(libraryID, kind, title)
-	if err := st.UpsertEntity(ctx, store.Entity{
-		ID:        id,
-		LibraryID: libraryID,
-		Kind:      kind,
-		Title:     title,
-	}); err != nil {
-		return err
-	}
-	return st.UpsertHydratedEntityRelation(ctx, store.EntityRelation{
-		FromEntityID: id,
-		Name:         relation,
-		ToMediaID:    mediaID,
-		Cardinality:  entity.Cardinality,
-		SortOrder:    entity.SortOrder,
-	})
 }
 
 func entityIDForName(library store.LibraryID, kind, name string) store.EntityID {

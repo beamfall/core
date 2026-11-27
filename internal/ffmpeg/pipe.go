@@ -352,8 +352,8 @@ func (r *Runner) loopbackCommand(ctx context.Context, goos string, port int, bin
 	}
 	if r.shimPath != "" {
 		// The common spawn seam's confinement, granting no path and only the
-		// loopback port.
-		argv, err := confinedArgv(goos, r.shimPath, binPath, confinement{LoopbackPort: port}, binArgs)
+		// loopback port, with mandatory Landlock ABI >= 3 on Linux.
+		argv, err := confinedArgv(goos, r.shimPath, binPath, confinement{LoopbackPort: port, RequireLandlock: true}, binArgs)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrPipeConfinementUnavailable, err)
 		}

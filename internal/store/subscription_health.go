@@ -2,7 +2,10 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -126,12 +129,43 @@ func optionalUnixMilli(ms int64) time.Time {
 	return time.UnixMilli(ms).UTC()
 }
 
+// PollFeedURLHash binds persisted adaptive-poll state to the Subscription's
+// URL so URL changes or restored DB backups cannot reuse stale cache validators.
+func PollFeedURLHash(feedURL string) string {
+	sum := sha256.Sum256([]byte(feedURL))
+	return hex.EncodeToString(sum[:])
+}
+
 // RecordSubscriptionPollSuccess records the poll and clears the feed's failure
 // and retired state. A refresh requested during the poll keeps its due time
 // and validators, so an in-flight poll cannot consume the newer request.
 func (s *Store) RecordSubscriptionPollSuccess(ctx context.Context, subscription Subscription, etag, lastModified string, now, nextPollAt time.Time) error {
+	return s.recordSubscriptionPollSuccess(ctx, subscription, etag, lastModified, nil, now, nextPollAt)
+}
+
+// RecordSubscriptionPollSuccessWithState atomically commits subscription
+// health/validators alongside optional adaptive-poll state in one transaction.
+func (s *Store) RecordSubscriptionPollSuccessWithState(ctx context.Context, subscription Subscription, etag, lastModified string, state *SubscriptionPollState, now, nextPollAt time.Time) error {
+	return s.recordSubscriptionPollSuccess(ctx, subscription, etag, lastModified, state, now, nextPollAt)
+}
+
+func (s *Store) recordSubscriptionPollSuccess(ctx context.Context, subscription Subscription, etag, lastModified string, state *SubscriptionPollState, now, nextPollAt time.Time) error {
+	if subscription.ID == "" {
+		return errors.New("subscription ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	refreshMS := unixMilliOrZero(subscription.Health.RefreshRequestedAt)
-	return s.updateSubscriptionHealth(ctx, subscription.ID, `
+	result, err := tx.ExecContext(ctx, `
 		UPDATE subscription SET last_error_class = '', failing_since_ms = 0, consecutive_failures = 0,
 			retired_at_ms = 0, last_polled_at_ms = ?,
 			etag = CASE WHEN refresh_requested_at_ms = ? THEN ? ELSE etag END,
@@ -139,6 +173,53 @@ func (s *Store) RecordSubscriptionPollSuccess(ctx context.Context, subscription 
 			next_poll_at_ms = CASE WHEN refresh_requested_at_ms = ? THEN ? ELSE next_poll_at_ms END
 		WHERE id = ?
 	`, now.UTC().UnixMilli(), refreshMS, etag, refreshMS, lastModified, refreshMS, nextPollAt.UTC().UnixMilli(), subscription.ID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrSubscriptionNotFound
+	}
+
+	var committedETag, committedLastMod, committedFeedURL string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT etag, last_modified, feed_url FROM subscription WHERE id = ?
+	`, subscription.ID).Scan(&committedETag, &committedLastMod, &committedFeedURL); err != nil {
+		return err
+	}
+
+	if state != nil {
+		bound := *state
+		bound.FeedURLHash = PollFeedURLHash(committedFeedURL)
+		bound.ETag = committedETag
+		bound.LastModified = committedLastMod
+		if err := upsertSubscriptionPollStateTx(ctx, tx, subscription.ID, bound, now); err != nil {
+			return err
+		}
+	} else if committedETag == "" && committedLastMod == "" {
+		// Clear stale validators from any existing poll_state when validators reset.
+		var raw string
+		qErr := tx.QueryRowContext(ctx, `SELECT value FROM server_config WHERE key = ?`, subscriptionPollStateKey(subscription.ID)).Scan(&raw)
+		if qErr != nil && !errors.Is(qErr, sql.ErrNoRows) {
+			return qErr
+		}
+		if qErr == nil {
+			var existing SubscriptionPollState
+			if jsonErr := json.Unmarshal([]byte(raw), &existing); jsonErr == nil {
+				existing.FeedURLHash = PollFeedURLHash(committedFeedURL)
+				existing.ETag = ""
+				existing.LastModified = ""
+				if err := upsertSubscriptionPollStateTx(ctx, tx, subscription.ID, existing, now); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return tx.Commit()
 }
 
 // RecordSubscriptionPollFailure records one failed poll: the failure class,
@@ -264,6 +345,9 @@ func (s *Store) RecordSubscriptionMoveObservation(ctx context.Context, id Subscr
 		}
 		return false, tx.Commit()
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM server_config WHERE key = ?`, subscriptionPollStateKey(id)); err != nil {
+		return false, err
+	}
 	return true, tx.Commit()
 }
 
@@ -345,4 +429,92 @@ func (s *Store) RequestAllSubscriptionsRefresh(ctx context.Context, filter Libra
 	}
 	affected, err := result.RowsAffected()
 	return int(affected), err
+}
+
+const subscriptionPollStatePrefix = "subscription.poll_state:"
+
+func subscriptionPollStateKey(id SubscriptionID) string {
+	return subscriptionPollStatePrefix + string(id)
+}
+
+// SubscriptionPollEntryDate pairs an opaque entry key (never a raw GUID or
+// URL) with its parsed publication timestamp for cadence and dormancy checks.
+type SubscriptionPollEntryDate struct {
+	Key         string    `json:"k,omitempty"`
+	PublishedAt time.Time `json:"t"`
+}
+
+// SubscriptionPollState retains the feed-level poll hints, bound URL/validator
+// metadata, and observed publication timestamps from the most recent full feed
+// fetch in server_config so 304 responses and rolling single-entry feeds
+// evaluate adaptive poll rules without schema changes or stale validators.
+type SubscriptionPollState struct {
+	FeedURLHash      string                      `json:"feed_url_hash,omitempty"`
+	ETag             string                      `json:"etag,omitempty"`
+	LastModified     string                      `json:"last_modified,omitempty"`
+	URLChangedAt     time.Time                   `json:"url_changed_at,omitempty"`
+	LastNewEntryAt   time.Time                   `json:"last_new_entry_at,omitempty"`
+	SeenUndatedGUIDs []string                    `json:"seen_undated_guids,omitempty"`
+	UndatedDigest    string                      `json:"undated_digest,omitempty"`
+	Complete         bool                        `json:"complete,omitempty"`
+	UpdateInterval   time.Duration               `json:"update_interval_ns,omitempty"`
+	MaxAge           time.Duration               `json:"max_age_ns,omitempty"`
+	Entries          []SubscriptionPollEntryDate `json:"entries,omitempty"`
+}
+
+// SubscriptionPollState returns the persisted adaptive-poll state for id, if any.
+func (s *Store) SubscriptionPollState(ctx context.Context, id SubscriptionID) (SubscriptionPollState, bool, error) {
+	if id == "" {
+		return SubscriptionPollState{}, false, errors.New("subscription ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return SubscriptionPollState{}, false, err
+	}
+	var raw string
+	err := s.catalogR.QueryRowContext(ctx, `SELECT value FROM server_config WHERE key = ?`, subscriptionPollStateKey(id)).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SubscriptionPollState{}, false, nil
+	}
+	if err != nil {
+		return SubscriptionPollState{}, false, err
+	}
+	var state SubscriptionPollState
+	if err := json.Unmarshal([]byte(raw), &state); err != nil {
+		return SubscriptionPollState{}, false, nil
+	}
+	for i := range state.Entries {
+		if !state.Entries[i].PublishedAt.IsZero() {
+			state.Entries[i].PublishedAt = state.Entries[i].PublishedAt.UTC()
+		}
+	}
+	return state, true, nil
+}
+
+// SaveSubscriptionPollState persists the adaptive-poll state for id when the
+// Subscription row still exists.
+func (s *Store) SaveSubscriptionPollState(ctx context.Context, id SubscriptionID, state SubscriptionPollState, now time.Time) error {
+	if id == "" {
+		return errors.New("subscription ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	return upsertSubscriptionPollStateTx(ctx, s.catalogW, id, state, now)
+}
+
+func upsertSubscriptionPollStateTx(ctx context.Context, execer sqlExecer, id SubscriptionID, state SubscriptionPollState, now time.Time) error {
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	_, err = execer.ExecContext(ctx, `
+		INSERT INTO server_config(key, value, updated_at_ms)
+		SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM subscription WHERE id = ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at_ms = excluded.updated_at_ms
+	`, subscriptionPollStateKey(id), string(data), now.UTC().UnixMilli(), id)
+	return err
 }

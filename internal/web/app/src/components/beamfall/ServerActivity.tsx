@@ -2,6 +2,7 @@ import { Activity, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { useAnyRescanActive } from "@/components/beamfall/LibraryRescan";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import { fetchAdminSession, fetchJobs } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 
@@ -130,18 +131,15 @@ export function ServerActivity({ menuItem = false }: { menuItem?: boolean } = {}
     );
   }
   return (
-    <Link
-      to="/console/operations"
-      className="bf-icon-button bf-activity-link"
-      aria-label={label}
-      title={label}
-    >
-      {busy ? (
-        <RefreshCw aria-hidden className="size-[18px] animate-spin" />
-      ) : (
-        <Activity aria-hidden className="size-[18px]" />
-      )}
-      {running > 0 && <span className="tabular-nums">{running}</span>}
-    </Link>
+    <ActionTooltip label={label} side="bottom">
+      <Link to="/console/operations" className="bf-icon-button bf-activity-link" aria-label={label}>
+        {busy ? (
+          <RefreshCw aria-hidden className="size-[18px] animate-spin" />
+        ) : (
+          <Activity aria-hidden className="size-[18px]" />
+        )}
+        {running > 0 && <span className="tabular-nums">{running}</span>}
+      </Link>
+    </ActionTooltip>
   );
 }

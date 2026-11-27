@@ -23,17 +23,33 @@ func (s *Store) MissingLegacyVersionFingerprints(ctx context.Context, libraryID 
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT f.path, f.content_fingerprint, f.size_bytes
 		FROM media m JOIN media_file f ON f.media_id = m.id
 		WHERE m.library_id = ? AND m.trashed_at_ms IS NULL
-		  AND f.missing_at_ms IS NOT NULL AND f.version_label <> ''
+		  AND f.missing_at_ms IS NOT NULL
 		  AND f.content_fingerprint GLOB 'sha256:*'
+		  AND (
+		    f.version_label <> ''
+		    OR f.part_ordinal > 0
+		    OR EXISTS (
+		      SELECT 1 FROM media_file peer
+		      WHERE peer.media_id = f.media_id AND peer.id <> f.id
+		    )
+		    OR EXISTS (
+		      SELECT 1 FROM media_field_provenance p
+		      WHERE p.media_id = f.media_id AND p.field = ?
+		    )
+		  )
 		  AND NOT EXISTS (
 		    SELECT 1 FROM media_file live WHERE live.media_id = f.media_id
 		      AND live.version_label = f.version_label AND live.part_ordinal = f.part_ordinal
 		      AND live.missing_at_ms IS NULL AND live.path <> f.path)
-	`, libraryID)
+	`, libraryID, legacyPartReservationField)
 	if err != nil {
 		return nil, err
 	}

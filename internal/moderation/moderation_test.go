@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/beamfall/core/internal/jsonstate"
 )
 
 func tempStore(t *testing.T) string {
@@ -179,5 +181,120 @@ func TestContactReturnsConfigured(t *testing.T) {
 	svc, _ := Open(tempStore(t), c)
 	if svc.Contact() != c {
 		t.Fatalf("Contact = %+v, want %+v", svc.Contact(), c)
+	}
+}
+
+func TestReportAndBlockRetainInstalledStateOnPostRenameSyncFailure(t *testing.T) {
+	path := tempStore(t)
+	svc, err := Open(path, ContactInfo{})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	p1 := Scope{ProfileID: "p1", DeviceID: "d1"}
+
+	injected := errors.New("dir fsync EIO")
+	restoreSync := jsonstate.WithSyncDirForTest(func(string) error { return injected })
+	if err := svc.Report(p1, ReportRequest{TargetType: "media", TargetID: "m1", Reason: "spam"}); err == nil {
+		restoreSync()
+		t.Fatal("expected post-rename sync error on Report")
+	}
+	if err := svc.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err == nil {
+		restoreSync()
+		t.Fatal("expected post-rename sync error on Block")
+	}
+	// Retrying the same Block while directory sync is still failing — even after
+	// reopening from disk — must retry persistence and keep reporting the sync error.
+	reopenedPending, err := Open(path, ContactInfo{})
+	if err != nil {
+		restoreSync()
+		t.Fatalf("reopen pending: %v", err)
+	}
+	if err := reopenedPending.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err == nil {
+		restoreSync()
+		t.Fatal("expected duplicate Block retry after reopen to surface still-failing sync error")
+	}
+	reopenedAgain, err := Open(path, ContactInfo{})
+	if err != nil {
+		restoreSync()
+		t.Fatalf("second reopen pending: %v", err)
+	}
+	if err := reopenedAgain.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err == nil {
+		restoreSync()
+		t.Fatal("expected duplicate Block retry after 2nd reopen to surface still-failing sync error")
+	}
+	restoreSync()
+	if err := reopenedAgain.Block(p1, BlockRequest{TargetType: "media", TargetID: "m1"}); err != nil {
+		t.Fatalf("duplicate Block retry after recovery = %v, want nil", err)
+	}
+	svc = reopenedAgain
+	raw, readErr := os.ReadFile(path) // #nosec G304 -- temp test store path
+	if readErr != nil || strings.Contains(string(raw), "pendingSync") {
+		t.Fatalf("pendingSync marker remained on disk after durable retry: err=%v raw=%s", readErr, raw)
+	}
+
+	// Both are already committed on disk and must remain in runtime memory so a
+	// subsequent durable save does not erase them.
+	if got := len(svc.state.Reports); got != 1 {
+		t.Fatalf("in-memory reports after post-rename sync error = %d, want 1", got)
+	}
+	if got := len(svc.Blocks(p1)); got != 1 {
+		t.Fatalf("in-memory blocks after post-rename sync error = %d, want 1", got)
+	}
+	if err := svc.Block(p1, BlockRequest{TargetType: "media", TargetID: "m2"}); err != nil {
+		t.Fatalf("follow-up Block: %v", err)
+	}
+	reopened, err := Open(path, ContactInfo{})
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if len(reopened.state.Reports) != 1 || len(reopened.Blocks(p1)) != 2 {
+		t.Fatalf("reopened state reports=%d blocks=%d, want 1/2", len(reopened.state.Reports), len(reopened.Blocks(p1)))
+	}
+
+	// Pre-rename failure must still roll back runtime memory.
+	badPath := tempStore(t)
+	preSvc, err := Open(badPath, ContactInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(badPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := preSvc.Block(p1, BlockRequest{TargetType: "media", TargetID: "m3"}); err == nil {
+		t.Fatal("expected pre-rename error when target path is a directory")
+	}
+	if len(preSvc.Blocks(p1)) != 0 {
+		t.Fatalf("blocks after pre-rename error = %d, want 0", len(preSvc.Blocks(p1)))
+	}
+}
+
+func TestReportCleanupPostRenameSyncFailureReturnsNilWithoutDuplicate(t *testing.T) {
+	path := tempStore(t)
+	svc, err := Open(path, ContactInfo{})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	p1 := Scope{ProfileID: "p1", DeviceID: "d1"}
+
+	var calls int
+	restoreSync := jsonstate.WithSyncDirForTest(func(string) error {
+		calls++
+		if calls == 3 {
+			// Save 1 calls syncDir twice (newly created moderation/ dir + parent DataDir);
+			// call 3 is Save 2 (clearPendingSyncLocked).
+			return errors.New("cleanup dir fsync EIO")
+		}
+		return nil
+	})
+	defer restoreSync()
+
+	if err := svc.Report(p1, ReportRequest{TargetType: "media", TargetID: "m1", Reason: "spam"}); err != nil {
+		t.Fatalf("Report with cleanup-only post-rename sync failure = %v, want nil", err)
+	}
+	if !svc.state.PendingSync || !svc.unsyncedPersist {
+		t.Fatalf("expected PendingSync=true and unsyncedPersist=true after cleanup sync failure, got (%v, %v)", svc.state.PendingSync, svc.unsyncedPersist)
+	}
+	if got := len(svc.state.Reports); got != 1 {
+		t.Fatalf("reports = %d, want 1", got)
 	}
 }

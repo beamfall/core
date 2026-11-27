@@ -808,7 +808,7 @@ func (s *Store) serverConfigValues(ctx context.Context) (map[string]string, erro
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `SELECT key, value FROM server_config`)
+	rows, err := s.catalogR.QueryContext(ctx, `SELECT key, value FROM server_config WHERE key NOT LIKE ?`, subscriptionPollStatePrefix+"%")
 	if err != nil {
 		return nil, err
 	}

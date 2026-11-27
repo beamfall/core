@@ -29,41 +29,153 @@ type ConditionalResult struct {
 }
 
 func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[string]string) ([]byte, error) {
+	data, _, err := e.fetchDocument(ctx, rawURL, headers, e.maxResponseBytes, func(req *http.Request) (*http.Response, error) {
+		return e.requestWithRetry(ctx, req, e.client.Do)
+	})
+	return data, err
+}
+
+// ErrDocumentThrottled reports a document request refused by the upstream.
+var ErrDocumentThrottled = errors.New("scrape: upstream throttled document request")
+
+var documentQueryKeySeparators = strings.NewReplacer("-", "", "_", "", ".", "")
+
+// CheckDocumentURL applies the polling pre-dial rules and rejects credentials
+// in public directory and discovery URLs. The dialer checks addresses on fetch.
+func (e *Engine) CheckDocumentURL(u *url.URL) error {
+	if u.User != nil {
+		return errors.New("scrape: refused URL with user credentials")
+	}
+	if rawPort := u.Port(); rawPort != "" {
+		port, err := strconv.Atoi(rawPort)
+		if err != nil || port < 1 || port > 65535 {
+			return errors.New("scrape: refused URL with invalid port")
+		}
+	}
+	if err := checkDocumentQueryCredentials(u.RawQuery); err != nil {
+		return err
+	}
+	return e.vetURL(u)
+}
+
+func checkDocumentQueryCredentials(rawQuery string) error {
+	if rawQuery == "" {
+		return nil
+	}
+	// Accept opaque semicolon-separated query parameters (such as ?a=1;b=2) that
+	// followFeed permits while still rejecting credential-bearing keys and bad escapes.
+	for _, pair := range strings.FieldsFunc(rawQuery, func(r rune) bool { return r == '&' || r == ';' }) {
+		if pair == "" {
+			continue
+		}
+		rawKey, rawVal, _ := strings.Cut(pair, "=")
+		key, err := url.QueryUnescape(rawKey)
+		if err != nil {
+			return errors.New("scrape: refused invalid URL query")
+		}
+		if rawVal != "" {
+			if _, err := url.QueryUnescape(rawVal); err != nil {
+				return errors.New("scrape: refused invalid URL query")
+			}
+		}
+		norm := documentQueryKeySeparators.Replace(strings.ToLower(key))
+		switch norm {
+		case "token", "privatetoken", "feedtoken", "accesstoken", "refreshtoken", "authtoken", "bearertoken",
+			"idtoken", "apitoken", "oauthtoken", "securitytoken", "sessiontoken", "clienttoken",
+			"usertoken", "xauthtoken", "personaltoken",
+			"jwt", "auth", "authorization", "credential", "credentials",
+			"apikey", "xapikey", "key", "accesskey", "accesskeyid", "subscriptionkey",
+			"authkey", "clientkey", "userkey",
+			"secret", "secretkey", "apisecret", "accesssecret", "clientsecret", "oauthtokensecret",
+			"password", "passwd", "pass", "pwd", "sessionid", "sig", "signature",
+			"xamzcredential", "xamzsecuritytoken", "xamzsignature",
+			"xgoogcredential", "xgoogsignature":
+			return errors.New("scrape: refused URL with query credentials")
+		}
+		if strings.HasSuffix(norm, "secret") ||
+			strings.HasSuffix(norm, "password") ||
+			strings.HasSuffix(norm, "passwd") ||
+			strings.HasSuffix(norm, "credential") ||
+			strings.HasSuffix(norm, "credentials") {
+			return errors.New("scrape: refused URL with query credentials")
+		}
+	}
+	return nil
+}
+
+// FetchDocumentLimited fetches a capped document and returns its final URL.
+// Each request, including allowed redirect hops, needs admission. An upstream
+// 429 returns immediately, leaving retries to the caller's request budget.
+func (e *Engine) FetchDocumentLimited(ctx context.Context, rawURL string, headers map[string]string, maxBytes int64, admit func() error) ([]byte, *url.URL, error) {
+	client := *e.client
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := e.checkRedirect(req, via); err != nil {
+			return err
+		}
+		if err := e.CheckDocumentURL(req.URL); err != nil {
+			return err
+		}
+		return admit()
+	}
+	data, finalURL, err := e.fetchDocument(ctx, rawURL, headers, min(e.maxResponseBytes, maxBytes), func(req *http.Request) (*http.Response, error) {
+		if err := e.CheckDocumentURL(req.URL); err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err := admit(); err != nil {
+			return nil, err
+		}
+		// The shared agent takes precedence over a caller-supplied header.
+		req.Header.Set("User-Agent", e.userAgent)
+		return client.Do(req) // #nosec G704 -- URL checked above, redirects pinned, and transport vets the resolved IP.
+	})
+	var status *statusError
+	if errors.As(err, &status) && status.code == http.StatusTooManyRequests {
+		return nil, nil, ErrDocumentThrottled
+	}
+	return data, finalURL, err
+}
+
+func (e *Engine) fetchDocument(ctx context.Context, rawURL string, headers map[string]string, maxBytes int64, do func(*http.Request) (*http.Response, error)) ([]byte, *url.URL, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: invalid request URL")
+		return nil, nil, fmt.Errorf("scrape: invalid request URL")
 	}
 	if err := e.vetURL(parsed); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return nil, safeFetchError("building request", err)
+		return nil, nil, safeFetchError("building request", err)
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", e.userAgent)
 	for name, value := range headers {
 		if strings.TrimSpace(value) != "" {
 			req.Header.Set(name, value)
 		}
 	}
-	resp, err := e.requestWithRetry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
-		return e.client.Do(attempt)
-	})
+	resp, err := do(req)
 	if err != nil {
-		return nil, sanitizedTransportError(parsed, err)
+		return nil, nil, sanitizedTransportError(parsed, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, &statusError{host: parsed.Hostname(), code: resp.StatusCode}
+		return nil, nil, &statusError{host: parsed.Hostname(), code: resp.StatusCode}
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
-		return nil, safeFetchError("reading response", err)
+		return nil, nil, safeFetchError("reading response", err)
 	}
-	if int64(len(data)) > e.maxResponseBytes {
-		return nil, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
+	if int64(len(data)) > maxBytes {
+		return nil, nil, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), maxBytes)
 	}
-	return data, nil
+	finalURL := parsed
+	if resp.Request != nil {
+		finalURL = resp.Request.URL
+	}
+	return data, finalURL, nil
 }
 
 // FetchConditional GETs one resource with If-None-Match/If-Modified-Since
@@ -106,7 +218,7 @@ func (e *Engine) DownloadResourceAuth(ctx context.Context, rawURL string, dst io
 	if err != nil {
 		return 0, safeFetchError("building request", err)
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", e.userAgent)
 	if strings.TrimSpace(authHeader) != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
@@ -178,7 +290,7 @@ func (e *Engine) OpenOriginRangeAuth(ctx context.Context, rawURL, rangeHeader, a
 	if err != nil {
 		return OriginResponse{}, safeFetchError("building request", err)
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", e.userAgent)
 	if strings.TrimSpace(rangeHeader) != "" {
 		req.Header.Set("Range", rangeHeader)
 	}
@@ -306,7 +418,20 @@ type FeedDocument struct {
 	// ArtworkURL is the channel's itunes:image, else its RSS image url
 	// ("" when absent).
 	ArtworkURL string
-	Entries    []FeedEntry
+	// UpdateInterval is the channel's declared refresh interval from the Index
+	// updateFrequency extension, RSS <ttl>, or Syndication
+	// updatePeriod/updateFrequency (0 when absent or unparseable).
+	UpdateInterval time.Duration
+	// Complete is true when updateFrequency declares complete="true".
+	Complete bool
+	Entries  []FeedEntry
+	// UnguidedPubDates holds non-zero publication timestamps of feed items
+	// that omitted both an explicit GUID and an enclosure.
+	UnguidedPubDates []time.Time
+	// UndatedTextKeys holds deterministic content digests of undated items
+	// that omitted both an explicit GUID and an enclosure (kept out of
+	// Entries/cataloguing while still letting adaptive polling detect new posts).
+	UndatedTextKeys []string
 }
 
 // ParseFeedEntries extracts every entry's GUID, title, and enclosure from an
@@ -358,13 +483,14 @@ func ParseFeed(data []byte) (FeedDocument, error) {
 			}
 		}
 	}
+	document.UpdateInterval, document.Complete = parseFeedUpdateHints(root.children[0], channel)
 	if items := findElements([]*xmlNode{root}, "item"); len(items) > 0 {
-		document.Entries = rssEntries(items)
+		document.Entries, document.UnguidedPubDates, document.UndatedTextKeys = rssEntries(items)
 		return document, nil
 	}
 	// No <item> elements: either an Atom feed or an empty RSS one — Atom's
 	// <entry> lookup returns the empty list for both.
-	document.Entries = atomEntries(findElements([]*xmlNode{root}, "entry"))
+	document.Entries, document.UnguidedPubDates, document.UndatedTextKeys = atomEntries(findElements([]*xmlNode{root}, "entry"))
 	return document, nil
 }
 
@@ -436,8 +562,10 @@ func parseEnclosureLength(value string) int64 {
 	return n
 }
 
-func rssEntries(items []*xmlNode) []FeedEntry {
+func rssEntries(items []*xmlNode) ([]FeedEntry, []time.Time, []string) {
 	entries := make([]FeedEntry, 0, len(items))
+	var unguided []time.Time
+	var undatedKeys []string
 	for _, item := range items {
 		entry := FeedEntry{
 			GUID:            childText(item, "guid"),
@@ -455,21 +583,29 @@ func rssEntries(items []*xmlNode) []FeedEntry {
 			entry.EnclosureType = enclosures[0].attrs["type"]
 			entry.EnclosureLength = parseEnclosureLength(enclosures[0].attrs["length"])
 		}
+		link := childText(item, "link")
 		if entry.GUID == "" && entry.EnclosureURL != "" {
-			entry.deriveGUID(childText(item, "link"), childText(item, "pubDate"))
+			entry.deriveGUID(link, childText(item, "pubDate"))
 		}
 		if entry.GUID == "" {
+			if !entry.PublishedAt.IsZero() {
+				unguided = append(unguided, entry.PublishedAt)
+			} else if key := deriveUndatedTextKey("rss", link, entry.Title, entry.Description); key != "" {
+				undatedKeys = append(undatedKeys, key)
+			}
 			continue
 		}
 		entries = append(entries, entry)
 	}
-	return entries
+	return entries, unguided, undatedKeys
 }
 
 // atomEntries maps Atom's vocabulary onto the same FeedEntry shape: <id> is
 // the identity, and the enclosure is the first <link rel="enclosure">.
-func atomEntries(items []*xmlNode) []FeedEntry {
+func atomEntries(items []*xmlNode) ([]FeedEntry, []time.Time, []string) {
 	entries := make([]FeedEntry, 0, len(items))
+	var unguided []time.Time
+	var undatedKeys []string
 	for _, item := range items {
 		entry := FeedEntry{
 			GUID:            childText(item, "id"),
@@ -490,15 +626,34 @@ func atomEntries(items []*xmlNode) []FeedEntry {
 				break
 			}
 		}
+		link := atomEntryLink(item)
 		if entry.GUID == "" && entry.EnclosureURL != "" {
-			entry.deriveGUID(atomEntryLink(item), childText(item, "published"))
+			entry.deriveGUID(link, childText(item, "published"))
 		}
 		if entry.GUID == "" {
+			if !entry.PublishedAt.IsZero() {
+				unguided = append(unguided, entry.PublishedAt)
+			} else if key := deriveUndatedTextKey("atom", link, entry.Title, entry.Description); key != "" {
+				undatedKeys = append(undatedKeys, key)
+			}
 			continue
 		}
 		entries = append(entries, entry)
 	}
-	return entries
+	return entries, unguided, undatedKeys
+}
+
+func deriveUndatedTextKey(kind, link, title, description string) string {
+	link = strings.TrimSpace(link)
+	if link != "" {
+		return fmt.Sprintf("urn:beamfall:feed-text:%x", sha256.Sum256([]byte(kind+"\x00link\x00"+link)))
+	}
+	title = strings.ToLower(strings.Join(strings.Fields(title), " "))
+	description = strings.TrimSpace(description)
+	if title == "" && description == "" {
+		return ""
+	}
+	return fmt.Sprintf("urn:beamfall:feed-text:%x", sha256.Sum256([]byte(kind+"\x00"+title+"\x00"+description)))
 }
 
 func atomEntryLink(item *xmlNode) string {
@@ -541,4 +696,473 @@ func childText(scope *xmlNode, name string) string {
 		return ""
 	}
 	return strings.TrimSpace(matched[0].text)
+}
+
+const (
+	syndicationNamespace        = "http://purl.org/rss/1.0/modules/syndication/"
+	syndicationDefaultNamespace = "http://purl.org/rss/1.0/modules/syndication"
+)
+
+var updateFrequencyNamespaces = []string{
+	"https://podcastindex.org/namespace/1.0",
+	"http://podcastindex.org/namespace/1.0",
+	"https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md",
+	"http://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md",
+}
+
+func parseFeedUpdateHints(docRoot, channel *xmlNode) (time.Duration, bool) {
+	var (
+		updateFreqDur time.Duration
+		complete      bool
+		ttlDur        time.Duration
+		syPeriod      time.Duration
+		hasSyPeriod   bool
+		syFreq        int
+		hasSyFreq     bool
+		syInvalid     bool
+	)
+	for _, child := range channel.children {
+		_, local, hasPrefix := splitXMLPrefix(child.name)
+		if isElementNamespaces(docRoot, channel, child, []string{syndicationNamespace, syndicationDefaultNamespace}, "sy") {
+			switch local {
+			case "updatePeriod":
+				if hasSyPeriod || syInvalid {
+					continue
+				}
+				period, ok := parseSyndicationPeriod(child.text)
+				if !ok {
+					syInvalid = true
+					continue
+				}
+				syPeriod = period
+				hasSyPeriod = true
+			case "updateFrequency":
+				if hasSyFreq || syInvalid {
+					continue
+				}
+				n, err := strconv.Atoi(strings.TrimSpace(child.text))
+				if err != nil || n <= 0 {
+					syInvalid = true
+					continue
+				}
+				syFreq = n
+				hasSyFreq = true
+			}
+			continue
+		}
+		switch local {
+		case "updateFrequency":
+			if !complete && updateFreqDur == 0 && isElementNamespaces(docRoot, channel, child, updateFrequencyNamespaces, "") {
+				dur, done, ok := parseUpdateFrequencyNode(child)
+				if ok {
+					updateFreqDur = dur
+					complete = done
+				}
+			}
+		case "ttl":
+			if !hasPrefix && ttlDur == 0 {
+				if mins, err := strconv.Atoi(strings.TrimSpace(child.text)); err == nil && mins > 0 {
+					ttlDur = boundedDuration(int64(mins), time.Minute)
+				}
+			}
+		}
+	}
+	if complete {
+		return 24 * time.Hour, true
+	}
+	if updateFreqDur > 0 {
+		return updateFreqDur, false
+	}
+	if ttlDur > 0 {
+		return ttlDur, false
+	}
+	if !syInvalid && (hasSyPeriod || hasSyFreq) {
+		if !hasSyPeriod {
+			syPeriod = 24 * time.Hour
+		}
+		freq := 1
+		if hasSyFreq {
+			freq = syFreq
+		}
+		return syPeriod / time.Duration(freq), false
+	}
+	return 0, false
+}
+
+func isElementNamespaces(docRoot, channel, child *xmlNode, wantNamespaces []string, fallbackPrefix string) bool {
+	prefix, _, hasPrefix := splitXMLPrefix(child.name)
+	attr := "xmlns"
+	if hasPrefix {
+		attr = "xmlns:" + prefix
+	}
+	for _, node := range []*xmlNode{child, channel, docRoot} {
+		if node == nil {
+			continue
+		}
+		if val, ok := node.attrs[attr]; ok {
+			normalized := strings.TrimRight(strings.TrimSpace(val), "/")
+			for _, want := range wantNamespaces {
+				if normalized == strings.TrimRight(want, "/") {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	return hasPrefix && fallbackPrefix != "" && prefix == fallbackPrefix
+}
+
+func splitXMLPrefix(name string) (prefix, local string, hasPrefix bool) {
+	if idx := strings.LastIndexByte(name, ':'); idx >= 0 {
+		return name[:idx], name[idx+1:], true
+	}
+	return "", name, false
+}
+
+func boundedDuration(count int64, unit time.Duration) time.Duration {
+	if count <= 0 || unit <= 0 {
+		return 0
+	}
+	limit := int64(maxParsedPollInterval / unit)
+	if count >= limit {
+		return maxParsedPollInterval
+	}
+	return time.Duration(count) * unit
+}
+
+func parseSyndicationPeriod(raw string) (time.Duration, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "hourly":
+		return time.Hour, true
+	case "daily":
+		return 24 * time.Hour, true
+	case "weekly":
+		return 7 * 24 * time.Hour, true
+	case "monthly":
+		return 30 * 24 * time.Hour, true
+	case "yearly":
+		return 365 * 24 * time.Hour, true
+	default:
+		return 0, false
+	}
+}
+
+func parseUpdateFrequencyNode(node *xmlNode) (interval time.Duration, complete bool, ok bool) {
+	if v := strings.TrimSpace(node.attrs["complete"]); strings.EqualFold(v, "true") || v == "1" {
+		return 24 * time.Hour, true, true
+	}
+	if rrule := strings.TrimSpace(node.attrs["rrule"]); rrule != "" {
+		if d, valid := parseRRuleInterval(rrule); valid {
+			return d, false, true
+		}
+	}
+	if d, valid := parseUpdateFrequencyText(node.text); valid {
+		return d, false, true
+	}
+	return 0, false, false
+}
+
+func boundedSubdividedDuration(count int64, unit time.Duration, divisor int64) time.Duration {
+	if count <= 0 || unit <= 0 || divisor <= 0 {
+		return 0
+	}
+	if divisor == 1 {
+		return boundedDuration(count, unit)
+	}
+	q := count / divisor
+	r := count % divisor
+	base := boundedDuration(q, unit)
+	if base >= maxParsedPollInterval {
+		return maxParsedPollInterval
+	}
+	rem := time.Duration(int64(unit)/divisor)*time.Duration(r) + time.Duration((int64(unit)%divisor)*r/divisor)
+	if rem >= maxParsedPollInterval-base {
+		return maxParsedPollInterval
+	}
+	return base + rem
+}
+
+func isValidRRuleByDay(tok string) bool {
+	if len(tok) < 2 {
+		return false
+	}
+	prefix := tok[:len(tok)-2]
+	wday := tok[len(tok)-2:]
+	switch wday {
+	case "MO", "TU", "WE", "TH", "FR", "SA", "SU":
+	default:
+		return false
+	}
+	if prefix == "" {
+		return true
+	}
+	if prefix[0] == '+' || prefix[0] == '-' {
+		prefix = prefix[1:]
+	}
+	n, err := strconv.Atoi(prefix)
+	return err == nil && n >= 1 && n <= 53
+}
+
+func parseRRuleInterval(raw string) (time.Duration, bool) {
+	var (
+		freq        string
+		interval    int64 = 1
+		seenDays          = map[string]bool{}
+		seenHours         = map[int]bool{}
+		seenMinutes       = map[int]bool{}
+	)
+	for _, part := range strings.Split(raw, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key, val, found := strings.Cut(part, "=")
+		if !found {
+			return 0, false
+		}
+		key = strings.ToUpper(strings.TrimSpace(key))
+		val = strings.ToUpper(strings.TrimSpace(val))
+		switch key {
+		case "FREQ":
+			freq = val
+		case "INTERVAL":
+			n, err := strconv.ParseInt(val, 10, 64)
+			if err != nil || n <= 0 {
+				return 0, false
+			}
+			interval = n
+		case "BYDAY":
+			for _, item := range strings.Split(val, ",") {
+				tok := strings.TrimSpace(item)
+				if tok == "" {
+					continue
+				}
+				if !isValidRRuleByDay(tok) {
+					return 0, false
+				}
+				seenDays[tok] = true
+			}
+		case "BYHOUR":
+			for _, item := range strings.Split(val, ",") {
+				tok := strings.TrimSpace(item)
+				if tok == "" {
+					continue
+				}
+				h, err := strconv.Atoi(tok)
+				if err != nil || h < 0 || h > 23 {
+					return 0, false
+				}
+				seenHours[h] = true
+			}
+		case "BYMINUTE":
+			for _, item := range strings.Split(val, ",") {
+				tok := strings.TrimSpace(item)
+				if tok == "" {
+					continue
+				}
+				m, err := strconv.Atoi(tok)
+				if err != nil || m < 0 || m > 59 {
+					return 0, false
+				}
+				seenMinutes[m] = true
+			}
+		default:
+			// Decline recurrence parts we do not explicitly interpret so unknown
+			// constraints (BYSECOND, BYMONTHDAY, COUNT, etc.) never miscompute.
+			return 0, false
+		}
+	}
+	var unit time.Duration
+	occurrences := int64(1)
+	switch freq {
+	case "SECONDLY":
+		if len(seenDays) > 0 || len(seenHours) > 0 || len(seenMinutes) > 0 {
+			return 0, false
+		}
+		unit = time.Second
+	case "MINUTELY":
+		if len(seenDays) > 0 || len(seenHours) > 0 || len(seenMinutes) > 0 {
+			return 0, false
+		}
+		unit = time.Minute
+	case "HOURLY":
+		if len(seenDays) > 0 || len(seenHours) > 0 {
+			return 0, false
+		}
+		unit = time.Hour
+		if len(seenMinutes) > 0 {
+			occurrences *= int64(len(seenMinutes))
+		}
+	case "DAILY":
+		unit = 24 * time.Hour
+		if len(seenDays) > 0 {
+			unit = 7 * 24 * time.Hour
+			occurrences *= int64(len(seenDays))
+		}
+		if len(seenHours) > 0 {
+			occurrences *= int64(len(seenHours))
+		}
+		if len(seenMinutes) > 0 {
+			occurrences *= int64(len(seenMinutes))
+		}
+	case "WEEKLY":
+		unit = 7 * 24 * time.Hour
+		if len(seenDays) > 0 {
+			occurrences *= int64(len(seenDays))
+		}
+		if len(seenHours) > 0 {
+			occurrences *= int64(len(seenHours))
+		}
+		if len(seenMinutes) > 0 {
+			occurrences *= int64(len(seenMinutes))
+		}
+	case "MONTHLY":
+		if len(seenDays) > 0 {
+			return 0, false
+		}
+		unit = 30 * 24 * time.Hour
+		if len(seenHours) > 0 {
+			occurrences *= int64(len(seenHours))
+		}
+		if len(seenMinutes) > 0 {
+			occurrences *= int64(len(seenMinutes))
+		}
+	case "YEARLY":
+		if len(seenDays) > 0 || len(seenHours) > 0 || len(seenMinutes) > 0 {
+			return 0, false
+		}
+		unit = 365 * 24 * time.Hour
+	default:
+		return 0, false
+	}
+	return boundedSubdividedDuration(interval, unit, occurrences), true
+}
+
+func parseUpdateFrequencyText(raw string) (time.Duration, bool) {
+	text := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(raw)), " "))
+	if text == "" {
+		return 0, false
+	}
+	switch text {
+	case "hourly", "every hour", "once an hour", "once per hour":
+		return time.Hour, true
+	case "twice hourly", "twice an hour":
+		return 30 * time.Minute, true
+	case "daily", "every day", "once a day", "once daily", "every weekday", "weekdays", "weekday":
+		return 24 * time.Hour, true
+	case "twice daily", "twice a day":
+		return 12 * time.Hour, true
+	case "weekly", "every week", "once a week", "once weekly":
+		return 7 * 24 * time.Hour, true
+	case "twice weekly", "twice a week", "semiweekly", "semi-weekly":
+		return 84 * time.Hour, true
+	case "biweekly", "bi-weekly", "fortnightly", "every other week", "every two weeks":
+		return 14 * 24 * time.Hour, true
+	case "monthly", "every month", "once a month":
+		return 30 * 24 * time.Hour, true
+	case "bimonthly", "bi-monthly":
+		return 60 * 24 * time.Hour, true
+	case "yearly", "annually", "annual", "every year":
+		return 365 * 24 * time.Hour, true
+	}
+	if d, ok := parseISO8601Duration(text); ok {
+		return d, true
+	}
+	if d, err := time.ParseDuration(text); err == nil && d > 0 {
+		if d > maxParsedPollInterval {
+			return maxParsedPollInterval, true
+		}
+		return d, true
+	}
+	trimmed := strings.TrimPrefix(text, "every ")
+	fields := strings.Fields(trimmed)
+	if len(fields) == 2 {
+		n, err := strconv.ParseInt(fields[0], 10, 64)
+		if err != nil || n <= 0 {
+			return 0, false
+		}
+		unit := fields[1]
+		switch {
+		case strings.HasPrefix(unit, "sec"):
+			return boundedDuration(n, time.Second), true
+		case strings.HasPrefix(unit, "min"):
+			return boundedDuration(n, time.Minute), true
+		case unit == "h" || strings.HasPrefix(unit, "hour") || strings.HasPrefix(unit, "hr"):
+			return boundedDuration(n, time.Hour), true
+		case strings.HasPrefix(unit, "day"):
+			return boundedDuration(n, 24*time.Hour), true
+		case strings.HasPrefix(unit, "week"):
+			return boundedDuration(n, 7*24*time.Hour), true
+		case strings.HasPrefix(unit, "month"):
+			return boundedDuration(n, 30*24*time.Hour), true
+		case strings.HasPrefix(unit, "year"):
+			return boundedDuration(n, 365*24*time.Hour), true
+		}
+	}
+	return 0, false
+}
+
+func parseISO8601Duration(raw string) (time.Duration, bool) {
+	s := strings.ToUpper(strings.TrimSpace(raw))
+	if !strings.HasPrefix(s, "P") || len(s) < 2 {
+		return 0, false
+	}
+	s = s[1:]
+	inTime := false
+	var total time.Duration
+	sawPart := false
+	for len(s) > 0 {
+		if s[0] == 'T' {
+			inTime = true
+			s = s[1:]
+			continue
+		}
+		i := 0
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		if i == 0 || i >= len(s) {
+			return 0, false
+		}
+		n, err := strconv.ParseInt(s[:i], 10, 64)
+		if err != nil || n < 0 {
+			return 0, false
+		}
+		designator := s[i]
+		s = s[i+1:]
+		var unit time.Duration
+		if !inTime {
+			switch designator {
+			case 'Y':
+				unit = 365 * 24 * time.Hour
+			case 'M':
+				unit = 30 * 24 * time.Hour
+			case 'W':
+				unit = 7 * 24 * time.Hour
+			case 'D':
+				unit = 24 * time.Hour
+			default:
+				return 0, false
+			}
+		} else {
+			switch designator {
+			case 'H':
+				unit = time.Hour
+			case 'M':
+				unit = time.Minute
+			case 'S':
+				unit = time.Second
+			default:
+				return 0, false
+			}
+		}
+		sawPart = true
+		add := boundedDuration(n, unit)
+		if add >= maxParsedPollInterval-total {
+			total = maxParsedPollInterval
+		} else {
+			total += add
+		}
+	}
+	return total, sawPart && total > 0
 }

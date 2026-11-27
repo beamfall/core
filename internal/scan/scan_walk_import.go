@@ -134,16 +134,17 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		}
 		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, authoritative)
 	}
-	// A file with extracted local metadata imports on its own, like a still:
-	// a queued part or an attached version would drop it.
-	standalone := imported.Class == store.MediaClassImage || len(task.local) > 0
+	// Files in a local-extractor Library and still images always import on their
+	// own: fast and full paths must agree regardless of transient probe or
+	// extractor outcomes (CORE-3029).
+	standalone := s.importsStandalone(imported)
 	if !standalone && s.isParsedPart(parsed, parsedOK) {
 		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), task.probe.value.Chapters, task.probe.succeeded, false, nil); err != nil {
 			return err
 		}
 		return s.ctx.Err()
 	}
-	if err := s.flushPendingPartsUnlessInGroup(path, imported.Class == store.MediaClassImage); err != nil {
+	if err := s.flushPendingPartsUnlessInGroup(path, standalone); err != nil {
 		return err
 	}
 	versionKey := ""
@@ -170,10 +171,13 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	if err := s.refreshParserFields(media.ID, refresh); err != nil {
 		return err
 	}
-	if len(task.local) > 0 {
-		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
+	if task.probe.succeeded && len(task.probe.value.Chapters) > 0 {
+		if err := s.st.ReplaceDetectedMarkers(s.ctx, media.ID, "chapter-import", markersFromProbeChapters(task.probe.value.Chapters), store.LibraryFilter{AllLibraries: true, Revealed: true}, now()); err != nil {
 			return err
 		}
+	}
+	if err := s.applyLocalExtraction(media.ID, stored.ContentFingerprint, task); err != nil {
+		return err
 	}
 	s.applyMediaLocalArtwork(path, media.ID)
 	if err := s.retryAutoIdentify(task, media.ID, stored.ContentFingerprint, parsed); err != nil {
@@ -237,16 +241,16 @@ func (s *scanWalkState) retryAutoIdentify(task *workerTask, mediaID store.MediaI
 
 // A changed timestamp alone cannot replace a legacy identity. Compare the
 // digest whenever the cheap path missed and the bytes could still match.
-func (task *workerTask) legacyComparison(ctx context.Context, reservations []store.StoredFingerprint) store.SampleFingerprintCheck {
+func (task *workerTask) legacyComparison(ctx context.Context, stored store.StoredFingerprint, reservations []store.StoredFingerprint) store.SampleFingerprintCheck {
 	eligible := func(fp store.StoredFingerprint) bool {
 		return (fp.SizeBytes == 0 || fp.SizeBytes == task.info.size) && strings.HasPrefix(fp.ContentFingerprint, "sha256:")
 	}
-	if !eligible(task.stored) && !slices.ContainsFunc(reservations, eligible) {
+	if !eligible(stored) && !slices.ContainsFunc(reservations, eligible) {
 		return nil
 	}
 	return func(file io.Reader, sample string) (string, error) {
 		full, err := store.HashMediaFileContentReader(ctx, file)
-		if err != nil || (eligible(task.stored) && full == task.stored.ContentFingerprint) || slices.ContainsFunc(reservations, func(fp store.StoredFingerprint) bool {
+		if err != nil || (eligible(stored) && full == stored.ContentFingerprint) || slices.ContainsFunc(reservations, func(fp store.StoredFingerprint) bool {
 			return eligible(fp) && full == fp.ContentFingerprint
 		}) {
 			return full, err
@@ -331,9 +335,10 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			t.added = true
 		}
 	})
-	// A file with extracted local metadata imports on its own, like a still:
-	// a queued part or an attached version would drop it.
-	standalone := isImage || len(task.local) > 0
+	// Files in a local-extractor Library and still images always import on their
+	// own: fast and full paths must agree regardless of transient probe or
+	// extractor outcomes (CORE-3029).
+	standalone := s.importsStandalone(imported)
 	if !standalone && s.isParsedPart(parsed, parsedOK) {
 		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded, probeSucceeded, probeTags); err != nil {
 			return err
@@ -389,10 +394,8 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	}
 	s.committed = path
 	s.rememberVersionAnchor(versionKey, media.ID, fingerprint, parsed)
-	if len(task.local) > 0 {
-		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
-			return err
-		}
+	if err := s.applyLocalExtraction(media.ID, fingerprint, task); err != nil {
+		return err
 	}
 	if err := s.hydrateMetadata(media, path, fingerprint, probeTags, probeSucceeded, pathChanged); err != nil {
 		return err
@@ -401,7 +404,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		return err
 	}
 	if len(probeChapters) > 0 {
-		if err := s.st.ReplaceDetectedMarkers(s.ctx, media.ID, "chapter-import", markersFromProbeChapters(probeChapters), store.LibraryFilter{AllLibraries: true}, now()); err != nil {
+		if err := s.st.ReplaceDetectedMarkers(s.ctx, media.ID, "chapter-import", markersFromProbeChapters(probeChapters), store.LibraryFilter{AllLibraries: true, Revealed: true}, now()); err != nil {
 			return err
 		}
 	}

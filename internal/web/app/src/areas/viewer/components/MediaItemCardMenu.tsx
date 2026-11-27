@@ -18,6 +18,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Menu } from "@/components/ui/astryx-primitives";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import { fetchMedia, queuePlayNextMedia } from "@/lib/graphql";
 import type { ItemTarget, MediaCredit } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -176,9 +177,11 @@ export function MediaItemCardMenu({
           setOpened(true);
         }}
       >
-        <Menu.Trigger className="bf-card-more" aria-label={t("cardMoreActions", { title })}>
-          <MoreVertical aria-hidden="true" size={16} />
-        </Menu.Trigger>
+        <ActionTooltip label={t("cardMoreActions", { title })} disabled={open}>
+          <Menu.Trigger className="bf-card-more" aria-label={t("cardMoreActions", { title })}>
+            <MoreVertical aria-hidden="true" size={16} />
+          </Menu.Trigger>
+        </ActionTooltip>
         <Menu.Portal>
           <Menu.Positioner side="bottom" align="end" sideOffset={6} className="bf-card-menu-layer">
             <Menu.Popup className="bf-card-menu" data-register="viewer">

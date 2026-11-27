@@ -2,6 +2,7 @@ import { EyeOff, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { buttonVariants } from "@/components/ui/button";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import { useT } from "@/lib/i18n";
 import "../remote/remote.css";
 import "./hidden.css";
@@ -153,17 +154,19 @@ export function HiddenAwareEmpty({ fallback }: { fallback: ReactNode }) {
 export function HideWatchedToggle() {
   const t = useT();
   const { on, set } = useHideWatched();
+  const label = t("hideWatched");
   return (
-    <button
-      type="button"
-      className="bf-chip bf-chip-square"
-      aria-label={t("hideWatched")}
-      title={t("hideWatched")}
-      aria-pressed={on ?? false}
-      disabled={on === null}
-      onClick={() => void set(!on)}
-    >
-      <EyeOff aria-hidden className="size-4" />
-    </button>
+    <ActionTooltip label={label}>
+      <button
+        type="button"
+        className="bf-chip bf-chip-square"
+        aria-label={label}
+        aria-pressed={on ?? false}
+        disabled={on === null}
+        onClick={() => void set(!on)}
+      >
+        <EyeOff aria-hidden className="size-4" />
+      </button>
+    </ActionTooltip>
   );
 }

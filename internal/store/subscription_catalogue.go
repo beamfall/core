@@ -311,11 +311,14 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 // Media title follows the feed unless identification locked it; probe facts
 // of a downloaded file are never overwritten by the feed's guesses.
 func refreshSubscriptionEntryTx(ctx context.Context, tx *sql.Tx, id SubscriptionID, guid string, mediaID MediaID, title string, entry FeedCatalogEntry) error {
+	pubMS := unixMilliOrZero(entry.PublishedAt)
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE subscription_entry
-		SET feed_position = ?, published_at_ms = ?, enclosure_url = ?, enclosure_type = ?, enclosure_length = ?
+		SET feed_position = ?,
+		    published_at_ms = CASE WHEN ? > 0 THEN ? ELSE published_at_ms END,
+		    enclosure_url = ?, enclosure_type = ?, enclosure_length = ?
 		WHERE subscription_id = ? AND guid = ?
-	`, entry.Position, unixMilliOrZero(entry.PublishedAt), entry.EnclosureURL, entry.EnclosureType,
+	`, entry.Position, pubMS, pubMS, entry.EnclosureURL, entry.EnclosureType,
 		max(0, entry.EnclosureLength), id, guid); err != nil {
 		return err
 	}
@@ -559,6 +562,43 @@ func (s *Store) SubscriptionEntries(ctx context.Context, id SubscriptionID) ([]S
 			return nil, err
 		}
 		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
+}
+
+// SubscriptionEntryPollDates reads only the GUIDs and publication timestamps
+// needed for adaptive polling cadence and dormancy decisions.
+func (s *Store) SubscriptionEntryPollDates(ctx context.Context, id SubscriptionID) ([]SubscriptionEntry, error) {
+	if id == "" {
+		return nil, errors.New("subscription ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT guid, published_at_ms, first_seen_at_ms
+		FROM subscription_entry
+		WHERE subscription_id = ?
+		ORDER BY published_at_ms DESC, first_seen_at_ms DESC, guid
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	entries := []SubscriptionEntry{}
+	for rows.Next() {
+		var guid string
+		var publishedMS, firstSeenMS int64
+		if err := rows.Scan(&guid, &publishedMS, &firstSeenMS); err != nil {
+			return nil, err
+		}
+		entries = append(entries, SubscriptionEntry{
+			GUID:        guid,
+			PublishedAt: optionalUnixMilli(publishedMS),
+			FirstSeenAt: optionalUnixMilli(firstSeenMS),
+		})
 	}
 	return entries, rows.Err()
 }

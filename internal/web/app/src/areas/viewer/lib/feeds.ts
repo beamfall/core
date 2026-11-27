@@ -160,6 +160,59 @@ export function isForbidden(err: unknown): boolean {
   return graphqlErrorCode(err) === "FORBIDDEN";
 }
 
+const CREDENTIAL_QUERY_KEYS = new Set([
+  "token",
+  "privatetoken",
+  "feedtoken",
+  "accesstoken",
+  "refreshtoken",
+  "authtoken",
+  "bearertoken",
+  "idtoken",
+  "apitoken",
+  "oauthtoken",
+  "securitytoken",
+  "sessiontoken",
+  "clienttoken",
+  "usertoken",
+  "xauthtoken",
+  "personaltoken",
+  "jwt",
+  "auth",
+  "authorization",
+  "credential",
+  "credentials",
+  "apikey",
+  "xapikey",
+  "key",
+  "accesskey",
+  "accesskeyid",
+  "subscriptionkey",
+  "authkey",
+  "clientkey",
+  "userkey",
+  "secret",
+  "secretkey",
+  "apisecret",
+  "accesssecret",
+  "clientsecret",
+  "oauthtokensecret",
+  "password",
+  "passwd",
+  "pass",
+  "pwd",
+  "sessionid",
+  "sig",
+  "signature",
+  "xamzcredential",
+  "xamzsecuritytoken",
+  "xamzsignature",
+  "xgoogcredential",
+  "xgoogsignature",
+]);
+
+const CREDENTIAL_QUERY_SUFFIXES = ["secret", "password", "passwd", "credential", "credentials"];
+
 /** A typed search box value that is a feed address rather than search words. */
 export function asFeedURL(input: string): string | null {
   const value = input.trim();
@@ -170,6 +223,40 @@ export function asFeedURL(input: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Whether a parsed feed address is safe to pass to feed discovery before direct follow. */
+export function canDiscoverFeedURL(feedURL: string): boolean {
+  try {
+    const url = new URL(feedURL);
+    if (url.protocol !== "https:" || url.username !== "" || url.password !== "") {
+      return false;
+    }
+    const rawQuery = url.search.startsWith("?") ? url.search.slice(1) : "";
+    for (const pair of rawQuery.split(/[&;]/)) {
+      if (!pair) continue;
+      const eq = pair.indexOf("=");
+      const rawKey = eq >= 0 ? pair.slice(0, eq) : pair;
+      const key = decodeURIComponent(rawKey.replace(/\+/g, " "));
+      const normalized = key.toLowerCase().replace(/[-_.]/g, "");
+      if (
+        CREDENTIAL_QUERY_KEYS.has(normalized) ||
+        CREDENTIAL_QUERY_SUFFIXES.some((suffix) => normalized.endsWith(suffix))
+      ) {
+        return false;
+      }
+    }
+    return Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Server-localized message when searchFeeds rejects with THROTTLED or INVALID. */
+export function feedSearchErrorMessage(err: unknown): string | undefined {
+  const code = graphqlErrorCode(err);
+  if (code !== "THROTTLED" && code !== "INVALID") return undefined;
+  return err instanceof ApiError && err.message.trim() !== "" ? err.message.trim() : undefined;
 }
 
 // Whether each Library has any followed feed, behind its Following pivot.

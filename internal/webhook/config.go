@@ -35,6 +35,9 @@ type fileEndpoint struct {
 	// AllowPrivateNetwork approves a hostname-named LAN receiver for local
 	// address classes (see Endpoint.AllowPrivateNetwork).
 	AllowPrivateNetwork bool `json:"allow_private_network,omitempty"`
+	// PendingCreateKey records an in-flight create signature until directory
+	// durability succeeds, so retries (including after restart) reuse this ID.
+	PendingCreateKey string `json:"pending_create_key,omitempty"`
 }
 
 // fileConfig is the on-disk webhook configuration (DataDir/webhook-endpoints.json).
@@ -49,6 +52,9 @@ type fileConfig struct {
 	// PublicBaseURL is the owner's public origin, used to build artwork URLs
 	// in derived events. Empty leaves them out.
 	PublicBaseURL string `json:"public_base_url,omitempty"`
+	// StaleSecretRefs holds retired secret refs awaiting removal after a
+	// durable configuration sync.
+	StaleSecretRefs []string `json:"stale_secret_refs,omitempty"`
 }
 
 // LoadConfig reads the webhook configuration from path and resolves each

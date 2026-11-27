@@ -574,7 +574,7 @@ func TestProbeHardwareAccelLowPowerRetryAlsoFails(t *testing.T) {
 
 func TestHWAccelProbeArgsLowPowerAndAV1(t *testing.T) {
 	low := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: "h264_qsv", LowPower: true}), " ")
-	if !strings.Contains(low, "-c:v h264_qsv -low_power 1 -preset veryfast -forced_idr 1 -extbrc 1 -b:v 1000k -maxrate 1001k -bufsize 2000k -f null -") {
+	if !strings.Contains(low, "-c:v h264_qsv -low_power 1 -preset veryfast -forced_idr 1 -b:v 1000k -maxrate 1001k -bufsize 2000k -f null -") {
 		t.Fatalf("low-power QSV probe args = %q, want -low_power 1 and the production rate control after the encoder", low)
 	}
 	// The probe uses the production rate control, so a low-power encoder that

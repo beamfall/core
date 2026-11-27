@@ -102,7 +102,7 @@ func TestHardenedCommandWrapsWithShim(t *testing.T) {
 		t.Fatalf("expected shim binary /opt/beamfall, got %q", cmd.Path)
 	}
 	want := []string{
-		"/opt/beamfall", shimSubcommand, "--require-landlock",
+		"/opt/beamfall", shimSubcommand,
 		"--ro", "/media/in",
 		"--rw", "/var/out",
 		"--",

@@ -386,11 +386,22 @@ func (s *Store) RemoveSubscription(ctx context.Context, id SubscriptionID) (Subs
 	if err := s.guardLocked(); err != nil {
 		return Subscription{}, err
 	}
-	removed, err := scanSubscription(s.catalogR.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, id))
+	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
 		return Subscription{}, err
 	}
-	if _, err := s.catalogW.ExecContext(ctx, `DELETE FROM subscription WHERE id = ?`, id); err != nil {
+	defer tx.Rollback()
+	removed, err := scanSubscription(tx.QueryRowContext(ctx, subscriptionColumns+` WHERE id = ?`, id))
+	if err != nil {
+		return Subscription{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM subscription WHERE id = ?`, id); err != nil {
+		return Subscription{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM server_config WHERE key = ?`, subscriptionPollStateKey(id)); err != nil {
+		return Subscription{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return Subscription{}, err
 	}
 	return removed, nil

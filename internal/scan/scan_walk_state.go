@@ -41,7 +41,10 @@ type scanWalkState struct {
 	legacyParserPaths map[string]struct{}
 	// durationlessPaths are the unchanged files probed on the fast path
 	// because their Media holds no duration.
-	durationlessPaths  map[string]struct{}
+	durationlessPaths map[string]struct{}
+	// localBackfillPaths are unchanged video files probed once on the fast
+	// path so local extractors can run on previously unextracted clips.
+	localBackfillPaths map[string]struct{}
 	legacyReservations map[string][]store.StoredFingerprint
 	req                Request
 	checkpoint         jobCheckpoint
@@ -202,7 +205,7 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 		return
 	}
 	defer s.releaseBudget()
-	task.fill(ctx, s.st, s.prober, s.grabber, s.legacyReservations[task.path])
+	task.fill(ctx, s.req.LibraryID, s.st, s.prober, s.grabber, s.legacyReservations[task.path])
 	verified := task.err == nil
 	if task.err == errUnstableSample {
 		// The worker's normal fast-path lookup only sees the public catalog.
@@ -222,12 +225,17 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 		// its sample could not be verified against the stored bytes.
 		_, legacy := s.legacyParserPaths[task.path]
 		_, durationless := s.durationlessPaths[task.path]
-		if legacy || durationless && verified {
+		_, localBackfill := s.localBackfillPaths[task.path]
+		if legacy || (durationless || localBackfill) && verified {
 			task.probeFile(ctx, s.prober)
 		}
 	}
 	if class := localMetadataClass(task.path, task.probe); task.err == nil && class != "" {
-		task.local = extractLocalMetadata(ctx, class, s.req.Root, task.path, s.localExtractors)
+		_, localBackfill := s.localBackfillPaths[task.path]
+		if !task.fastPath || imageClassForPath(task.path) || (localBackfill && verified) {
+			task.localEligible = true
+			task.local, task.localClean = extractLocalMetadataChecked(ctx, class, s.req.Root, task.path, s.localExtractors)
+		}
 	}
 }
 

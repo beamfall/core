@@ -129,7 +129,7 @@ export function LibraryFolders({
 
   return (
     <AppShell actions={<ViewerActions />}>
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
         <LibraryHeader
           nodeID={nodeID}
           libraryID={libraryID}
@@ -146,28 +146,31 @@ export function LibraryFolders({
             </p>
           }
         />
-        {switcher}
 
-        <nav aria-label={t("libraryFoldersPathLabel")}>
-          <ol className="bf-crumbs">
-            {/* The root list is a step back only when it lists more than one root. */}
-            {(page ? page.rootCount > 1 || !page.path : !path) && (
-              <Crumb
-                label={t("libraryFoldersAll")}
-                search={folderSearch()}
-                current={page ? !page.path : !path}
-              />
-            )}
-            {crumbs.map((crumb, index) => (
-              <Crumb
-                key={crumb.path}
-                label={crumb.name}
-                search={folderSearch(crumb.path)}
-                current={index === crumbs.length - 1}
-              />
-            ))}
-          </ol>
-        </nav>
+        <div className="bf-folder-toolbar">
+          {switcher}
+          {switcher && <span aria-hidden="true" className="bf-folder-toolbar-sep" />}
+          <nav aria-label={t("libraryFoldersPathLabel")}>
+            <ol className="bf-crumbs">
+              {/* The root list is a step back only when it lists more than one root. */}
+              {(page ? page.rootCount > 1 || !page.path : !path) && (
+                <Crumb
+                  label={t("libraryFoldersAll")}
+                  search={folderSearch()}
+                  current={page ? !page.path : !path}
+                />
+              )}
+              {crumbs.map((crumb, index) => (
+                <Crumb
+                  key={crumb.path}
+                  label={crumb.name}
+                  search={folderSearch(crumb.path)}
+                  current={index === crumbs.length - 1}
+                />
+              ))}
+            </ol>
+          </nav>
+        </div>
 
         {failed && (
           <div role="alert" className="bf-empty flex flex-col gap-3">
@@ -188,12 +191,14 @@ export function LibraryFolders({
             {page.folders.map((folder) => (
               <li key={folder.path}>
                 <Link to={{ search: folderSearch(folder.path) }} className="bf-folder">
-                  <Folder aria-hidden className="size-5 shrink-0" />
-                  <span className="bf-folder-name">{folder.name}</span>
+                  <Folder aria-hidden className="bf-folder-icon size-4 shrink-0" />
+                  <span className="bf-folder-name">
+                    <span>{folder.name}</span>
+                  </span>
                   <span className="bf-folder-count">
                     {t("libraryBrowseCount", { count: folder.mediaCount })}
                   </span>
-                  <ChevronRight aria-hidden className="size-4 shrink-0" />
+                  <ChevronRight aria-hidden className="bf-folder-chevron size-4 shrink-0" />
                 </Link>
               </li>
             ))}

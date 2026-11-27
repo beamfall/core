@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -76,13 +77,28 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 			return Result{}, err
 		}
 		state.libraryPluginID = pluginID
+		allowsVideo := true
 		if resolver, ok := identifier.(PluginMediaClassResolver); ok && pluginID != "" {
-			state.imageRule = ImageRuleFor(resolver.PluginMediaClasses(pluginID))
+			classes := resolver.PluginMediaClasses(pluginID)
+			state.imageRule = ImageRuleFor(classes)
+			allowsVideo = slices.Contains(classes, store.MediaClassVideo)
 		}
 		if resolver, ok := identifier.(PluginTagHintResolver); ok && pluginID != "" {
 			state.tagHints = resolver.PluginEmbeddedTagHints(pluginID)
 		}
 		state.localExtractors = localExtractors[pluginID]
+		if len(state.localExtractors) > 0 {
+			if err := st.ReconcileStandaloneLibraryMedia(ctx, req.LibraryID); err != nil {
+				return Result{}, err
+			}
+			if prober != nil && allowsVideo {
+				localBackfill, err := st.LibraryFilePathsWithoutLocalExtraction(ctx, req.LibraryID, store.MediaClassVideo)
+				if err != nil {
+					return Result{}, err
+				}
+				state.localBackfillPaths = localBackfill
+			}
+		}
 		if pluginID != "" {
 			state.parser = parsers[pluginID]
 			state.metadataHydrator = metadataHydrators[pluginID]
@@ -214,16 +230,18 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 	if err := linkExtraRelationsForLibrary(ctx, st, req.LibraryID, state.extrasRoot); err != nil {
 		return Result{}, err
 	}
-	unverified, err := state.mergeVerifiedCopies()
-	if err != nil {
-		return state.stopped(err)
-	}
-	// A failed candidate read leaves no safe set for title grouping.
-	if unverified != nil {
-		err = state.mergeSplitVersions(unverified)
-	}
-	if err != nil {
-		return state.stopped(err)
+	if len(state.localExtractors) == 0 {
+		unverified, err := state.mergeVerifiedCopies()
+		if err != nil {
+			return state.stopped(err)
+		}
+		// A failed candidate read leaves no safe set for title grouping.
+		if unverified != nil {
+			err = state.mergeSplitVersions(unverified)
+		}
+		if err != nil {
+			return state.stopped(err)
+		}
 	}
 	state.countUnmatchedVersions()
 	return state.result, nil

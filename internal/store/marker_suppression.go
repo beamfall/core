@@ -107,8 +107,17 @@ func (s *Store) ReplaceDetectedMarkers(ctx context.Context, mediaID MediaID, met
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	if _, err := s.visibleMediaSQL(ctx, mediaID, filter); err != nil {
+	media, err := s.visibleMediaSQL(ctx, mediaID, filter)
+	if err != nil {
 		return err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, media.LibraryID)
+	if err != nil {
+		return err
+	}
+	if plane.encrypted {
+		// Encrypted library DBs do not store catalog marker rows.
+		return nil
 	}
 	createdAt := now.UTC()
 	tx, err := s.catalogW.BeginTx(ctx, nil)

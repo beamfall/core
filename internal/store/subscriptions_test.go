@@ -815,3 +815,77 @@ func TestFillSubscriptionTitleOnlyFillsEmptyTitles(t *testing.T) {
 		t.Fatalf("missing Subscription error = %v", err)
 	}
 }
+
+func TestRemoveSubscriptionDeletesPollStateAtomically(t *testing.T) {
+	ctx := t.Context()
+	st := openSeeded(t)
+	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	sub, err := st.AddSubscription(ctx, Subscription{
+		LibraryID: "library-local",
+		FeedURL:   "https://feeds.example.org/show.xml",
+		Root:      t.TempDir(),
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordSubscriptionPollSuccessWithState(ctx, sub, `"v1"`, "", &SubscriptionPollState{
+		UpdateInterval: 30 * time.Minute,
+	}, now, now.Add(30*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	state, found, err := st.SubscriptionPollState(ctx, sub.ID)
+	if err != nil || !found || state.ETag != `"v1"` || state.FeedURLHash != PollFeedURLHash(sub.FeedURL) {
+		t.Fatalf("poll state = %+v (%v, %v)", state, found, err)
+	}
+	if _, err := st.RemoveSubscription(ctx, sub.ID); err != nil {
+		t.Fatalf("RemoveSubscription: %v", err)
+	}
+	var count int
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT COUNT(*) FROM server_config WHERE key = ?`, subscriptionPollStateKey(sub.ID)).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("poll_state row survived RemoveSubscription (%d rows)", count)
+	}
+}
+
+func TestRecordSubscriptionPollSuccessWithStateHandlesConcurrentRefresh(t *testing.T) {
+	ctx := t.Context()
+	st := openSeeded(t)
+	t0 := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	sub, err := st.AddSubscription(ctx, Subscription{
+		LibraryID: "library-local",
+		FeedURL:   "https://feeds.example.org/show.xml",
+		Root:      t.TempDir(),
+	}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordSubscriptionPollSuccessWithState(ctx, sub, `"v1"`, "Mon, 20 Nov 2026 12:00:00 GMT", &SubscriptionPollState{
+		UpdateInterval: 45 * time.Minute,
+	}, t0, t0.Add(45*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	staleSub, err := st.Subscription(ctx, sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Concurrent refresh clears validators and bumps refresh_requested_at_ms.
+	if _, err := st.RequestSubscriptionRefresh(ctx, sub.ID, t0.Add(time.Minute), 0); err != nil {
+		t.Fatal(err)
+	}
+	// Completing the older poll must NOT re-bind stale validators in poll_state.
+	if err := st.RecordSubscriptionPollSuccessWithState(ctx, staleSub, `"v1"`, "Mon, 20 Nov 2026 12:00:00 GMT", &SubscriptionPollState{
+		UpdateInterval: 45 * time.Minute,
+	}, t0.Add(2*time.Minute), t0.Add(47*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	state, found, err := st.SubscriptionPollState(ctx, sub.ID)
+	if err != nil || !found {
+		t.Fatalf("SubscriptionPollState = %+v, %v, %v", state, found, err)
+	}
+	if state.ETag != "" || state.LastModified != "" {
+		t.Fatalf("stale validators written to poll_state across concurrent refresh: %+v", state)
+	}
+}

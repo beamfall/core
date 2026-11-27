@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/jsonstate"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/webhook"
 )
@@ -177,11 +178,14 @@ func (h *Handler) saveWebhook(ctx context.Context, scope auth.Scope, req request
 		return WebhookEndpointInfo{}, err
 	}
 	view, err := admin.SaveEndpoint(in)
-	if err != nil {
+	if err != nil && view.ID == "" {
 		return WebhookEndpointInfo{}, webhookError(err)
 	}
-	if err := h.logActivity(ctx, scope, store.ActivityConfigUpdate, "webhook", view.ID, ""); err != nil {
-		return WebhookEndpointInfo{}, err
+	if logErr := h.logActivity(ctx, scope, store.ActivityConfigUpdate, "webhook", view.ID, ""); logErr != nil {
+		return WebhookEndpointInfo{}, logErr
+	}
+	if err != nil {
+		return WebhookEndpointInfo{}, webhookError(err)
 	}
 	return webhookEndpointInfo(view), nil
 }
@@ -196,10 +200,18 @@ func (h *Handler) deleteWebhook(ctx context.Context, scope auth.Scope, req reque
 	if id == "" {
 		return clientError("id is required")
 	}
-	if err := admin.DeleteEndpoint(id); err != nil {
-		return webhookError(err)
+	delErr := admin.DeleteEndpoint(id)
+	var postSync *jsonstate.PostRenameSyncError
+	if delErr != nil && !errors.As(delErr, &postSync) {
+		return webhookError(delErr)
 	}
-	return h.logActivity(ctx, scope, store.ActivityConfigUpdate, "webhook", id, "")
+	if logErr := h.logActivity(ctx, scope, store.ActivityConfigUpdate, "webhook", id, ""); logErr != nil {
+		return logErr
+	}
+	if delErr != nil {
+		return webhookError(delErr)
+	}
+	return nil
 }
 
 // testWebhook sends one synthetic notification and reports the outcome. A
@@ -268,12 +280,16 @@ func (h *Handler) setWebhookSettings(ctx context.Context, scope auth.Scope, req 
 	if err := v.Err(); err != nil {
 		return WebhookSettingsInfo{}, err
 	}
-	saved, err := admin.SetSettings(webhook.Settings{PublicBaseURL: base})
-	if err != nil {
-		return WebhookSettingsInfo{}, webhookError(err)
+	saved, saveErr := admin.SetSettings(webhook.Settings{PublicBaseURL: base})
+	var postSync *jsonstate.PostRenameSyncError
+	if saveErr != nil && !errors.As(saveErr, &postSync) {
+		return WebhookSettingsInfo{}, webhookError(saveErr)
 	}
-	if err := h.logActivity(ctx, scope, store.ActivityConfigUpdate, "webhook", "settings", ""); err != nil {
-		return WebhookSettingsInfo{}, err
+	if logErr := h.logActivity(ctx, scope, store.ActivityConfigUpdate, "webhook", "settings", ""); logErr != nil {
+		return WebhookSettingsInfo{}, logErr
+	}
+	if saveErr != nil {
+		return WebhookSettingsInfo{}, webhookError(saveErr)
 	}
 	return webhookSettingsInfo(saved), nil
 }

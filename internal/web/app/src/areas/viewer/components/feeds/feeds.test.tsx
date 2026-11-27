@@ -18,7 +18,14 @@ import {
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { nodePath } from "@/lib/nodePath";
-import { asFeedURL, catalogueView, formatBytes, isForbidden, isRateLimited } from "../../lib/feeds";
+import {
+  asFeedURL,
+  canDiscoverFeedURL,
+  catalogueView,
+  formatBytes,
+  isForbidden,
+  isRateLimited,
+} from "../../lib/feeds";
 import {
   insertQueueNext,
   type PlayQueueItem,
@@ -198,26 +205,118 @@ describe("FeedFollowPanel", () => {
     expect(await screen.findByRole("button", { name: "Following" })).toBeDisabled();
   });
 
-  it("follows a pasted feed address without searching, with the picked policy", async () => {
+  it("follows HTTP and credentialed feed addresses directly without calling discovery", async () => {
     const user = userEvent.setup();
     vi.mocked(followFeed).mockResolvedValue(subscription({ downloadPolicy: "stream-only" }));
     wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: "Stream only" }));
     expect(screen.queryByRole("radio", { name: "Everything" })).not.toBeInTheDocument();
-    await user.type(screen.getByRole("searchbox"), "https://example.org/feed.xml{Enter}");
+    await user.type(screen.getByRole("searchbox"), "http://example.org/feed.xml{Enter}");
 
     expect(searchFeeds).not.toHaveBeenCalled();
     await user.click(await screen.findByRole("button", { name: "Follow Feed address" }));
-    expect(followFeed).toHaveBeenCalledWith("https://example.org/feed.xml", {
+    expect(followFeed).toHaveBeenCalledWith("http://example.org/feed.xml", {
       libraryID: "lib-1",
       downloadPolicy: "stream-only",
       latestN: undefined,
     });
+
+    const userinfoURL = new URL("https://example.org/private.xml");
+    userinfoURL.username = "user";
+    userinfoURL.password = "pass";
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), `${userinfoURL.toString()}{Enter}`);
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(
+      screen.getByRole("searchbox"),
+      "https://example.org/private.xml?private_token=abc{Enter}",
+    );
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(
+      screen.getByRole("searchbox"),
+      "https://example.org/private.xml?feed_token=abc{Enter}",
+    );
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(
+      screen.getByRole("searchbox"),
+      "https://example.org/private.xml?X-API-Key=abc{Enter}",
+    );
+    expect(searchFeeds).not.toHaveBeenCalled();
+  });
+
+  it("runs discovery for clean HTTPS addresses and keeps direct follow when none match or discovery fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(searchFeeds)
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(throttled())
+      .mockRejectedValueOnce(new Error("discovery byte cap exceeded"))
+      .mockResolvedValueOnce([
+        {
+          title: "Daily Apple",
+          feedURL: "https://feeds.example.org/daily.xml",
+        },
+      ]);
+    vi.mocked(followFeed).mockResolvedValue(subscription());
+    wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
+
+    await user.type(screen.getByRole("searchbox"), "https://example.org/feed.xml{Enter}");
+    expect(searchFeeds).toHaveBeenCalledWith("https://example.org/feed.xml");
+    await user.click(await screen.findByRole("button", { name: "Follow Feed address" }));
+    expect(followFeed).toHaveBeenCalledWith("https://example.org/feed.xml", {
+      libraryID: "lib-1",
+      downloadPolicy: "latest",
+      latestN: 3,
+    });
+
+    // THROTTLED discovery on a valid HTTPS feed still falls back to direct follow.
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), "https://example.org/throttled.xml{Enter}");
+    expect(await screen.findByRole("button", { name: "Follow Feed address" })).toBeInTheDocument();
+
+    // Upstream/size cap failure during discovery also keeps direct follow available.
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), "https://example.org/huge.xml{Enter}");
+    expect(await screen.findByRole("button", { name: "Follow Feed address" })).toBeInTheDocument();
+
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(
+      screen.getByRole("searchbox"),
+      "https://podcasts.apple.com/ca/podcast/daily/id1234{Enter}",
+    );
+    expect(await screen.findByText("Daily Apple")).toBeInTheDocument();
+  });
+
+  it("surfaces server-localized THROTTLED and INVALID errors from feed search", async () => {
+    const user = userEvent.setup();
+    vi.mocked(searchFeeds)
+      .mockRejectedValueOnce(
+        new ApiError("Limite de recherche atteinte.", 200, {
+          errors: [{ message: "Limite de recherche atteinte.", extensions: { code: "THROTTLED" } }],
+        }),
+      )
+      .mockRejectedValueOnce(
+        new ApiError("Saisissez une URL de site web valide.", 200, {
+          errors: [
+            { message: "Saisissez une URL de site web valide.", extensions: { code: "INVALID" } },
+          ],
+        }),
+      );
+    wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
+
+    await user.type(screen.getByRole("searchbox"), "daily{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Limite de recherche atteinte.");
+
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), "https://example.org/bad{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Saisissez une URL de site web valide.",
+    );
   });
 
   it("says so when a follow fails", async () => {
     const user = userEvent.setup();
+    vi.mocked(searchFeeds).mockResolvedValue([]);
     vi.mocked(followFeed).mockRejectedValue(new ApiError("followFeed unavailable", 200));
     wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
     await user.type(screen.getByRole("searchbox"), "https://example.org/feed.xml{Enter}");
@@ -227,6 +326,7 @@ describe("FeedFollowPanel", () => {
 
   it("names the cause when the server classified a refused follow", async () => {
     const user = userEvent.setup();
+    vi.mocked(searchFeeds).mockResolvedValue([]);
     vi.mocked(followFeed).mockRejectedValue(new ApiError("feed could not be read: http-4xx", 200));
     wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
     await user.type(screen.getByRole("searchbox"), "https://example.org/feed.xml{Enter}");
@@ -663,5 +763,33 @@ describe("FeedCatalogue", () => {
     expect(where.startsWith("/watch/m-1|")).toBe(true);
     const state = JSON.parse(where.slice(where.indexOf("|") + 1));
     expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["m-1", "m-3", "m-2"]);
+  });
+});
+
+describe("opaque semicolon query discovery and direct follow (CORE-2970)", () => {
+  it("allows benign semicolon queries in canDiscoverFeedURL while still blocking semicolon credentials", () => {
+    expect(canDiscoverFeedURL("https://example.org/feed.xml?a=1;b=2")).toBe(true);
+    expect(canDiscoverFeedURL("https://example.org/feed.xml?a=1;feed_token=secret")).toBe(false);
+  });
+
+  it("preserves direct Follow when searchFeeds returns INVALID for an opaque semicolon query", async () => {
+    const user = userEvent.setup();
+    vi.mocked(searchFeeds).mockRejectedValue(
+      new ApiError("invalid URL query", 200, {
+        errors: [{ message: "invalid URL query", extensions: { code: "INVALID" } }],
+      }),
+    );
+    vi.mocked(followFeed).mockResolvedValue(subscription());
+
+    wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
+    await user.type(screen.getByRole("searchbox"), "https://example.org/feed.xml?a=1;b=2");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(await screen.findByText("https://example.org/feed.xml?a=1;b=2")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Follow/i }));
+    expect(followFeed).toHaveBeenCalledWith(
+      "https://example.org/feed.xml?a=1;b=2",
+      expect.objectContaining({ libraryID: "lib-1" }),
+    );
   });
 });

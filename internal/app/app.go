@@ -632,6 +632,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// official build bundled (BundledCredentials).
 	scraperCredentials := withBundledCredentials(secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}, BundledCredentials)
 	scrapeEngine := newScrapeEngine(
+		scrape.WithReleaseVersion(capabilities.ReleaseVersion),
 		scrape.WithCredentials(scraperCredentials),
 		scrape.WithConfigSource(pluginConfigWithDefaults{saved: st, bundles: executablePlugins}),
 	)
@@ -1243,7 +1244,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		updateOpts = append(updateOpts, updatecheck.WithBaseURL(baseURL))
 	}
 	graphUpdateChecker := updateCheckAdapter{service: updatecheck.New(updateOpts...)}
-	graphFeedSearcher := activeFeedSearcher(executablePlugins, hooks.FeedSearcher, scrapeEngine, secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}, FeedSearcherOptions{AppleChart: cfg.PodcastAppleChart})
+	graphFeedSearcher := activeFeedSearcher(executablePlugins, hooks.FeedSearcher, scrapeEngine,
+		secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}, filepath.Join(cfg.DataDir, "feed-directory-budget.json"), FeedSearcherOptions{AppleChart: cfg.PodcastAppleChart})
 	// Remote access (ADR-0012 §1 direct HTTPS + ACME; ADR-0018/0025 self-hosted
 	// relay carrier). Both paths are off by default (LAN-only). The relay token
 	// lives in <DataDir>/secrets/relay-token (0600, invariant 5).

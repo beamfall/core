@@ -3,9 +3,13 @@ package webhook
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -105,10 +109,12 @@ type Manager struct {
 	state   *FileDeadLetter
 	emitter *Emitter
 
-	mu       sync.Mutex
-	file     fileConfig
-	problems map[string]string
-	baseURL  string
+	mu              sync.Mutex
+	file            fileConfig
+	problems        map[string]string
+	baseURL         string
+	unsyncedCreates map[string]string
+	staleSecretRefs map[string]struct{}
 }
 
 // OpenManager loads the endpoint file and builds the emitter, which runs from
@@ -133,7 +139,25 @@ func OpenManager(opts ManagerOptions) (*Manager, error) {
 		logger.Error("webhook configuration decode failed", "error", err)
 		return nil, ErrConfigDiagnostic
 	}
-	m := &Manager{opts: opts, logger: logger, state: state, file: fc, baseURL: fc.PublicBaseURL}
+	m := &Manager{
+		opts:            opts,
+		logger:          logger,
+		state:           state,
+		file:            fc,
+		baseURL:         fc.PublicBaseURL,
+		unsyncedCreates: map[string]string{},
+		staleSecretRefs: map[string]struct{}{},
+	}
+	for _, fe := range fc.Endpoints {
+		if fe.PendingCreateKey != "" && fe.ID != "" {
+			m.unsyncedCreates[fe.PendingCreateKey] = fe.ID
+		}
+	}
+	for _, ref := range fc.StaleSecretRefs {
+		if ref != "" && !refInUse(fc, ref) {
+			m.staleSecretRefs[ref] = struct{}{}
+		}
+	}
 	running := m.resolveAll()
 	cfg := Config{
 		MaxAttempts:  fc.MaxAttempts,
@@ -287,8 +311,6 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 		if index < 0 {
 			return EndpointView{}, ErrUnknownEndpoint
 		}
-	} else if len(m.file.Endpoints) >= maxEndpoints {
-		return EndpointView{}, ErrConfigDiagnostic
 	}
 
 	fe, err := m.buildFileEndpoint(in, prior, index >= 0)
@@ -305,10 +327,60 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 			secret = value
 		}
 	}
-	if secret == "" {
+	createSig := ""
+	matchedUnsyncedCreate := false
+	if index < 0 {
+		createSig = endpointCreateKey(fe, secret)
+		if existingID, ok := m.unsyncedCreates[createSig]; ok {
+			for i, candidate := range m.file.Endpoints {
+				if candidate.ID == existingID {
+					index, prior = i, candidate
+					fe.ID = candidate.ID
+					fe.SecretRef = candidate.SecretRef
+					matchedUnsyncedCreate = true
+					if in.Secret == nil && prior.SecretRef != "" {
+						if value, err := m.opts.Secrets.Secret(prior.SecretRef); err == nil {
+							secret = value
+						}
+					}
+					break
+				}
+			}
+		}
+		if index < 0 && len(m.file.Endpoints) >= maxEndpoints {
+			return EndpointView{}, ErrConfigDiagnostic
+		}
+	}
+	isCreate := index < 0 || matchedUnsyncedCreate
+	switch {
+	case secret == "":
 		fe.SecretRef = ""
-	} else if fe.SecretRef == "" {
-		fe.SecretRef = "webhook-" + fe.ID
+	case matchedUnsyncedCreate && prior.SecretRef != "":
+		fe.SecretRef = prior.SecretRef
+	case prior.SecretRef == "" && index < 0:
+		if _, stale := m.staleSecretRefs["webhook-"+fe.ID]; !stale {
+			fe.SecretRef = "webhook-" + fe.ID
+		} else {
+			ref, refErr := newSecretRef(fe.ID)
+			if refErr != nil {
+				return EndpointView{}, ErrSecretDiagnostic
+			}
+			fe.SecretRef = ref
+		}
+	case in.Secret != nil || prior.SecretRef == "":
+		// Rotate to a fresh secret ref instead of reusing or overwriting an
+		// existing endpoint's ref so a crash before directory durability never
+		// pairs an older recoverable config with the new token.
+		ref, refErr := newSecretRef(fe.ID)
+		if refErr != nil {
+			return EndpointView{}, ErrSecretDiagnostic
+		}
+		fe.SecretRef = ref
+	}
+	if isCreate {
+		fe.PendingCreateKey = createSig
+	} else {
+		fe.PendingCreateKey = ""
 	}
 	ep := fe.endpoint([]byte(secret))
 	if _, err := validateEndpoint(ep); err != nil {
@@ -317,11 +389,20 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 
 	next := m.file
 	next.Endpoints = append([]fileEndpoint(nil), m.file.Endpoints...)
+	savedIdx := index
 	if index >= 0 {
 		next.Endpoints[index] = fe
 	} else {
+		savedIdx = len(next.Endpoints)
 		next.Endpoints = append(next.Endpoints, fe)
 	}
+	retiredRef := ""
+	if prior.SecretRef != "" && prior.SecretRef != fe.SecretRef && !refInUse(next, prior.SecretRef) {
+		retiredRef = prior.SecretRef
+	}
+	hadStaleBeforeSave := len(m.staleSecretRefs) > 0 || retiredRef != ""
+	next.StaleSecretRefs = m.sortedStaleRefs(next, retiredRef, fe.SecretRef)
+
 	running, err := m.runningSetWith(next, fe.ID, ep)
 	if err != nil {
 		return EndpointView{}, err
@@ -330,26 +411,128 @@ func (m *Manager) SaveEndpoint(in EndpointInput) (EndpointView, error) {
 		return EndpointView{}, ErrConfigDiagnostic
 	}
 
+	isNewSecretRef := fe.SecretRef != "" && !refInUse(m.file, fe.SecretRef)
 	restore, err := m.writeSecret(in.Secret != nil || prior.SecretRef != fe.SecretRef, fe.SecretRef, secret)
 	if err != nil {
+		if isNewSecretRef {
+			m.trackOrphanSecretRefLocked(fe.SecretRef)
+		}
 		return EndpointView{}, err
 	}
-	if err := jsonstate.Save(m.opts.ConfigPath, next); err != nil {
-		m.logger.Error("webhook configuration write failed", "error", err)
-		restore()
-		return EndpointView{}, ErrConfigDiagnostic
-	}
-	if prior.SecretRef != "" && prior.SecretRef != fe.SecretRef && !refInUse(next, prior.SecretRef) {
-		if err := m.opts.Secrets.SetSecret(prior.SecretRef, ""); err != nil {
-			m.logger.Warn("webhook secret removal failed", "endpoint", fe.ID, "error", ErrSecretDiagnostic)
+	saveErr := jsonstate.Save(m.opts.ConfigPath, next)
+	var postSync *jsonstate.PostRenameSyncError
+	if saveErr != nil && !errors.As(saveErr, &postSync) {
+		m.logger.Error("webhook configuration write failed", "error", saveErr)
+		if !restore() && isNewSecretRef {
+			m.trackOrphanSecretRefLocked(fe.SecretRef)
 		}
+		return EndpointView{}, ErrConfigDiagnostic
 	}
 	if err := m.emitter.SetEndpoints(running); err != nil {
 		return EndpointView{}, ErrConfigDiagnostic
 	}
 	m.file = next
 	delete(m.problems, fe.ID)
+	delete(m.staleSecretRefs, fe.SecretRef)
+	if retiredRef != "" {
+		m.staleSecretRefs[retiredRef] = struct{}{}
+	}
+	if saveErr != nil {
+		if isCreate && createSig != "" {
+			m.unsyncedCreates[createSig] = fe.ID
+		}
+		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
+		return m.view(fe), errors.Join(ErrConfigDiagnostic, saveErr)
+	}
+	m.purgeStaleSecretRefs(next)
+	wasPendingCreate := fe.PendingCreateKey != ""
+	if wasPendingCreate || hadStaleBeforeSave {
+		cleaned := next
+		cleaned.Endpoints = append([]fileEndpoint(nil), next.Endpoints...)
+		cleaned.Endpoints[savedIdx].PendingCreateKey = ""
+		cleaned.StaleSecretRefs = m.sortedStaleRefs(cleaned, "", "")
+		if cleanErr := jsonstate.Save(m.opts.ConfigPath, cleaned); cleanErr != nil {
+			if errors.As(cleanErr, &postSync) {
+				// Save 1 already durably committed the endpoint, and cleaned has
+				// already replaced the file without PendingCreateKey. Acknowledge
+				// the durable create so callers do not retry and duplicate after reopen.
+				m.file = cleaned
+				fe = cleaned.Endpoints[savedIdx]
+			} else if wasPendingCreate {
+				if createSig != "" {
+					m.unsyncedCreates[createSig] = fe.ID
+				}
+				m.logger.Error("webhook configuration cleanup save failed", "error", cleanErr)
+				return m.view(fe), errors.Join(ErrConfigDiagnostic, cleanErr)
+			}
+		} else {
+			m.file = cleaned
+			fe = cleaned.Endpoints[savedIdx]
+		}
+	}
+	m.clearUnsyncedCreateID(fe.ID)
 	return m.view(fe), nil
+}
+
+func newSecretRef(id string) (string, error) {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return "webhook-" + id + "-" + hex.EncodeToString(b[:]), nil
+}
+
+func (m *Manager) sortedStaleRefs(cfg fileConfig, addRef, keepRef string) []string {
+	set := make(map[string]struct{}, len(m.staleSecretRefs)+1)
+	for ref := range m.staleSecretRefs {
+		if ref != "" && ref != keepRef && !refInUse(cfg, ref) {
+			set[ref] = struct{}{}
+		}
+	}
+	if addRef != "" && addRef != keepRef && !refInUse(cfg, addRef) {
+		set[addRef] = struct{}{}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for ref := range set {
+		out = append(out, ref)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func endpointCreateKey(fe fileEndpoint, secret string) string {
+	keyFe := fe
+	keyFe.ID = ""
+	keyFe.SecretRef = ""
+	raw, _ := json.Marshal(keyFe)
+	secHash := sha256.Sum256([]byte(secret))
+	sum := sha256.Sum256(append(raw, secHash[:]...))
+	return hex.EncodeToString(sum[:])
+}
+
+func (m *Manager) clearUnsyncedCreateID(id string) {
+	for sig, candidateID := range m.unsyncedCreates {
+		if candidateID == id {
+			delete(m.unsyncedCreates, sig)
+		}
+	}
+}
+
+func (m *Manager) purgeStaleSecretRefs(cfg fileConfig) {
+	for ref := range m.staleSecretRefs {
+		if ref == "" || refInUse(cfg, ref) {
+			delete(m.staleSecretRefs, ref)
+			continue
+		}
+		if err := m.opts.Secrets.SetSecret(ref, ""); err != nil {
+			m.logger.Warn("webhook secret removal failed", "ref", ref, "error", ErrSecretDiagnostic)
+			continue
+		}
+		delete(m.staleSecretRefs, ref)
+	}
 }
 
 // buildFileEndpoint applies a console input over the saved endpoint.
@@ -444,8 +627,8 @@ func (m *Manager) runningSetWith(next fileConfig, editedID string, edited Endpoi
 // writeSecret stores the edited endpoint's secret file when it changed and
 // returns a function that puts the previous value back, for a config save
 // that fails after the secret is written.
-func (m *Manager) writeSecret(changed bool, ref, value string) (func(), error) {
-	noop := func() {}
+func (m *Manager) writeSecret(changed bool, ref, value string) (func() bool, error) {
+	noop := func() bool { return true }
 	if !changed || ref == "" {
 		return noop, nil
 	}
@@ -457,11 +640,38 @@ func (m *Manager) writeSecret(changed bool, ref, value string) (func(), error) {
 		m.logger.Error("webhook secret write failed", "error", ErrSecretDiagnostic)
 		return noop, ErrSecretDiagnostic
 	}
-	return func() {
+	return func() bool {
 		if err := m.opts.Secrets.SetSecret(ref, previous); err != nil {
 			m.logger.Error("webhook secret restore failed", "error", ErrSecretDiagnostic)
+			return false
 		}
+		return true
 	}, nil
+}
+
+// trackOrphanSecretRefLocked records a newly written unreferenced secret ref
+// whose store write or rollback failed after writing the secret file, so a
+// restart or subsequent durable save reclaims it cleanly.
+func (m *Manager) trackOrphanSecretRefLocked(ref string) {
+	if ref == "" || refInUse(m.file, ref) {
+		return
+	}
+	if err := m.opts.Secrets.SetSecret(ref, ""); err == nil {
+		return
+	}
+	m.staleSecretRefs[ref] = struct{}{}
+	// Persist StaleSecretRefs only if the secret is readable or a config file
+	// already exists, so an initial pre-create secret write failure never
+	// materializes a brand-new endpoint file.
+	if _, readErr := m.opts.Secrets.Secret(ref); readErr != nil && len(m.file.Endpoints) == 0 && m.file.PublicBaseURL == "" {
+		return
+	}
+	next := m.file
+	next.StaleSecretRefs = m.sortedStaleRefs(next, ref, "")
+	var postSync *jsonstate.PostRenameSyncError
+	if saveErr := jsonstate.Save(m.opts.ConfigPath, next); saveErr == nil || errors.As(saveErr, &postSync) {
+		m.file = next
+	}
 }
 
 func refInUse(fc fileConfig, ref string) bool {
@@ -497,8 +707,16 @@ func (m *Manager) DeleteEndpoint(id string) error {
 			running = append(running, ep)
 		}
 	}
-	if err := jsonstate.Save(m.opts.ConfigPath, next); err != nil {
-		m.logger.Error("webhook configuration write failed", "error", err)
+	retiredRef := ""
+	if removed.SecretRef != "" && !refInUse(next, removed.SecretRef) {
+		retiredRef = removed.SecretRef
+	}
+	hadStaleBeforeSave := len(m.staleSecretRefs) > 0 || retiredRef != ""
+	next.StaleSecretRefs = m.sortedStaleRefs(next, retiredRef, "")
+	saveErr := jsonstate.Save(m.opts.ConfigPath, next)
+	var postSync *jsonstate.PostRenameSyncError
+	if saveErr != nil && !errors.As(saveErr, &postSync) {
+		m.logger.Error("webhook configuration write failed", "error", saveErr)
 		return ErrConfigDiagnostic
 	}
 	if err := m.emitter.SetEndpoints(running); err != nil {
@@ -506,9 +724,22 @@ func (m *Manager) DeleteEndpoint(id string) error {
 	}
 	m.file = next
 	delete(m.problems, id)
-	if removed.SecretRef != "" && !refInUse(next, removed.SecretRef) {
-		if err := m.opts.Secrets.SetSecret(removed.SecretRef, ""); err != nil {
-			m.logger.Warn("webhook secret removal failed", "endpoint", id, "error", ErrSecretDiagnostic)
+	m.clearUnsyncedCreateID(id)
+	if retiredRef != "" {
+		m.staleSecretRefs[retiredRef] = struct{}{}
+	}
+	if saveErr != nil {
+		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
+		return errors.Join(ErrConfigDiagnostic, saveErr)
+	}
+	m.purgeStaleSecretRefs(next)
+	if hadStaleBeforeSave {
+		cleaned := next
+		cleaned.StaleSecretRefs = m.sortedStaleRefs(cleaned, "", "")
+		if len(cleaned.StaleSecretRefs) < len(next.StaleSecretRefs) {
+			if cleanErr := jsonstate.Save(m.opts.ConfigPath, cleaned); cleanErr == nil || errors.As(cleanErr, &postSync) {
+				m.file = cleaned
+			}
 		}
 	}
 	return nil
@@ -552,12 +783,30 @@ func (m *Manager) SetSettings(s Settings) (Settings, error) {
 	defer m.mu.Unlock()
 	next := m.file
 	next.PublicBaseURL = base
-	if err := jsonstate.Save(m.opts.ConfigPath, next); err != nil {
-		m.logger.Error("webhook configuration write failed", "error", err)
+	hadStale := len(m.staleSecretRefs) > 0
+	next.StaleSecretRefs = m.sortedStaleRefs(next, "", "")
+	saveErr := jsonstate.Save(m.opts.ConfigPath, next)
+	var postSync *jsonstate.PostRenameSyncError
+	if saveErr != nil && !errors.As(saveErr, &postSync) {
+		m.logger.Error("webhook configuration write failed", "error", saveErr)
 		return Settings{}, ErrConfigDiagnostic
 	}
 	m.file = next
 	m.baseURL = base
+	if saveErr != nil {
+		m.logger.Error("webhook configuration directory sync failed", "error", saveErr)
+		return Settings{PublicBaseURL: base}, errors.Join(ErrConfigDiagnostic, saveErr)
+	}
+	m.purgeStaleSecretRefs(next)
+	if hadStale {
+		cleaned := next
+		cleaned.StaleSecretRefs = m.sortedStaleRefs(cleaned, "", "")
+		if len(cleaned.StaleSecretRefs) < len(next.StaleSecretRefs) {
+			if cleanErr := jsonstate.Save(m.opts.ConfigPath, cleaned); cleanErr == nil || errors.As(cleanErr, &postSync) {
+				m.file = cleaned
+			}
+		}
+	}
 	return Settings{PublicBaseURL: base}, nil
 }
 

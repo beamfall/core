@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
@@ -184,16 +185,17 @@ export function RevealControls() {
   if (revealed) {
     return (
       <>
-        <button
-          type="button"
-          className="bf-icon-button bf-reveal-open"
-          onClick={onRelock}
-          disabled={busy}
-          aria-label={t("relock")}
-          title={t("relock")}
-        >
-          <LockOpen aria-hidden className="size-[18px]" />
-        </button>
+        <ActionTooltip label={t("relock")} side="bottom">
+          <button
+            type="button"
+            className="bf-icon-button bf-reveal-open"
+            onClick={onRelock}
+            disabled={busy}
+            aria-label={t("relock")}
+          >
+            <LockOpen aria-hidden className="size-[18px]" />
+          </button>
+        </ActionTooltip>
         {relockError && (
           <span role="alert" className="text-xs text-[var(--state-danger)]">
             {relockError}
@@ -220,15 +222,16 @@ export function RevealControls() {
       error={error}
       onSubmitPin={onReveal}
       trigger={
-        <button
-          type="button"
-          className="bf-icon-button"
-          onClick={() => setOpen(true)}
-          aria-label={t("restrictions")}
-          title={t("restrictions")}
-        >
-          <Lock aria-hidden className="size-[18px]" />
-        </button>
+        <ActionTooltip label={t("restrictions")} side="bottom">
+          <button
+            type="button"
+            className="bf-icon-button"
+            onClick={() => setOpen(true)}
+            aria-label={t("restrictions")}
+          >
+            <Lock aria-hidden className="size-[18px]" />
+          </button>
+        </ActionTooltip>
       }
     />
   );

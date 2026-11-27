@@ -2,6 +2,7 @@ import { Check, ListPlus, Play, RotateCcw } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
+import { ActionTooltip } from "@/components/ui/tooltip";
 import { queuePlayNextMedia, type SubscriptionEntry, setWatched } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
@@ -189,16 +190,18 @@ export function FeedCatalogue({
                 data-played={entry.played ? "true" : undefined}
                 className="flex items-center gap-3 border-b border-[var(--border-subtle)] py-2"
               >
-                <button
-                  type="button"
-                  className="bf-row-play"
-                  aria-label={t("feedsPlayEntry", { title: item.title })}
-                  onClick={() => play(item)}
-                  onPointerEnter={preloadPlayer}
-                  onFocus={preloadPlayer}
-                >
-                  <Play aria-hidden />
-                </button>
+                <ActionTooltip label={t("feedsPlayEntry", { title: item.title })}>
+                  <button
+                    type="button"
+                    className="bf-row-play"
+                    aria-label={t("feedsPlayEntry", { title: item.title })}
+                    onClick={() => play(item)}
+                    onPointerEnter={preloadPlayer}
+                    onFocus={preloadPlayer}
+                  >
+                    <Play aria-hidden />
+                  </button>
+                </ActionTooltip>
                 <div className={`flex min-w-0 flex-1 flex-col ${entry.played ? "opacity-60" : ""}`}>
                   <Link
                     to={mediaPath("media", entry.mediaID)}
@@ -242,27 +245,35 @@ export function FeedCatalogue({
                 >
                   {t(availability)}
                 </Badge>
-                <button
-                  type="button"
-                  className="bf-row-play"
-                  aria-label={t("feedsPlayNextEntry", { title: item.title })}
-                  disabled={busy}
-                  onClick={() => void playNext(item)}
-                >
-                  <ListPlus aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  className="bf-row-play"
-                  aria-label={t(entry.played ? "feedsMarkUnplayed" : "feedsMarkPlayed", {
+                <ActionTooltip label={t("feedsPlayNextEntry", { title: item.title })}>
+                  <button
+                    type="button"
+                    className="bf-row-play"
+                    aria-label={t("feedsPlayNextEntry", { title: item.title })}
+                    disabled={busy}
+                    onClick={() => void playNext(item)}
+                  >
+                    <ListPlus aria-hidden />
+                  </button>
+                </ActionTooltip>
+                <ActionTooltip
+                  label={t(entry.played ? "feedsMarkUnplayed" : "feedsMarkPlayed", {
                     title: item.title,
                   })}
-                  aria-pressed={entry.played}
-                  disabled={busy}
-                  onClick={() => togglePlayed(entry)}
                 >
-                  {entry.played ? <RotateCcw aria-hidden /> : <Check aria-hidden />}
-                </button>
+                  <button
+                    type="button"
+                    className="bf-row-play"
+                    aria-label={t(entry.played ? "feedsMarkUnplayed" : "feedsMarkPlayed", {
+                      title: item.title,
+                    })}
+                    aria-pressed={entry.played}
+                    disabled={busy}
+                    onClick={() => togglePlayed(entry)}
+                  >
+                    {entry.played ? <RotateCcw aria-hidden /> : <Check aria-hidden />}
+                  </button>
+                </ActionTooltip>
               </li>
             );
           })}
