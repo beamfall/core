@@ -90,7 +90,7 @@ export function openEventStream(url: string, handlers: EventStreamHandlers): () 
     }
     if ((response.status === 401 || response.status === 403) && handlers.onAuthError) {
       handlers.onAuthError(response.status, await response.json().catch(() => undefined));
-      return false;
+      throw new Error(`event stream unauthorized (${response.status})`);
     }
     const contentType = response.headers.get("content-type") ?? "";
     if (!response.ok || !response.body || !contentType.includes("text/event-stream")) {

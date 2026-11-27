@@ -37,7 +37,7 @@ import {
   switchProfile as switchProfileMutation,
 } from "@/lib/graphql";
 import type { NavigationManifest, ProfileSummary, SessionInfo } from "@/lib/graphql/types";
-import { setManifestRefresher } from "@/lib/manifestRefresh";
+import { setManifestRefresher, setSessionRefresher } from "@/lib/manifestRefresh";
 
 // A lapsed session renews once from the device-secret cookies before the
 // browser is shown the enroll screen (CORE-1106). Any other failure, or a
@@ -308,8 +308,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         () => {},
       );
     });
-    return () => setManifestRefresher();
-  }, []);
+    setSessionRefresher(() => {
+      void load();
+    });
+    return () => {
+      setManifestRefresher();
+      setSessionRefresher();
+    };
+  }, [load]);
 
   const reveal = useCallback(
     async (pin: string) => {

@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState } from "react";
+import { type MutableRefObject, Suspense, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 import { profilePickedThisTab } from "@/components/beamfall/profile";
 import { ErrorState } from "@/components/beamfall/workbench";
@@ -47,31 +47,32 @@ import { PlayerHost } from "./player/PlayerHost";
 import "./player/player-deferred.css";
 import { RemoteMessage, useRemoteReceiver } from "./remote/RemoteReceiver";
 
-function ViewerSessionError({ error, onRetry }: { error: string; onRetry: () => Promise<void> }) {
+function ViewerSessionError({
+  error,
+  onRetry,
+  retryDelayRef,
+}: {
+  error: string;
+  onRetry: () => Promise<void>;
+  retryDelayRef: MutableRefObject<number>;
+}) {
   const t = useT();
   const transient = !error.startsWith("compat-");
 
   useEffect(() => {
     if (!transient) return;
     let alive = true;
-    let delayMs = 2000;
-    let timer = 0;
-    const schedule = () => {
-      timer = window.setTimeout(() => {
-        if (!alive) return;
-        void Promise.resolve(onRetry()).finally(() => {
-          if (!alive) return;
-          delayMs = Math.min(delayMs * 2, 30000);
-          schedule();
-        });
-      }, delayMs);
-    };
-    schedule();
+    const delayMs = retryDelayRef.current;
+    const timer = window.setTimeout(() => {
+      if (!alive) return;
+      retryDelayRef.current = Math.min(delayMs * 2, 30000);
+      void Promise.resolve(onRetry());
+    }, delayMs);
     return () => {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [transient, onRetry]);
+  }, [transient, onRetry, retryDelayRef]);
 
   return (
     <AppShell>
@@ -125,7 +126,12 @@ export function ViewerArea() {
   // hand-off. A failed probe resolves to `false` (fetchSetupRequired), so a
   // normal enrolled server never gets stuck routed at /setup.
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
+  const sessionRetryDelayRef = useRef(2000);
   useScrollRestoration();
+
+  useEffect(() => {
+    if (session) sessionRetryDelayRef.current = 2000;
+  }, [session]);
 
   useEffect(() => setRegister("viewer"), [setRegister]);
 
@@ -165,7 +171,9 @@ export function ViewerArea() {
   // mounted indefinitely.
   if (!session) {
     if (!error) return <ViewerSessionPending />;
-    return <ViewerSessionError error={error} onRetry={refresh} />;
+    return (
+      <ViewerSessionError error={error} onRetry={refresh} retryDelayRef={sessionRetryDelayRef} />
+    );
   }
 
   // "Who's watching?" (CORE-1196): a server with more than one Profile opens on

@@ -135,7 +135,7 @@ describe("openEventStream", () => {
     expect(onEvent).not.toHaveBeenCalled();
   });
 
-  it("invokes onAuthError and stops reconnecting on 401/403", async () => {
+  it("invokes onAuthError and retries with backoff on 401/403", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn(
       async () =>
@@ -155,9 +155,9 @@ describe("openEventStream", () => {
     await vi.waitFor(() =>
       expect(onAuthError).toHaveBeenCalledWith(401, { message: "unauthorized" }),
     );
-    await vi.advanceTimersByTimeAsync(10000);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(onState).not.toHaveBeenCalledWith("reconnecting");
+    expect(onState).toHaveBeenCalledWith("reconnecting");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     close();
   });
 });

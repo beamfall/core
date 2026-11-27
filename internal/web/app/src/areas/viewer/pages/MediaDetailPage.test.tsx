@@ -1920,5 +1920,47 @@ describe("MediaDetailPage", () => {
       );
       expect(screen.queryByRole("progressbar")).toBeNull();
     });
+
+    it("paginates resume-progress beyond the first 200 items for older standalone audiobooks (CORE-3148)", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue({
+        ...media,
+        id: "m1",
+        title: "Older Book",
+        mediaClass: "audio",
+        playsAlone: true,
+        libraryID: "lib-books",
+        credits: [],
+        durationSeconds: 3600,
+      });
+      const firstPage: SourceItem[] = Array.from({ length: 200 }, (_, i) => ({
+        id: `other-${i}`,
+        kind: "media",
+        title: `Other ${i}`,
+        mediaClass: "audio",
+      }));
+      vi.mocked(fetchSourceItems)
+        .mockResolvedValueOnce(firstPage)
+        .mockResolvedValueOnce([
+          {
+            id: "m1",
+            kind: "media",
+            title: "Older Book",
+            mediaClass: "audio",
+            engagement: { positionSeconds: 1800, durationSeconds: 3600, completed: false },
+          },
+        ]);
+
+      renderAt(["/media/m1"]);
+
+      await waitFor(() => expect(fetchSourceItems).toHaveBeenCalledTimes(2));
+      expect(fetchSourceItems).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ offset: 200, limit: 200 }),
+        expect.any(AbortSignal),
+      );
+      expect(await screen.findByRole("button", { name: "Resume Older Book" })).toHaveTextContent(
+        "Resume · 30 minutes left",
+      );
+    });
   });
 });
