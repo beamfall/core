@@ -250,6 +250,7 @@ func (m *Manager) Erase(libraryID string) error {
 	release := m.acquireLibrary(libraryID)
 	defer release()
 	m.sealLocked(libraryID)
+	m.forgetKnownProvisioned(libraryID)
 	var joined error
 	for _, kind := range []secretKind{secretKindBundle, secretKindRewrapJournal, secretKindProvisionJournal, secretKindKEK} {
 		if err := m.writeOwnerSecret(libraryID, kind, ""); err != nil {
@@ -554,6 +555,7 @@ func (m *Manager) provisionLocked(libraryID string, mode UnsealMode, passphrase 
 
 	m.mu.Lock()
 	m.unsealed[libraryID] = dek
+	m.knownProvisioned[libraryID] = true
 	m.mu.Unlock()
 	dek = nil
 	// The commit record has served its purpose: the KEK and bundle are durable,

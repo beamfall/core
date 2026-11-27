@@ -130,7 +130,7 @@ func (h *Handler) sealedFilter(ctx context.Context, base store.LibraryFilter) (s
 	}
 	var sealedIDs []store.LibraryID
 	for _, lib := range libraries {
-		if h.librarySealed(lib.ID) {
+		if (lib.Encrypted && h.libEncrypt.Sealed(string(lib.ID))) || h.librarySealed(lib.ID) {
 			sealedIDs = append(sealedIDs, lib.ID)
 		}
 	}

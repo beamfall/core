@@ -448,3 +448,81 @@ func TestSealedFilterFailsClosedWhenSecureStoreRefusesReads(t *testing.T) {
 		t.Fatalf("playQueue when all secure-store reads refused = %+v, want empty", visibleQueue.Entries)
 	}
 }
+
+func TestSealedFilterKeepsSubscriptionsHiddenWhenSecretsDirDisappears(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	added := time.Now().UTC()
+
+	sealedLibrary, err := st.CreateLibrary(ctx, "Encrypted Vault", false, "feedkit", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	openSub, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local", FeedURL: "https://feeds.example.com/open", Root: "/media/open", Title: "Open Feed",
+	}, added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedSub, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: sealedLibrary.ID, FeedURL: "https://feeds.example.com/sealed", Root: "/media/sealed", Title: "Sealed Feed",
+	}, added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetLibraryBacking(ctx, sealedLibrary.ID, false, true); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := newTestHandlerWithStore(st)
+	secrets := newMemSecretStore()
+	mgr := libencrypt.NewManagerWithParams(secrets, libencrypt.TestArgon2Params)
+	handler.SetLibEncrypt(mgr)
+	if _, err := mgr.Provision(string(sealedLibrary.ID), libencrypt.UnsealModeAuto, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.AutoUnseal(string(sealedLibrary.ID)); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Seal(string(sealedLibrary.ID))
+
+	// Remove all secret entries (simulating the secrets directory disappearing
+	// while the server is running so Secret() returns fs.ErrNotExist).
+	clear(secrets.values)
+
+	var openListed []SubscriptionInfo
+	execGraph(t, handler, authorizeManager,
+		`query { subscriptions(libraryID: "library-local") { id } }`,
+		nil, "subscriptions", &openListed)
+	if len(openListed) != 1 || openListed[0].ID != string(openSub.ID) {
+		t.Fatalf("open Library subscriptions = %+v, want [%s]", openListed, openSub.ID)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		query string
+		vars  map[string]any
+		want  string
+	}{
+		{
+			name:  "list subscriptions",
+			query: `query List($library: String!) { subscriptions(libraryID: $library) { id } }`,
+			vars:  map[string]any{"library": string(sealedLibrary.ID)},
+			want:  "unknown library",
+		},
+		{
+			name:  "remove subscription",
+			query: `mutation Remove($id: String!) { removeSubscription(id: $id) { id } }`,
+			vars:  map[string]any{"id": string(sealedSub.ID)},
+			want:  "unknown subscription",
+		},
+	} {
+		resp := postGraphJSON(t, handler, authorizeManager, tc.query, tc.vars)
+		if len(resp.Errors) == 0 || resp.Errors[0].Message != tc.want {
+			t.Fatalf("%s with missing secrets dir: errors = %+v, want %q", tc.name, resp.Errors, tc.want)
+		}
+	}
+	if _, err := st.Subscription(ctx, sealedSub.ID); err != nil {
+		t.Fatalf("sealed subscription was removed when secrets dir disappeared: %v", err)
+	}
+}

@@ -20,15 +20,16 @@ import (
 // secure store. It records every value ever written so a test can assert no key
 // material reaches a forbidden surface and inspect what is persisted.
 type memStore struct {
-	mu         sync.Mutex
-	values     map[string]string
-	writes     []string
-	failGetRef string
-	failGetErr error
-	failSetRef string
-	failSetErr error
-	failSetAt  int
-	setCounts  map[string]int
+	mu          sync.Mutex
+	values      map[string]string
+	writes      []string
+	failGetRef  string
+	failGetErr  error
+	failRefsErr error
+	failSetRef  string
+	failSetErr  error
+	failSetAt   int
+	setCounts   map[string]int
 }
 
 func newMemStore() *memStore {
@@ -67,6 +68,9 @@ func (s *memStore) SetSecret(ref, value string) error {
 func (s *memStore) SecretRefs(prefix string) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.failRefsErr != nil {
+		return nil, s.failRefsErr
+	}
 	var refs []string
 	for ref := range s.values {
 		if strings.HasPrefix(ref, prefix) {
@@ -857,6 +861,39 @@ func TestUnreadableBundleFailsClosed(t *testing.T) {
 	}
 	if m.Provisioned("unprovisioned-library") || m.SealedEncrypted("unprovisioned-library") {
 		t.Fatal("missing bundle (fs.ErrNotExist) reported as provisioned/sealed")
+	}
+}
+
+func TestMissingSecretsDirectoryKeepsPreviouslyProvisionedLibrarySealed(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "secrets")
+	m := NewManagerWithParams(diskSecretStore{dir: dir}, TestArgon2Params)
+	if _, err := m.Provision(testLib, UnsealModeAuto, ""); err != nil {
+		t.Fatalf("Provision: %v", err)
+	}
+	if err := m.AutoUnseal(testLib); err != nil {
+		t.Fatalf("AutoUnseal: %v", err)
+	}
+	m.Seal(testLib)
+
+	// Simulate the secrets directory disappearing at runtime.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+
+	if !m.Provisioned(testLib) {
+		t.Fatal("Provisioned = false after secrets dir removed, want true")
+	}
+	if !m.Sealed(testLib) {
+		t.Fatal("Sealed = false after secrets dir removed, want true")
+	}
+	if !m.SealedEncrypted(testLib) {
+		t.Fatal("SealedEncrypted = false after secrets dir removed, want true")
+	}
+	if _, err := m.Mode(testLib); err == nil || errors.Is(err, ErrNotProvisioned) {
+		t.Fatalf("Mode after secrets dir removed = %v, want non-ErrNotProvisioned error", err)
+	}
+	if m.Provisioned("never-encrypted") || m.SealedEncrypted("never-encrypted") {
+		t.Fatal("never-encrypted library reported as provisioned/sealed")
 	}
 }
 
