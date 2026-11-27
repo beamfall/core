@@ -203,8 +203,8 @@ func addPodcastHooks(hooks *app.Hooks) {
 	hooks.FeedSearcher = &app.FeedSearcherHook{
 		PluginID:          pluginID,
 		RequiredScraperID: "itunes-directory",
-		New: func(engine *scrape.Engine, secrets app.SecretSource) graph.FeedSearcher {
-			return feedDirectorySearcher{engine: engine, secrets: secrets}
+		New: func(engine *scrape.Engine, secrets app.SecretSource, opts app.FeedSearcherOptions) graph.FeedSearcher {
+			return feedDirectorySearcher{engine: engine, secrets: secrets, trending: newTrendingState(opts.AppleChart)}
 		},
 	}
 }
@@ -477,8 +477,9 @@ func (r musicPackResolver) Resolve(ctx context.Context, ref string, filter store
 }
 
 type feedDirectorySearcher struct {
-	engine  *scrape.Engine
-	secrets app.SecretSource
+	engine   *scrape.Engine
+	secrets  app.SecretSource
+	trending *trendingState
 }
 
 func (s feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) ([]graph.FeedSearchResult, error) {

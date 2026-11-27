@@ -73,10 +73,16 @@ type SecretSource interface {
 	Secret(ref string) (string, error)
 }
 
+// FeedSearcherOptions carries operator opt-ins into the searcher (CORE-3554).
+type FeedSearcherOptions struct {
+	// AppleChart enables Apple's top-shows chart for trending (default off).
+	AppleChart bool
+}
+
 type FeedSearcherHook struct {
 	PluginID          string
 	RequiredScraperID string
-	New               func(*scrape.Engine, SecretSource) graph.FeedSearcher
+	New               func(*scrape.Engine, SecretSource, FeedSearcherOptions) graph.FeedSearcher
 }
 
 // PrePlayPolicyHook contributes the graph.PrePlayPolicy behind prePlayQueue
@@ -245,7 +251,7 @@ func resolveHooks(values []Hooks) (Hooks, error) {
 	return values[0], nil
 }
 
-func activeFeedSearcher(registry *plugin.Registry, hook *FeedSearcherHook, engine *scrape.Engine, secrets SecretSource) graph.FeedSearcher {
+func activeFeedSearcher(registry *plugin.Registry, hook *FeedSearcherHook, engine *scrape.Engine, secrets SecretSource, opts FeedSearcherOptions) graph.FeedSearcher {
 	if hook == nil || hook.New == nil {
 		return nil
 	}
@@ -253,7 +259,7 @@ func activeFeedSearcher(registry *plugin.Registry, hook *FeedSearcherHook, engin
 	if !ok || !declaresScraper(bundle, hook.RequiredScraperID) {
 		return nil
 	}
-	return hook.New(engine, secrets)
+	return hook.New(engine, secrets, opts)
 }
 
 func activePrePlayPolicy(registry *plugin.Registry, hook *PrePlayPolicyHook, st *store.Store) graph.PrePlayPolicy {

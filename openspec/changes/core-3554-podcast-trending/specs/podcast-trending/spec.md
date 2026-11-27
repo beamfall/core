@@ -15,12 +15,12 @@ neither is enabled the server SHALL make no outbound request and SHALL return an
 #### Scenario: Podcast Index key present
 
 - **WHEN** an operator key and secret exist
-- **THEN** the results include Podcast Index trending shows labelled `podcast-index`
+- **THEN** the results include Podcast Index trending shows labelled `directory-index`
 
 #### Scenario: Apple chart enabled
 
 - **WHEN** the Apple chart is enabled
-- **THEN** the results include the chart's shows with their feed addresses, labelled `apple-podcasts`
+- **THEN** the results include the chart's shows with their feed addresses, labelled `directory-chart`
 
 ### Requirement: Trending requests identify no install or person
 

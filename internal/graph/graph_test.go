@@ -5933,3 +5933,45 @@ func testPNG(t *testing.T) []byte {
 	}
 	return buf.Bytes()
 }
+
+type trendingSearcher struct {
+	feedSearchFunc
+	fn func(ctx context.Context, region, language string) ([]FeedTrendingResult, error)
+}
+
+func (s trendingSearcher) TrendingFeeds(ctx context.Context, region, language string) ([]FeedTrendingResult, error) {
+	return s.fn(ctx, region, language)
+}
+
+func TestTrendingFeedsValidatesLocaleDedupesAndGatesRole(t *testing.T) {
+	handler := newTestHandler(t)
+	var gotRegion, gotLang string
+	handler.SetFeedSearcher(trendingSearcher{fn: func(_ context.Context, region, language string) ([]FeedTrendingResult, error) {
+		gotRegion, gotLang = region, language
+		return []FeedTrendingResult{
+			{Title: "A", FeedURL: "https://feeds.example.com/a.xml", Source: TrendingSourceIndex},
+			{Title: "A again", FeedURL: "https://feeds.example.com/a.xml", Source: TrendingSourceChart},
+			{Title: "No feed"},
+		}, nil
+	}})
+	var results []FeedTrendingResult
+	execGraph(t, handler, authorizeViewer,
+		`query T($region: String, $language: String) { trendingFeeds(region: $region, language: $language) { title feedURL source } }`,
+		map[string]any{"region": "CA", "language": "fr-CA; drop"}, "trendingFeeds", &results)
+	if gotRegion != "ca" || gotLang != "en" {
+		t.Fatalf("region/language = %q/%q, want ca/en (invalid language falls back)", gotRegion, gotLang)
+	}
+	if len(results) != 1 || results[0].Title != "A" {
+		t.Fatalf("results = %+v, want one deduped show", results)
+	}
+}
+
+func TestTrendingFeedsEmptyWithoutTrender(t *testing.T) {
+	handler := newTestHandler(t)
+	handler.SetFeedSearcher(feedSearchFunc(func(context.Context, string) ([]FeedSearchResult, error) { return nil, nil }))
+	var results []FeedTrendingResult
+	execGraph(t, handler, authorizeViewer, `query { trendingFeeds { title } }`, nil, "trendingFeeds", &results)
+	if len(results) != 0 {
+		t.Fatalf("results = %+v", results)
+	}
+}

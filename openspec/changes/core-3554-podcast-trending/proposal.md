@@ -13,7 +13,7 @@ There is no way to see what is popular and follow it in a click.
 
 - **Wire**: new read field `trendingFeeds(region: String, language: String)` returning
   `[FeedTrendingResult]` (`title feedURL artworkURL description source`). `source` is the closed
-  vocabulary `podcast-index|apple-podcasts` so clients label provenance. Adult Profile or manager
+  vocabulary `directory-index|directory-chart` so clients label provenance. Adult Profile or manager
   device, as `searchFeeds`. Additive wire-contract minor bump (3.3.0).
 - **Sources, both off until configured**:
   - Podcast Index `/podcasts/trending`, only when the operator key and secret exist in the secure

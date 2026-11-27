@@ -1180,6 +1180,12 @@ export interface FeedSearchResult {
   description?: string | null;
 }
 
+/** One trendingFeeds result (graph.FeedTrendingResult, CORE-3554): a feed a
+ * person can follow, with the directory it came from. */
+export interface FeedTrendingResult extends FeedSearchResult {
+  source: "directory-index" | "directory-chart";
+}
+
 /** One catalogue entry of a Subscription (graph.SubscriptionEntryInfo).
  * `mediaID` is a Media id the ordinary play path accepts, downloaded or not. */
 export interface SubscriptionEntry {

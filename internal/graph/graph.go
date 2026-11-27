@@ -7073,6 +7073,7 @@ var queryFields = map[string]bool{
 	"semanticcapability":     true,
 	"searchentities":         true,
 	"searchfeeds":            true,
+	"trendingfeeds":          true,
 	"preplayqueue":           true, // CORE-1701: items to play before a feature
 	"preplayclips":           true, // CORE-1701: the Owner's pre-play clip list
 	"media":                  true,

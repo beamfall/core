@@ -5662,6 +5662,18 @@
       ]
     },
     {
+      "field": "trendingfeeds",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artworkURL",
+        "description",
+        "feedURL",
+        "source",
+        "title"
+      ]
+    },
+    {
       "field": "unassigntag",
       "effect": "write",
       "tier": "session",

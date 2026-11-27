@@ -693,6 +693,11 @@
       "tier": "admin"
     },
     {
+      "field": "managedlivesessions",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "manifest",
       "effect": "read",
       "tier": "session"
@@ -1860,6 +1865,11 @@
     {
       "field": "trashmedia",
       "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "trendingfeeds",
+      "effect": "read",
       "tier": "session"
     },
     {
@@ -16158,6 +16168,78 @@
     },
     {
       "field": "livesessions",
+      "kind": "object",
+      "children": [
+        {
+          "name": "bitrate",
+          "kind": "scalar"
+        },
+        {
+          "name": "deviceID",
+          "kind": "scalar"
+        },
+        {
+          "name": "deviceName",
+          "kind": "scalar"
+        },
+        {
+          "name": "deviceRole",
+          "kind": "scalar"
+        },
+        {
+          "name": "durationSeconds",
+          "kind": "scalar"
+        },
+        {
+          "name": "expiresAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "playMethod",
+          "kind": "scalar"
+        },
+        {
+          "name": "playReason",
+          "kind": "scalar"
+        },
+        {
+          "name": "positionSeconds",
+          "kind": "scalar"
+        },
+        {
+          "name": "profileID",
+          "kind": "scalar"
+        },
+        {
+          "name": "profileName",
+          "kind": "scalar"
+        },
+        {
+          "name": "sessionID",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "transcoding",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "managedlivesessions",
       "kind": "object",
       "children": [
         {
@@ -63776,6 +63858,44 @@
         },
         {
           "name": "trashedAt",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "trendingfeeds",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "language",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "region",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "children": [
+        {
+          "name": "artworkURL",
+          "kind": "scalar"
+        },
+        {
+          "name": "description",
+          "kind": "scalar"
+        },
+        {
+          "name": "feedURL",
+          "kind": "scalar"
+        },
+        {
+          "name": "source",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
           "kind": "scalar"
         }
       ]

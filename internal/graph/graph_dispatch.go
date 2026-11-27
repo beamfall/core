@@ -802,6 +802,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"search":                             newFieldHandler("search", "search", fieldRead, roleSession, 19),
 	"searchentities":                     newFieldHandler("searchEntities", "searchEntities", fieldRead, roleSession, 22),
 	"searchfeeds":                        newFieldHandler("searchFeeds", "searchFeeds", fieldRead, roleSession, 23),
+	"trendingfeeds":                      newFieldHandler("trendingFeeds", "trendingFeeds", fieldRead, roleSession, 23),
 	"followfeed":                         newFieldHandler("followFeed", "followFeed", fieldMutation, roleSession, 23),
 	"searchresult":                       newFieldHandler("searchResult", "searchResult", fieldRead, roleSession, 20),
 	"semanticcapability":                 newFieldHandler("semanticCapability", "semanticCapability", fieldRead, roleSession, 21),
@@ -1366,6 +1367,12 @@ func dispatchFieldBlock023(dispatch *fieldDispatchContext) response {
 	if fields["searchfeeds"] {
 		items, err := h.searchFeeds(ctx, scope, req)
 		if resp := resolveField(dispatch, "searchfeeds", items, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["trendingfeeds"] {
+		items, err := h.trendingFeeds(ctx, scope, req)
+		if resp := resolveField(dispatch, "trendingfeeds", items, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

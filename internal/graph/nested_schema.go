@@ -72,6 +72,7 @@ var resultTypes = map[string]any{
 	"semanticcapability":            SemanticCapabilityInfo{},
 	"searchentities":                SourceItem{},
 	"searchfeeds":                   FeedSearchResult{},
+	"trendingfeeds":                 FeedTrendingResult{},
 	"preplayqueue":                  []PrePlayItem{},
 	"preplayclips":                  PrePlayClipsInfo{},
 	"media":                         MediaInfo{},
@@ -528,6 +529,7 @@ var fieldArguments = map[string][]NestedArgument{
 	"serverlogs":        serverLogsArguments(),
 	"searchentities":    {{Name: "query", Kind: "string", Optional: true}},
 	"searchfeeds":       {{Name: "query", Kind: "string"}},
+	"trendingfeeds":     {{Name: "language", Kind: "string", Optional: true}, {Name: "region", Kind: "string", Optional: true}},
 	"preplayqueue":      {{Name: "mediaID", Kind: "string"}},
 	"searchresult":      {{Name: "limit", Kind: "int", Optional: true}, searchModeArgument(), {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}},
 	"partystage": {

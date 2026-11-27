@@ -112,6 +112,9 @@ type Config struct {
 	// today only enables the no-op registration seam (push.NoopRegistrar); no
 	// real network dispatch exists yet.
 	PushRegistrationEnabled bool
+	// PodcastAppleChart opts the server into the top-shows chart in the
+	// Trending directory (CORE-3554). Default false: no outbound chart request.
+	PodcastAppleChart bool
 
 	// --- qBittorrent ingest ---
 	// QBittorrentURL is the qBittorrent Web API base, e.g.
@@ -573,6 +576,13 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 			return Config{}, err
 		}
 		cfg.QBittorrentRouting = routing
+	}
+	if value, ok := lookupEnv("BEAMFALL_PODCAST_APPLE_CHART"); ok && value != "" {
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid BEAMFALL_PODCAST_APPLE_CHART: %w", err)
+		}
+		cfg.PodcastAppleChart = enabled
 	}
 	if value, ok := lookupEnv("BEAMFALL_PUBLIC_DOMAIN"); ok {
 		cfg.RemoteAccess.DirectHTTPS.PublicDomain = strings.TrimSpace(value)
