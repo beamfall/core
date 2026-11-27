@@ -720,12 +720,13 @@ func TestManagerSecretClearRotateRetryAndOrphanCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Inject PostRenameSyncError on the 2nd save (cleanup after Save 1 already
-	// durably committed and cleaned replaced the file without PendingCreateKey):
+	// durably committed and cleaned replaced the file without PendingCreateKey;
+	// Save 1 calls syncDir twice: dir + parent):
 	// acknowledges durable create and reopening mints a new ID for identical create.
 	syncCalls := 0
 	restoreClean := jsonstate.WithSyncDirForTest(func(string) error {
 		syncCalls++
-		if syncCalls >= 2 {
+		if syncCalls >= 3 {
 			return injected
 		}
 		return nil

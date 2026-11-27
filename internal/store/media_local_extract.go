@@ -413,7 +413,7 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 			if err := copySplitMediaMetadataAndLinksTx(ctx, tx, group.mediaID, newID, plane.encrypted); err != nil {
 				return err
 			}
-			if file.missing {
+			if file.missing || strings.HasPrefix(file.contentFingerprint, "sha256:") {
 				if _, err := tx.ExecContext(ctx, `
 					INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, ?)
 					ON CONFLICT(media_id, field) DO NOTHING
@@ -425,7 +425,7 @@ func (s *Store) ReconcileStandaloneLibraryMedia(ctx context.Context, libraryID L
 				createdPublicIDs = append(createdPublicIDs, newID)
 			}
 		}
-		if len(group.files) > 1 && primary.missing {
+		if len(group.files) > 1 && (primary.missing || strings.HasPrefix(primary.contentFingerprint, "sha256:")) {
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, ?)
 				ON CONFLICT(media_id, field) DO NOTHING

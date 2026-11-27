@@ -220,13 +220,7 @@ func (s *Service) persistTransitionLocked(revert func()) error {
 		}
 		return err
 	}
-	if err := s.clearPendingSyncLocked(); err != nil {
-		var postSync *jsonstate.PostRenameSyncError
-		if errors.As(err, &postSync) {
-			return nil
-		}
-		return err
-	}
+	_ = s.clearPendingSyncLocked()
 	return nil
 }
 

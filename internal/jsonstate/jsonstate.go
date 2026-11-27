@@ -64,8 +64,6 @@ func Save(path string, state any) error {
 		return err
 	}
 	dir := filepath.Dir(path)
-	_, statErr := os.Stat(dir)
-	createdDir := errors.Is(statErr, os.ErrNotExist)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -106,8 +104,8 @@ func Save(path string, state any) error {
 	if err := syncFn(dir); err != nil {
 		return &PostRenameSyncError{Err: err}
 	}
-	if createdDir {
-		if err := syncFn(filepath.Dir(dir)); err != nil {
+	if parent := filepath.Dir(dir); parent != dir {
+		if err := syncFn(parent); err != nil {
 			return &PostRenameSyncError{Err: err}
 		}
 	}
