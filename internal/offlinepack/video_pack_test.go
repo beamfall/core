@@ -45,7 +45,7 @@ type fakeTranscoder struct {
 	streams [][]store.MediaFileStream
 }
 
-func (f *fakeTranscoder) transcode(_ context.Context, src, dst, quality string, streams []store.MediaFileStream) error {
+func (f *fakeTranscoder) transcode(_ context.Context, src, dst, quality string, streams []store.MediaFileStream, _ func(TranscodeProgress)) error {
 	f.calls = append(f.calls, filepath.Base(src)+"@"+quality)
 	f.streams = append(f.streams, streams)
 	if f.err != nil {
@@ -212,7 +212,7 @@ func TestBuildTranscodeCancellationStaysVisible(t *testing.T) {
 	svc, authService, st, _ := newFixture(t)
 	setFixtureClass(t, st, "media-alpha", store.MediaClassVideo)
 	ctx, cancel := context.WithCancel(context.Background())
-	svc.SetTranscoder(func(context.Context, string, string, string, []store.MediaFileStream) error {
+	svc.SetTranscoder(func(context.Context, string, string, string, []store.MediaFileStream, func(TranscodeProgress)) error {
 		cancel()
 		return errors.New("ffmpeg convert: exit status 255")
 	})

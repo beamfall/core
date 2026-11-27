@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"math"
+	"sync"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
@@ -271,9 +274,54 @@ func (s *Service) recordBuildFailure(ctx context.Context, id store.OfflinePackID
 	return s.store.FailOfflinePackBuild(context.WithoutCancel(ctx), id, FailureReason(err), s.now())
 }
 
-// buildProgress reports a tracked build's coarse progress as it transcodes,
-// hashes and seals each item. The final step (persisting the sealed pack) is
-// never reported, so a building row stays below 1 until it becomes ready.
+// BuildTranscodeSpeed returns the live FFmpeg encoding speed multiplier (e.g.
+// 14.1 for 14.1x) while id is actively transcoding a video item, or 0 otherwise.
+func (s *Service) BuildTranscodeSpeed(id store.OfflinePackID) float64 {
+	if s == nil || id == "" {
+		return 0
+	}
+	s.speedMu.RLock()
+	defer s.speedMu.RUnlock()
+	return s.buildSpeeds[id]
+}
+
+func (s *Service) setBuildTranscodeSpeed(id store.OfflinePackID, speed float64) {
+	if s == nil || id == "" {
+		return
+	}
+	s.speedMu.Lock()
+	defer s.speedMu.Unlock()
+	if math.IsNaN(speed) || math.IsInf(speed, 0) || speed <= 0 {
+		delete(s.buildSpeeds, id)
+		return
+	}
+	if s.buildSpeeds == nil {
+		s.buildSpeeds = map[store.OfflinePackID]float64{}
+	}
+	s.buildSpeeds[id] = speed
+}
+
+func (s *Service) clearBuildTranscodeSpeed(id store.OfflinePackID) {
+	if s == nil || id == "" {
+		return
+	}
+	s.speedMu.Lock()
+	delete(s.buildSpeeds, id)
+	s.speedMu.Unlock()
+}
+
+const (
+	// transcodeProgressWeight weights each video transcode step relative to
+	// hashing, encrypting, and final DB sealing (each weight 1), so live
+	// percentage tracks the CPU-bound transcode rather than stalling near 0%.
+	transcodeProgressWeight = 8
+	transcodeWriteInterval  = time.Second
+	transcodeWriteMinDelta  = 0.01
+)
+
+// buildProgress reports a tracked build's progress as it transcodes, hashes,
+// and seals each item. The final step (persisting the sealed pack) is never
+// reported, so a building row stays below 1 until it becomes ready.
 type buildProgress struct {
 	s           *Service
 	ctx         context.Context
@@ -285,18 +333,87 @@ func (s *Service) newBuildProgress(ctx context.Context, id store.OfflinePackID, 
 	total := 2*len(sources) + 1
 	for _, source := range sources {
 		if source.transcode {
-			total++
+			total += transcodeProgressWeight
 		}
 	}
 	return &buildProgress{s: s, ctx: ctx, id: id, total: total}
 }
 
-// step records one finished unit of work. Progress is best-effort: a failed
-// write never fails the build.
+func (p *buildProgress) packID() store.OfflinePackID {
+	if p == nil {
+		return ""
+	}
+	return p.id
+}
+
+// step records one finished hash or encrypt unit of work. Progress is
+// best-effort: a failed write never fails the build.
 func (p *buildProgress) step() {
-	if p == nil || p.id == "" {
+	if p == nil || p.id == "" || p.total <= 0 {
 		return
 	}
 	p.done++
-	_ = p.s.store.SetOfflinePackBuildProgress(p.ctx, p.id, float64(p.done)/float64(p.total), p.s.now())
+	p.record(float64(p.done) / float64(p.total))
+}
+
+// transcodeStep records one finished item transcode and clears its live speed.
+func (p *buildProgress) transcodeStep() {
+	if p == nil || p.id == "" || p.total <= 0 {
+		return
+	}
+	p.s.clearBuildTranscodeSpeed(p.id)
+	p.done += transcodeProgressWeight
+	p.record(float64(p.done) / float64(p.total))
+}
+
+func (p *buildProgress) record(progress float64) {
+	if p == nil || p.id == "" {
+		return
+	}
+	_ = p.s.store.SetOfflinePackBuildProgress(p.ctx, p.id, progress, p.s.now())
+}
+
+// transcodeReporter returns a callback that streams live FFmpeg transcode
+// progress and speed for the next transcode item, or nil for untracked builds.
+func (p *buildProgress) transcodeReporter(itemDuration time.Duration) func(TranscodeProgress) {
+	if p == nil || p.id == "" || p.total <= 0 {
+		return nil
+	}
+	var (
+		mu          sync.Mutex
+		base        = p.done
+		lastWritten = -1.0
+		lastWriteAt time.Time
+	)
+	return func(tp TranscodeProgress) {
+		if tp.Speed > 0 && !math.IsNaN(tp.Speed) && !math.IsInf(tp.Speed, 0) {
+			p.s.setBuildTranscodeSpeed(p.id, tp.Speed)
+		} else {
+			p.s.clearBuildTranscodeSpeed(p.id)
+		}
+		dur := itemDuration
+		if dur <= 0 {
+			dur = tp.Duration
+		}
+		if dur <= 0 || tp.OutTime <= 0 {
+			return
+		}
+		frac := math.Min(1, math.Max(0, float64(tp.OutTime)/float64(dur)))
+		overall := (float64(base) + frac*float64(transcodeProgressWeight)) / float64(p.total)
+		mu.Lock()
+		if overall <= lastWritten {
+			mu.Unlock()
+			return
+		}
+		now := time.Now()
+		shouldWrite := lastWritten < 0 || overall-lastWritten >= transcodeWriteMinDelta || now.Sub(lastWriteAt) >= transcodeWriteInterval
+		if shouldWrite {
+			lastWritten = overall
+			lastWriteAt = now
+		}
+		mu.Unlock()
+		if shouldWrite {
+			p.record(overall)
+		}
+	}
 }

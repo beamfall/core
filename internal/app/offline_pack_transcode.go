@@ -27,6 +27,12 @@ type videoConverter interface {
 	Probe(ctx context.Context, path string) (ffmpeg.Probe, error)
 }
 
+// progressVideoConverter is implemented by FFmpeg runners that stream live
+// -progress updates during Convert.
+type progressVideoConverter interface {
+	ConvertWithProgress(ctx context.Context, src, dst string, profile ffmpeg.ConvertProfile, onProgress func(ffmpeg.ConvertProgress)) error
+}
+
 // pipeTranscoder is the slice of the FFmpeg runner the encrypted-library pack
 // transcoder and its duration probe use.
 type pipeTranscoder interface {
@@ -55,24 +61,42 @@ func offlinePackProfile(quality string, streams []store.MediaFileStream) (ffmpeg
 // (scanned without a probe) is probed first, so an HDR source is not taken
 // for SDR (CORE-1845).
 func offlinePackTranscoder(runner videoConverter) offlinepack.Transcoder {
-	return func(ctx context.Context, src, dst, quality string, streams []store.MediaFileStream) error {
+	return func(ctx context.Context, src, dst, quality string, streams []store.MediaFileStream, onProgress func(offlinepack.TranscodeProgress)) error {
 		profile, err := offlinePackProfile(quality, streams)
 		if err != nil {
 			return err
 		}
+		var probedDuration time.Duration
 		video, ok := packVideoStream(streams)
 		if !ok {
 			probe, err := runner.Probe(ctx, src)
 			if err != nil {
 				return fmt.Errorf("probe offline pack source: %w", err)
 			}
+			if probe.DurationSeconds > 0 {
+				probedDuration = time.Duration(probe.DurationSeconds) * time.Second
+			}
 			video, ok = packVideoStream(probedVideoStreams(probe.Streams))
+		} else if onProgress != nil {
+			if probe, err := runner.Probe(ctx, src); err == nil && probe.DurationSeconds > 0 {
+				probedDuration = time.Duration(probe.DurationSeconds) * time.Second
+			}
 		}
-		if !ok {
-			return runner.Convert(ctx, src, dst, profile)
+		if ok {
+			signal := playback.VideoSignalFromStreams([]store.MediaFileStream{video})
+			profile = profile.WithSourceVideo(signal.ColorTransfer, signal.DoViProfile).WithSourceVideoStream(video.Index)
 		}
-		signal := playback.VideoSignalFromStreams([]store.MediaFileStream{video})
-		profile = profile.WithSourceVideo(signal.ColorTransfer, signal.DoViProfile).WithSourceVideoStream(video.Index)
+		if onProgress != nil {
+			if progressRunner, ok := runner.(progressVideoConverter); ok {
+				return progressRunner.ConvertWithProgress(ctx, src, dst, profile, func(p ffmpeg.ConvertProgress) {
+					onProgress(offlinepack.TranscodeProgress{
+						OutTime:  p.OutTime,
+						Duration: probedDuration,
+						Speed:    p.Speed,
+					})
+				})
+			}
+		}
 		return runner.Convert(ctx, src, dst, profile)
 	}
 }

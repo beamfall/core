@@ -91,12 +91,22 @@ func NormalizeQuality(quality string) (string, error) {
 	}
 }
 
+// TranscodeProgress reports live progress from a video item transcode.
+// OutTime is the encoded output position; Duration (when positive) overrides an
+// unprobed catalog duration; Speed is FFmpeg's real-time multiplier (0 when N/A).
+type TranscodeProgress struct {
+	OutTime  time.Duration
+	Duration time.Duration
+	Speed    float64
+}
+
 // Transcoder writes a transcoded copy of the plaintext source file src to dst
 // at quality (one of high, medium or low). streams is the source file's
 // persisted per-stream inventory (empty when the scan recorded none), so the
-// transcoder can tell an HDR source from SDR. The composition root wires it to
-// FFmpeg; nil (the default) refuses every non-original video build.
-type Transcoder func(ctx context.Context, src, dst, quality string, streams []store.MediaFileStream) error
+// transcoder can tell an HDR source from SDR. When non-nil, onProgress receives
+// live transcode progress updates. The composition root wires it to FFmpeg;
+// nil (the default) refuses every non-original video build.
+type Transcoder func(ctx context.Context, src, dst, quality string, streams []store.MediaFileStream, onProgress func(TranscodeProgress)) error
 
 // PipeTranscoder transcodes a video item in an Encrypted Library. It reads the
 // decrypted source from input, a token-gated loopback URL, and writes a
@@ -229,6 +239,8 @@ type Service struct {
 	pipeProbe       PipeDurationProbe
 	deviceMu        sync.RWMutex
 	devices         map[string]deviceRegistration
+	speedMu         sync.RWMutex
+	buildSpeeds     map[store.OfflinePackID]float64
 	// resolveContext binds each encrypted open to its immutable object identity.
 	resolveContext ObjectContextResolver
 	// pipePoll overrides the encrypted transcode's re-authorization interval;
@@ -252,6 +264,7 @@ func NewService(st Store, authority *Authority, now func() time.Time) *Service {
 		now:             now,
 		resolvers:       map[string]TargetResolver{},
 		devices:         map[string]deviceRegistration{},
+		buildSpeeds:     map[store.OfflinePackID]float64{},
 		buildByteBudget: DefaultBuildByteBudget,
 		encryptItem:     EncryptPackItemTo,
 	}
@@ -515,7 +528,7 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 	// Registered first so a failure part-way through the transcodes still
 	// releases the ones already staged.
 	defer removeTranscodes(sources)
-	if err := s.transcodeSources(ctx, scope, sources, packDir, quality, progress.step); err != nil {
+	if err := s.transcodeSources(ctx, scope, sources, packDir, quality, progress); err != nil {
 		return store.OfflinePack{}, err
 	}
 	bytesTotal, err := s.checkBuildBytes(sources)

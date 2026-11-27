@@ -2816,18 +2816,36 @@ type HLSProcess struct {
 // real lines are a few dozen bytes, so anything longer is discarded.
 const hlsProgressLineBytes = 4 << 10
 
-// progressWriter consumes ffmpeg's -progress key=value stream and reports each
-// increase of out_time_us. Anything else in the stream is ignored.
+// ConvertProgress is a live progress snapshot parsed from ffmpeg's
+// -progress pipe:1 stream during Runner.ConvertWithProgress.
+type ConvertProgress struct {
+	// OutTime is the encoder's output timestamp (from out_time_us).
+	OutTime time.Duration
+	// Speed is the encoding speed multiplier relative to real-time (from
+	// speed=<n>x), or 0 when FFmpeg reported N/A or no valid speed yet.
+	Speed float64
+}
+
+// progressWriter consumes ffmpeg's -progress key=value stream, reporting each
+// increase of out_time_us via advance and completed progress blocks (out_time_us
+// and speed) via onProgress. Anything else in the stream is ignored.
 type progressWriter struct {
-	mu      sync.Mutex
-	line    []byte
-	lastOut int64
-	advance func()
+	mu         sync.Mutex
+	emitMu     sync.Mutex
+	line       []byte
+	lastOut    int64
+	speed      float64
+	dirty      bool
+	advance    func()
+	onProgress func(ConvertProgress)
 }
 
 func (w *progressWriter) Write(p []byte) (int, error) {
+	var (
+		advances int
+		samples  []ConvertProgress
+	)
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	for _, b := range p {
 		if b != '\n' {
 			if len(w.line) < hlsProgressLineBytes {
@@ -2835,25 +2853,114 @@ func (w *progressWriter) Write(p []byte) (int, error) {
 			}
 			continue
 		}
-		w.parseLine(string(w.line))
+		adv, sample, emit := w.parseLineLocked(string(w.line))
+		if adv {
+			advances++
+		}
+		if emit {
+			samples = append(samples, sample)
+		}
 		w.line = w.line[:0]
 	}
+	w.mu.Unlock()
+	w.dispatch(advances, samples)
 	return len(p), nil
 }
 
-func (w *progressWriter) parseLine(line string) {
-	value, ok := strings.CutPrefix(strings.TrimSpace(line), "out_time_us=")
-	if !ok {
-		return
+// flush parses any trailing partial line and emits pending progress updates at
+// end of stream (for callers that exit without a final progress=end marker).
+func (w *progressWriter) flush() {
+	var (
+		advances int
+		samples  []ConvertProgress
+	)
+	w.mu.Lock()
+	if len(w.line) > 0 {
+		adv, sample, emit := w.parseLineLocked(string(w.line))
+		if adv {
+			advances++
+		}
+		if emit {
+			samples = append(samples, sample)
+		}
+		w.line = w.line[:0]
 	}
-	out, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || out <= w.lastOut {
-		return // N/A before the first frame, or no forward motion
+	if w.dirty && (w.lastOut > 0 || w.speed > 0) {
+		w.dirty = false
+		samples = append(samples, ConvertProgress{
+			OutTime: time.Duration(w.lastOut) * time.Microsecond,
+			Speed:   w.speed,
+		})
 	}
-	w.lastOut = out
+	w.mu.Unlock()
+	w.dispatch(advances, samples)
+}
+
+func (w *progressWriter) dispatch(advances int, samples []ConvertProgress) {
 	if w.advance != nil {
-		w.advance()
+		for range advances {
+			w.advance()
+		}
 	}
+	if w.onProgress != nil && len(samples) > 0 {
+		w.emitMu.Lock()
+		for _, sample := range samples {
+			w.onProgress(sample)
+		}
+		w.emitMu.Unlock()
+	}
+}
+
+func (w *progressWriter) parseLineLocked(line string) (advanced bool, sample ConvertProgress, emit bool) {
+	trimmed := strings.TrimSpace(line)
+	if value, ok := strings.CutPrefix(trimmed, "out_time_us="); ok {
+		out, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || out <= w.lastOut || out > math.MaxInt64/int64(time.Microsecond) {
+			return false, ConvertProgress{}, false // N/A before the first frame, overflow, or no forward motion
+		}
+		w.lastOut = out
+		w.dirty = true
+		return true, ConvertProgress{}, false
+	}
+	if value, ok := strings.CutPrefix(trimmed, "speed="); ok {
+		speed, ok := parseProgressSpeed(value)
+		if !ok {
+			speed = 0
+		}
+		if speed != w.speed {
+			w.speed = speed
+			w.dirty = true
+		}
+		return false, ConvertProgress{}, false
+	}
+	if value, ok := strings.CutPrefix(trimmed, "progress="); ok && (value == "continue" || value == "end") {
+		if w.dirty && (w.lastOut > 0 || w.speed > 0) {
+			w.dirty = false
+			return false, ConvertProgress{
+				OutTime: time.Duration(w.lastOut) * time.Microsecond,
+				Speed:   w.speed,
+			}, true
+		}
+	}
+	return false, ConvertProgress{}, false
+}
+
+// parseProgressSpeed parses FFmpeg's -progress speed value (e.g. "14.1x",
+// " 40x", "N/A"). Negative, infinite, NaN, and N/A values are rejected.
+func parseProgressSpeed(raw string) (float64, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" || strings.EqualFold(s, "N/A") {
+		return 0, false
+	}
+	s = strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(s, "x"), "X"))
+	if s == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
+		return 0, false
+	}
+	return v, true
 }
 
 // requestsProgress reports whether argv asks ffmpeg to write its -progress

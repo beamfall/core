@@ -866,6 +866,7 @@
         "state",
         "targetKind",
         "targetRef",
+        "transcodeSpeed",
         "updatedAt"
       ]
     },
@@ -2383,6 +2384,7 @@
         "state",
         "targetKind",
         "targetRef",
+        "transcodeSpeed",
         "updatedAt"
       ]
     },
@@ -4031,6 +4033,7 @@
         "state",
         "targetKind",
         "targetRef",
+        "transcodeSpeed",
         "updatedAt"
       ]
     },
@@ -4145,6 +4148,7 @@
         "state",
         "targetKind",
         "targetRef",
+        "transcodeSpeed",
         "updatedAt"
       ]
     },
@@ -5594,6 +5598,7 @@
         "state",
         "targetKind",
         "targetRef",
+        "transcodeSpeed",
         "updatedAt"
       ]
     },

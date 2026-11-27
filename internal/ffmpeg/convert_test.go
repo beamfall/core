@@ -284,3 +284,37 @@ func TestConvertPackProfileEncodesTheMappedStreamRealBinary(t *testing.T) {
 		}
 	}
 }
+
+func TestConvertWithProgressRealBinary(t *testing.T) {
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not installed; skipping real-binary progress convert test")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.mkv")
+	gen := exec.CommandContext(t.Context(), ffmpegPath, "-v", "error", // #nosec G204 -- resolved test binary, fixed args
+		"-f", "lavfi", "-i", "testsrc=size=320x240:rate=10:duration=2",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+		"-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", "-t", "2", "-y", src)
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Skipf("could not synthesize test clip: %v\n%s", err, out)
+	}
+	dst := filepath.Join(dir, "out.mp4")
+	preset, _ := PackProfileByName("pack-480p")
+	var events []ConvertProgress
+	if err := New().ConvertWithProgress(t.Context(), src, dst, preset, func(p ConvertProgress) {
+		events = append(events, p)
+	}); err != nil {
+		t.Fatalf("ConvertWithProgress: %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatal("ConvertWithProgress emitted zero progress events")
+	}
+	last := events[len(events)-1]
+	if last.OutTime <= 0 {
+		t.Fatalf("final progress = %+v, want positive OutTime", last)
+	}
+	if info, err := os.Stat(dst); err != nil || info.Size() == 0 {
+		t.Fatalf("converted output missing or empty: info=%v err=%v", info, err)
+	}
+}

@@ -39,7 +39,7 @@ func TestOfflinePackTranscoderMapsEachQualityToItsPreset(t *testing.T) {
 		offlinepack.QualityHigh: "pack-1080p", offlinepack.QualityMedium: "pack-720p", offlinepack.QualityLow: "pack-480p",
 	} {
 		runner.profiles = nil
-		if err := transcode(t.Context(), "/src", "/dst", quality, nil); err != nil {
+		if err := transcode(t.Context(), "/src", "/dst", quality, nil, nil); err != nil {
 			t.Fatalf("%s: %v", quality, err)
 		}
 		if len(runner.profiles) != 1 || runner.profiles[0].Name != want {
@@ -47,7 +47,7 @@ func TestOfflinePackTranscoderMapsEachQualityToItsPreset(t *testing.T) {
 		}
 	}
 	for _, quality := range []string{offlinepack.QualityOriginal, "", "ultra"} {
-		if err := transcode(t.Context(), "/src", "/dst", quality, nil); err == nil {
+		if err := transcode(t.Context(), "/src", "/dst", quality, nil, nil); err == nil {
 			t.Fatalf("quality %q: want an error", quality)
 		}
 	}
@@ -69,7 +69,7 @@ func TestOfflinePackTranscoderPassesTheSourceVideoSignal(t *testing.T) {
 		"sdr":          {[]store.MediaFileStream{{Type: "video", ColorTransfer: "bt709"}}, preset.WithSourceVideo("bt709", 0).WithSourceVideoStream(0)},
 	} {
 		runner := &recordingConverter{}
-		if err := offlinePackTranscoder(runner)(t.Context(), "/src", "/dst", offlinepack.QualityMedium, tc.streams); err != nil {
+		if err := offlinePackTranscoder(runner)(t.Context(), "/src", "/dst", offlinepack.QualityMedium, tc.streams, nil); err != nil {
 			t.Fatalf("%s: %v", label, err)
 		}
 		if len(runner.profiles) != 1 || runner.profiles[0] != tc.want {
@@ -94,7 +94,7 @@ func TestOfflinePackTranscoderProbesASourceWithoutAnInventory(t *testing.T) {
 	audioOnly := []store.MediaFileStream{{Index: 0, Type: "audio", Codec: "aac"}}
 	for label, inventory := range map[string][]store.MediaFileStream{"no inventory": nil, "audio rows only": audioOnly} {
 		runner := &recordingConverter{probe: hdrProbe}
-		if err := offlinePackTranscoder(runner)(t.Context(), "/src", "/dst", offlinepack.QualityMedium, inventory); err != nil {
+		if err := offlinePackTranscoder(runner)(t.Context(), "/src", "/dst", offlinepack.QualityMedium, inventory, nil); err != nil {
 			t.Fatalf("%s: %v", label, err)
 		}
 		if len(runner.probed) != 1 || runner.probed[0] != "/src" {
@@ -108,7 +108,7 @@ func TestOfflinePackTranscoderProbesASourceWithoutAnInventory(t *testing.T) {
 
 	runner := &recordingConverter{probe: hdrProbe}
 	sdr := []store.MediaFileStream{{Index: 0, Type: "video", ColorTransfer: "bt709"}}
-	if err := offlinePackTranscoder(runner)(t.Context(), "/src", "/dst", offlinepack.QualityMedium, sdr); err != nil {
+	if err := offlinePackTranscoder(runner)(t.Context(), "/src", "/dst", offlinepack.QualityMedium, sdr, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(runner.probed) != 0 {
@@ -116,7 +116,7 @@ func TestOfflinePackTranscoderProbesASourceWithoutAnInventory(t *testing.T) {
 	}
 
 	failing := &recordingConverter{probeErr: errors.New("ffprobe exited 1")}
-	if err := offlinePackTranscoder(failing)(t.Context(), "/src", "/dst", offlinepack.QualityMedium, nil); err == nil || len(failing.profiles) != 0 {
+	if err := offlinePackTranscoder(failing)(t.Context(), "/src", "/dst", offlinepack.QualityMedium, nil, nil); err == nil || len(failing.profiles) != 0 {
 		t.Fatalf("failed probe: err = %v, converts = %d; want an error and no convert", err, len(failing.profiles))
 	}
 }
@@ -141,7 +141,7 @@ func TestOfflinePackTranscoderProbesAnUnprobedHDRSourceRealBinary(t *testing.T) 
 		t.Skipf("could not synthesize HDR-tagged clip: %v\n%s", err, out)
 	}
 	runner := &probingRecorder{Runner: ffmpeg.New()}
-	if err := offlinePackTranscoder(runner)(t.Context(), src, src+".mp4", offlinepack.QualityMedium, nil); err != nil {
+	if err := offlinePackTranscoder(runner)(t.Context(), src, src+".mp4", offlinepack.QualityMedium, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	preset, _ := ffmpeg.PackProfileByName("pack-720p")
@@ -195,7 +195,7 @@ func TestOfflinePackTranscoderMapsTheStreamItReadsTheSignalFrom(t *testing.T) {
 		},
 	} {
 		runner := &recordingConverter{}
-		if err := offlinePackTranscoder(runner)(t.Context(), "/src", "/dst", offlinepack.QualityMedium, tc.streams); err != nil {
+		if err := offlinePackTranscoder(runner)(t.Context(), "/src", "/dst", offlinepack.QualityMedium, tc.streams, nil); err != nil {
 			t.Fatalf("%s: %v", label, err)
 		}
 		if len(runner.profiles) != 1 || runner.profiles[0] != tc.want {
@@ -265,5 +265,62 @@ func TestOfflinePackPipeDurationProbeUsesTheEndpoint(t *testing.T) {
 	}
 	if len(runner.inputs) != 0 {
 		t.Fatal("the probe ran a transcode")
+	}
+}
+
+type recordingProgressConverter struct {
+	recordingConverter
+	samples []ffmpeg.ConvertProgress
+}
+
+func (r *recordingProgressConverter) ConvertWithProgress(_ context.Context, _, _ string, profile ffmpeg.ConvertProfile, onProgress func(ffmpeg.ConvertProgress)) error {
+	r.profiles = append(r.profiles, profile)
+	for _, sample := range r.samples {
+		onProgress(sample)
+	}
+	return nil
+}
+
+func TestOfflinePackTranscoderForwardsProgressAndProbedDuration(t *testing.T) {
+	runner := &recordingProgressConverter{
+		recordingConverter: recordingConverter{
+			probe: ffmpeg.Probe{
+				DurationSeconds: 180,
+				Streams:         []ffmpeg.ProbeStream{{Index: 0, Type: "video", Codec: "h264"}},
+			},
+		},
+		samples: []ffmpeg.ConvertProgress{
+			{OutTime: 45 * time.Second, Speed: 14.1},
+		},
+	}
+	var got []offlinepack.TranscodeProgress
+	if err := offlinePackTranscoder(runner)(t.Context(), "/src", "/dst", offlinepack.QualityMedium, nil, func(p offlinepack.TranscodeProgress) {
+		got = append(got, p)
+	}); err != nil {
+		t.Fatalf("offlinePackTranscoder: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("progress events = %+v, want 1", got)
+	}
+	want := offlinepack.TranscodeProgress{
+		OutTime:  45 * time.Second,
+		Duration: 180 * time.Second,
+		Speed:    14.1,
+	}
+	if got[0] != want {
+		t.Fatalf("progress = %+v, want %+v", got[0], want)
+	}
+
+	// Persisted video streams skip the stream-discovery probe, yet live
+	// progress still needs per-file duration (for multipart files, etc.).
+	got = nil
+	persisted := []store.MediaFileStream{{Index: 0, Type: "video", Codec: "h264", Default: true}}
+	if err := offlinePackTranscoder(runner)(t.Context(), "/src-part2", "/dst-part2", offlinepack.QualityMedium, persisted, func(p offlinepack.TranscodeProgress) {
+		got = append(got, p)
+	}); err != nil {
+		t.Fatalf("offlinePackTranscoder(persisted streams): %v", err)
+	}
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("progress with persisted streams = %+v, want [%+v]", got, want)
 	}
 }

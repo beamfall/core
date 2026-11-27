@@ -7992,6 +7992,11 @@
           "kind": "scalar"
         },
         {
+          "name": "transcodeSpeed",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "updatedAt",
           "kind": "scalar"
         }
@@ -22328,6 +22333,11 @@
             "kind": "scalar"
           },
           {
+            "name": "transcodeSpeed",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
             "name": "updatedAt",
             "kind": "scalar"
           }
@@ -22388,6 +22398,11 @@
         {
           "name": "targetRef",
           "kind": "scalar"
+        },
+        {
+          "name": "transcodeSpeed",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "updatedAt",
@@ -50547,6 +50562,11 @@
           "kind": "scalar"
         },
         {
+          "name": "transcodeSpeed",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "updatedAt",
           "kind": "scalar"
         }
@@ -50775,6 +50795,11 @@
         {
           "name": "targetRef",
           "kind": "scalar"
+        },
+        {
+          "name": "transcodeSpeed",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "updatedAt",
@@ -64431,6 +64456,11 @@
         {
           "name": "targetRef",
           "kind": "scalar"
+        },
+        {
+          "name": "transcodeSpeed",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "updatedAt",

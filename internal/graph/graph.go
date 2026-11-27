@@ -770,6 +770,7 @@ type OfflinePackService interface {
 	// Background builds that have not sealed yet (CORE-1743).
 	TrackBuild(ctx context.Context, payload []byte) (store.OfflinePackBuild, error)
 	Builds(ctx context.Context, profileID store.ProfileID) ([]store.OfflinePackBuild, error)
+	BuildTranscodeSpeed(id store.OfflinePackID) float64
 	RetryBuild(ctx context.Context, scope auth.Scope, id store.OfflinePackID) (store.OfflinePackBuild, []byte, error)
 	FailBuild(ctx context.Context, id store.OfflinePackID, reason string) error
 	DismissBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error

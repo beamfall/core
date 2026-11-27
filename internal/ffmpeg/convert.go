@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -234,6 +235,14 @@ func (p ConvertProfile) boundArgs() []string {
 // refused, so the admitted file always corresponds to the bytes that were
 // actually authorised.
 func (r *Runner) Convert(ctx context.Context, src, dst string, profile ConvertProfile) (err error) {
+	return r.ConvertWithProgress(ctx, src, dst, profile, nil)
+}
+
+// ConvertWithProgress is Convert with live FFmpeg -progress pipe:1 telemetry.
+// When onProgress is non-nil, FFmpeg emits machine-readable progress blocks on
+// stdout and each parsed out_time_us / speed update is delivered sequentially
+// to onProgress while stderr keeps bounded diagnostic capture.
+func (r *Runner) ConvertWithProgress(ctx context.Context, src, dst string, profile ConvertProfile, onProgress func(ConvertProgress)) (err error) {
 	if err := checkPath(src); err != nil {
 		return err
 	}
@@ -257,7 +266,12 @@ func (r *Runner) Convert(ctx context.Context, src, dst string, profile ConvertPr
 		return err
 	}
 	defer out.joinDiscardError(&err)
-	args := append([]string{"-v", "error", "-protocol_whitelist", productionProtocolAllowlist, "-i", src}, profile.encodeArgs()...)
+	args := []string{"-v", "error"}
+	if onProgress != nil {
+		args = append(args, "-progress", "pipe:1")
+	}
+	args = append(args, "-protocol_whitelist", productionProtocolAllowlist, "-i", src)
+	args = append(args, profile.encodeArgs()...)
 	// The temp file carries no extension, so FFmpeg cannot infer the muxer from
 	// it; -f names the container explicitly. mp4/m4a both mux as "mp4".
 	format := profile.Container
@@ -266,8 +280,14 @@ func (r *Runner) Convert(ctx context.Context, src, dst string, profile ConvertPr
 	}
 	args = append(args, "-f", format, "-y", "--", out.Path)
 	cmd := r.convertCommand(ctx, transformConfinement(src, out.Path), ffmpegPath, args...)
-	if detail, err := r.runDetail(ctx, cmd); err != nil {
-		return errors.Join(fmt.Errorf("ffmpeg convert: %s", detail), survivedError(err))
+	if onProgress == nil {
+		if detail, err := r.runDetail(ctx, cmd); err != nil {
+			return errors.Join(fmt.Errorf("ffmpeg convert: %s", detail), survivedError(err))
+		}
+	} else {
+		if detail, err := r.runDetailWithProgress(ctx, cmd, onProgress); err != nil {
+			return errors.Join(fmt.Errorf("ffmpeg convert: %s", detail), survivedError(err))
+		}
 	}
 	// A source swapped mid-run makes the output a transcode of something the
 	// caller never authorised, so the artifact is discarded rather than published.
@@ -275,4 +295,22 @@ func (r *Runner) Convert(ctx context.Context, src, dst string, profile ConvertPr
 		return err
 	}
 	return out.publish(dst)
+}
+
+func (r *Runner) runDetailWithProgress(ctx context.Context, cmd *exec.Cmd, onProgress func(ConvertProgress)) (string, error) {
+	group := newProcessGroup(cmd)
+	stderr := &boundedBuffer{limit: captureLimitBytes, onOverflow: group.kill}
+	var outTail lockedTail
+	outTail.tail.limit = hlsProgressLineBytes
+	pw := &progressWriter{onProgress: onProgress}
+	stdout := io.MultiWriter(pw, &outTail)
+	runErr := superviseGroup(ctx, group, stdout, stderr)
+	pw.flush()
+	if stderr.overflowed() {
+		return ErrOutputOverflow.Error(), overflowError(runErr)
+	}
+	if runErr == nil {
+		return "", nil
+	}
+	return captureDetail([]byte(outTail.String()), stderr.bytes(), runErr), runErr
 }

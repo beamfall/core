@@ -17,17 +17,18 @@ import (
 )
 
 type offlinePackBuildView struct {
-	ID            string  `json:"id"`
-	State         string  `json:"state"`
-	Progress      float64 `json:"progress"`
-	FailureReason string  `json:"failureReason"`
-	ItemCount     int     `json:"itemCount"`
-	ManifestToken string  `json:"manifestToken"`
+	ID             string  `json:"id"`
+	State          string  `json:"state"`
+	Progress       float64 `json:"progress"`
+	TranscodeSpeed float64 `json:"transcodeSpeed"`
+	FailureReason  string  `json:"failureReason"`
+	ItemCount      int     `json:"itemCount"`
+	ManifestToken  string  `json:"manifestToken"`
 }
 
 func listOfflinePackBuilds(t *testing.T, handler *Handler) []offlinePackBuildView {
 	t.Helper()
-	data, errs := post(t, handler, `{"query":"query { offlinePacks { id state progress failureReason itemCount manifestToken } }"}`, authorizeViewer)
+	data, errs := post(t, handler, `{"query":"query { offlinePacks { id state progress transcodeSpeed failureReason itemCount manifestToken } }"}`, authorizeViewer)
 	if len(errs) != 0 {
 		t.Fatalf("offlinePacks errors = %#v", errs)
 	}
@@ -531,6 +532,76 @@ func TestOfflinePackOperatorCancelOfRunningBuildWaitsForTheWorker(t *testing.T) 
 	runOfflinePackBuildJob(t, handler)
 	if state := offlinePackBuildState(t, handler, created.ID); state != "ready" {
 		t.Fatalf("build %q after the retried job = %q, want ready", created.ID, state)
+	}
+}
+
+func TestOfflinePacksExposesLiveTranscodeProgressAndSpeed(t *testing.T) {
+	handler, st, _, svc := newOfflinePackHandlerWith(t, nil)
+	filter := store.LibraryFilter{AllLibraries: true, Revealed: true}
+	media, err := st.Media(t.Context(), "media-alpha", filter)
+	if err != nil {
+		t.Fatalf("Media: %v", err)
+	}
+	files, err := st.MediaFilesForMedia(t.Context(), "media-alpha", filter)
+	if err != nil || len(files) == 0 {
+		t.Fatalf("MediaFilesForMedia: %v", err)
+	}
+	if _, _, err := st.ImportMediaFile(t.Context(), store.ImportMediaFile{
+		LibraryID: media.LibraryID, Path: files[0].Path, Title: media.Title,
+		Container: "mkv", Codec: "hevc", Class: store.MediaClassVideo,
+		ContentFingerprint: files[0].ContentFingerprint, DurationSecondsHint: 120,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	svc.SetTranscoder(func(_ context.Context, _ string, dst string, _ string, _ []store.MediaFileStream, onProgress func(offlinepack.TranscodeProgress)) error {
+		if onProgress == nil {
+			t.Error("expected non-nil onProgress callback")
+		} else {
+			onProgress(offlinepack.TranscodeProgress{OutTime: 60 * time.Second, Speed: 14.1})
+		}
+		close(entered)
+		<-release
+		return os.WriteFile(dst, []byte("transcoded-video-bytes"), 0o600)
+	})
+
+	created := queueOfflinePackBuildForTest(t, handler)
+	done := make(chan error, 1)
+	go func() {
+		_, err := handler.jobRunner.RunOne(t.Context(), []store.JobClass{store.JobClassBackground}, time.Now().UTC())
+		done <- err
+	}()
+
+	<-entered
+	packs := listOfflinePackBuilds(t, handler)
+	if len(packs) != 1 || packs[0].ID != created.ID || packs[0].State != "building" {
+		close(release)
+		<-done
+		t.Fatalf("offlinePacks while transcoding = %+v, want building %q", packs, created.ID)
+	}
+	if packs[0].Progress <= 0 || packs[0].Progress >= 1 || packs[0].TranscodeSpeed != 14.1 {
+		close(release)
+		<-done
+		t.Fatalf("live telemetry = %+v, want 0 < progress < 1 and transcodeSpeed 14.1", packs[0])
+	}
+
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("RunOne: %v", err)
+	}
+
+	data, errs := post(t, handler, `{"query":"query { offlinePacks { id state progress transcodeSpeed } }"}`, authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("offlinePacks errors = %#v", errs)
+	}
+	if bytes.Contains(data["offlinePacks"], []byte(`"transcodeSpeed"`)) {
+		t.Fatalf("sealed pack JSON unexpectedly includes transcodeSpeed: %s", data["offlinePacks"])
+	}
+	packs = listOfflinePackBuilds(t, handler)
+	if len(packs) != 1 || packs[0].State != "ready" || packs[0].Progress != 1 || packs[0].TranscodeSpeed != 0 {
+		t.Fatalf("offlinePacks after sealing = %+v, want ready with progress 1 and transcodeSpeed 0", packs)
 	}
 }
 

@@ -101,3 +101,79 @@ func TestHLSProcessWithoutProgressArgsDoesNotReport(t *testing.T) {
 		t.Fatal("ReportsProgress = true without -progress pipe:1")
 	}
 }
+
+func TestProgressWriterParsesOutTimeAndSpeed(t *testing.T) {
+	var got []ConvertProgress
+	w := &progressWriter{onProgress: func(p ConvertProgress) { got = append(got, p) }}
+	chunks := []string{
+		"frame=0\nout_time_us=N/A\nspeed=N/A\nprogress=continue\n",
+		"out_time_us=1000000\nspeed= 14.1x\nprogress=co",
+		"ntinue\nout_time_us=500000\nspeed=14.1x\nprogress=continue\n",
+		"out_time_us=2500000\nspeed=N/A\nprogress=continue\n",
+		"out_time_us=4000000\nspeed=18.5X\nprogress=end\n",
+		"out_time_us=5000000\nspeed=20.25x",
+	}
+	for _, chunk := range chunks {
+		if _, err := w.Write([]byte(chunk)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.flush()
+
+	want := []ConvertProgress{
+		{OutTime: 1 * time.Second, Speed: 14.1},
+		{OutTime: 2500 * time.Millisecond, Speed: 0},
+		{OutTime: 4 * time.Second, Speed: 18.5},
+		{OutTime: 5 * time.Second, Speed: 20.25},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d progress events %+v, want %d %+v", len(got), got, len(want), want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("event[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestParseProgressSpeedBoundaries(t *testing.T) {
+	for raw, want := range map[string]float64{
+		"14.1x":   14.1,
+		" 40x":    40,
+		"0.75X":   0.75,
+		"0x":      0,
+		"1.5e+01": 15,
+	} {
+		got, ok := parseProgressSpeed(raw)
+		if !ok || got != want {
+			t.Fatalf("parseProgressSpeed(%q) = %v, %v; want %v, true", raw, got, ok, want)
+		}
+	}
+	for _, raw := range []string{"", "N/A", "n/a", "-1.5x", "NaNx", "Infx", "bad"} {
+		if got, ok := parseProgressSpeed(raw); ok {
+			t.Fatalf("parseProgressSpeed(%q) = %v, true; want false", raw, got)
+		}
+	}
+}
+
+func TestRunDetailWithProgressStreamsAndPreservesStderr(t *testing.T) {
+	var got []ConvertProgress
+	script := `printf 'out_time_us=1500000\nspeed=12.4x\nprogress=continue\nout_time_us=3000000\nspeed=15.0x\nprogress=end\n'`
+	cmd := exec.CommandContext(context.Background(), "sh", "-c", script) // #nosec G204 -- fixed test script
+	detail, err := New().runDetailWithProgress(context.Background(), cmd, func(p ConvertProgress) {
+		got = append(got, p)
+	})
+	if err != nil || detail != "" {
+		t.Fatalf("runDetailWithProgress = %q, %v; want clean success", detail, err)
+	}
+	if len(got) != 2 || got[0] != (ConvertProgress{OutTime: 1500 * time.Millisecond, Speed: 12.4}) ||
+		got[1] != (ConvertProgress{OutTime: 3 * time.Second, Speed: 15}) {
+		t.Fatalf("progress events = %+v", got)
+	}
+
+	failCmd := exec.CommandContext(context.Background(), "sh", "-c", `echo "boom" >&2; exit 2`) // #nosec G204 -- fixed test script
+	detail, err = New().runDetailWithProgress(context.Background(), failCmd, func(ConvertProgress) {})
+	if err == nil || detail != "boom" {
+		t.Fatalf("failed runDetailWithProgress = %q, %v; want boom + err", detail, err)
+	}
+}

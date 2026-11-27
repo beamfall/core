@@ -209,6 +209,9 @@ type packBuildSource struct {
 	staged     *encderiv.Result
 	// streams is the source file's stream inventory, read for transcodes.
 	streams []store.MediaFileStream
+	// duration is the source video's catalog length when a single-file Media
+	// records it, used to turn FFmpeg out_time_us into progress %.
+	duration time.Duration
 	// markers are the Media's chapter Markers, carried on its Part 0 only.
 	markers []ManifestMarker
 }
@@ -269,6 +272,9 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 				source.markers = markers
 			}
 			if transcode {
+				if len(parts) == 1 && media.DurationSeconds > 0 {
+					source.duration = time.Duration(media.DurationSeconds) * time.Second
+				}
 				source.streams, err = s.store.MediaFileStreams(ctx, file.ContentFingerprint)
 				if err != nil {
 					return nil, err
@@ -301,7 +307,8 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 // transcodeSources replaces each marked source with its transcode in packDir
 // and records the transcoded size. An item in an Encrypted Library is staged
 // encrypted instead, under the scope that asked for the pack.
-func (s *Service) transcodeSources(ctx context.Context, scope auth.Scope, sources []packBuildSource, packDir, quality string, step func()) error {
+func (s *Service) transcodeSources(ctx context.Context, scope auth.Scope, sources []packBuildSource, packDir, quality string, progress *buildProgress) error {
+	defer s.clearBuildTranscodeSpeed(progress.packID())
 	for i := range sources {
 		if !sources[i].transcode {
 			continue
@@ -310,14 +317,14 @@ func (s *Service) transcodeSources(ctx context.Context, scope auth.Scope, source
 			if err := s.transcodeEncrypted(ctx, scope, &sources[i], packDir, i, quality); err != nil {
 				return err
 			}
-			step()
+			progress.transcodeStep()
 			continue
 		}
 		if s.transcode == nil {
 			return fmt.Errorf("%w: transcoder is not configured", ErrTranscode)
 		}
 		dst := filepath.Join(packDir, fmt.Sprintf("%04d.src.mp4", i))
-		if err := s.transcode(ctx, sources[i].path, dst, quality, sources[i].streams); err != nil {
+		if err := s.transcode(ctx, sources[i].path, dst, quality, sources[i].streams, progress.transcodeReporter(sources[i].duration)); err != nil {
 			_ = os.Remove(dst)
 			// A transcoder may flatten a cancellation into its own error. Keep
 			// shutdown and preemption visible so the job yields and reruns under
@@ -338,7 +345,7 @@ func (s *Service) transcodeSources(ctx context.Context, scope auth.Scope, source
 			return fmt.Errorf("%w produced no bytes", ErrTranscode)
 		}
 		sources[i].size = uint64(size)
-		step()
+		progress.transcodeStep()
 	}
 	return nil
 }

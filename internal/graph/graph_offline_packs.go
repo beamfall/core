@@ -38,10 +38,14 @@ type OfflinePackInfo struct {
 	// pack returns empty token fields (the byte routes would deny them anyway).
 	ManifestToken string `json:"manifestToken,omitempty"`
 	KeyToken      string `json:"keyToken,omitempty"`
-	// Progress is the server-side build progress from 0 to 1 (CORE-1743). A
-	// background build reports it while building and keeps it when it fails;
+	// Progress is the server-side build progress from 0 to 1 (CORE-1743, CORE-3548).
+	// A background build reports it while building and keeps it when it fails;
 	// a sealed pack reports 1.
 	Progress float64 `json:"progress"`
+	// TranscodeSpeed is the live FFmpeg encoding speed multiplier (e.g. 14.1
+	// for 14.1x real-time) while a background build is actively transcoding a
+	// video item, and omitted otherwise (CORE-3548).
+	TranscodeSpeed float64 `json:"transcodeSpeed,omitempty"`
 	// FailureReason is a closed code naming why a background build failed
 	// (state "failed"): empty_target, unknown_target_kind, unknown_quality,
 	// device_attestation_failed, source_unavailable, transcode_failed,
@@ -126,7 +130,11 @@ func (h *Handler) offlinePacks_(ctx context.Context, scope auth.Scope) ([]Offlin
 	out := make([]OfflinePackInfo, 0, len(builds)+len(packs))
 	for _, b := range builds {
 		if !sealed[b.PackID] {
-			out = append(out, offlinePackBuildInfo(b))
+			info := offlinePackBuildInfo(b)
+			if b.State == store.OfflinePackBuildBuilding {
+				info.TranscodeSpeed = h.offlinePacks.BuildTranscodeSpeed(b.PackID)
+			}
+			out = append(out, info)
 		}
 	}
 	for _, p := range packs {
