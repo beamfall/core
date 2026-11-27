@@ -85,11 +85,16 @@ export function openEventStream(url: string, handlers: EventStreamHandlers): () 
       headers,
       signal,
     });
+    if (signal.aborted) return false;
     if (response.status === 409 && handlers.onRefused) {
-      handlers.onRefused(extra, response.status, await response.json().catch(() => undefined));
+      const payload = await response.json().catch(() => undefined);
+      if (signal.aborted) return false;
+      handlers.onRefused(extra, response.status, payload);
     }
     if ((response.status === 401 || response.status === 403) && handlers.onAuthError) {
-      handlers.onAuthError(response.status, await response.json().catch(() => undefined));
+      const payload = await response.json().catch(() => undefined);
+      if (signal.aborted) return false;
+      handlers.onAuthError(response.status, payload);
       throw new Error(`event stream unauthorized (${response.status})`);
     }
     const contentType = response.headers.get("content-type") ?? "";

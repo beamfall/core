@@ -2,7 +2,12 @@ import "@testing-library/jest-dom/vitest";
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, getExpectedProfile, noteProfileRefusal } from "@/lib/api";
+import {
+  ApiError,
+  getExpectedProfile,
+  getIdentityEpochSignal,
+  noteProfileRefusal,
+} from "@/lib/api";
 import {
   advanceCompatibilityEpoch,
   isBlocked,
@@ -21,7 +26,7 @@ import {
   switchProfile as switchProfileMutation,
 } from "@/lib/graphql";
 import type { NavigationManifest, ProfileSummary, SessionInfo } from "@/lib/graphql/types";
-import { requestManifestRefresh } from "./manifestRefresh";
+import { requestManifestRefresh, requestSessionRefresh } from "./manifestRefresh";
 import { SessionProvider, useSession } from "./session";
 
 const postUnmountWrites = vi.hoisted(() => ({ armed: false, values: [] as unknown[] }));
@@ -1441,5 +1446,46 @@ describe("SessionProvider names its Profile on requests (CORE-2923)", () => {
     await waitFor(() => expect(getExpectedProfile()).toBe("p1"));
     unmount();
     expect(getExpectedProfile()).toBeUndefined();
+  });
+
+  it("ignores stale requestSessionRefresh from a superseded epoch or Profile during switchProfile", async () => {
+    const switched = deferred<SessionInfo>();
+    vi.mocked(fetchCurrentSession)
+      .mockResolvedValueOnce(p1Session)
+      .mockResolvedValueOnce(p2Session);
+    vi.mocked(switchProfileMutation).mockImplementationOnce(async () => switched.promise);
+    const user = userEvent.setup();
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("profile")).toHaveTextContent("p1"));
+    const p1Epoch = getIdentityEpochSignal();
+    expect(p1Epoch).toBeInstanceOf(AbortSignal);
+
+    let p2Epoch: AbortSignal | undefined;
+    // Start switching to p2 -> aborts p1Epoch and begins p2Epoch.
+    await user.click(screen.getByRole("button", { name: "Switch" }));
+    p2Epoch = getIdentityEpochSignal();
+    expect(p1Epoch?.aborted).toBe(true);
+    expect(p2Epoch).toBeInstanceOf(AbortSignal);
+    expect(p2Epoch?.aborted).toBe(false);
+
+    // A late stream 401 refresh originating from p1 must NOT abort p2's switchProfile.
+    act(() => requestSessionRefresh({ epoch: p1Epoch, profileID: "p1" }));
+    expect(p2Epoch?.aborted).toBe(false);
+    expect(fetchCurrentSession).toHaveBeenCalledTimes(1);
+
+    // Finish switchProfile -> settles cleanly on p2 without interference.
+    await act(async () => {
+      switched.resolve(p2Session);
+      await switched.promise;
+    });
+    await waitFor(() => expect(screen.getByTestId("profile")).toHaveTextContent("p2"));
+
+    // A late refresh naming old profile p1 while p2 is live is also ignored.
+    act(() => requestSessionRefresh({ epoch: p2Epoch, profileID: "p1" }));
+    expect(fetchCurrentSession).toHaveBeenCalledTimes(2);
   });
 });

@@ -9,7 +9,16 @@ import {
 } from "@/lib/serverConnection";
 import { useEngagementEpoch, useEngagementEvents } from "./engagementSync";
 
-vi.mock("@/lib/api", () => ({ subscribeEvents: vi.fn(() => () => {}) }));
+const apiState = vi.hoisted(() => ({
+  epochController: undefined as AbortController | undefined,
+  expectedProfile: undefined as string | undefined,
+}));
+
+vi.mock("@/lib/api", () => ({
+  subscribeEvents: vi.fn(() => () => {}),
+  getIdentityEpochSignal: () => apiState.epochController?.signal,
+  getExpectedProfile: () => apiState.expectedProfile,
+}));
 vi.mock("@/lib/manifestRefresh", () => ({
   requestManifestRefresh: vi.fn(),
   requestSessionRefresh: vi.fn(),
@@ -18,6 +27,8 @@ vi.mock("@/lib/manifestRefresh", () => ({
 afterEach(() => {
   cleanup();
   resetServerConnectionForTest();
+  apiState.epochController = undefined;
+  apiState.expectedProfile = undefined;
 });
 
 describe("engagement events", () => {
@@ -84,5 +95,48 @@ describe("engagement events", () => {
     connState.rerender();
     expect(connState.result.current).toBe("reconnecting");
     expect(requestSessionRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("ignores stale stream callbacks after identity epoch aborts or Profile changes", () => {
+    vi.mocked(subscribeEvents).mockClear();
+    vi.mocked(requestManifestRefresh).mockClear();
+    vi.mocked(requestSessionRefresh).mockClear();
+    const unsubscribe = vi.fn();
+    vi.mocked(subscribeEvents).mockImplementation(() => unsubscribe);
+
+    const p1Epoch = new AbortController();
+    apiState.epochController = p1Epoch;
+    apiState.expectedProfile = "p1";
+
+    const view = renderHook(
+      ({ profileID }: { profileID?: string }) => useEngagementEvents(undefined, profileID),
+      { initialProps: { profileID: "p1" } },
+    );
+    const [deliver, , onState, onAuthError] = vi.mocked(subscribeEvents).mock.calls[0]!;
+    const engagementEpoch = renderHook(() => useEngagementEpoch());
+    const connState = renderHook(() => useServerConnectionState());
+    const startEpoch = engagementEpoch.result.current;
+
+    // Move to a new identity epoch for p2 BEFORE delivering stale p1 callbacks.
+    p1Epoch.abort();
+    apiState.epochController = new AbortController();
+    apiState.expectedProfile = "p2";
+
+    deliver(new MessageEvent("client.fullRefresh"));
+    onState?.("reconnecting");
+    onState?.("live");
+    onAuthError?.(401, {});
+
+    engagementEpoch.rerender();
+    connState.rerender();
+    expect(engagementEpoch.result.current).toBe(startEpoch);
+    expect(connState.result.current).toBe("live");
+    expect(requestManifestRefresh).not.toHaveBeenCalled();
+    expect(requestSessionRefresh).not.toHaveBeenCalled();
+
+    // Changing profileID tears down the previous subscription and opens a fresh one.
+    view.rerender({ profileID: "p2" });
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(vi.mocked(subscribeEvents)).toHaveBeenCalledTimes(2);
   });
 });

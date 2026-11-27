@@ -11,6 +11,7 @@ import {
 import {
   ApiError,
   isAuthRejection,
+  setExpectedIdentity,
   setExpectedProfile,
   setIdentityEpochReset,
   setIdentityEpochSignal,
@@ -157,6 +158,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // names the Profile this tab shows, so a stale tab's PIN or switch is
     // refused instead of acting on the Profile the session moved to.
     setExpectedProfile();
+    setExpectedIdentity();
     try {
       const { compatibility, renewed } = await handshakeRenewingOnce(signal);
       if (!current()) return;
@@ -181,6 +183,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // From here on every request names this Profile, and the server refuses
       // one after another tab switched the shared session (CORE-2923).
       setExpectedProfile(s.profileID);
+      setExpectedIdentity({
+        profileID: s.profileID,
+        revealed: s.revealed,
+        deviceRole: s.deviceRole,
+        profile: s.profile,
+      });
       // Manifest + profiles are best-effort; a failure here is not fatal to
       // having a session unless either response says this identity is no
       // longer authorized. Hold every scoped value locally until both settle
@@ -192,6 +200,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         (p.status === "rejected" && isAuthRejection(p.reason))
       ) {
         setExpectedProfile();
+        setExpectedIdentity();
         clearViewerCache();
         setSession(null);
         setManifest(null);
@@ -239,6 +248,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         controllerRef.current?.abort();
         setIdentityEpochSignal();
         setExpectedProfile();
+        setExpectedIdentity();
         clearViewerCache();
         setSession(null);
         setManifest(null);
@@ -282,6 +292,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       advanceCompatibilityEpoch();
       setIdentityEpochSignal();
       setExpectedProfile();
+      setExpectedIdentity();
       setIdentityEpochReset();
       setProfileMismatchHandler();
     };
@@ -308,7 +319,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         () => {},
       );
     });
-    setSessionRefresher(() => {
+    setSessionRefresher((origin) => {
+      if (
+        origin?.epoch &&
+        (origin.epoch.aborted || origin.epoch !== controllerRef.current?.signal)
+      ) {
+        return;
+      }
+      if (origin?.profileID !== undefined && sessionRef.current?.profileID !== origin.profileID) {
+        return;
+      }
       void load();
     });
     return () => {
@@ -398,6 +418,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await load();
         return;
       }
+      setExpectedIdentity({
+        profileID: next.profileID,
+        revealed: next.revealed,
+        deviceRole: next.deviceRole,
+        profile: next.profile,
+      });
       setSession(next);
     },
     [load],

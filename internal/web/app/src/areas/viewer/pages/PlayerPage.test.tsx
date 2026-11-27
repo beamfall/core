@@ -83,7 +83,7 @@ import {
 import { deliverPlayerCommand } from "../remote/remoteControl";
 import { MediaDetailPage } from "./MediaDetailPage";
 import { NotificationsPage } from "./NotificationsPage";
-import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
+import { buildTimestampedLink, HostedPlayer, PlayerPage } from "./PlayerPage";
 
 const viewer = vi.hoisted(() => ({
   profileID: "profile-a",
@@ -4314,10 +4314,14 @@ describe("PlayerPage in a Watch Party (CORE-1766)", () => {
           expect(handled).toBe(true);
         });
 
-        expect(graphql).toHaveBeenCalledWith(expect.stringContaining("mutation QueueAddManyEnd"), {
-          mediaIDs: ["media-alpha", "media-inserted", "media-next", "media-prev"],
-          expectedProfileID: "profile-a",
-        });
+        expect(graphql).toHaveBeenCalledWith(
+          expect.stringContaining("mutation QueueAddManyEnd"),
+          {
+            mediaIDs: ["media-alpha", "media-inserted", "media-next", "media-prev"],
+            expectedProfileID: "profile-a",
+          },
+          expect.any(AbortSignal),
+        );
         const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
         expect(props?.nextTitle).toBe("Inserted");
       } finally {
@@ -4692,6 +4696,7 @@ describe("PlayerPage CORE-2845 catalog conversion and serialization", () => {
     expect(graphql).toHaveBeenCalledWith(
       expect.stringContaining("mutation QueueAddAt"),
       expect.objectContaining({ mediaID: "extra-next", position: 1 }),
+      expect.any(AbortSignal),
     );
   });
 
@@ -5022,6 +5027,7 @@ describe("PlayerPage CORE-2845 catalog conversion and serialization", () => {
     expect(graphql).toHaveBeenCalledWith(
       expect.stringContaining("mutation QueueAddAt"),
       expect.objectContaining({ mediaID: "q-3", expectedProfileID: "profile-a" }),
+      expect.any(AbortSignal),
     );
   });
 
@@ -5734,5 +5740,173 @@ describe("PlayerPage CORE-2845 catalog conversion and serialization", () => {
     await waitFor(() => expect(loc.pathname).toBe("/watch/pick-b"));
     expect(loc.search).toBe("?playQueue=profile-a");
     expect(server.rows.map((r) => r.id)).toEqual(["pick-a", "pick-b", "pick-added"]);
+  });
+
+  it("uses live docked/expanded mode in onConverted when dock state toggles mid-conversion", async () => {
+    const { dispatchAddToQueueToActivePlayer } = await import("../lib/watchQueue");
+    const server = createServerQueueHarness();
+    let releaseWrite = () => {};
+    let holdWrite = true;
+
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { currentSession: { profileID: "profile-a", revealed: true }, media: null };
+      }
+      if (query.startsWith("query MusicQueue")) {
+        return server.snapshot(
+          typeof vars.offset === "number" ? vars.offset : 0,
+          typeof vars.limit === "number" ? vars.limit : 200,
+        );
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        if (holdWrite) {
+          await new Promise<void>((resolve) => {
+            releaseWrite = resolve;
+          });
+        }
+        server.applyMany(vars.mediaIDs as string[]);
+        return {
+          queueAddMany: { currentEntryID: server.snapshot().playQueue.currentEntryID, entries: [] },
+        };
+      }
+      return {};
+    });
+
+    vi.mocked(usePlayer).mockReturnValue({
+      videoRef: { current: null },
+      hlsRef: { current: null },
+      state: playerState({
+        phase: "playing",
+        mediaID: "dock-a",
+        info: { mediaClass: "audio", streams: [], assets: {} } as never,
+      }),
+      retry: vi.fn(),
+      restart: vi.fn(),
+      switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
+    });
+
+    const entry = {
+      mediaId: "dock-a",
+      search: "",
+      state: {
+        skipPrePlay: true,
+        title: "Track A",
+        queue: [{ id: "dock-a", title: "Track A", mediaClass: "audio" }],
+        queueIdentity: "viewer-1",
+      },
+    };
+    const onAdvanceDocked = vi.fn();
+    const onAudioChange = vi.fn();
+    const onStop = vi.fn();
+
+    // 1. Start conversion undocked -> dock while conversion is in flight -> calls onAdvanceDocked, keeps current browse URL.
+    const view = render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/library"]}>
+          <HostedPlayer
+            entry={entry}
+            docked={false}
+            onAudioChange={onAudioChange}
+            onAdvanceDocked={onAdvanceDocked}
+            onStop={onStop}
+          />
+          <RouteProbe />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    let edit1!: Promise<boolean>;
+    act(() => {
+      edit1 = dispatchAddToQueueToActivePlayer(
+        { id: "dock-added", title: "Track Added", mediaClass: "audio" },
+        "viewer-1",
+      );
+    });
+
+    // User leaves /watch into mini-player (docked becomes true) while QueueAddManyEnd is pending.
+    view.rerender(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/library"]}>
+          <HostedPlayer
+            entry={entry}
+            docked={true}
+            onAudioChange={onAudioChange}
+            onAdvanceDocked={onAdvanceDocked}
+            onStop={onStop}
+          />
+          <RouteProbe />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    await act(async () => {
+      holdWrite = false;
+      releaseWrite();
+      await edit1;
+    });
+
+    expect(onAdvanceDocked).toHaveBeenCalledWith({
+      mediaId: "dock-a",
+      state: { selectPartyTitle: false },
+      search: "?playQueue=profile-a",
+    });
+    expect(loc.pathname).toBe("/library");
+    view.unmount();
+
+    // 2. Start conversion docked -> expand to full watch page while conversion is in flight -> navigates instead of onAdvanceDocked.
+    server.seed([]);
+    onAdvanceDocked.mockClear();
+    holdWrite = true;
+    const expandView = render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/watch/dock-a"]}>
+          <HostedPlayer
+            entry={entry}
+            docked={true}
+            onAudioChange={onAudioChange}
+            onAdvanceDocked={onAdvanceDocked}
+            onStop={onStop}
+          />
+          <RouteProbe />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    let edit2!: Promise<boolean>;
+    act(() => {
+      edit2 = dispatchAddToQueueToActivePlayer(
+        { id: "dock-added-2", title: "Track Added 2", mediaClass: "audio" },
+        "viewer-1",
+      );
+    });
+
+    expandView.rerender(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/watch/dock-a"]}>
+          <HostedPlayer
+            entry={entry}
+            docked={false}
+            onAudioChange={onAudioChange}
+            onAdvanceDocked={onAdvanceDocked}
+            onStop={onStop}
+          />
+          <RouteProbe />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    await act(async () => {
+      holdWrite = false;
+      releaseWrite();
+      await edit2;
+    });
+
+    expect(onAdvanceDocked).not.toHaveBeenCalled();
+    expect(loc.pathname).toBe("/watch/dock-a");
+    expect(loc.search).toBe("?playQueue=profile-a");
+    expandView.unmount();
   });
 });

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
+import * as api from "@/lib/api";
 import { subscribeEvents } from "@/lib/api";
 import { requestManifestRefresh, requestSessionRefresh } from "@/lib/manifestRefresh";
 import { reportEventStreamState } from "@/lib/serverConnection";
@@ -59,12 +60,30 @@ export function isEngagementInvalidation(data: unknown): boolean {
  * `onEvent` sees every frame of the same stream, so other viewer features (the cross-device
  * remote) share this one subscription instead of opening their own.
  */
-export function useEngagementEvents(onEvent?: (event: MessageEvent) => void): void {
+export function useEngagementEvents(
+  onEvent?: (event: MessageEvent) => void,
+  profileID?: string,
+): void {
   const handler = useRef(onEvent);
   handler.current = onEvent;
   useEffect(() => {
+    const readEpochSignal = Object.hasOwn(api, "getIdentityEpochSignal")
+      ? api.getIdentityEpochSignal
+      : undefined;
+    const readExpectedProfile = Object.hasOwn(api, "getExpectedProfile")
+      ? api.getExpectedProfile
+      : undefined;
+    const epochSignal = readEpochSignal?.();
+    const expectedProfile = profileID ?? readExpectedProfile?.();
+    let active = true;
+    const sameIdentity = () =>
+      active &&
+      !epochSignal?.aborted &&
+      (!epochSignal || !readEpochSignal || readEpochSignal() === epochSignal) &&
+      (!expectedProfile || !readExpectedProfile || readExpectedProfile() === expectedProfile);
     const unsubscribe = subscribeEvents(
       (event) => {
+        if (!sameIdentity()) return;
         if (
           event.type === FULL_REFRESH_KIND ||
           (event.type === INVALIDATE_KIND && isEngagementInvalidation(event.data))
@@ -74,6 +93,7 @@ export function useEngagementEvents(onEvent?: (event: MessageEvent) => void): vo
       },
       undefined,
       (state) => {
+        if (!sameIdentity()) return;
         const recovered = reportEventStreamState(state);
         if (recovered) {
           requestManifestRefresh();
@@ -85,13 +105,15 @@ export function useEngagementEvents(onEvent?: (event: MessageEvent) => void): vo
         }
       },
       () => {
+        if (!sameIdentity()) return;
         reportEventStreamState("reconnecting");
-        requestSessionRefresh();
+        requestSessionRefresh({ epoch: epochSignal, profileID: expectedProfile });
       },
     );
     return () => {
+      active = false;
       unsubscribe();
       reportEventStreamState("live");
     };
-  }, []);
+  }, [profileID]);
 }

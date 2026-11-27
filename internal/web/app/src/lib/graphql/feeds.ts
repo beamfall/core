@@ -161,19 +161,24 @@ export async function queuePlayNextMedia(
   mediaID: string,
   position?: number,
   expectedProfileID?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const profile = resolvedExpectedProfile(expectedProfileID);
   if (position !== undefined) {
-    await graphql<{ queueAdd: unknown }>(
-      QUEUE_ADD_POSITION_MUTATION,
-      profile ? { mediaID, position, expectedProfileID: profile } : { mediaID, position },
-    );
+    const vars = profile
+      ? { mediaID, position, expectedProfileID: profile }
+      : { mediaID, position };
+    await (signal !== undefined
+      ? graphql<{ queueAdd: unknown }>(QUEUE_ADD_POSITION_MUTATION, vars, signal)
+      : graphql<{ queueAdd: unknown }>(QUEUE_ADD_POSITION_MUTATION, vars));
     return;
   }
-  await graphql<{ queueAddMany: unknown }>(
-    QUEUE_NEXT_MUTATION,
-    profile ? { mediaIDs: [mediaID], expectedProfileID: profile } : { mediaIDs: [mediaID] },
-  );
+  const vars = profile
+    ? { mediaIDs: [mediaID], expectedProfileID: profile }
+    : { mediaIDs: [mediaID] };
+  await (signal !== undefined
+    ? graphql<{ queueAddMany: unknown }>(QUEUE_NEXT_MUTATION, vars, signal)
+    : graphql<{ queueAddMany: unknown }>(QUEUE_NEXT_MUTATION, vars));
 }
 
 /** Add one Media to the tail (or a specific position) of the Profile's play queue (CORE-2845). */
@@ -181,26 +186,40 @@ export async function queueAddMedia(
   mediaID: string,
   position?: number,
   expectedProfileID?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const profile = resolvedExpectedProfile(expectedProfileID);
   const variables: Record<string, unknown> = { mediaID };
   if (position !== undefined) variables.position = position;
   if (profile) variables.expectedProfileID = profile;
-  await graphql<{ queueAdd: unknown }>(QUEUE_ADD_POSITION_MUTATION, variables);
+  await (signal !== undefined
+    ? graphql<{ queueAdd: unknown }>(QUEUE_ADD_POSITION_MUTATION, variables, signal)
+    : graphql<{ queueAdd: unknown }>(QUEUE_ADD_POSITION_MUTATION, variables));
 }
 
 /** Append an ordered batch of Media IDs to the tail of the Profile's play queue (CORE-2845). */
 export async function queueAddManyEnd(
   mediaIDs: readonly string[],
   expectedProfileID?: string,
+  signal?: AbortSignal,
 ): Promise<{ currentEntryID?: string | null; entries?: { id: string; mediaID: string }[] }> {
   if (mediaIDs.length === 0) return {};
   const profile = resolvedExpectedProfile(expectedProfileID);
-  const data = await graphql<{
-    queueAddMany: { currentEntryID?: string | null; entries?: { id: string; mediaID: string }[] };
-  }>(
-    QUEUE_ADD_MANY_END_MUTATION,
-    profile ? { mediaIDs: [...mediaIDs], expectedProfileID: profile } : { mediaIDs: [...mediaIDs] },
-  );
+  const variables = profile
+    ? { mediaIDs: [...mediaIDs], expectedProfileID: profile }
+    : { mediaIDs: [...mediaIDs] };
+  const data = await (signal !== undefined
+    ? graphql<{
+        queueAddMany: {
+          currentEntryID?: string | null;
+          entries?: { id: string; mediaID: string }[];
+        };
+      }>(QUEUE_ADD_MANY_END_MUTATION, variables, signal)
+    : graphql<{
+        queueAddMany: {
+          currentEntryID?: string | null;
+          entries?: { id: string; mediaID: string }[];
+        };
+      }>(QUEUE_ADD_MANY_END_MUTATION, variables));
   return data.queueAddMany ?? {};
 }

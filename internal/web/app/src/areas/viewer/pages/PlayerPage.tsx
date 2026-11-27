@@ -33,6 +33,7 @@ import {
   MUSIC_QUEUE_PARAM,
   musicQueueNeighbours,
   playableMusic,
+  type QueueIdentity,
   useHasPendingQueueEdits,
   useMusicQueue,
   waitForPendingQueueEdits,
@@ -323,6 +324,24 @@ function FeaturePlayer({
   queueMatchesProfileRef.current = queueMatchesProfile;
   const searchRef = useRef(entry.search);
   searchRef.current = entry.search;
+  const dockedRef = useRef(docked);
+  dockedRef.current = docked;
+  const onAdvanceDockedRef = useRef(onAdvanceDocked);
+  onAdvanceDockedRef.current = onAdvanceDocked;
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  const expectedIdentity = useMemo<QueueIdentity | undefined>(
+    () =>
+      profileID
+        ? {
+            profileID,
+            revealed: session?.revealed ?? revealed,
+            ...(session?.deviceRole !== undefined ? { deviceRole: session.deviceRole } : {}),
+            ...(session?.profile !== undefined ? { profile: session.profile } : {}),
+          }
+        : undefined,
+    [profileID, session?.revealed, session?.deviceRole, session?.profile, revealed],
+  );
   const queueEditPending = useHasPendingQueueEdits();
   useLayoutEffect(() => {
     if (serverQueueRun) convertedProfileRef.current = null;
@@ -341,6 +360,7 @@ function FeaturePlayer({
     readMedia,
     isCurrent,
     latestRows: latestQueueRows,
+    invalidate: invalidateMusicQueue,
   } = useMusicQueue();
   const queueAllowed = !serverQueueRun || (queueMatchesProfile && !musicQueue?.invalid);
   const queueReady = queueAllowed && (!serverQueueRun || musicQueue?.rows !== undefined);
@@ -1050,9 +1070,14 @@ function FeaturePlayer({
           mediaID: item.id,
           placement,
           expectedProfileID: expected,
+          expectedIdentity:
+            expectedIdentity && expected === expectedIdentity.profileID
+              ? expectedIdentity
+              : undefined,
           currentPlayingMediaID: () => playingAnchorRef.current,
           signal: isCurrent()?.signal,
           applyConfirmed: applyConfirmedSnapshot,
+          onIdentityChanged: invalidateMusicQueue,
         });
         if (
           placement === "next" &&
@@ -1121,8 +1146,13 @@ function FeaturePlayer({
         editMediaID: item.id,
         placement,
         expectedProfileID: targetProfile,
+        expectedIdentity:
+          expectedIdentity && targetProfile === expectedIdentity.profileID
+            ? expectedIdentity
+            : undefined,
         isStillCurrent: () => activeQueueRoute.current.mediaId === playingMediaID && !!isCurrent(),
         applyConfirmed: applyConfirmedSnapshot,
+        onIdentityChanged: invalidateMusicQueue,
         onConverted: (_snap, convertedProfile) => {
           convertedProfileRef.current = { identity, profileID: convertedProfile };
           convertedDuringPlayRef.current = {
@@ -1137,14 +1167,14 @@ function FeaturePlayer({
           const nextParams = new URLSearchParams(searchRef.current);
           nextParams.set(MUSIC_QUEUE_PARAM, convertedProfile);
           const search = `?${nextParams.toString()}`;
-          if (docked && onAdvanceDocked) {
-            onAdvanceDocked({
+          if (dockedRef.current && onAdvanceDockedRef.current) {
+            onAdvanceDockedRef.current({
               mediaId: playingMediaID,
               state: { selectPartyTitle: false },
               search,
             });
           } else {
-            navigate(`${mediaPath("watch", playingMediaID)}${search}`, {
+            navigateRef.current(`${mediaPath("watch", playingMediaID)}${search}`, {
               replace: true,
               state: { selectPartyTitle: false },
             });
@@ -1158,8 +1188,10 @@ function FeaturePlayer({
       identity,
       queueProfile,
       profileID,
+      expectedIdentity,
       isCurrent,
       applyConfirmedSnapshot,
+      invalidateMusicQueue,
       isAudio,
       entryClass,
       activeRawQueue,
@@ -1167,8 +1199,6 @@ function FeaturePlayer({
       onAdvanceDocked,
       entry,
       navState,
-      docked,
-      navigate,
     ],
   );
   useEffect(() => {

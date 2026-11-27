@@ -160,4 +160,53 @@ describe("openEventStream", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     close();
   });
+
+  it("suppresses onAuthError and onRefused when closed while reading the error body", async () => {
+    let releaseAuthJson!: (value: unknown) => void;
+    let releaseRefusedJson!: (value: unknown) => void;
+    const authResponse = {
+      status: 401,
+      ok: false,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () =>
+        new Promise((resolve) => {
+          releaseAuthJson = resolve;
+        }),
+    } as unknown as Response;
+    const refusedResponse = {
+      status: 409,
+      ok: false,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () =>
+        new Promise((resolve) => {
+          releaseRefusedJson = resolve;
+        }),
+    } as unknown as Response;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => authResponse),
+    );
+    const onAuthError = vi.fn();
+    const closeAuth = openEventStream("/api/events", { onEvent: () => {}, onAuthError });
+    await vi.waitFor(() => expect(releaseAuthJson).toBeTypeOf("function"));
+    closeAuth();
+    releaseAuthJson({ message: "unauthorized" });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onAuthError).not.toHaveBeenCalled();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => refusedResponse),
+    );
+    const onRefused = vi.fn();
+    const closeRefused = openEventStream("/api/events", { onEvent: () => {}, onRefused });
+    await vi.waitFor(() => expect(releaseRefusedJson).toBeTypeOf("function"));
+    closeRefused();
+    releaseRefusedJson({ reason: "PROFILE_MISMATCH" });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onRefused).not.toHaveBeenCalled();
+  });
 });

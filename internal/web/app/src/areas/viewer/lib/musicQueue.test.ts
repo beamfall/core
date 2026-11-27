@@ -14,17 +14,20 @@ import {
   type MusicQueueView,
   publishMusicQueueSnapshot,
   QUEUE_BATCH_SIZE,
+  QueueIdentityChanged,
   readMusicQueueSnapshot,
   resetQueueCoordinatorForTest,
   useMusicQueue,
   waitForPendingQueueEdits,
 } from "./musicQueue";
 
+const mockSessionState = vi.hoisted(() => ({
+  revealed: true,
+  session: { profileID: "profile-a", revealed: true },
+}));
+
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({
-    revealed: true,
-    session: { profileID: "profile-a", revealed: true },
-  }),
+  useSession: () => mockSessionState,
   useViewerIdentity: () => "viewer-1",
 }));
 
@@ -94,6 +97,8 @@ class InMemoryServerQueue {
 
 describe("musicQueue CORE-2845 server edits, conversion, and serialization", () => {
   afterEach(() => {
+    mockSessionState.revealed = true;
+    mockSessionState.session = { profileID: "profile-a", revealed: true };
     resetQueueCoordinatorForTest();
     vi.restoreAllMocks();
   });
@@ -523,5 +528,220 @@ describe("musicQueue CORE-2845 server edits, conversion, and serialization", () 
       expect(latestView?.rows?.map((r) => r.id)).toEqual(["a", "confirmed-new", "pushed-3"]),
     );
     unmount();
+  });
+
+  it("refuses and invalidates when Reveal changes on the same Profile during pagination, edits, or published snapshots", async () => {
+    const queue = new InMemoryServerQueue();
+    queue.seed(Array.from({ length: 205 }, (_, i) => `t-${i}`));
+
+    // 1. Paginated read fails cleanly when Reveal flips mid-pagination (same profileID).
+    vi.spyOn(api, "graphql").mockImplementation(async (_query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      const offset = typeof vars.offset === "number" ? vars.offset : 0;
+      const snap = queue.snapshot();
+      return {
+        ...snap,
+        currentSession: { profileID: "profile-a", revealed: offset === 0 },
+        sourceItems: snap.sourceItems.slice(offset, offset + 200),
+      };
+    });
+    await expect(
+      readMusicQueueSnapshot({
+        expectedIdentity: { profileID: "profile-a", revealed: true },
+      }),
+    ).rejects.toBeInstanceOf(QueueIdentityChanged);
+
+    // 2. editServerQueue rejects QueueIdentityChanged, notifies onIdentityChanged, and does not apply stale snapshot.
+    const small = new InMemoryServerQueue();
+    small.seed(["a", "b"]);
+    let postMutation = false;
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueue")) {
+        return {
+          ...small.snapshot(),
+          currentSession: { profileID: "profile-a", revealed: !postMutation },
+        };
+      }
+      if (query.startsWith("mutation QueueAddAt")) {
+        postMutation = true;
+        small.addAt(
+          String(vars.mediaID),
+          typeof vars.position === "number" ? vars.position : undefined,
+        );
+        return { queueAdd: { id: vars.mediaID } };
+      }
+      return {};
+    });
+
+    const onIdentityChanged = vi.fn();
+    const applyConfirmed = vi.fn();
+    await expect(
+      editServerQueue({
+        mediaID: "c",
+        placement: "end",
+        expectedProfileID: "profile-a",
+        expectedIdentity: { profileID: "profile-a", revealed: true },
+        applyConfirmed,
+        onIdentityChanged,
+      }),
+    ).rejects.toBeInstanceOf(QueueIdentityChanged);
+    expect(onIdentityChanged).toHaveBeenCalledOnce();
+    expect(applyConfirmed).not.toHaveBeenCalled();
+
+    // 3. useMusicQueue invalidates on applyConfirmedSnapshot or publishMusicQueueSnapshot with mismatched Reveal.
+    let latestView: MusicQueueView | undefined;
+    let applySnapshot!: ReturnType<typeof useMusicQueue>["applyConfirmedSnapshot"];
+    function Probe() {
+      const q = useMusicQueue();
+      latestView = q.view;
+      applySnapshot = q.applyConfirmedSnapshot;
+      return null;
+    }
+    const view = render(createElement(Probe));
+
+    const validSnap = {
+      rows: [{ id: "a", title: "Revealed track", mediaClass: "audio" }],
+      currentEntryID: "e-1",
+      entries: [{ id: "e-1", mediaID: "a" }],
+      entryMediaIDs: ["a"],
+      session: {
+        profileID: "profile-a",
+        revealed: true,
+        deviceRole: "viewer",
+        profile: "adult",
+      },
+    };
+    const scopedValidSnap = {
+      rows: [{ id: "a", title: "Revealed track", mediaClass: "audio" }],
+      currentEntryID: "e-1",
+      entries: [{ id: "e-1", mediaID: "a" }],
+      entryMediaIDs: ["a"],
+      session: { profileID: "profile-a", revealed: true } as unknown as typeof validSnap.session,
+    };
+    act(() => applySnapshot(scopedValidSnap));
+    expect(latestView?.rows?.map((r) => r.id)).toEqual(["a"]);
+
+    act(() =>
+      publishMusicQueueSnapshot(
+        { profileID: "profile-a", revealed: false },
+        {
+          ...validSnap,
+          rows: [{ id: "secret", title: "Should Stay Hidden", mediaClass: "audio" }],
+          session: {
+            profileID: "profile-a",
+            revealed: false,
+            deviceRole: "viewer",
+            profile: "adult",
+          },
+        },
+      ),
+    );
+    expect(latestView?.invalid).toBe(true);
+    expect(latestView?.rows).toBeUndefined();
+    view.unmount();
+
+    // Also verify applyConfirmedSnapshot directly invalidates mismatched session.
+    const view2 = render(createElement(Probe));
+    act(() => applySnapshot(scopedValidSnap));
+    expect(latestView?.rows?.map((r) => r.id)).toEqual(["a"]);
+    act(() =>
+      applySnapshot({
+        ...validSnap,
+        rows: [{ id: "secret-2", title: "Relocked Secret", mediaClass: "audio" }],
+        session: {
+          profileID: "profile-a",
+          revealed: false,
+          deviceRole: "viewer",
+          profile: "adult",
+        },
+      }),
+    );
+    expect(latestView?.invalid).toBe(true);
+    expect(latestView?.rows).toBeUndefined();
+    view2.unmount();
+  });
+
+  it("aborts and cancels multi-batch catalog conversion before later QueueAddManyEnd batches execute", async () => {
+    const queue = new InMemoryServerQueue();
+    const total = QUEUE_BATCH_SIZE + 50;
+    const catalog = Array.from({ length: total }, (_, i) => `track-${i}`);
+
+    // 1. AbortController aborting during batch 1 forwards signal and stops before batch 2.
+    const abortController = new AbortController();
+    let batchesSent = 0;
+    const graphql = vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueue")) {
+        return queue.snapshot();
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        batchesSent++;
+        if (batchesSent === 1) abortController.abort();
+        return {
+          queueAddMany: {
+            currentEntryID: null,
+            entries: (vars.mediaIDs as string[]).map((id, i) => ({ id: `b-${i}`, mediaID: id })),
+          },
+        };
+      }
+      return {};
+    });
+
+    const onConvertedAborted = vi.fn();
+    await expect(
+      convertCatalogAndApplyEdit({
+        resolveCatalogIDs: async () => catalog,
+        currentMediaID: "track-0",
+        editMediaID: "track-new",
+        placement: "end",
+        expectedProfileID: "profile-a",
+        onConverted: onConvertedAborted,
+        signal: abortController.signal,
+      }),
+    ).rejects.toThrow();
+    expect(batchesSent).toBe(1);
+    expect(onConvertedAborted).not.toHaveBeenCalled();
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining("mutation QueueAddManyEnd"),
+      expect.anything(),
+      abortController.signal,
+    );
+
+    // 2. isStillCurrent flipping false during batch 1 also prevents batch 2 and onConverted.
+    let stillCurrent = true;
+    let supersededBatches = 0;
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      const vars = (variables ?? {}) as Record<string, unknown>;
+      if (query.startsWith("query MusicQueue")) {
+        return queue.snapshot();
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        supersededBatches++;
+        stillCurrent = false;
+        return {
+          queueAddMany: {
+            currentEntryID: null,
+            entries: (vars.mediaIDs as string[]).map((id, i) => ({ id: `s-${i}`, mediaID: id })),
+          },
+        };
+      }
+      return {};
+    });
+
+    const onConvertedSuperseded = vi.fn();
+    await expect(
+      convertCatalogAndApplyEdit({
+        resolveCatalogIDs: async () => catalog,
+        currentMediaID: "track-0",
+        editMediaID: "track-new",
+        placement: "end",
+        expectedProfileID: "profile-a",
+        isStillCurrent: () => stillCurrent,
+        onConverted: onConvertedSuperseded,
+      }),
+    ).rejects.toThrow("Queue conversion superseded");
+    expect(supersededBatches).toBe(1);
+    expect(onConvertedSuperseded).not.toHaveBeenCalled();
   });
 });

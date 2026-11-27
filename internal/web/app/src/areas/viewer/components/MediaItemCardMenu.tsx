@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Menu } from "@/components/ui/astryx-primitives";
 import { ActionTooltip } from "@/components/ui/tooltip";
+import * as api from "@/lib/api";
 import { getExpectedProfile, getIdentityEpochSignal } from "@/lib/api";
 import { fetchMedia } from "@/lib/graphql";
 import type { ItemTarget, MediaCredit } from "@/lib/graphql/types";
@@ -199,10 +200,20 @@ export function MediaItemCardMenu({
           ? await dispatchPlayNextToActivePlayer(nextItem, actionIdentity)
           : await dispatchAddToQueueToActivePlayer(nextItem, actionIdentity);
       if (!handled) {
+        const boundIdentity = Object.hasOwn(api, "getExpectedIdentity")
+          ? api.getExpectedIdentity()
+          : undefined;
+        const targetProfile =
+          expectedProfileID ?? getExpectedProfile?.() ?? boundIdentity?.profileID;
+        const expectedIdentity =
+          boundIdentity && (!targetProfile || targetProfile === boundIdentity.profileID)
+            ? boundIdentity
+            : undefined;
         await editServerQueue({
           mediaID: target.mediaID,
           placement,
-          expectedProfileID: expectedProfileID ?? getExpectedProfile?.(),
+          expectedProfileID: targetProfile,
+          expectedIdentity,
           currentPlayingMediaID: getActivePlayingMediaID,
           signal: runEpoch,
         });

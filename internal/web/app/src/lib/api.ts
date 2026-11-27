@@ -54,6 +54,15 @@ function requestSignal(signal?: AbortSignal): AbortSignal | undefined {
 // it was made for, and the server refuses one that no longer matches.
 const PROFILE_HEADER = "X-Beamfall-Profile";
 let expectedProfileID: string | undefined;
+
+export interface ExpectedSessionIdentity {
+  profileID: string;
+  revealed: boolean;
+  deviceRole?: string;
+  profile?: string;
+}
+
+let expectedIdentity: ExpectedSessionIdentity | undefined;
 let profileMismatchHandler: (() => void) | undefined;
 
 /**
@@ -62,6 +71,20 @@ let profileMismatchHandler: (() => void) | undefined;
  */
 export function setExpectedProfile(profileID?: string): void {
   expectedProfileID = profileID || undefined;
+}
+
+/**
+ * Record the current bound session identity (including `revealed`, `deviceRole`,
+ * and `profile`) alongside `setExpectedProfile` so non-hook callers can guard
+ * against same-Profile Reveal / role changes (CORE-2845).
+ */
+export function setExpectedIdentity(identity?: ExpectedSessionIdentity): void {
+  expectedIdentity = identity ? { ...identity } : undefined;
+}
+
+/** The live session identity this tab expects, if registered by SessionProvider. */
+export function getExpectedIdentity(): ExpectedSessionIdentity | undefined {
+  return expectedIdentity;
 }
 
 /**

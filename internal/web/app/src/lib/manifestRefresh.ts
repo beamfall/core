@@ -13,12 +13,17 @@ export function requestManifestRefresh(): void {
   refresher?.();
 }
 
-let sessionRefresher: (() => void) | undefined;
+export interface SessionRefreshOrigin {
+  epoch?: AbortSignal;
+  profileID?: string;
+}
 
-export function setSessionRefresher(refresh?: () => void): void {
+let sessionRefresher: ((origin?: SessionRefreshOrigin) => void) | undefined;
+
+export function setSessionRefresher(refresh?: (origin?: SessionRefreshOrigin) => void): void {
   sessionRefresher = refresh;
 }
 
-export function requestSessionRefresh(): void {
-  sessionRefresher?.();
+export function requestSessionRefresh(origin?: SessionRefreshOrigin): void {
+  sessionRefresher?.(origin);
 }

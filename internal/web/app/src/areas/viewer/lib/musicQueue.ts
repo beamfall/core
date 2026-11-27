@@ -246,11 +246,12 @@ export async function moveMusicQueueTrack(
   mediaID: string,
   position: number,
   expectedProfileID?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   await graphql(
     QUEUE_MOVE_MUTATION,
     expectedProfileID ? { mediaID, position, expectedProfileID } : { mediaID, position },
-    undefined,
+    signal,
     { adminUnlock: false },
   );
 }
@@ -258,16 +259,18 @@ export async function moveMusicQueueTrack(
 export async function removeMusicQueueTrack(
   mediaID: string,
   expectedProfileID?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   await graphql(
     QUEUE_REMOVE_MUTATION,
     expectedProfileID ? { mediaID, expectedProfileID } : { mediaID },
-    undefined,
+    signal,
     { adminUnlock: false },
   );
 }
 
-type SnapshotListener = (profileID: string | undefined, snapshot: QueueSnapshot) => void;
+export type SnapshotTarget = string | QueueIdentity | undefined;
+type SnapshotListener = (target: SnapshotTarget, snapshot: QueueSnapshot) => void;
 const snapshotListeners = new Set<SnapshotListener>();
 
 /** Profile mismatch refused on read or mutation: drops queue edits cleanly (CORE-2845). */
@@ -393,46 +396,108 @@ export function resetQueueCoordinatorForTest(): void {
   snapshotListeners.clear();
 }
 
-export function publishMusicQueueSnapshot(
-  profileID: string | undefined,
-  snapshot: QueueSnapshot,
-): void {
+export function publishMusicQueueSnapshot(target: SnapshotTarget, snapshot: QueueSnapshot): void {
   for (const listener of snapshotListeners) {
-    listener(profileID, snapshot);
+    listener(target, snapshot);
   }
+}
+
+function sameQueueIdentity(
+  live: Pick<SessionInfo, "profileID" | "revealed"> &
+    Partial<Pick<SessionInfo, "deviceRole" | "profile">>,
+  expected: QueueIdentity,
+): boolean {
+  return (
+    live.profileID === expected.profileID &&
+    live.revealed === expected.revealed &&
+    live.deviceRole === expected.deviceRole &&
+    live.profile === expected.profile
+  );
 }
 
 function assertExpectedSession(
   session: SessionInfo | null | undefined,
   expectedProfileID?: string,
+  expectedIdentity?: QueueIdentity,
 ): void {
-  if (!expectedProfileID) return;
-  if (session === null || (session !== undefined && session.profileID !== expectedProfileID)) {
+  const profileID = expectedIdentity?.profileID ?? expectedProfileID;
+  if (!profileID && !expectedIdentity) return;
+  if (session === null) {
     throw new QueueProfileMismatchError();
+  }
+  if (session === undefined) {
+    if (expectedIdentity) throw new QueueIdentityChanged();
+    return;
+  }
+  if (profileID && session.profileID !== profileID) {
+    throw new QueueProfileMismatchError();
+  }
+  if (expectedIdentity && !sameQueueIdentity(session, expectedIdentity)) {
+    throw new QueueIdentityChanged();
+  }
+}
+
+function assertConsistentPageSession(
+  pageSession: SessionInfo | null | undefined,
+  baseline: SessionInfo | null,
+): void {
+  if (pageSession === undefined) {
+    throw new QueueIdentityChanged();
+  }
+  if (baseline === null) {
+    if (pageSession !== null) throw new QueueProfileMismatchError();
+    return;
+  }
+  if (pageSession === null || pageSession.profileID !== baseline.profileID) {
+    throw new QueueProfileMismatchError();
+  }
+  if (!sameQueueIdentity(pageSession, baseline)) {
+    throw new QueueIdentityChanged();
   }
 }
 
 export async function readMusicQueueSnapshot(
-  options: { expectedProfileID?: string; signal?: AbortSignal } = {},
+  options: {
+    expectedProfileID?: string;
+    expectedIdentity?: QueueIdentity;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<QueueSnapshot> {
-  const { expectedProfileID, signal } = options;
+  const { expectedProfileID, expectedIdentity, signal } = options;
   signal?.throwIfAborted();
+  let hasBaseline = false;
+  let baselineSession: SessionInfo | null = null;
   let meta: {
     currentEntryID: string | null;
     entries: PlayQueueEntryRef[];
     session?: SessionInfo | null;
   } = { currentEntryID: null, entries: [] };
   const rows = await readMusicQueue(
-    (offset) =>
-      graphql<Page>(QUEUE_QUERY, { query: "queue", limit: PAGE_SIZE, offset }, signal, {
-        adminUnlock: false,
-      }),
+    async (offset) => {
+      const page = await graphql<Page>(
+        QUEUE_QUERY,
+        { query: "queue", limit: PAGE_SIZE, offset },
+        signal,
+        { adminUnlock: false },
+      );
+      signal?.throwIfAborted();
+      assertExpectedSession(page.currentSession, expectedProfileID, expectedIdentity);
+      if (page.currentSession !== undefined) {
+        if (!hasBaseline) {
+          hasBaseline = true;
+          baselineSession = page.currentSession;
+        } else {
+          assertConsistentPageSession(page.currentSession, baselineSession);
+        }
+      }
+      return page;
+    },
     (collected) => {
       meta = collected;
     },
   );
   signal?.throwIfAborted();
-  assertExpectedSession(meta.session, expectedProfileID);
+  assertExpectedSession(meta.session, expectedProfileID, expectedIdentity);
   const entryMediaIDs = meta.entries.map((entry) => entry.mediaID);
   if (meta.entries.length > 0) queueEntryMediaIDs.set(rows, entryMediaIDs);
   return {
@@ -454,39 +519,80 @@ function sameQueueOrder(a: readonly MusicQueueRow[], b: readonly MusicQueueRow[]
 
 async function rereadSnapshotSafely(
   profileID: string | undefined,
+  expectedIdentity: QueueIdentity | undefined,
   signal: AbortSignal | undefined,
+  isStillCurrent?: () => boolean,
   applyConfirmed?: (snapshot: QueueSnapshot) => void,
+  onIdentityChanged?: () => void,
 ): Promise<QueueSnapshot | null> {
-  if (signal?.aborted) return null;
+  if (signal?.aborted || (isStillCurrent && !isStillCurrent())) return null;
   try {
-    const reread = await readMusicQueueSnapshot({ expectedProfileID: profileID, signal });
+    const reread = await readMusicQueueSnapshot({
+      expectedProfileID: profileID,
+      expectedIdentity,
+      signal,
+    });
+    if (signal?.aborted || (isStillCurrent && !isStillCurrent())) return null;
     applyConfirmed?.(reread);
-    publishMusicQueueSnapshot(profileID ?? reread.session?.profileID ?? undefined, reread);
+    publishMusicQueueSnapshot(reread.session ?? expectedIdentity ?? profileID ?? undefined, reread);
     return reread;
-  } catch {
+  } catch (err) {
+    if (isProfileMismatchError(err) || err instanceof QueueIdentityChanged) {
+      onIdentityChanged?.();
+    }
     return null;
+  }
+}
+
+async function readSnapshotChecked({
+  expectedProfileID,
+  expectedIdentity,
+  signal,
+  onIdentityChanged,
+}: {
+  expectedProfileID?: string;
+  expectedIdentity?: QueueIdentity;
+  signal?: AbortSignal;
+  onIdentityChanged?: () => void;
+}): Promise<QueueSnapshot> {
+  try {
+    return await readMusicQueueSnapshot({
+      expectedProfileID: expectedIdentity?.profileID ?? expectedProfileID,
+      expectedIdentity,
+      signal,
+    });
+  } catch (err) {
+    if (isProfileMismatchError(err) || err instanceof QueueIdentityChanged) {
+      onIdentityChanged?.();
+    }
+    throw err;
   }
 }
 
 /**
  * Serialized Play next / Add to queue against the server queue (CORE-2845).
- * Always checks expectedProfileID, rereads server state on confirmation or
- * post-write failure (no automatic write replay), and never requeues the active track.
+ * Always checks expectedProfileID and session identity, rereads server state on
+ * confirmation or post-write failure (no automatic write replay), and never
+ * requeues the active track.
  */
 export async function editServerQueue({
   mediaID,
   placement,
   expectedProfileID,
+  expectedIdentity,
   currentPlayingMediaID,
   signal,
   applyConfirmed,
+  onIdentityChanged,
 }: {
   mediaID: string;
   placement: "next" | "end";
   expectedProfileID?: string;
+  expectedIdentity?: QueueIdentity;
   currentPlayingMediaID?: string | null | (() => string | null | undefined);
   signal?: AbortSignal;
   applyConfirmed?: (snapshot: QueueSnapshot) => void;
+  onIdentityChanged?: () => void;
 }): Promise<QueueSnapshot> {
   return enqueueQueueEdit(async () => {
     signal?.throwIfAborted();
@@ -496,8 +602,15 @@ export async function editServerQueue({
     if (livePlayingMediaID && mediaID === livePlayingMediaID) {
       throw new Error("Cannot requeue the currently playing track");
     }
-    const before = await readMusicQueueSnapshot({ expectedProfileID, signal });
-    const effectiveProfile = expectedProfileID ?? before.session?.profileID ?? undefined;
+    const before = await readSnapshotChecked({
+      expectedProfileID,
+      expectedIdentity,
+      signal,
+      onIdentityChanged,
+    });
+    const effectiveProfile =
+      expectedIdentity?.profileID ?? expectedProfileID ?? before.session?.profileID ?? undefined;
+    const effectiveIdentity = expectedIdentity ?? before.session ?? undefined;
     const serverCurrentMediaID = before.currentEntryID
       ? before.entries.find((entry) => entry.id === before.currentEntryID)?.mediaID
       : undefined;
@@ -507,6 +620,7 @@ export async function editServerQueue({
     }
     let writeStarted = false;
     try {
+      signal?.throwIfAborted();
       writeStarted = true;
       if (placement === "next") {
         const currentIndex = anchorID ? before.rows.findIndex((row) => row.id === anchorID) : -1;
@@ -517,7 +631,7 @@ export async function editServerQueue({
             : existingIndex >= 0 && existingIndex < currentIndex
               ? currentIndex
               : currentIndex + 1;
-        await queuePlayNextMedia(mediaID, position, effectiveProfile);
+        await queuePlayNextMedia(mediaID, position, effectiveProfile, signal);
       } else {
         let duplicateCount = 0;
         for (const entry of before.entries) {
@@ -527,19 +641,32 @@ export async function editServerQueue({
           mediaID,
           duplicateCount > 1 ? before.rows.length : undefined,
           effectiveProfile,
+          signal,
         );
       }
-      const after = await readMusicQueueSnapshot({
+      const after = await readSnapshotChecked({
         expectedProfileID: effectiveProfile,
+        expectedIdentity: effectiveIdentity,
         signal,
+        onIdentityChanged,
       });
       applyConfirmed?.(after);
-      publishMusicQueueSnapshot(effectiveProfile ?? after.session?.profileID ?? undefined, after);
+      publishMusicQueueSnapshot(
+        after.session ?? effectiveIdentity ?? effectiveProfile ?? undefined,
+        after,
+      );
       return after;
     } catch (err) {
-      if (isProfileMismatchError(err)) throw err;
+      if (isProfileMismatchError(err) || err instanceof QueueIdentityChanged) throw err;
       if (writeStarted) {
-        await rereadSnapshotSafely(effectiveProfile, signal, applyConfirmed);
+        await rereadSnapshotSafely(
+          effectiveProfile,
+          effectiveIdentity,
+          signal,
+          undefined,
+          applyConfirmed,
+          onIdentityChanged,
+        );
       }
       throw err;
     }
@@ -574,8 +701,10 @@ export async function convertCatalogAndApplyEdit({
   editMediaID,
   placement,
   expectedProfileID,
+  expectedIdentity,
   isStillCurrent,
   applyConfirmed,
+  onIdentityChanged,
   onConverted,
   signal,
 }: {
@@ -584,30 +713,40 @@ export async function convertCatalogAndApplyEdit({
   editMediaID: string;
   placement: "next" | "end";
   expectedProfileID?: string;
+  expectedIdentity?: QueueIdentity;
   isStillCurrent?: () => boolean;
   applyConfirmed?: (snapshot: QueueSnapshot) => void;
+  onIdentityChanged?: () => void;
   onConverted: (snapshot: QueueSnapshot, profileID: string) => void;
   signal?: AbortSignal;
 }): Promise<QueueSnapshot> {
   return enqueueQueueEdit(async () => {
-    signal?.throwIfAborted();
+    const assertActive = () => {
+      signal?.throwIfAborted();
+      if (isStillCurrent && !isStillCurrent()) {
+        throw new Error("Queue conversion superseded");
+      }
+    };
+    assertActive();
     if (!currentMediaID || editMediaID === currentMediaID) {
       throw new Error("Cannot requeue the currently playing track");
     }
     const rawCatalog = await resolveCatalogIDs();
-    signal?.throwIfAborted();
-    if (isStillCurrent && !isStillCurrent()) {
-      throw new Error("Queue conversion superseded");
-    }
+    assertActive();
     const orderedCatalog = orderedCatalogAfterCurrent(rawCatalog, currentMediaID);
-    const before = await readMusicQueueSnapshot({ expectedProfileID, signal });
-    const effectiveProfile = expectedProfileID ?? before.session?.profileID ?? undefined;
+    const before = await readSnapshotChecked({
+      expectedProfileID,
+      expectedIdentity,
+      signal,
+      onIdentityChanged,
+    });
+    const effectiveProfile =
+      expectedIdentity?.profileID ?? expectedProfileID ?? before.session?.profileID ?? undefined;
+    const effectiveIdentity = expectedIdentity ?? before.session ?? undefined;
     if (!effectiveProfile) {
       throw new Error("Missing profile for server queue conversion");
     }
-    if (isStillCurrent && !isStillCurrent()) {
-      throw new Error("Queue conversion superseded");
-    }
+    assertActive();
 
     let writeStarted = false;
     try {
@@ -626,17 +765,20 @@ export async function convertCatalogAndApplyEdit({
             : [currentMediaID, ...rest, editMediaID];
         writeStarted = true;
         for (let i = 0; i < batchIDs.length; i += QUEUE_BATCH_SIZE) {
-          await queueAddManyEnd(batchIDs.slice(i, i + QUEUE_BATCH_SIZE), effectiveProfile);
+          assertActive();
+          await queueAddManyEnd(batchIDs.slice(i, i + QUEUE_BATCH_SIZE), effectiveProfile, signal);
         }
       } else {
         const existingSet = new Set<string>(before.rows.map((row) => row.id));
         existingSet.add(currentMediaID);
         writeStarted = true;
         if (before.rows[0]?.id !== currentMediaID) {
-          await queueAddMedia(currentMediaID, 0, effectiveProfile);
+          assertActive();
+          await queueAddMedia(currentMediaID, 0, effectiveProfile, signal);
         }
         if (placement === "next") {
-          await queueAddMedia(editMediaID, 1, effectiveProfile);
+          assertActive();
+          await queueAddMedia(editMediaID, 1, effectiveProfile, signal);
           const missing: string[] = [];
           for (const id of orderedCatalog) {
             if (!existingSet.has(id) && id !== editMediaID) {
@@ -644,7 +786,8 @@ export async function convertCatalogAndApplyEdit({
             }
           }
           for (let i = 0; i < missing.length; i += QUEUE_BATCH_SIZE) {
-            await queueAddManyEnd(missing.slice(i, i + QUEUE_BATCH_SIZE), effectiveProfile);
+            assertActive();
+            await queueAddManyEnd(missing.slice(i, i + QUEUE_BATCH_SIZE), effectiveProfile, signal);
           }
         } else {
           const alreadyExisting = existingSet.has(editMediaID);
@@ -656,38 +799,66 @@ export async function convertCatalogAndApplyEdit({
           }
           const appendIDs = alreadyExisting ? missing : [...missing, editMediaID];
           for (let i = 0; i < appendIDs.length; i += QUEUE_BATCH_SIZE) {
-            await queueAddManyEnd(appendIDs.slice(i, i + QUEUE_BATCH_SIZE), effectiveProfile);
+            assertActive();
+            await queueAddManyEnd(
+              appendIDs.slice(i, i + QUEUE_BATCH_SIZE),
+              effectiveProfile,
+              signal,
+            );
           }
           if (alreadyExisting) {
             let duplicateCount = 0;
             for (const entry of before.entries) {
               if (entry.mediaID === editMediaID) duplicateCount++;
             }
+            assertActive();
             await queueAddMedia(
               editMediaID,
               duplicateCount > 1 ? before.rows.length + missing.length : undefined,
               effectiveProfile,
+              signal,
             );
           }
         }
       }
 
-      const confirmed = await readMusicQueueSnapshot({
+      assertActive();
+      const confirmed = await readSnapshotChecked({
         expectedProfileID: effectiveProfile,
+        expectedIdentity: effectiveIdentity,
         signal,
+        onIdentityChanged,
       });
-      if (!isStillCurrent || isStillCurrent()) {
+      if (!signal?.aborted && (!isStillCurrent || isStillCurrent())) {
         applyConfirmed?.(confirmed);
-        publishMusicQueueSnapshot(effectiveProfile, confirmed);
+        publishMusicQueueSnapshot(
+          confirmed.session ?? effectiveIdentity ?? effectiveProfile,
+          confirmed,
+        );
         onConverted(confirmed, effectiveProfile);
       }
       return confirmed;
     } catch (err) {
-      if (isProfileMismatchError(err)) throw err;
+      if (
+        isProfileMismatchError(err) ||
+        err instanceof QueueIdentityChanged ||
+        signal?.aborted ||
+        (isStillCurrent && !isStillCurrent())
+      ) {
+        throw err;
+      }
       if (writeStarted) {
-        const reread = await rereadSnapshotSafely(effectiveProfile, signal, applyConfirmed);
+        const reread = await rereadSnapshotSafely(
+          effectiveProfile,
+          effectiveIdentity,
+          signal,
+          isStillCurrent,
+          applyConfirmed,
+          onIdentityChanged,
+        );
         if (
           reread &&
+          !signal?.aborted &&
           (!isStillCurrent || isStillCurrent()) &&
           !sameQueueOrder(reread.rows, before.rows) &&
           reread.rows.some((row) => row.id === currentMediaID)
@@ -700,9 +871,14 @@ export async function convertCatalogAndApplyEdit({
   });
 }
 
-type QueueIdentity = Pick<SessionInfo, "profileID" | "revealed"> &
+export type QueueIdentity = Pick<SessionInfo, "profileID" | "revealed"> &
   Partial<Pick<SessionInfo, "deviceRole" | "profile">>;
-class QueueIdentityChanged extends Error {}
+export class QueueIdentityChanged extends Error {
+  constructor(message = "Queue session identity changed") {
+    super(message);
+    this.name = "QueueIdentityChanged";
+  }
+}
 
 async function readScoped<T>(
   query: string,
@@ -741,10 +917,14 @@ export function useMusicQueue() {
   const { session, revealed } = useSession();
   const identity = useViewerIdentity();
   const { profileID, deviceRole, profile } = session ?? {};
+  const effectiveRevealed = session?.revealed ?? revealed;
   const epoch = getIdentityEpochSignal();
   const scope = useMemo(
-    () => (profileID ? { epoch, identity, profileID, revealed, deviceRole, profile } : null),
-    [epoch, identity, profileID, revealed, deviceRole, profile],
+    () =>
+      profileID
+        ? { epoch, identity, profileID, revealed: effectiveRevealed, deviceRole, profile }
+        : null,
+    [epoch, identity, profileID, effectiveRevealed, deviceRole, profile],
   );
   const active = useRef<{
     scope: typeof scope;
@@ -757,16 +937,45 @@ export function useMusicQueue() {
   }>(null);
   const [result, setResult] = useState<MusicQueueView & { scope: typeof scope }>();
 
+  const invalidate = useCallback(
+    (read: NonNullable<typeof active.current>) => {
+      read.invalid = true;
+      read.pending?.controller.abort();
+      setResult({ scope, invalid: true });
+    },
+    [scope],
+  );
+
   useLayoutEffect(() => {
     setResult(undefined);
     if (!scope) return;
     const controller = new AbortController();
     const signal = epoch ? AbortSignal.any([epoch, controller.signal]) : controller.signal;
     active.current = { scope, signal, gen: 0 };
-    const listener: SnapshotListener = (targetProfileID, snapshot) => {
-      if (targetProfileID && targetProfileID !== scope.profileID) return;
+    const listener: SnapshotListener = (target, snapshot) => {
       const read = active.current;
       if (!read || read.scope !== scope || read.signal.aborted || read.invalid) return;
+      if (target !== undefined) {
+        if (typeof target === "string") {
+          if (target !== scope.profileID) return;
+        } else {
+          if (target.profileID !== scope.profileID) return;
+          if (!sameQueueIdentity(target, scope)) {
+            invalidate(read);
+            return;
+          }
+        }
+      }
+      if (snapshot.session !== undefined) {
+        if (!snapshot.session || snapshot.session.profileID !== scope.profileID) {
+          if (target !== undefined) invalidate(read);
+          return;
+        }
+        if (!sameQueueIdentity(snapshot.session, scope)) {
+          invalidate(read);
+          return;
+        }
+      }
       read.gen++;
       read.pending?.controller.abort();
       read.pending = undefined;
@@ -781,21 +990,17 @@ export function useMusicQueue() {
       snapshotListeners.delete(listener);
       controller.abort();
     };
-  }, [scope, epoch]);
+  }, [scope, epoch, invalidate]);
 
   const current = useCallback(() => {
     const read = active.current;
     return scope && read?.scope === scope && !read.signal.aborted && !read.invalid ? read : null;
   }, [scope]);
 
-  const invalidate = useCallback(
-    (read: NonNullable<typeof active.current>) => {
-      read.invalid = true;
-      read.pending?.controller.abort();
-      setResult({ scope, invalid: true });
-    },
-    [scope],
-  );
+  const invalidateCurrent = useCallback(() => {
+    const read = current();
+    if (read) invalidate(read);
+  }, [current, invalidate]);
 
   const refresh = useCallback(
     (fresh = false): Promise<RefreshResult> => {
@@ -868,6 +1073,16 @@ export function useMusicQueue() {
     (snapshot: QueueSnapshot) => {
       const read = current();
       if (!scope || !read) return;
+      if (snapshot.session !== undefined) {
+        if (
+          !snapshot.session ||
+          snapshot.session.profileID !== scope.profileID ||
+          !sameQueueIdentity(snapshot.session, scope)
+        ) {
+          invalidate(read);
+          return;
+        }
+      }
       read.gen++;
       read.pending?.controller.abort();
       read.pending = undefined;
@@ -877,7 +1092,7 @@ export function useMusicQueue() {
       read.rows = snapshot.rows;
       setResult({ scope, pending: false, failed: false, rows: snapshot.rows });
     },
-    [scope, current],
+    [scope, current, invalidate],
   );
 
   const readSnapshot = useCallback(async (): Promise<QueueSnapshot | null> => {
@@ -886,6 +1101,7 @@ export function useMusicQueue() {
     try {
       const snap = await readMusicQueueSnapshot({
         expectedProfileID: scope.profileID,
+        expectedIdentity: scope,
         signal: read.signal,
       });
       if (current() !== read) return null;
@@ -918,5 +1134,6 @@ export function useMusicQueue() {
     readMedia,
     isCurrent: current,
     latestRows,
+    invalidate: invalidateCurrent,
   };
 }

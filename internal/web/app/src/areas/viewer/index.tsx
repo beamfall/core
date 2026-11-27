@@ -191,7 +191,7 @@ export function ViewerArea() {
     return <Navigate to="/profiles" state={{ from: location }} replace />;
   }
 
-  return <ViewerRoutes profileID={session.profileID} />;
+  return <ViewerRoutes key={session.profileID} profileID={session.profileID} />;
 }
 
 // The bound viewer: its routes, plus the one event subscription that keeps
@@ -199,7 +199,7 @@ export function ViewerArea() {
 // carries remote commands from the Profile's other devices.
 function ViewerRoutes({ profileID }: { profileID: string }) {
   const remote = useRemoteReceiver(profileID);
-  useEngagementEvents(remote.onEvent);
+  useEngagementEvents(remote.onEvent, profileID);
   useScreensaver();
   // The player host sits above the routes so audio keeps playing, docked in a
   // mini player, while the listener browses (CORE-1633). Keyed like the routes:
