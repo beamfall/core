@@ -4546,9 +4546,19 @@ func observePersistedRoots(ctx context.Context, st *store.Store, watcherService 
 // software-level emulator attestation (CORE-3189). Release builds ignore it.
 const devEmulatorAttestationEnv = "BEAMFALL_DEV_ACCEPT_EMULATOR_ATTESTATION"
 
+// devAppleAttestationEnv opts a development build into accepting Apple App
+// Attest development ("appattestdevelop") AAGUIDs. Release builds ignore it.
+const devAppleAttestationEnv = "BEAMFALL_DEV_ACCEPT_APPLE_DEV_ATTESTATION"
+
+// appleAttestAllowedAppIDsEnv lists the comma-separated Apple "<TeamID>.<BundleID>"
+// app IDs accepted by AppleAppAttestVerifier. Empty fails closed (CORE-1926).
+const appleAttestAllowedAppIDsEnv = "BEAMFALL_APPLE_APP_ATTEST_APP_IDS"
+
 // offlinePackAttestationVerifier returns the hook's verifier when one is set,
-// else Android Key Attestation against the Google roots (ADR-0208). Apple
-// Secure Enclave attestation is refused until CORE-1926.
+// else a multi-platform verifier routing Android Key Attestation and Apple App
+// Attest (ADR-0208, CORE-1926). Apple verification fails closed unless
+// AllowedAppIDs is configured, and development AAGUIDs require a development
+// build plus explicit opt-in.
 // Google's revocation list is fetched on the first verification and held in
 // memory.
 func offlinePackAttestationVerifier(hook offlinepack.DeviceKeyAttestationVerifier, logger *slog.Logger) (offlinepack.DeviceKeyAttestationVerifier, error) {
@@ -4564,7 +4574,8 @@ func offlinePackAttestationVerifier(hook offlinepack.DeviceKeyAttestationVerifie
 		return nil, err
 	}
 	apple, err := offlinepack.NewAppleAppAttestVerifier(offlinepack.AppleAppAttestOptions{
-		AllowDevelopment: true,
+		AllowDevelopment: appleDevAttestationAllowed(capabilities.ReleaseVersion, logger),
+		AllowedAppIDs:    appleAllowedAppIDs(),
 	})
 	if err != nil {
 		return nil, err
@@ -4573,15 +4584,46 @@ func offlinePackAttestationVerifier(hook offlinepack.DeviceKeyAttestationVerifie
 }
 
 func emulatorAttestationAllowed(releaseVersion string, logger *slog.Logger) bool {
-	if !envEnabled(devEmulatorAttestationEnv) {
+	return devAttestationAllowed(devEmulatorAttestationEnv, "software emulator", releaseVersion, logger)
+}
+
+func appleDevAttestationAllowed(releaseVersion string, logger *slog.Logger) bool {
+	return devAttestationAllowed(devAppleAttestationEnv, "Apple development", releaseVersion, logger)
+}
+
+func devAttestationAllowed(envName, kind, releaseVersion string, logger *slog.Logger) bool {
+	if !envEnabled(envName) {
 		return false
 	}
 	if releaseVersion != "development" {
-		logger.Warn("ignoring emulator attestation opt-in in a release build", "env", devEmulatorAttestationEnv)
+		if logger != nil {
+			logger.Warn("ignoring dev attestation opt-in in a release build", "env", envName, "kind", kind)
+		}
 		return false
 	}
-	logger.Warn("accepting software emulator device-key attestation; development builds only", "env", devEmulatorAttestationEnv)
+	if logger != nil {
+		logger.Warn("accepting dev device-key attestation; development builds only", "env", envName, "kind", kind)
+	}
 	return true
+}
+
+func appleAllowedAppIDs() []string {
+	raw := strings.TrimSpace(os.Getenv(appleAttestAllowedAppIDsEnv))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func envEnabled(name string) bool {

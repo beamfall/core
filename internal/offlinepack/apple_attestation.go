@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -151,6 +152,9 @@ func (v *AppleAppAttestVerifier) VerifyDeviceKey(_ context.Context, enrollmentID
 }
 
 func (v *AppleAppAttestVerifier) verifyChain(chain []*x509.Certificate) error {
+	if chain[0].IsCA {
+		return errors.New("apple attestation leaf certificate cannot be a CA")
+	}
 	roots := x509.NewCertPool()
 	for _, r := range v.roots {
 		roots.AddCert(r)
@@ -172,19 +176,26 @@ func (v *AppleAppAttestVerifier) verifyChain(chain []*x509.Certificate) error {
 }
 
 func (v *AppleAppAttestVerifier) verifyAuthData(authData []byte, leaf *x509.Certificate) error {
-	if len(v.opts.AllowedAppIDs) > 0 {
-		rpHash := authData[:32]
-		matched := false
-		for _, appID := range v.opts.AllowedAppIDs {
-			sum := sha256.Sum256([]byte(appID))
-			if bytes.Equal(rpHash, sum[:]) {
-				matched = true
-				break
-			}
+	rpHash := authData[:32]
+	configured := false
+	matched := false
+	for _, appID := range v.opts.AllowedAppIDs {
+		appID = strings.TrimSpace(appID)
+		if appID == "" {
+			continue
 		}
-		if !matched {
-			return errors.New("apple attestation rpIdHash does not match any allowed app ID")
+		configured = true
+		sum := sha256.Sum256([]byte(appID))
+		if bytes.Equal(rpHash, sum[:]) {
+			matched = true
+			break
 		}
+	}
+	if !configured {
+		return errors.New("apple attestation allowed app IDs are not configured")
+	}
+	if !matched {
+		return errors.New("apple attestation rpIdHash does not match any allowed app ID")
 	}
 
 	flags := authData[32]
@@ -424,6 +435,9 @@ func (r *cborReader) readValue(depth int) (any, error) {
 			ks, ok := k.(string)
 			if !ok {
 				return nil, errors.New("CBOR map key must be text string")
+			}
+			if _, exists := out[ks]; exists {
+				return nil, errors.New("duplicate CBOR map key")
 			}
 			v, err := r.readValue(depth + 1)
 			if err != nil {

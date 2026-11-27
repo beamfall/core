@@ -100,6 +100,7 @@ func TestMultiPlatformAttestationVerifierRoutesBoth(t *testing.T) {
 	root, inter, _, interKey := newTestAppleChain(t, now)
 	apple, err := NewAppleAppAttestVerifier(AppleAppAttestOptions{
 		AllowDevelopment: true,
+		AllowedAppIDs:    []string{"T3Y5YFTYRN.com.beamfall.mobile"},
 		Now:              func() time.Time { return now },
 		roots:            []*x509.Certificate{root},
 	})
@@ -218,6 +219,37 @@ func buildTestAppleAttestation(
 			"x5c": [][]byte{leafDER, inter.Raw},
 		},
 	})
+}
+
+func TestAppleAppAttestVerifierFailsClosedWithoutAllowedAppIDs(t *testing.T) {
+	now := time.Date(2026, 11, 25, 18, 0, 0, 0, time.UTC)
+	root, inter, _, interKey := newTestAppleChain(t, now)
+	deviceKey, err := ecdh.P256().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cbor := buildTestAppleAttestation(t, now, inter, interKey, appleProdAAGUID, "T3Y5YFTYRN.com.beamfall.mobile", "device-1", deviceKey.PublicKey().Bytes(), 0, "apple-appattest", false)
+
+	for _, allowed := range [][]string{nil, {"", "   "}} {
+		verifier, err := NewAppleAppAttestVerifier(AppleAppAttestOptions{
+			AllowedAppIDs: allowed,
+			Now:           func() time.Time { return now },
+			roots:         []*x509.Certificate{root},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := verifier.VerifyDeviceKey(context.Background(), "device-1", deviceKey.PublicKey().Bytes(), cbor); err == nil {
+			t.Fatalf("expected fail-closed error with AllowedAppIDs=%v", allowed)
+		}
+	}
+}
+
+func TestAppleAppAttestVerifierRejectsDuplicateCBORKeys(t *testing.T) {
+	dup := []byte{0xa2, 0x61, 'a', 0x01, 0x61, 'a', 0x02}
+	if _, err := decodeStrictCBOR(dup); err == nil {
+		t.Fatal("expected duplicate CBOR map key error")
+	}
 }
 
 func encodeTestCBORMap(m map[string]any) []byte {
