@@ -1,24 +1,35 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OFFERED_LOCALE_TAGS } from "@/l10n/locales";
+import { getIdentityEpochSignal, setExpectedIdentity, setIdentityEpochSignal } from "@/lib/api";
 import { I18nProvider } from "@/lib/i18n";
 import { STRINGS } from "@/strings";
-import { beginQueueAdvance, resetQueueCoordinatorForTest, useMusicQueue } from "../lib/musicQueue";
+import {
+  beginQueueAdvance,
+  hasPendingQueueEdits,
+  resetQueueCoordinatorForTest,
+  useMusicQueue,
+} from "../lib/musicQueue";
 import { resetPlayNextForTest, setActivePlayingMediaID } from "../lib/watchQueue";
 import { MusicQueuePanel } from "./MusicQueuePanel";
 
 const viewer = vi.hoisted(() => ({
   profileID: "profile-a",
   revealed: true,
+  deviceRole: undefined as string | undefined,
 }));
 vi.mock("@/lib/session", () => ({
   useSession: () => ({
-    session: { profileID: viewer.profileID },
+    session: {
+      profileID: viewer.profileID,
+      revealed: viewer.revealed,
+      ...(viewer.deviceRole !== undefined ? { deviceRole: viewer.deviceRole } : {}),
+    },
     revealed: viewer.revealed,
   }),
-  useViewerIdentity: () => `${viewer.profileID}:${viewer.revealed}`,
+  useViewerIdentity: () => `${viewer.profileID}:${viewer.revealed}:${viewer.deviceRole ?? ""}`,
 }));
 
 function QueueButton({ onPlay }: { onPlay: () => void }) {
@@ -60,6 +71,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
   viewer.profileID = "profile-a";
   viewer.revealed = true;
+  viewer.deviceRole = undefined;
+  setIdentityEpochSignal(undefined);
+  setExpectedIdentity(undefined);
 });
 
 describe("MusicQueuePanel", () => {
@@ -689,6 +703,157 @@ describe("MusicQueuePanel", () => {
       );
       expect(mutations).toEqual([]);
     } finally {
+      resetPlayNextForTest();
+      resetQueueCoordinatorForTest();
+    }
+  });
+
+  it("drops deferred Remove, Move, and Clear upcoming edits after epoch abort/relock or unmount (CORE-3565)", async () => {
+    const mutations: { op: string; mediaID: string; hasSignal: boolean }[] = [];
+    const oldEpoch = new AbortController();
+    const newEpoch = new AbortController();
+    setIdentityEpochSignal(oldEpoch.signal);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_path: string, request: RequestInit) => {
+        const body = JSON.parse(String(request.body));
+        const q = String(body.query ?? "");
+        const hasSignal = request.signal instanceof AbortSignal;
+        if (q.includes("queueMove") || q.includes("queueRemove")) {
+          const mediaID = String(body.variables?.mediaID);
+          mutations.push({ op: q.includes("queueMove") ? "move" : "remove", mediaID, hasSignal });
+          return new Response(JSON.stringify({ data: {} }));
+        }
+        return new Response(
+          JSON.stringify({
+            data: {
+              currentSession: { profileID: viewer.profileID, revealed: viewer.revealed },
+              sourceItems: [
+                { id: "track-202", title: "Track A", mediaClass: "audio", libraryID: "lib-1" },
+                { id: "b", title: "Track B", mediaClass: "audio", libraryID: "lib-1" },
+                { id: "c", title: "Track C", mediaClass: "audio", libraryID: "lib-1" },
+              ],
+            },
+          }),
+        );
+      }),
+    );
+
+    // 1. Remove queued while advance is held -> epoch aborts, new same-Profile epoch installs, panel unmounts -> 0 mutations.
+    const view1 = render(
+      <I18nProvider initialLocale="en">
+        <QueueButton onPlay={vi.fn()} />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueTitle }));
+    await screen.findByText("Track B");
+
+    const endAdvance1 = beginQueueAdvance();
+    try {
+      setActivePlayingMediaID("track-202");
+      fireEvent.click(screen.getByRole("button", { name: "Remove Track B" }));
+      await Promise.resolve();
+      expect(hasPendingQueueEdits()).toBe(true);
+      expect(mutations).toEqual([]);
+
+      oldEpoch.abort();
+      setIdentityEpochSignal(newEpoch.signal);
+      view1.unmount();
+      expect(getIdentityEpochSignal()).toBe(newEpoch.signal);
+
+      await act(async () => {
+        endAdvance1();
+      });
+      await waitFor(() => expect(hasPendingQueueEdits()).toBe(false));
+      expect(mutations).toEqual([]);
+    } finally {
+      endAdvance1();
+      view1.unmount();
+    }
+
+    // 2. Move queued while advance is held -> same-Profile relock (revealed false) re-renders before release -> 0 mutations.
+    const moveEpoch = new AbortController();
+    setIdentityEpochSignal(moveEpoch.signal);
+    const view2 = render(
+      <I18nProvider initialLocale="en">
+        <QueueButton onPlay={vi.fn()} />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueTitle }));
+    const rowB = (await screen.findByText("Track B")).closest("li")!;
+    const rowC = screen.getByText("Track C").closest("li")!;
+    const endAdvance2 = beginQueueAdvance();
+    try {
+      setActivePlayingMediaID("track-202");
+      fireEvent.dragStart(rowB);
+      fireEvent.drop(rowC);
+      await Promise.resolve();
+      expect(hasPendingQueueEdits()).toBe(true);
+
+      viewer.revealed = false;
+      moveEpoch.abort();
+      view2.rerender(
+        <I18nProvider initialLocale="en">
+          <QueueButton onPlay={vi.fn()} />
+        </I18nProvider>,
+      );
+
+      await act(async () => {
+        endAdvance2();
+      });
+      await waitFor(() => expect(hasPendingQueueEdits()).toBe(false));
+      expect(mutations).toEqual([]);
+    } finally {
+      endAdvance2();
+      view2.unmount();
+    }
+
+    // 3. Clear upcoming aborts mid-loop before the second track ("c" removes only; wait: "b" & "c" -> seed c first or swap order).
+    viewer.revealed = true;
+    const clearEpoch = new AbortController();
+    setIdentityEpochSignal(clearEpoch.signal);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_path: string, request: RequestInit) => {
+        const body = JSON.parse(String(request.body));
+        const q = String(body.query ?? "");
+        const hasSignal = request.signal instanceof AbortSignal;
+        if (q.includes("queueRemove")) {
+          const mediaID = String(body.variables?.mediaID);
+          mutations.push({ op: "remove", mediaID, hasSignal });
+          if (mediaID === "b") clearEpoch.abort();
+          return new Response(JSON.stringify({ data: {} }));
+        }
+        return new Response(
+          JSON.stringify({
+            data: {
+              currentSession: { profileID: viewer.profileID, revealed: viewer.revealed },
+              sourceItems: [
+                { id: "track-202", title: "Track A", mediaClass: "audio", libraryID: "lib-1" },
+                { id: "b", title: "Track B", mediaClass: "audio", libraryID: "lib-1" },
+                { id: "c", title: "Track C", mediaClass: "audio", libraryID: "lib-1" },
+              ],
+            },
+          }),
+        );
+      }),
+    );
+
+    const view3 = render(
+      <I18nProvider initialLocale="en">
+        <QueueButton onPlay={vi.fn()} />
+      </I18nProvider>,
+    );
+    try {
+      setActivePlayingMediaID("track-202");
+      fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueTitle }));
+      await screen.findByText("Track B");
+      fireEvent.click(screen.getByRole("button", { name: "Clear upcoming" }));
+      await waitFor(() => expect(hasPendingQueueEdits()).toBe(false));
+      expect(mutations).toEqual([{ op: "remove", mediaID: "b", hasSignal: true }]);
+    } finally {
+      view3.unmount();
       resetPlayNextForTest();
       resetQueueCoordinatorForTest();
     }

@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, ListMusic, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/astryx-primitives";
 import { Button } from "@/components/ui/button";
+import * as api from "@/lib/api";
 import { addCollectionMedia, createCollection } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
@@ -47,12 +48,21 @@ export function MusicQueuePanel({
 }) {
   const t = useT();
   const sessionState = useSession() as {
-    session?: { profileID?: string; deviceRole?: string } | null;
+    session?: {
+      profileID?: string;
+      deviceRole?: string;
+      profile?: string;
+      revealed?: boolean;
+    } | null;
     manifest?: { libraries?: { id: string }[] } | null;
     isManager?: boolean;
+    revealed?: boolean;
   };
   const profileID = sessionState.session?.profileID;
   const deviceRole = sessionState.session?.deviceRole;
+  const profileKind = sessionState.session?.profile;
+  const revealed = sessionState.session?.revealed ?? sessionState.revealed;
+  const identityKey = `${profileID ?? ""}:${revealed ?? ""}:${deviceRole ?? ""}:${profileKind ?? ""}`;
   const notManager =
     sessionState.isManager === false ||
     (deviceRole !== undefined && deviceRole !== "" && deviceRole !== "manager");
@@ -64,6 +74,10 @@ export function MusicQueuePanel({
   const [playlistName, setPlaylistName] = useState("");
   const [notice, setNotice] = useState<PanelNotice>(null);
   const frozenSaveRef = useRef<FrozenPlaylistSave | null>(null);
+  const mountedRef = useRef(true);
+  const scopeControllerRef = useRef<AbortController | null>(null);
+  const activeIdentityRef = useRef(identityKey);
+  activeIdentityRef.current = identityKey;
 
   const { rows, failed, invalid, pending } = queue ?? {};
   const currentIDRef = useRef(currentID);
@@ -74,11 +88,78 @@ export function MusicQueuePanel({
   const upcomingIDs = upcomingPlayableIDs(rows, currentID);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    scopeControllerRef.current = controller;
+    return () => {
+      controller.abort();
+      if (scopeControllerRef.current === controller) {
+        scopeControllerRef.current = null;
+      }
+    };
+  }, [identityKey]);
+
+  useEffect(() => {
+    setBusy(false);
+    setNotice(null);
+    frozenSaveRef.current = null;
+  }, [identityKey]);
+
+  useEffect(() => {
     if (!open) {
       setNotice(null);
       frozenSaveRef.current = null;
     }
-  }, [open, profileID]);
+  }, [open]);
+
+  function captureEditScope() {
+    const capturedController = scopeControllerRef.current;
+    const readEpoch = () =>
+      Object.hasOwn(api, "getIdentityEpochSignal") ? api.getIdentityEpochSignal() : undefined;
+    const readExpected = () =>
+      Object.hasOwn(api, "getExpectedIdentity") ? api.getExpectedIdentity() : undefined;
+    const capturedEpoch = readEpoch();
+    const capturedExpected = readExpected();
+    const capturedProfileID = profileID;
+    const capturedIdentityKey = identityKey;
+    const signals = [capturedController?.signal, capturedEpoch].filter(
+      (s): s is AbortSignal => s !== undefined,
+    );
+    const signal =
+      signals.length === 0
+        ? undefined
+        : signals.length === 1
+          ? signals[0]
+          : AbortSignal.any(signals);
+    const isAlive = () => {
+      if (!mountedRef.current || !capturedController || capturedController.signal.aborted) {
+        return false;
+      }
+      if (scopeControllerRef.current !== capturedController) return false;
+      if (activeIdentityRef.current !== capturedIdentityKey) return false;
+      if (capturedEpoch?.aborted || readEpoch() !== capturedEpoch) return false;
+      if (capturedExpected) {
+        const live = readExpected();
+        if (
+          !live ||
+          live.profileID !== capturedExpected.profileID ||
+          live.revealed !== capturedExpected.revealed ||
+          live.deviceRole !== capturedExpected.deviceRole ||
+          live.profile !== capturedExpected.profile
+        ) {
+          return false;
+        }
+      }
+      return true;
+    };
+    return { profileID: capturedProfileID, signal, isAlive };
+  }
 
   async function rereadQueue() {
     if (queue?.refresh) {
@@ -106,12 +187,14 @@ export function MusicQueuePanel({
 
   async function handleMove(mediaID: string, position: number) {
     if (busy) return;
+    const scope = captureEditScope();
     setBusy(true);
     setNotice(null);
     let writeFailed = false;
     let mismatched = false;
     try {
       await enqueueQueueEdit(async () => {
+        if (!scope.isAlive()) return;
         const liveCurrent = getActivePlayingMediaID() ?? currentIDRef.current;
         const liveRows = rowsRef.current;
         const { valid, curIndex } = stillUpcomingEditable(liveRows, mediaID, liveCurrent);
@@ -122,80 +205,90 @@ export function MusicQueuePanel({
           position < 0 ||
           position >= liveRows.length
         ) {
-          await rereadQueue();
+          if (scope.isAlive()) await rereadQueue();
           return;
         }
         try {
-          await moveMusicQueueTrack(mediaID, position, profileID);
+          if (!scope.isAlive()) return;
+          await moveMusicQueueTrack(mediaID, position, scope.profileID, scope.signal);
         } catch (err) {
+          if (!scope.isAlive()) return;
           if (isProfileMismatchError(err)) {
             mismatched = true;
             return;
           }
           writeFailed = true;
         }
-        await rereadQueue();
+        if (scope.isAlive()) await rereadQueue();
       });
     } finally {
-      if (writeFailed && !mismatched) {
+      if (scope.isAlive() && writeFailed && !mismatched) {
         setNotice({ kind: "alert", text: t("musicQueueWriteFailed") });
       }
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
     }
   }
 
   async function handleRemove(mediaID: string) {
     if (busy) return;
+    const scope = captureEditScope();
     setBusy(true);
     setNotice(null);
     let writeFailed = false;
     let mismatched = false;
     try {
       await enqueueQueueEdit(async () => {
+        if (!scope.isAlive()) return;
         const liveCurrent = getActivePlayingMediaID() ?? currentIDRef.current;
         if (!stillUpcomingEditable(rowsRef.current, mediaID, liveCurrent).valid) {
-          await rereadQueue();
+          if (scope.isAlive()) await rereadQueue();
           return;
         }
         try {
-          await removeMusicQueueTrack(mediaID, profileID);
+          if (!scope.isAlive()) return;
+          await removeMusicQueueTrack(mediaID, scope.profileID, scope.signal);
         } catch (err) {
+          if (!scope.isAlive()) return;
           if (isProfileMismatchError(err)) {
             mismatched = true;
             return;
           }
           writeFailed = true;
         }
-        await rereadQueue();
+        if (scope.isAlive()) await rereadQueue();
       });
     } finally {
-      if (writeFailed && !mismatched) {
+      if (scope.isAlive() && writeFailed && !mismatched) {
         setNotice({ kind: "alert", text: t("musicQueueWriteFailed") });
       }
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
     }
   }
 
   async function handleClearUpcoming() {
     if (busy) return;
     if (upcomingPlayableIDs(rows, currentID).length === 0) return;
+    const scope = captureEditScope();
     setBusy(true);
     setNotice(null);
     let writeFailed = false;
     let mismatched = false;
     try {
       await enqueueQueueEdit(async () => {
+        if (!scope.isAlive()) return;
         // Recompute targets after any in-flight advance finishes so a newly playing track is never deleted.
         const liveCurrent = getActivePlayingMediaID() ?? currentIDRef.current;
         const upcoming = upcomingPlayableIDs(rowsRef.current, liveCurrent);
         if (upcoming.length === 0) {
-          await rereadQueue();
+          if (scope.isAlive()) await rereadQueue();
           return;
         }
         for (const id of upcoming) {
+          if (!scope.isAlive()) return;
           try {
-            await removeMusicQueueTrack(id, profileID);
+            await removeMusicQueueTrack(id, scope.profileID, scope.signal);
           } catch (err) {
+            if (!scope.isAlive()) return;
             if (isProfileMismatchError(err)) {
               mismatched = true;
               return;
@@ -204,13 +297,13 @@ export function MusicQueuePanel({
             break;
           }
         }
-        await rereadQueue();
+        if (scope.isAlive()) await rereadQueue();
       });
     } finally {
-      if (writeFailed && !mismatched) {
+      if (scope.isAlive() && writeFailed && !mismatched) {
         setNotice({ kind: "alert", text: t("musicQueueWriteFailed") });
       }
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
     }
   }
 

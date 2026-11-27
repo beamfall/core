@@ -743,5 +743,93 @@ describe("musicQueue CORE-2845 server edits, conversion, and serialization", () 
     ).rejects.toThrow("Queue conversion superseded");
     expect(supersededBatches).toBe(1);
     expect(onConvertedSuperseded).not.toHaveBeenCalled();
+
+    // 3. Non-empty queue conversion cancels before later QueueAddAt / QueueAddManyEnd writes, forwards signal,
+    //    and role/profile/error-reread identity drift refuses safely.
+    const nonEmptyQueue = new InMemoryServerQueue();
+    nonEmptyQueue.seed(["other"]);
+    const nonEmptyAbort = new AbortController();
+    const writes: string[] = [];
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables, signal) => {
+      if (query.startsWith("query MusicQueue")) {
+        return nonEmptyQueue.snapshot();
+      }
+      if (query.startsWith("mutation QueueAddAt")) {
+        writes.push(`QueueAddAt:${(variables as Record<string, unknown>).mediaID}`);
+        expect(signal).toBe(nonEmptyAbort.signal);
+        nonEmptyAbort.abort();
+        return { queueAdd: { id: "track-0" } };
+      }
+      if (query.startsWith("mutation QueueAddManyEnd")) {
+        writes.push("QueueAddManyEnd");
+        return {};
+      }
+      return {};
+    });
+
+    await expect(
+      convertCatalogAndApplyEdit({
+        resolveCatalogIDs: async () => ["track-0", "track-1"],
+        currentMediaID: "track-0",
+        editMediaID: "track-1",
+        placement: "next",
+        expectedProfileID: "profile-a",
+        onConverted: vi.fn(),
+        signal: nonEmptyAbort.signal,
+      }),
+    ).rejects.toThrow();
+    expect(writes).toEqual(["QueueAddAt:track-0"]);
+
+    // 4. Role/profile mismatch (same profileID & revealed, different deviceRole/profile) + error-reread drift.
+    await expect(
+      (async () => {
+        vi.spyOn(api, "graphql").mockResolvedValueOnce({
+          ...nonEmptyQueue.snapshot(),
+          currentSession: {
+            profileID: "profile-a",
+            revealed: true,
+            deviceRole: "managed",
+            profile: "managed",
+          },
+        });
+        return readMusicQueueSnapshot({
+          expectedIdentity: {
+            profileID: "profile-a",
+            revealed: true,
+            deviceRole: "viewer",
+            profile: "adult",
+          },
+        });
+      })(),
+    ).rejects.toBeInstanceOf(QueueIdentityChanged);
+
+    let readIndex = 0;
+    const onErrorRereadIdentityChanged = vi.fn();
+    const applyAfterFailedWrite = vi.fn();
+    vi.spyOn(api, "graphql").mockImplementation(async (query) => {
+      if (query.startsWith("query MusicQueue")) {
+        readIndex++;
+        return {
+          ...nonEmptyQueue.snapshot(),
+          currentSession: {
+            profileID: "profile-a",
+            revealed: readIndex === 1,
+          },
+        };
+      }
+      throw new Error("write timeout");
+    });
+    await expect(
+      editServerQueue({
+        mediaID: "track-x",
+        placement: "end",
+        expectedProfileID: "profile-a",
+        expectedIdentity: { profileID: "profile-a", revealed: true },
+        applyConfirmed: applyAfterFailedWrite,
+        onIdentityChanged: onErrorRereadIdentityChanged,
+      }),
+    ).rejects.toThrow("write timeout");
+    expect(onErrorRereadIdentityChanged).toHaveBeenCalledOnce();
+    expect(applyAfterFailedWrite).not.toHaveBeenCalled();
   });
 });
